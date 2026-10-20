@@ -9,6 +9,8 @@
 
 namespace plugmesh {
 
+PluginManager* PluginManager::active_instance_ = nullptr;
+
 namespace {
 
 bool is_library(const std::filesystem::path& path) {
@@ -122,6 +124,8 @@ const char* plugin_state_name(PluginState state) {
 
 PluginManager::PluginManager(plugmesh_host_api host_api) : host_api_(host_api) {
   if (host_api_.abi_version == 0) host_api_.abi_version = PLUGMESH_PLUGIN_ABI_VERSION;
+  if (!host_api_.stream_write) host_api_.stream_write = &PluginManager::stream_write_trampoline;
+  active_instance_ = this;
 }
 
 PluginManager::~PluginManager() {
@@ -131,6 +135,12 @@ PluginManager::~PluginManager() {
     if (plugin && plugin->state == PluginState::Enabled && loaded_plugin.loader && loaded_plugin.loader->loaded() && loaded_plugin.loader->api()->stop) loaded_plugin.loader->api()->stop();
   }
   loaded_.clear();
+  if (active_instance_ == this) active_instance_ = nullptr;
+}
+
+void PluginManager::set_stream_writer(StreamWriter writer) {
+  std::lock_guard lock(mutex_);
+  stream_writer_ = std::move(writer);
 }
 
 bool PluginManager::discover(const std::filesystem::path& directory, std::string& error) {
@@ -320,6 +330,16 @@ const PluginManager::LoadedPlugin* PluginManager::loaded(const std::string& plug
 bool PluginManager::set_failed(PluginInfo& plugin, std::string& error) {
   plugin.state = PluginState::Failed;
   return false;
+}
+
+int PluginManager::stream_write_trampoline(const char* stream_id, const uint8_t* data, uint64_t size, int finished) {
+  return active_instance_ ? active_instance_->write_stream(stream_id, data, size, finished) : -1;
+}
+
+int PluginManager::write_stream(const char* stream_id, const uint8_t* data, uint64_t size, int finished) {
+  std::lock_guard lock(mutex_);
+  if (!stream_writer_ || !stream_id || (!data && size > 0)) return -1;
+  return stream_writer_(stream_id, data, size, finished);
 }
 
 }  // namespace plugmesh

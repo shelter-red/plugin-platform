@@ -103,8 +103,9 @@ export class PluginBridge {
     socket.accept()
     this.publicSockets.set(connectionId, socket)
     socket.addEventListener('message', (event) => {
-      const data = typeof event.data === 'string' ? event.data : encodeBytes(new Uint8Array(event.data as ArrayBuffer))
-      this.serverSocket?.send(JSON.stringify(makeFrame('stream.chunk', this.serverId, { connectionId, data }, pluginId)))
+      const binary = typeof event.data !== 'string'
+      const data = binary ? encodeBytes(new Uint8Array(event.data as ArrayBuffer)) : event.data
+      this.serverSocket?.send(JSON.stringify(makeFrame('stream.chunk', this.serverId, { connectionId, data, encoding: binary ? 'base64' : 'text' }, pluginId)))
     })
     socket.addEventListener('close', () => {
       this.publicSockets.delete(connectionId)
@@ -186,7 +187,8 @@ export class PluginBridge {
       const connectionId = typeof frame.payload?.connectionId === 'string' ? frame.payload.connectionId : frame.requestId
       const socket = this.publicSockets.get(connectionId)
       const data = frame.payload?.data
-      if (socket && typeof data === 'string' && socket.readyState === WebSocket.OPEN) socket.send(data)
+      const encoding = frame.payload?.encoding
+      if (socket && typeof data === 'string' && socket.readyState === WebSocket.OPEN) socket.send(encoding === 'base64' ? decodeBytes(data) : data)
       return
     }
     if (frame.type === 'stream.close') {
@@ -292,4 +294,11 @@ function encodeBytes(bytes: Uint8Array): string {
   let value = ''
   for (const byte of bytes) value += String.fromCharCode(byte)
   return btoa(value)
+}
+
+function decodeBytes(value: string): Uint8Array {
+  const binary = atob(value)
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
+  return bytes
 }

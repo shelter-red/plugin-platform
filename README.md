@@ -8,7 +8,7 @@
 - 暗色、浅色、跟随系统三种主题，主题选择持久化到浏览器本地存储。
 - 服务器绑定、插件加载、域名分配等核心操作的表单和反馈状态。
 - Worker API 基础路由：健康检查、总览、服务器、插件和域名查询。
-- 控制 WebSocket 接入边界和 Durable Object 插件桥接对象，支持 HTTP 流式响应及公开 WebSocket 桥接。
+- 控制 WebSocket 接入边界和 Durable Object 插件桥接对象，支持 HTTP 流式响应及带 base64 二进制帧的公开 WebSocket 桥接。
 - D1 表结构：用户、服务器、插件实例、域名和审计日志。
 - 控制 token 使用 SHA-256 摘要后与 D1 字段比对。
 - SMTP 配置使用 `worker-mailer` 开源依赖，支持密文保存、脱敏读取和管理员测试发送。
@@ -55,7 +55,7 @@ Cloudflare OAuth 使用官方 Authorization Code 流程。创建 OAuth client �
 
 ## 当前边界
 
-当前提交建立了可编译的 MVP 基础，但还没有把生产凭据放入仓库，也没有伪装成已完成本地服务器 Web UI、文件流和完整公开 WebSocket 二进制回传。C++ 服务器已支持独立 sidecar `manifest.json` 校验、插件生命周期和出站控制连接，但当前稳定 C ABI 尚未提供文件流回调。Worker 侧已具备 GitHub OAuth、Cloudflare OAuth、邀请会话、HTTP 流式响应、公开 WebSocket 桥接、R2 一次性对象、Cloudflare Analytics 查询和基于 `worker-mailer` 的 SMTP 测试发送能力；管理端已具备对应的 Cloudflare 和 SMTP 配置入口。这些功能仍需在真实 Cloudflare 资源、OAuth client 和本地服务器之间完成端到端联调。
+当前提交建立了可编译的 MVP 基础，但还没有把生产凭据放入仓库，也没有伪装成已完成文件流和 SSE。C++ 服务器已支持独立 sidecar `manifest.json` 校验、插件生命周期、健康检查、出站控制连接和公开 WebSocket base64 二进制桥接；稳定 C ABI 尚未提供文件流回调。Worker 侧已具备 GitHub OAuth、Cloudflare OAuth、邀请会话、HTTP 流式响应、公开 WebSocket 桥接、R2 一次性对象、Cloudflare Analytics 查询和基于 `worker-mailer` 的 SMTP 测试发送能力；管理端已具备对应的 Cloudflare 和 SMTP 配置入口。这些功能仍需在真实 Cloudflare 资源、OAuth client 和本地服务器之间完成端到端联调。
 
 ## 目录
 

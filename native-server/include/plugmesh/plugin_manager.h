@@ -3,6 +3,7 @@
 #include "plugmesh/plugin_api.h"
 
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -42,10 +43,14 @@ class PluginLoader;
 
 class PluginManager {
  public:
+  using StreamWriter = std::function<int(const char*, const uint8_t*, uint64_t, int)>;
+
   explicit PluginManager(plugmesh_host_api host_api = {});
   PluginManager(const PluginManager&) = delete;
   PluginManager& operator=(const PluginManager&) = delete;
   ~PluginManager();
+
+  void set_stream_writer(StreamWriter writer);
 
   bool discover(const std::filesystem::path& directory, std::string& error);
   std::vector<PluginInfo> snapshot() const;
@@ -69,9 +74,13 @@ class PluginManager {
   LoadedPlugin* loaded(const std::string& plugin_id);
   const LoadedPlugin* loaded(const std::string& plugin_id) const;
   bool set_failed(PluginInfo& plugin, std::string& error);
+  static int stream_write_trampoline(const char* stream_id, const uint8_t* data, uint64_t size, int finished);
+  int write_stream(const char* stream_id, const uint8_t* data, uint64_t size, int finished);
 
   plugmesh_host_api host_api_{};
   mutable std::recursive_mutex mutex_;
+  StreamWriter stream_writer_;
+  static PluginManager* active_instance_;
   std::vector<PluginInfo> plugins_;
   std::map<std::string, LoadedPlugin> loaded_;
 };

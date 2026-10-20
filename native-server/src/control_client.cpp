@@ -4,6 +4,7 @@
 #include <iostream>
 
 #include <asio/ssl/context.hpp>
+#include <websocketpp/base64/base64.hpp>
 
 namespace plugmesh {
 
@@ -34,6 +35,7 @@ Json manifest(const PluginInfo& plugin) {
 }  // namespace
 
 ControlClient::ControlClient(ServerConfig config, PluginManager& plugins) : config_(std::move(config)), plugins_(plugins) {
+  plugins_.set_stream_writer([this](const char* stream_id, const uint8_t* data, uint64_t size, int finished) { return write_stream(stream_id, data, size, finished); });
   client_.clear_access_channels(websocketpp::log::alevel::all);
   client_.clear_error_channels(websocketpp::log::elevel::all);
   client_.init_asio();
@@ -44,7 +46,10 @@ ControlClient::ControlClient(ServerConfig config, PluginManager& plugins) : conf
   client_.set_fail_handler([this](websocketpp::connection_hdl handle) { on_fail(handle); });
 }
 
-ControlClient::~ControlClient() { stop(); }
+ControlClient::~ControlClient() {
+  stop();
+  plugins_.set_stream_writer({});
+}
 
 bool ControlClient::run(std::string& error) {
   websocketpp::lib::error_code code;
@@ -215,8 +220,30 @@ void ControlClient::handle_websocket_chunk(const ControlFrame& frame) {
   const auto id = plugin_id(frame);
   const auto connection_id = text(frame.payload, "connectionId");
   const auto data = text(frame.payload, "data");
+  const auto encoding = text(frame.payload, "encoding");
+  const auto decoded = encoding == "base64" ? websocketpp::base64_decode(data) : data;
   std::string error;
-  if (!plugins_.websocket(id, connection_id, reinterpret_cast<const uint8_t*>(data.data()), data.size(), true, error)) send_error(frame, error);
+  if (!plugins_.websocket(id, connection_id, reinterpret_cast<const uint8_t*>(decoded.data()), decoded.size(), encoding != "base64", error)) send_error(frame, error);
+}
+
+int ControlClient::write_stream(const char* stream_id, const uint8_t* data, uint64_t size, int finished) {
+  if (!stream_id || (!data && size > 0)) return -1;
+  constexpr uint64_t kChunkSize = 32 * 1024;
+  const auto connection_id = std::string(stream_id);
+  if (size == 0 && !finished) return 0;
+  for (uint64_t offset = 0; offset < size || (size == 0 && offset == 0);) {
+    const auto length = std::min<uint64_t>(kChunkSize, size - offset);
+    const auto encoded = length == 0 ? std::string() : websocketpp::base64_encode(data + offset, static_cast<size_t>(length));
+    auto frame = make_control_frame("stream.chunk", config_.server_id, { {"connectionId", connection_id}, {"data", encoded}, {"encoding", "base64"} });
+    client_.get_io_service().post([this, frame = std::move(frame)]() mutable { send_frame(std::move(frame)); });
+    offset += length;
+    if (size == 0) break;
+  }
+  if (finished) {
+    auto close = make_control_frame("stream.close", config_.server_id, {{"connectionId", connection_id}});
+    client_.get_io_service().post([this, close = std::move(close)]() mutable { send_frame(std::move(close)); });
+  }
+  return 0;
 }
 
 void ControlClient::send_frame(ControlFrame frame) {
