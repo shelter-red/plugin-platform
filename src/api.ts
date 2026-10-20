@@ -65,6 +65,13 @@ export interface PluginCommandResult {
   bodySize?: number
 }
 
+export interface PluginHealthResult {
+  id: string
+  ok: boolean
+  status: number
+  bodySize: number
+}
+
 export interface DomainAssignmentResult {
   hostname: string
   status: string
@@ -267,6 +274,13 @@ export async function commandPlugin(pluginInstanceId: string, action: 'load' | '
   const response = await fetch(`${apiBase}/api/plugins/${encodeURIComponent(pluginInstanceId)}/${action}`, { method: 'POST', credentials: 'include' })
   if (!response.ok) throw await apiError(response, `plugin command failed: ${response.status}`)
   return response.json() as Promise<PluginCommandResult>
+}
+
+export async function checkPluginHealth(pluginInstanceId: string): Promise<PluginHealthResult> {
+  const apiBase = import.meta.env.VITE_API_BASE ?? ''
+  const response = await fetch(`${apiBase}/api/plugins/${encodeURIComponent(pluginInstanceId)}/health`, { method: 'POST', credentials: 'include' })
+  if (!response.ok) throw await apiError(response, `plugin health check failed: ${response.status}`)
+  return response.json() as Promise<PluginHealthResult>
 }
 
 export async function assignDomain(pluginInstanceId: string, prefix: string): Promise<DomainAssignmentResult> {
