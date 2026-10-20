@@ -4,7 +4,9 @@
 #include <websocketpp/config/asio_client.hpp>
 
 #include <asio/ssl/context.hpp>
+#include <asio/ssl/rfc2818_verification.hpp>
 #include <nlohmann/json.hpp>
+#include <openssl/ssl.h>
 
 #include <type_traits>
 
@@ -40,7 +42,15 @@ bool register_with_client(const std::string& worker_url, const std::string& code
   client.clear_access_channels(websocketpp::log::alevel::all);
   client.clear_error_channels(websocketpp::log::elevel::all);
   client.init_asio();
-  if constexpr (std::is_same_v<Client, TlsClient>) client.set_tls_init_handler(&tls_init);
+  if constexpr (std::is_same_v<Client, TlsClient>) {
+    client.set_tls_init_handler(&tls_init);
+    client.set_socket_init_handler([&client](websocketpp::connection_hdl handle, asio::ssl::stream<asio::ip::tcp::socket>& socket) {
+      const auto connection = client.get_con_from_hdl(handle);
+      const auto host = connection->get_uri()->get_host();
+      socket.set_verify_callback(asio::ssl::rfc2818_verification(host));
+      if (!host.empty()) SSL_set_tlsext_host_name(socket.native_handle(), host.c_str());
+    });
+  }
   bool success = false;
   client.set_open_handler([&client, &code, &name](websocketpp::connection_hdl handle) {
     websocketpp::lib::error_code send_error;

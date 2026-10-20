@@ -4,6 +4,8 @@
 #include <iostream>
 
 #include <asio/ssl/context.hpp>
+#include <asio/ssl/rfc2818_verification.hpp>
+#include <openssl/ssl.h>
 #include <websocketpp/base64/base64.hpp>
 
 namespace plugmesh {
@@ -41,6 +43,12 @@ ControlClient::ControlClient(ServerConfig config, PluginManager& plugins) : conf
   client_.clear_error_channels(websocketpp::log::elevel::all);
   client_.init_asio();
   client_.set_tls_init_handler(&ControlClient::tls_init);
+  client_.set_socket_init_handler([this](websocketpp::connection_hdl handle, asio::ssl::stream<asio::ip::tcp::socket>& socket) {
+    const auto connection = client_.get_con_from_hdl(handle);
+    const auto host = connection->get_uri()->get_host();
+    socket.set_verify_callback(asio::ssl::rfc2818_verification(host));
+    if (!host.empty()) SSL_set_tlsext_host_name(socket.native_handle(), host.c_str());
+  });
   client_.set_open_handler([this](websocketpp::connection_hdl handle) { on_open(handle); });
   client_.set_message_handler([this](websocketpp::connection_hdl handle, Message message) { on_message(handle, std::move(message)); });
   client_.set_close_handler([this](websocketpp::connection_hdl handle) { on_close(handle); });
