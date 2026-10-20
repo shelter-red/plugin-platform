@@ -18,26 +18,9 @@ let settingsCache: { value: PlatformSettings; expiresAt: number } | null = null
 
 export async function getPlatformSettings(env: Env): Promise<PlatformSettings> {
   if (settingsCache && settingsCache.expiresAt > Date.now()) return settingsCache.value
-  const row = await env.DB.prepare('SELECT value_json FROM platform_settings WHERE key = ?').bind('platform').first<{ value_json: string }>()
-  if (!row) {
-    settingsCache = { value: defaultPlatformSettings, expiresAt: Date.now() + settingsCacheTtlMs }
-    return defaultPlatformSettings
-  }
-  try {
-    const value = JSON.parse(row.value_json) as Partial<PlatformSettings>
-    const settings = {
-      maintenance: Boolean(value.maintenance),
-      quotas: {
-        ...defaultPlatformSettings.quotas,
-        ...(value.quotas ?? {}),
-      },
-    }
-    settingsCache = { value: settings, expiresAt: Date.now() + settingsCacheTtlMs }
-    return settings
-  } catch {
-    settingsCache = { value: defaultPlatformSettings, expiresAt: Date.now() + settingsCacheTtlMs }
-    return defaultPlatformSettings
-  }
+  const settings = await readPlatformSettings(env)
+  settingsCache = { value: settings, expiresAt: Date.now() + settingsCacheTtlMs }
+  return settings
 }
 
 export async function isMaintenanceMode(env: Env): Promise<boolean> {
@@ -45,10 +28,13 @@ export async function isMaintenanceMode(env: Env): Promise<boolean> {
 }
 
 export async function activateMaintenance(env: Env, reason = 'platform quota reached'): Promise<void> {
-  const settings = await getPlatformSettings(env)
-  if (settings.maintenance) return
-  const next = { ...settings, maintenance: true }
-  await env.DB.prepare('INSERT INTO platform_settings (key, value_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at').bind('platform', JSON.stringify(next), new Date().toISOString()).run()
+  await ensurePlatformSettingsRow(env)
+  const updated = await env.DB.prepare("UPDATE platform_settings SET value_json = json_set(value_json, '$.maintenance', true), updated_at = ? WHERE key = ? AND COALESCE(json_extract(value_json, '$.maintenance'), 0) != 1").bind(new Date().toISOString(), 'platform').run()
+  if ((updated.meta.changes ?? 0) !== 1) {
+    setPlatformSettingsCache(await readPlatformSettings(env))
+    return
+  }
+  const next = await readPlatformSettings(env)
   setPlatformSettingsCache(next)
   await notifyMaintenance(env, reason)
 }
@@ -135,6 +121,28 @@ export async function releaseR2Usage(env: Env, bytes: number): Promise<void> {
 async function ensureUsageRow(env: Env): Promise<void> {
   const now = new Date().toISOString()
   await env.DB.prepare('INSERT OR IGNORE INTO platform_usage (key, request_count, request_window_started_at, active_connections, r2_bytes, r2_objects, updated_at) VALUES (?, 0, ?, 0, 0, 0, ?)').bind(usageKey, now, now).run()
+}
+
+async function ensurePlatformSettingsRow(env: Env): Promise<void> {
+  const now = new Date().toISOString()
+  await env.DB.prepare('INSERT OR IGNORE INTO platform_settings (key, value_json, updated_at) VALUES (?, ?, ?)').bind('platform', JSON.stringify(defaultPlatformSettings), now).run()
+}
+
+async function readPlatformSettings(env: Env): Promise<PlatformSettings> {
+  const row = await env.DB.prepare('SELECT value_json FROM platform_settings WHERE key = ?').bind('platform').first<{ value_json: string }>()
+  if (!row) return defaultPlatformSettings
+  try {
+    const value = JSON.parse(row.value_json) as Partial<PlatformSettings>
+    return {
+      maintenance: Boolean(value.maintenance),
+      quotas: {
+        ...defaultPlatformSettings.quotas,
+        ...(value.quotas ?? {}),
+      },
+    }
+  } catch {
+    return defaultPlatformSettings
+  }
 }
 
 export function countStream(stream: ReadableStream<Uint8Array>, counter: { bytes: number }, maxBytes: number): ReadableStream<Uint8Array> {
