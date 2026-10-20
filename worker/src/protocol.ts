@@ -2,6 +2,7 @@ import type { ControlFrame, PluginManifest } from './types'
 
 export const PROTOCOL_VERSION = 1 as const
 export const MAX_CONTROL_FRAME_BYTES = 64 * 1024
+export const SUPPORTED_PLUGIN_ABI_VERSION = '2' as const
 
 export function makeFrame(type: string, serverId: string, payload: Record<string, unknown> = {}, pluginId?: string): ControlFrame {
   return {
@@ -32,5 +33,5 @@ export function isManifest(value: unknown): value is PluginManifest {
   if (!value || typeof value !== 'object') return false
   const manifest = value as Partial<PluginManifest>
   const capabilities = manifest.capabilities
-  return typeof manifest.id === 'string' && typeof manifest.name === 'string' && typeof manifest.version === 'string' && typeof manifest.abiVersion === 'string' && typeof manifest.library === 'string' && typeof manifest.healthPath === 'string' && !!capabilities && typeof capabilities === 'object' && ['http', 'websocket', 'sse', 'fileStream'].every((key) => typeof capabilities[key as keyof typeof capabilities] === 'boolean') && Array.isArray(manifest.permissions) && manifest.permissions.every((item) => typeof item === 'string')
+  return typeof manifest.id === 'string' && manifest.id.length > 0 && typeof manifest.name === 'string' && manifest.name.length > 0 && typeof manifest.version === 'string' && manifest.version.length > 0 && manifest.abiVersion === SUPPORTED_PLUGIN_ABI_VERSION && typeof manifest.library === 'string' && manifest.library.length > 0 && typeof manifest.healthPath === 'string' && manifest.healthPath.length > 0 && !!capabilities && typeof capabilities === 'object' && ['http', 'websocket', 'sse', 'fileStream'].every((key) => typeof capabilities[key as keyof typeof capabilities] === 'boolean') && Array.isArray(manifest.permissions) && manifest.permissions.every((item) => typeof item === 'string')
 }
