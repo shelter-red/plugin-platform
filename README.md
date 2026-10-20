@@ -12,6 +12,7 @@
 - D1 表结构：用户、服务器、插件实例、域名和审计日志。
 - 控制 token 使用 SHA-256 摘要后与 D1 字段比对。
 - SMTP 配置使用 `worker-mailer` 开源依赖，支持密文保存、脱敏读取和管理员测试发送。
+- Cloudflare Analytics GraphQL 查询按 5 分钟写入 D1 缓存，权限错误和未配置状态会明确返回。
 - C++20 跨平台基础：Linux `.so` / Windows `.dll` 动态库加载、ABI 版本检查和配置校验。
 
 ## 本地运行
@@ -40,7 +41,7 @@ npm run worker:dev
 
 ## 当前边界
 
-当前提交建立了可编译的 MVP 基础，但还没有把生产凭据放入仓库，也没有伪装成已完成以下能力：Cloudflare OAuth 实际回调、管理端 SMTP 配置表单、本地服务器 Web UI 和 C++ 服务器侧 WebSocket 传输适配。Worker 侧已具备 GitHub OAuth、邀请会话、HTTP 流式响应、公开 WebSocket 桥接、R2 一次性对象、Cloudflare Analytics 查询和基于 `worker-mailer` 的 SMTP 测试发送能力，这些功能应在现有协议、D1 模型和 ABI 边界上继续完成端到端联调。
+当前提交建立了可编译的 MVP 基础，但还没有把生产凭据放入仓库，也没有伪装成已完成以下能力：Cloudflare OAuth 实际回调、本地服务器 Web UI 和 C++ 服务器侧 WebSocket 传输适配。Worker 侧已具备 GitHub OAuth、邀请会话、HTTP 流式响应、公开 WebSocket 桥接、R2 一次性对象、Cloudflare Analytics 查询和基于 `worker-mailer` 的 SMTP 测试发送能力，管理端已具备对应的 SMTP 配置表单；这些功能应在现有协议、D1 模型和 ABI 边界上继续完成端到端联调。
 
 ## 目录
 
