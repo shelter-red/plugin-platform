@@ -438,8 +438,8 @@ async function proxyPublicHost(request: Request, env: Env, url: URL, ctx: Execut
   const settings = await getPlatformSettings(env)
   if (settings.maintenance) return maintenanceResponse()
   const hostname = url.hostname
-  const domain = await env.DB.prepare('SELECT domains.id AS domain_id, domains.user_id, domains.plugin_instance_id, domains.server_id, domains.status, domains.hostname, plugin_instances.plugin_id, servers.status AS server_status FROM domains JOIN plugin_instances ON plugin_instances.id = domains.plugin_instance_id JOIN servers ON servers.id = plugin_instances.server_id WHERE domains.hostname = ?').bind(hostname).first<{ domain_id: string; user_id: string; plugin_instance_id: string; server_id: string; status: string; hostname: string; plugin_id: string; server_status: string }>()
-  if (!domain || domain.status !== 'online' || domain.server_status !== 'online') return maintenanceResponse('插件暂时不可用', '公开入口尚未就绪或插件服务器当前离线。')
+  const domain = await env.DB.prepare('SELECT domains.id AS domain_id, domains.user_id, domains.plugin_instance_id, domains.server_id, domains.status, domains.hostname, plugin_instances.plugin_id, plugin_instances.state AS plugin_state, servers.status AS server_status FROM domains JOIN plugin_instances ON plugin_instances.id = domains.plugin_instance_id JOIN servers ON servers.id = plugin_instances.server_id WHERE domains.hostname = ?').bind(hostname).first<{ domain_id: string; user_id: string; plugin_instance_id: string; server_id: string; status: string; hostname: string; plugin_id: string; plugin_state: string; server_status: string }>()
+  if (!domain || domain.status !== 'online' || domain.server_status !== 'online' || domain.plugin_state !== 'enabled') return maintenanceResponse('插件暂时不可用', '公开入口尚未就绪、插件当前未启用或插件服务器当前离线。')
   const startedAt = Date.now()
   if (!await reserveRequest(env, settings.quotas)) {
     await activateMaintenance(env)
