@@ -92,11 +92,25 @@ function IconButton({ label, children, onClick }: { label: string; children: Rea
   return <button className="icon-button" aria-label={label} title={label} onClick={onClick}>{children}</button>
 }
 
+function AuthLoading() {
+  return <div className="auth-screen"><div className="auth-card"><div className="brand-mark"><Network size={17} strokeWidth={2.4} /></div><h1>正在检查登录状态</h1><p>请稍候，Plugmesh 正在验证当前会话。</p><div className="loading-line" /></div></div>
+}
+
+function LoginPage() {
+  const invite = new URLSearchParams(window.location.search).get('invite')
+  const authError = new URLSearchParams(window.location.search).get('auth_error')
+  const startUrl = `/auth/github/start${invite ? `?invite=${encodeURIComponent(invite)}` : ''}`
+  return <div className="auth-screen"><div className="auth-card"><div className="auth-brand"><div className="brand-mark"><Network size={17} strokeWidth={2.4} /></div><div><strong>Plugmesh</strong><span>插件平台</span></div></div><div className="auth-icon"><Code2 size={22} /></div><h1>{invite ? '接受平台邀请' : '登录 Plugmesh'}</h1><p>{invite ? '使用受邀的 GitHub 身份继续，平台会在登录后完成身份匹配。' : '管理插件服务器、插件实例和公开域名。平台不开放自助注册。'}</p>{authError && <div className="auth-error"><AlertCircle size={14} />{authError}</div>}<a className="github-button" href={startUrl}><Code2 size={16} />使用 GitHub 登录<ArrowUpRight size={14} /></a><span className="auth-note"><LockKeyhole size={13} />登录状态由 HttpOnly 会话 cookie 保护</span></div></div>
+}
+
 function StatusBadge({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: 'success' | 'warning' | 'danger' | 'neutral' }) {
   return <span className={`status-badge ${tone}`}><span className="status-dot" />{children}</span>
 }
 
 function App() {
+  const authEnabled = import.meta.env.VITE_AUTH_ENABLED === 'true'
+  const [authState, setAuthState] = useState<'loading' | 'authenticated' | 'anonymous'>(authEnabled ? 'loading' : 'authenticated')
+  const [authUser, setAuthUser] = useState<{ display_name: string; email: string } | null>(null)
   const [page, setPage] = useState<Page>('overview')
   const [theme, setTheme] = useState<Theme>(() => {
     const savedTheme = window.localStorage.getItem('plugmesh-theme')
@@ -112,6 +126,18 @@ function App() {
   const meta = pageMeta[page]
   const themeLabel = theme === 'dark' ? '深色' : theme === 'light' ? '浅色' : '系统'
   const effectiveTheme = theme === 'system' ? systemTheme : theme
+
+  useEffect(() => {
+    if (!authEnabled) return
+    fetch('/api/me', { credentials: 'include' })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('anonymous')
+        const data = await response.json() as { user?: { display_name: string; email: string } }
+        setAuthUser(data.user ?? null)
+        setAuthState('authenticated')
+      })
+      .catch(() => setAuthState('anonymous'))
+  }, [authEnabled])
 
   useEffect(() => {
     window.localStorage.setItem('plugmesh-theme', theme)
@@ -140,6 +166,9 @@ function App() {
     setSidebarOpen(false)
   }
 
+  if (authEnabled && authState === 'loading') return <AuthLoading />
+  if (authEnabled && authState === 'anonymous') return <LoginPage />
+
   return (
     <div className={`app-shell theme-${effectiveTheme}`}>
       <div className="ambient ambient-one" />
@@ -156,7 +185,7 @@ function App() {
         </nav>
         <div className="sidebar-bottom">
           <div className="support-link"><CircleHelp size={15} /><span>帮助与协议</span><ExternalLink size={12} /></div>
-          <div className="user-card"><div className="avatar">AD</div><div className="user-copy"><strong>管理员</strong><span>admin@example.com</span></div><MoreHorizontal size={16} /></div>
+          <div className="user-card"><div className="avatar">{(authUser?.display_name ?? '管理员').slice(0, 2).toUpperCase()}</div><div className="user-copy"><strong>{authUser?.display_name ?? '管理员'}</strong><span>{authUser?.email ?? 'admin@example.com'}</span></div><MoreHorizontal size={16} /></div>
         </div>
       </aside>
 
