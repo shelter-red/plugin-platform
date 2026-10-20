@@ -368,12 +368,12 @@ async function createServerRegistration(env: Env, code: string | undefined, name
 }
 
 async function proxyPublicHost(request: Request, env: Env, url: URL): Promise<Response> {
-  const settings = await getPlatformSettings(env)
-  if (settings.maintenance) return maintenanceResponse()
   const suffix = pluginDomainSuffix(env)
-  if (!url.hostname.endsWith(suffix) || url.hostname.length <= suffix.length) return new Response('Plugmesh console route', { status: 404 })
+  if (!url.hostname.endsWith(suffix) || url.hostname.length <= suffix.length) return env.ASSETS ? env.ASSETS.fetch(request) : new Response('Plugmesh console route', { status: 404 })
   const prefix = url.hostname.slice(0, -suffix.length)
   if (!/^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$/.test(prefix)) return new Response('Plugmesh console route', { status: 404 })
+  const settings = await getPlatformSettings(env)
+  if (settings.maintenance) return maintenanceResponse()
   const hostname = url.hostname
   const domain = await env.DB.prepare('SELECT domains.plugin_instance_id, domains.server_id, domains.status, plugin_instances.plugin_id, servers.status AS server_status FROM domains JOIN plugin_instances ON plugin_instances.id = domains.plugin_instance_id JOIN servers ON servers.id = plugin_instances.server_id WHERE domains.hostname = ?').bind(hostname).first<{ plugin_instance_id: string; server_id: string; status: string; plugin_id: string; server_status: string }>()
   if (!domain || domain.status !== 'online' || domain.server_status !== 'online') return maintenanceResponse('插件暂时不可用', '公开入口尚未就绪或插件服务器当前离线。')

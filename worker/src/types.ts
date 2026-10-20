@@ -17,6 +17,7 @@ export interface Env {
   DB: D1Database
   BLOB_BUCKET: R2Bucket
   PLUGIN_BRIDGE: DurableObjectNamespace
+  ASSETS?: Fetcher
   PLUGIN_DOMAIN_SUFFIX?: string
   GITHUB_CLIENT_ID?: string
   GITHUB_CLIENT_SECRET?: string
