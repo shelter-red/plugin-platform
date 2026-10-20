@@ -144,9 +144,11 @@ async function consumeBlob(request: Request, env: Env, ctx: ExecutionContext, ur
   const consumed = await env.DB.prepare('UPDATE temp_objects SET consumed_at = ? WHERE id = ? AND consumed_at IS NULL').bind(new Date().toISOString(), object.id).run()
   if ((consumed.meta.changes ?? 0) !== 1) return new Response('Resource expired or already consumed', { status: 410 })
   const blob = await env.BLOB_BUCKET.get(object.object_key)
-  ctx.waitUntil(releaseR2Usage(env, object.size_bytes))
-  if (!blob) return new Response('Resource not found', { status: 404 })
-  ctx.waitUntil(env.BLOB_BUCKET.delete(object.object_key))
+  if (!blob) {
+    ctx.waitUntil(releaseR2Usage(env, object.size_bytes))
+    return new Response('Resource not found', { status: 404 })
+  }
+  ctx.waitUntil(env.BLOB_BUCKET.delete(object.object_key).then(() => releaseR2Usage(env, object.size_bytes)))
   return new Response(blob.body, { headers: { 'content-type': object.content_type, 'content-length': String(blob.size), 'cache-control': 'no-store' } })
 }
 
