@@ -141,9 +141,16 @@ async function consumeBlob(request: Request, env: Env, ctx: ExecutionContext, ur
   if (!token) return new Response('Not found', { status: 404 })
   const object = await env.DB.prepare('SELECT id, object_key, content_type, size_bytes, expires_at FROM temp_objects WHERE token_hash = ? AND consumed_at IS NULL AND expires_at > ?').bind(await digest(token), new Date().toISOString()).first<{ id: string; object_key: string; content_type: string; size_bytes: number; expires_at: string }>()
   if (!object) return new Response('Resource expired or already consumed', { status: 410 })
-  const consumed = await env.DB.prepare('UPDATE temp_objects SET consumed_at = ? WHERE id = ? AND consumed_at IS NULL').bind(new Date().toISOString(), object.id).run()
+  const consumedAt = new Date().toISOString()
+  const consumed = await env.DB.prepare('UPDATE temp_objects SET consumed_at = ? WHERE id = ? AND consumed_at IS NULL').bind(consumedAt, object.id).run()
   if ((consumed.meta.changes ?? 0) !== 1) return new Response('Resource expired or already consumed', { status: 410 })
-  const blob = await env.BLOB_BUCKET.get(object.object_key)
+  let blob: R2ObjectBody | null
+  try {
+    blob = await env.BLOB_BUCKET.get(object.object_key)
+  } catch {
+    await env.DB.prepare('UPDATE temp_objects SET consumed_at = NULL WHERE id = ? AND consumed_at = ?').bind(object.id, consumedAt).run()
+    return new Response('Resource temporarily unavailable', { status: 502 })
+  }
   if (!blob) {
     ctx.waitUntil(releaseR2Usage(env, object.size_bytes))
     return new Response('Resource not found', { status: 404 })
