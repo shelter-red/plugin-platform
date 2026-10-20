@@ -11,6 +11,7 @@ find_package(Threads REQUIRED)
 add_library(plugmesh_core STATIC
   src/control_client.cpp
   src/control_protocol.cpp
+  src/credential_store.cpp
   src/plugin_loader.cpp
   src/plugin_manager.cpp
   src/server_config.cpp
@@ -39,6 +40,9 @@ target_link_libraries(plugmesh-plugin-manager-smoke PRIVATE plugmesh_core)
 
 add_executable(plugmesh-control-protocol-smoke tests/control_protocol_smoke.cpp)
 target_link_libraries(plugmesh-control-protocol-smoke PRIVATE plugmesh_core)
+
+add_executable(plugmesh-credential-store-smoke tests/credential_store_smoke.cpp)
+target_link_libraries(plugmesh-credential-store-smoke PRIVATE plugmesh_core)
 
 if (WIN32)
   target_compile_definitions(plugmesh_core PRIVATE PLUGMESH_PLATFORM_WINDOWS=1)

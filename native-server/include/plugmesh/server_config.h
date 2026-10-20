@@ -14,6 +14,7 @@ struct ServerConfig {
 };
 
 ServerConfig load_config_from_environment();
+bool load_persisted_config(ServerConfig& config, std::string& error);
 bool validate_config(const ServerConfig& config, std::string& error);
 
 }  // namespace plugmesh

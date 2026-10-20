@@ -8,12 +8,21 @@
 - `ControlClient` 使用 WebSocket++、standalone Asio 和 nlohmann/json 建立 `wss` 出站连接，处理注册、心跳、插件命令和 HTTP 请求帧；注册描述来自已校验的 manifest。
 - `examples/sample_plugin.cpp` 和 `tests/plugin_loader_smoke.cpp` 验证动态库导出、ABI 检查和基本生命周期。
 
-配置由环境变量提供，便于后续接入本地 Web UI、系统密钥链和一次性注册码流程：
+启动配置可以由环境变量提供；当连接参数缺失且指定了凭据文件时，服务器会使用口令解密持久化凭据：
 
 - `PLUGMESH_WORKER_URL`
 - `PLUGMESH_SERVER_ID`
 - `PLUGMESH_ACCESS_TOKEN`
 - `PLUGMESH_PLUGIN_DIRECTORY`
 - `PLUGMESH_CREDENTIAL_FILE`
+- `PLUGMESH_CREDENTIAL_PASSWORD`
+
+凭据文件使用 OpenSSL AES-256-GCM 加密，口令通过 PBKDF2-HMAC-SHA256 派生密钥；文件只保存加密 envelope，不保存明文 access token。Linux 下文件权限收紧为用户可读写。生产部署应通过本地配置 UI 或受保护的进程环境提供口令，当前版本尚未接入系统密钥链。
+
+凭据存储回归测试：
+
+```bash
+native-server/build/plugmesh-credential-store-smoke
+```
 
 网络传输层复用 `worker/src/protocol.ts` 的协议字段约定；当前已接入控制 WebSocket 和 HTTP 回调，SSE、文件流、公开 WebSocket 的二进制回传及本地 Web UI 仍未完成。
