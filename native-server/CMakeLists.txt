@@ -14,6 +14,12 @@ target_include_directories(plugmesh_core PUBLIC include)
 add_executable(plugmesh-server src/main.cpp)
 target_link_libraries(plugmesh-server PRIVATE plugmesh_core)
 
+add_library(plugmesh-sample SHARED examples/sample_plugin.cpp)
+target_include_directories(plugmesh-sample PRIVATE include)
+
+add_executable(plugmesh-plugin-loader-smoke tests/plugin_loader_smoke.cpp)
+target_link_libraries(plugmesh-plugin-loader-smoke PRIVATE plugmesh_core)
+
 if (WIN32)
   target_compile_definitions(plugmesh_core PRIVATE PLUGMESH_PLATFORM_WINDOWS=1)
 else()
