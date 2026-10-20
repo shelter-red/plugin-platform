@@ -62,8 +62,8 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   if (request.method === 'GET' && serverDetail) return serverDetailsApi(env, user, decodeURIComponent(serverDetail[1]))
   const pluginDetail = url.pathname.match(/^\/api\/plugins\/([^/]+)$/)
   if (request.method === 'GET' && pluginDetail) return pluginDetailsApi(env, user, decodeURIComponent(pluginDetail[1]))
-  const pluginAction = url.pathname.match(/^\/api\/plugins\/([^/]+)\/(load|unload|enable|disable|reload)$/)
-  if (request.method === 'POST' && pluginAction) return commandPlugin(request, env, user, decodeURIComponent(pluginAction[1]), pluginAction[2] as 'load' | 'unload' | 'enable' | 'disable' | 'reload')
+  const pluginAction = url.pathname.match(/^\/api\/plugins\/([^/]+)\/(load|unload|enable|disable|reload|health)$/)
+  if (request.method === 'POST' && pluginAction) return commandPlugin(request, env, user, decodeURIComponent(pluginAction[1]), pluginAction[2] as 'load' | 'unload' | 'enable' | 'disable' | 'reload' | 'health')
   if (request.method === 'POST' && url.pathname === '/api/domains') return assignDomain(request, env, user)
   if (request.method === 'GET' && url.pathname === '/api/invites') {
     if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
@@ -350,7 +350,7 @@ async function createRegistrationCode(env: Env, user: AuthenticatedUser): Promis
   return json({ code: rawCode, expiresAt }, 201)
 }
 
-async function commandPlugin(request: Request, env: Env, user: AuthenticatedUser, pluginInstanceId: string, action: 'load' | 'unload' | 'enable' | 'disable' | 'reload'): Promise<Response> {
+async function commandPlugin(request: Request, env: Env, user: AuthenticatedUser, pluginInstanceId: string, action: 'load' | 'unload' | 'enable' | 'disable' | 'reload' | 'health'): Promise<Response> {
   if (await isMaintenanceMode(env)) return json({ error: 'Platform is in maintenance mode' }, 503)
   const plugin = await env.DB.prepare('SELECT id, plugin_id, server_id, state, desired_state FROM plugin_instances WHERE id = ? AND user_id = ?').bind(pluginInstanceId, user.id).first<{ id: string; plugin_id: string; server_id: string; state: string; desired_state: string }>()
   if (!plugin) return json({ error: 'Plugin instance not found' }, 404)
@@ -359,7 +359,12 @@ async function commandPlugin(request: Request, env: Env, user: AuthenticatedUser
   const bridge = env.PLUGIN_BRIDGE.get(env.PLUGIN_BRIDGE.idFromName(plugin.server_id))
   const response = await bridge.fetch(new Request(new URL('/command', request.url), { method: 'POST', headers: { 'content-type': 'application/json', 'x-plugmesh-server-id': plugin.server_id }, body: JSON.stringify({ type: `plugin.${action}`, pluginId: plugin.plugin_id }) }))
   if (!response.ok) return response
-  const result = await response.json().catch(() => null) as { state?: string } | null
+  const result = await response.json().catch(() => null) as { state?: string; ok?: boolean; status?: number; bodySize?: number } | null
+  if (action === 'health') {
+    if (result?.ok !== true || typeof result.status !== 'number' || result.status < 200 || result.status >= 400) return json({ error: 'Plugin health check failed', status: result?.status ?? null }, 409)
+    await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'plugin.health', JSON.stringify({ pluginInstanceId: plugin.id, status: result.status, bodySize: result.bodySize ?? 0 }), new Date().toISOString()).run()
+    return json({ id: plugin.id, ok: true, status: result.status, bodySize: result.bodySize ?? 0 }, 200)
+  }
   const nextState = result?.state ?? (action === 'load' ? 'loaded' : action === 'unload' ? 'unloaded' : action === 'enable' ? 'enabled' : action === 'disable' ? 'disabled' : plugin.state)
   const nextDesiredState = action === 'reload' ? plugin.desired_state : action === 'load' ? 'loaded' : action === 'unload' ? 'unloaded' : action === 'enable' ? 'enabled' : 'disabled'
   await env.DB.prepare('UPDATE plugin_instances SET state = ?, desired_state = ?, updated_at = ? WHERE id = ?').bind(nextState, nextDesiredState, new Date().toISOString(), plugin.id).run()
@@ -380,6 +385,8 @@ async function assignDomain(request: Request, env: Env, user: AuthenticatedUser)
   const hostname = `${prefix}${suffix}`
   const server = await env.DB.prepare('SELECT status FROM servers WHERE id = ? AND user_id = ?').bind(plugin.server_id, user.id).first<{ status: string }>()
   if (!server || server.status !== 'online') return json({ error: 'Plugin server is offline' }, 409)
+  const health = await commandPlugin(new Request(new URL(`/api/plugins/${encodeURIComponent(plugin.id)}/health`, request.url), { method: 'POST' }), env, user, plugin.id, 'health')
+  if (!health.ok) return json({ error: 'Plugin health check failed' }, 409)
   try {
     await env.DB.prepare('INSERT INTO domains (id, user_id, plugin_instance_id, hostname, status, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, plugin.id, hostname, 'online', new Date().toISOString()).run()
   } catch {

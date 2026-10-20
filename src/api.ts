@@ -60,6 +60,9 @@ export interface PluginCommandResult {
   id: string
   state: string
   accepted: boolean
+  ok?: boolean
+  status?: number
+  bodySize?: number
 }
 
 export interface DomainAssignmentResult {
@@ -259,7 +262,7 @@ export async function revokeInvite(inviteId: string): Promise<void> {
   if (!response.ok) throw await apiError(response, `invite revoke failed: ${response.status}`)
 }
 
-export async function commandPlugin(pluginInstanceId: string, action: 'load' | 'unload' | 'enable' | 'disable' | 'reload'): Promise<PluginCommandResult> {
+export async function commandPlugin(pluginInstanceId: string, action: 'load' | 'unload' | 'enable' | 'disable' | 'reload' | 'health'): Promise<PluginCommandResult> {
   const apiBase = import.meta.env.VITE_API_BASE ?? ''
   const response = await fetch(`${apiBase}/api/plugins/${encodeURIComponent(pluginInstanceId)}/${action}`, { method: 'POST', credentials: 'include' })
   if (!response.ok) throw await apiError(response, `plugin command failed: ${response.status}`)

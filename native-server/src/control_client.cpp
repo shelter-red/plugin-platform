@@ -207,7 +207,18 @@ void ControlClient::handle_plugin_command(const ControlFrame& frame) {
   else if (action == "enable") ok = plugins_.enable(id, error);
   else if (action == "disable") ok = plugins_.disable(id, error);
   else if (action == "reload") ok = plugins_.reload(id, error);
+  else if (action == "health") ok = true;
   else return;
+  if (action == "health") {
+    plugmesh_http_response health{};
+    ok = plugins_.health(id, health, error);
+    Json payload = {{"action", action}, {"ok", ok}, {"status", health.status}, {"bodySize", health.body.size}};
+    if (!ok) payload["error"] = error;
+    auto response = make_control_frame("plugin.result", config_.server_id, std::move(payload), id);
+    response.request_id = frame.request_id;
+    send_frame(std::move(response));
+    return;
+  }
   Json payload = {{"action", action}, {"ok", ok}};
   if (const auto info = plugins_.info_snapshot(id)) payload["state"] = plugin_state_name(info->state);
   if (!ok) payload["error"] = error;
