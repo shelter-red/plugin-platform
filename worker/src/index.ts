@@ -26,6 +26,9 @@ export default {
     if (url.pathname.startsWith('/blobs/')) return consumeBlob(request, env, ctx, url)
     return proxyPublicHost(request, env, url, ctx)
   },
+  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(runScheduledMaintenance(env))
+  },
 }
 
 async function api(request: Request, env: Env, url: URL): Promise<Response> {
@@ -132,6 +135,23 @@ async function cleanupExpiredBlobs(env: Env): Promise<void> {
     await env.DB.prepare('UPDATE temp_objects SET consumed_at = ? WHERE id = ? AND consumed_at IS NULL').bind(now, object.id).run()
     await releaseR2Usage(env, object.size_bytes)
   }
+}
+
+async function runScheduledMaintenance(env: Env): Promise<void> {
+  const now = new Date()
+  const nowIso = now.toISOString()
+  const accessSince = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString()
+  const auditSince = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000).toISOString()
+  await Promise.all([
+    cleanupExpiredBlobs(env),
+    env.DB.prepare('DELETE FROM request_logs WHERE created_at < ?').bind(accessSince).run(),
+    env.DB.prepare('DELETE FROM audit_log WHERE created_at < ?').bind(auditSince).run(),
+    env.DB.prepare('UPDATE invites SET status = ? WHERE status = ? AND expires_at <= ?').bind('expired', 'pending', nowIso).run(),
+    env.DB.prepare('DELETE FROM sessions WHERE expires_at <= ?').bind(nowIso).run(),
+    env.DB.prepare('DELETE FROM oauth_states WHERE expires_at <= ?').bind(nowIso).run(),
+    env.DB.prepare('DELETE FROM cloudflare_oauth_states WHERE expires_at <= ?').bind(nowIso).run(),
+    env.DB.prepare('DELETE FROM registration_codes WHERE expires_at <= ?').bind(nowIso).run(),
+  ])
 }
 
 async function startGithubAuth(request: Request, env: Env, url: URL): Promise<Response> {
