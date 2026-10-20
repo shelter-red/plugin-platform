@@ -291,6 +291,35 @@ bool load_system_credentials(StoredCredentials& credentials, std::string& error)
 #endif
 }
 
+bool remove_system_credentials(std::string& error) {
+#if defined(_WIN32)
+  if (!CredDeleteA("Plugmesh/default", CRED_TYPE_GENERIC, 0)) {
+    if (GetLastError() == ERROR_NOT_FOUND) return true;
+    error = "Windows Credential Manager delete failed";
+    return false;
+  }
+  return true;
+#elif defined(__APPLE__)
+  CFStringRef service = CFStringCreateWithCString(kCFAllocatorDefault, kSystemService, kCFStringEncodingUTF8);
+  CFStringRef account = CFStringCreateWithCString(kCFAllocatorDefault, kSystemAccount, kCFStringEncodingUTF8);
+  const void* keys[] = {kSecClass, kSecAttrService, kSecAttrAccount};
+  const void* values[] = {kSecClassGenericPassword, service, account};
+  CFDictionaryRef query = CFDictionaryCreate(kCFAllocatorDefault, keys, values, 3, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+  const auto status = SecItemDelete(query);
+  CFRelease(query);
+  CFRelease(account);
+  CFRelease(service);
+  if (status != errSecSuccess && status != errSecItemNotFound) {
+    error = "macOS Keychain delete failed";
+    return false;
+  }
+  return true;
+#else
+  error = "system credential store is unavailable on this platform";
+  return false;
+#endif
+}
+
 bool save_credentials(const std::filesystem::path& path, const StoredCredentials& credentials, const std::string& password, std::string& error) {
   if (path.empty()) return save_system_credentials(credentials, error);
   if (credentials.worker_url.empty() || credentials.server_id.empty() || credentials.access_token.empty()) {
@@ -319,6 +348,17 @@ bool load_credentials(const std::filesystem::path& path, const std::string& pass
   std::string plaintext;
   if (!decrypt(envelope, password, plaintext, error)) return false;
   return parse_credentials_json(plaintext, credentials, error);
+}
+
+bool remove_credentials(const std::filesystem::path& path, std::string& error) {
+  if (path.empty()) return remove_system_credentials(error);
+  std::error_code remove_error;
+  const auto removed = std::filesystem::remove(path, remove_error);
+  if (remove_error) {
+    error = "unable to delete credential file";
+    return false;
+  }
+  return removed || !std::filesystem::exists(path);
 }
 
 bool load_credentials_into_config(const std::filesystem::path& path, const std::string& password, std::string& worker_url, std::string& server_id, std::string& access_token, std::string& error) {

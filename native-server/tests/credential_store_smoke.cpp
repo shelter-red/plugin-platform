@@ -36,10 +36,14 @@ int main() {
     std::cerr << "corrupted file was accepted\n";
     return 5;
   }
+  if (!plugmesh::save_credentials(path, expected, "correct-password", error) || !plugmesh::remove_credentials(path, error) || std::filesystem::exists(path)) {
+    std::cerr << "credential removal failed: " << error << '\n';
+    return 6;
+  }
   if (!plugmesh::system_credentials_available()) {
     if (plugmesh::save_system_credentials(expected, error) || plugmesh::load_system_credentials(actual, error)) {
       std::cerr << "unavailable system credential store was reported as usable\n";
-      return 6;
+      return 7;
     }
   }
   std::filesystem::remove(path, ignored);
