@@ -57,8 +57,11 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   if (request.method === 'POST' && url.pathname === '/api/domains') return assignDomain(request, env, user)
   if (request.method === 'GET' && url.pathname === '/api/invites') {
     if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
+    await expireInvites(env)
     return json(await env.DB.prepare('SELECT id, email, github_login, status, expires_at, used_at, created_at FROM invites ORDER BY created_at DESC').all())
   }
+  const inviteAction = url.pathname.match(/^\/api\/invites\/([^/]+)$/)
+  if (request.method === 'DELETE' && inviteAction) return revokeInvite(env, user, decodeURIComponent(inviteAction[1]))
   if (request.method === 'POST' && url.pathname === '/api/invites') return createInvite(request, env, user)
   if (request.method === 'POST' && url.pathname === '/api/registration-codes') return createRegistrationCode(env, user)
   if (request.method === 'POST' && url.pathname === '/api/blobs') return createBlob(request, env)
@@ -233,6 +236,19 @@ async function createInvite(request: Request, env: Env, user: AuthenticatedUser)
   await env.DB.prepare('INSERT INTO invites (id, token_hash, email, github_login, status, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(invite.id, await digest(rawToken), invite.email, invite.githubLogin, 'pending', invite.expiresAt, new Date().toISOString()).run()
   await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'invite.created', JSON.stringify({ inviteId: invite.id }), new Date().toISOString()).run()
   return json({ id: invite.id, inviteUrl: `${new URL('/', request.url).origin}/auth/github/start?invite=${encodeURIComponent(rawToken)}`, expiresAt: invite.expiresAt }, 201)
+}
+
+async function expireInvites(env: Env): Promise<void> {
+  await env.DB.prepare('UPDATE invites SET status = ? WHERE status = ? AND expires_at <= ?').bind('expired', 'pending', new Date().toISOString()).run()
+}
+
+async function revokeInvite(env: Env, user: AuthenticatedUser, inviteId: string): Promise<Response> {
+  if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
+  await expireInvites(env)
+  const updated = await env.DB.prepare('UPDATE invites SET status = ? WHERE id = ? AND status = ?').bind('revoked', inviteId, 'pending').run()
+  if ((updated.meta.changes ?? 0) !== 1) return json({ error: 'Invite is not pending or does not exist' }, 409)
+  await recordAudit(env, user.id, 'invite.revoked', { inviteId })
+  return json({ id: inviteId, status: 'revoked' })
 }
 
 async function createRegistrationCode(env: Env, user: AuthenticatedUser): Promise<Response> {
