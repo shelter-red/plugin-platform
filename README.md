@@ -33,6 +33,8 @@ npm run native-ui:build
 管理端地址：`http://localhost:4173/`
 本地控制台开发地址：`http://localhost:4174/`（Vite `/api` 代理到 `127.0.0.1:8787`）。
 
+管理端默认启用 GitHub OAuth；仅查看无后端的静态空态时可使用 `VITE_AUTH_ENABLED=false npm run dev`。
+
 验证命令：
 
 ```bash

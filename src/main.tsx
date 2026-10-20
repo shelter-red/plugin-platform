@@ -96,7 +96,7 @@ function StatusBadge({ children, tone = 'neutral' }: { children: React.ReactNode
 }
 
 function App() {
-  const authEnabled = import.meta.env.VITE_AUTH_ENABLED === 'true'
+  const authEnabled = import.meta.env.VITE_AUTH_ENABLED !== 'false'
   const [authState, setAuthState] = useState<'loading' | 'authenticated' | 'anonymous'>(authEnabled ? 'loading' : 'authenticated')
   const [authUser, setAuthUser] = useState<{ display_name: string; email: string; role?: string } | null>(null)
   const [overview, setOverview] = useState<ApiOverview | null>(null)
