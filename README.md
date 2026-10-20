@@ -15,15 +15,18 @@
 - Cloudflare Analytics GraphQL 查询按 5 分钟写入 D1 缓存，权限错误和未配置状态会明确返回。
 - Cloudflare OAuth Authorization Code 回调：管理员状态校验、一次性 state、令牌密文保存、账号自动发现和官方撤销。
 - C++20 跨平台基础：Linux `.so` / Windows `.dll` 动态库加载、ABI 版本检查、插件生命周期管理和 WebSocket++ 出站控制连接。
+- 独立本地 React + TypeScript 控制台：连接状态、插件 manifest、生命周期操作、诊断摘要和 CLI 配置提示。
 
 ## 本地运行
 
 ```bash
 npm install
 npm run dev
+npm run native-ui:build
 ```
 
 管理端地址：`http://localhost:4173/`
+本地控制台开发地址：`http://localhost:4174/`（Vite `/api` 代理到 `127.0.0.1:8787`）。
 
 验证命令：
 
@@ -59,3 +62,4 @@ Cloudflare OAuth 使用官方 Authorization Code 流程。创建 OAuth client �
 - `src/`：管理端 SPA。
 - `worker/`：Cloudflare Worker、Durable Object、D1 migration 和协议定义。
 - `native-server/`：跨平台 C++ 服务器基础层和插件 C ABI。
+- `native-ui/`：本地服务器 React 控制台；当前可独立构建，静态资源尚未嵌入 C++ HTTP 服务。
