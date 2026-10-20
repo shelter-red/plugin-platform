@@ -21,6 +21,15 @@ bool is_library(const std::filesystem::path& path) {
 #endif
 }
 
+bool is_within_directory(const std::filesystem::path& directory, const std::filesystem::path& path) {
+  auto directory_part = directory.begin();
+  auto path_part = path.begin();
+  for (; directory_part != directory.end(); ++directory_part, ++path_part) {
+    if (path_part == path.end() || *directory_part != *path_part) return false;
+  }
+  return path_part != path.end();
+}
+
 struct Manifest {
   std::string id;
   std::string name;
@@ -170,8 +179,10 @@ bool PluginManager::discover(const std::filesystem::path& directory, std::string
     if (!std::filesystem::is_regular_file(manifest_path)) continue;
     Manifest manifest;
     if (!read_manifest(manifest_path, manifest, error)) return false;
-    const auto library = entry.path() / manifest.library;
-    if (!std::filesystem::is_regular_file(library) || !is_library(library)) {
+    std::error_code path_error;
+    const auto plugin_directory = std::filesystem::weakly_canonical(entry.path(), path_error);
+    const auto library = path_error ? std::filesystem::path() : std::filesystem::weakly_canonical(plugin_directory / manifest.library, path_error);
+    if (path_error || !is_within_directory(plugin_directory, library) || !std::filesystem::is_regular_file(library) || !is_library(library)) {
       error = "manifest library does not exist or has an invalid extension: " + library.string();
       return false;
     }

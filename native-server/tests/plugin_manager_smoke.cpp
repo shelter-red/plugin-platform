@@ -1,6 +1,8 @@
 #include "plugmesh/plugin_manager.h"
 
+#include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -70,6 +72,23 @@ int main(int argc, char** argv) {
   }
   if (!manager.disable("sample.plugin", error) || manager.snapshot()[0].state != plugmesh::PluginState::Disabled || !manager.unload("sample.plugin", error) || manager.snapshot()[0].state != plugmesh::PluginState::Unloaded) {
     std::cerr << "disable/unload failed: " << error << '\n';
+    return 1;
+  }
+  const auto source_library = manager.snapshot()[0].library;
+  const auto traversal_root = std::filesystem::temp_directory_path() / ("plugmesh-plugin-path-smoke-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+  const auto traversal_plugin = traversal_root / "traversal.plugin";
+  const auto outside_library = traversal_root / ("outside" + source_library.extension().string());
+  std::filesystem::create_directories(traversal_plugin);
+  std::filesystem::copy_file(source_library, outside_library);
+  std::ofstream manifest(traversal_plugin / "manifest.json");
+  manifest << "{\"id\":\"traversal.plugin\",\"name\":\"Traversal Plugin\",\"version\":\"0.1.0\",\"abiVersion\":\"2\",\"library\":\"../" << outside_library.filename().string() << "\",\"capabilities\":{\"http\":true,\"websocket\":false,\"sse\":false,\"fileStream\":false},\"permissions\":[],\"healthPath\":\"/health\"}";
+  manifest.close();
+  plugmesh::PluginManager traversal_manager;
+  error.clear();
+  const auto traversal_accepted = traversal_manager.discover(traversal_root, error);
+  std::filesystem::remove_all(traversal_root);
+  if (traversal_accepted) {
+    std::cerr << "plugin library path traversal was accepted\n";
     return 1;
   }
   std::cout << "plugin lifecycle smoke test passed\n";
