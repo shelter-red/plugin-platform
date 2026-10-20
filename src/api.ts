@@ -84,6 +84,15 @@ export interface CloudflareUsage {
   updatedAt?: string
 }
 
+export interface LocalUsage {
+  requestCount: number
+  requestWindowStartedAt: string | null
+  activeConnections: number
+  r2Bytes: number
+  r2Objects: number
+  updatedAt: string | null
+}
+
 export interface PlatformSettings {
   maintenance: boolean
   quotas: {
@@ -212,6 +221,13 @@ export async function fetchCloudflareUsage(): Promise<CloudflareUsage> {
   const response = await fetch(`${apiBase}/api/usage/cloudflare`, { credentials: 'include' })
   if (!response.ok) throw await apiError(response, `cloudflare usage request failed: ${response.status}`)
   return response.json() as Promise<CloudflareUsage>
+}
+
+export async function fetchLocalUsage(): Promise<LocalUsage> {
+  const apiBase = import.meta.env.VITE_API_BASE ?? ''
+  const response = await fetch(`${apiBase}/api/usage/local`, { credentials: 'include' })
+  if (!response.ok) throw await apiError(response, `local usage request failed: ${response.status}`)
+  return response.json() as Promise<LocalUsage>
 }
 
 export async function updatePlatformSettings(settings: PlatformSettings): Promise<PlatformSettings> {

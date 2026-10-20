@@ -52,6 +52,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   if (url.pathname === '/api/settings/smtp') return smtpSettingsApi(request, env, user)
   if (url.pathname === '/api/settings/smtp/test') return smtpTestApi(request, env, user)
   if (url.pathname === '/api/usage/cloudflare') return cloudflareUsageApi(env, user)
+  if (url.pathname === '/api/usage/local') return localUsageApi(env, user)
   const pluginAction = url.pathname.match(/^\/api\/plugins\/([^/]+)\/(load|unload|enable|disable|reload)$/)
   if (request.method === 'POST' && pluginAction) return commandPlugin(request, env, user, decodeURIComponent(pluginAction[1]), pluginAction[2] as 'load' | 'unload' | 'enable' | 'disable' | 'reload')
   if (request.method === 'POST' && url.pathname === '/api/domains') return assignDomain(request, env, user)
@@ -538,6 +539,19 @@ async function cloudflareUsageApi(env: Env, user: AuthenticatedUser): Promise<Re
   const updatedAt = new Date().toISOString()
   await env.DB.prepare('INSERT INTO usage_cache (key, value_json, expires_at, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, expires_at = excluded.expires_at, updated_at = excluded.updated_at').bind('cloudflare:workers', JSON.stringify(result), new Date(Date.now() + 5 * 60 * 1000).toISOString(), updatedAt).run()
   return json({ ...result, cached: false, updatedAt })
+}
+
+async function localUsageApi(env: Env, user: AuthenticatedUser): Promise<Response> {
+  if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
+  const usage = await env.DB.prepare('SELECT request_count, request_window_started_at, active_connections, r2_bytes, r2_objects, updated_at FROM platform_usage WHERE key = ?').bind('global').first<{ request_count: number; request_window_started_at: string; active_connections: number; r2_bytes: number; r2_objects: number; updated_at: string }>()
+  return json({
+    requestCount: usage?.request_count ?? 0,
+    requestWindowStartedAt: usage?.request_window_started_at ?? null,
+    activeConnections: usage?.active_connections ?? 0,
+    r2Bytes: usage?.r2_bytes ?? 0,
+    r2Objects: usage?.r2_objects ?? 0,
+    updatedAt: usage?.updated_at ?? null,
+  })
 }
 
 function maintenanceResponse(title = '平台维护中', detail = '平台当前暂停新流量，请稍后再试。'): Response {
