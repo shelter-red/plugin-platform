@@ -85,7 +85,7 @@ bool read_manifest(const std::filesystem::path& path, Manifest& manifest, std::s
   }
 }
 
-PluginInfo make_info(const std::filesystem::path& path, const Manifest& manifest, const plugmesh_plugin_api_v2& api) {
+PluginInfo make_info(const std::filesystem::path& path, const Manifest& manifest) {
   return {
       manifest.id,
       manifest.name,
@@ -175,19 +175,12 @@ bool PluginManager::discover(const std::filesystem::path& directory, std::string
       error = "manifest library does not exist or has an invalid extension: " + library.string();
       return false;
     }
-    PluginLoader loader;
-    if (!loader.load(library, error)) return false;
-    const auto* api = loader.api();
-    if (!api->plugin_id || !api->plugin_name || !api->plugin_version || manifest.id != api->plugin_id || manifest.name != api->plugin_name || manifest.version != api->plugin_version || (manifest.http && !api->handle_http) || (manifest.websocket && !api->handle_websocket) || (manifest.sse && !api->handle_sse) || (manifest.file_stream && !api->handle_file)) {
-      error = "manifest does not match plugin ABI: " + manifest.id;
-      return false;
-    }
     if (find(manifest.id)) {
       error = "duplicate plugin id: " + manifest.id;
       plugins_.clear();
       return false;
     }
-    plugins_.push_back(make_info(library, manifest, *api));
+    plugins_.push_back(make_info(library, manifest));
   }
   std::sort(plugins_.begin(), plugins_.end(), [](const PluginInfo& left, const PluginInfo& right) { return left.id < right.id; });
   return true;
@@ -203,6 +196,11 @@ bool PluginManager::load(const std::string& plugin_id, std::string& error) {
   if (loaded(plugin_id)) return true;
   auto loader = std::make_unique<PluginLoader>();
   if (!loader->load(plugin->library, error)) return set_failed(*plugin, error);
+  const auto* api = loader->api();
+  if (!api->plugin_id || !api->plugin_name || !api->plugin_version || plugin->id != api->plugin_id || plugin->name != api->plugin_name || plugin->version != api->plugin_version || (plugin->http && !api->handle_http) || (plugin->websocket && !api->handle_websocket) || (plugin->sse && !api->handle_sse) || (plugin->file_stream && !api->handle_file)) {
+    error = "manifest does not match plugin ABI: " + plugin->id;
+    return set_failed(*plugin, error);
+  }
   loaded_.emplace(plugin_id, LoadedPlugin{std::move(loader)});
   plugin->state = PluginState::Loaded;
   write_log(1, ("plugin loaded: " + plugin_id).c_str());
