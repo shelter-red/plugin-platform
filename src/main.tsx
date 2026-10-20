@@ -32,13 +32,12 @@ import {
   Settings,
   ShieldCheck,
   Sun,
-  UserRound,
   Users,
   X,
   Zap,
 } from 'lucide-react'
 import './styles.css'
-import { assignDomain, commandPlugin, createRegistrationCode, fetchCloudflareSettings, fetchDomains, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchServers, fetchSmtpSettings, revokeCloudflareSettings, type ApiDomain, type ApiOverview, type ApiPlugin, type ApiServer, type CloudflareSettings, type PlatformSettings, type SmtpSettings, sendSmtpTest, updatePlatformSettings, updateSmtpSettings } from './api'
+import { assignDomain, commandPlugin, createRegistrationCode, fetchAudit, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchServers, fetchSmtpSettings, revokeCloudflareSettings, type ApiAudit, type ApiDomain, type ApiOverview, type ApiPlugin, type ApiServer, type CloudflareSettings, type CloudflareUsage, type PlatformSettings, type SmtpSettings, sendSmtpTest, updatePlatformSettings, updateSmtpSettings } from './api'
 
 type Page = 'overview' | 'servers' | 'plugins' | 'domains' | 'usage' | 'audit' | 'settings'
 type Theme = 'dark' | 'light' | 'system'
@@ -102,8 +101,14 @@ function App() {
   const [servers, setServers] = useState<ApiServer[] | null>(null)
   const [plugins, setPlugins] = useState<ApiPlugin[] | null>(null)
   const [domains, setDomains] = useState<ApiDomain[] | null>(null)
+  const [audits, setAudits] = useState<ApiAudit[] | null>(null)
+  const [usage, setUsage] = useState<CloudflareUsage | null>(null)
   const [dataLoading, setDataLoading] = useState(false)
   const [dataError, setDataError] = useState<string | null>(null)
+  const [auditLoading, setAuditLoading] = useState(false)
+  const [usageLoading, setUsageLoading] = useState(false)
+  const [auditError, setAuditError] = useState<string | null>(null)
+  const [usageError, setUsageError] = useState<string | null>(null)
   const [platformSettings, setPlatformSettings] = useState<PlatformSettings | null>(null)
   const [cloudflareSettings, setCloudflareSettings] = useState<CloudflareSettings | null>(null)
   const [smtpSettings, setSmtpSettings] = useState<SmtpSettings | null>(null)
@@ -178,6 +183,23 @@ function App() {
       setDomains(nextDomains)
       setDataError(null)
     }).catch(() => setDataError('Worker 数据暂时无法读取')).finally(() => setDataLoading(false))
+  }, [authEnabled])
+
+  useEffect(() => {
+    if (!authEnabled && !import.meta.env.VITE_API_BASE) return
+    setAuditLoading(true)
+    fetchAudit().then((data) => {
+      setAudits(data)
+      setAuditError(null)
+    }).catch(() => setAuditError('审计日志暂时无法读取')).finally(() => setAuditLoading(false))
+    setUsageLoading(true)
+    fetchCloudflareUsage().then((data) => {
+      setUsage(data)
+      setUsageError(null)
+    }).catch((error) => {
+      setUsage(null)
+      setUsageError(error instanceof Error ? error.message : 'Cloudflare 用量暂时无法读取')
+    }).finally(() => setUsageLoading(false))
   }, [authEnabled])
 
   useEffect(() => {
@@ -282,12 +304,12 @@ function App() {
           <div className="page-content">
             <div className="page-header"><div><div className="eyebrow"><span className="live-pulse" />{apiLive ? '实时数据' : '等待真实数据'}</div><h1>{meta.title}</h1><p>{meta.description}</p></div><div className="header-actions">{page === 'overview' && <button className="button secondary" onClick={() => void refreshData()} disabled={dataLoading}><RefreshCw size={15} />刷新状态</button>}{page === 'servers' && <button className="button primary" onClick={() => setModal('server')}><Plus size={16} />绑定服务器</button>}{page === 'domains' && <button className="button primary" onClick={() => setModal('domain')}><Plus size={16} />分配域名</button>}{page === 'plugins' && <button className="button primary" onClick={() => setModal('plugin')}><Plus size={16} />加载插件</button>}</div></div>
             {dataError && <div className="notice-bar compact"><div className="notice-icon"><AlertCircle size={16} /></div><div><strong>数据读取失败</strong><span>{dataError}</span></div><button onClick={() => void refreshData()}>重试 <RefreshCw size={14} /></button></div>}
-            {page === 'overview' && <Overview overview={overview} range={range} setRange={setRange} onAction={showToast} onNavigate={selectPage} />}
+            {page === 'overview' && <Overview overview={overview} audits={audits ?? []} range={range} setRange={setRange} onNavigate={selectPage} />}
             {page === 'servers' && <Servers servers={servers ?? []} loading={dataLoading} onAction={showToast} onBind={() => setModal('server')} />}
             {page === 'plugins' && <Plugins plugins={filteredPlugins} loading={dataLoading} onAction={showToast} onLoad={() => setModal('plugin')} />}
             {page === 'domains' && <Domains domains={domains ?? []} loading={dataLoading} onAction={showToast} onAssign={() => setModal('domain')} />}
-            {page === 'usage' && <Usage onAction={showToast} />}
-            {page === 'audit' && <Audit />}
+            {page === 'usage' && <Usage settings={platformSettings} usage={usage} loading={usageLoading} error={usageError} onNavigate={selectPage} />}
+            {page === 'audit' && <Audit audits={audits ?? []} loading={auditLoading} error={auditError} />}
             {page === 'settings' && <SettingsPage settings={platformSettings} onSettingsChange={setPlatformSettings} cloudflareSettings={cloudflareSettings} onCloudflareChange={setCloudflareSettings} smtpSettings={smtpSettings} onSmtpChange={setSmtpSettings} onAction={showToast} />}
           </div>
         </div>
@@ -298,7 +320,7 @@ function App() {
   )
 }
 
-function Overview({ overview, range, setRange, onAction, onNavigate }: { overview: ApiOverview | null; range: '24h' | '7d' | '30d'; setRange: (value: '24h' | '7d' | '30d') => void; onAction: (message: string) => void; onNavigate: (page: Page) => void }) {
+function Overview({ overview, audits, range, setRange, onNavigate }: { overview: ApiOverview | null; audits: ApiAudit[]; range: '24h' | '7d' | '30d'; setRange: (value: '24h' | '7d' | '30d') => void; onNavigate: (page: Page) => void }) {
   const onlineServers = overview ? String(overview.onlineServers) : '—'
   const enabledPlugins = overview ? String(overview.enabledPlugins) : '—'
   const domains = overview ? String(overview.domains) : '—'
@@ -314,7 +336,7 @@ function Overview({ overview, range, setRange, onAction, onNavigate }: { overvie
       <div className="panel chart-panel"><div className="panel-header"><div><h2>请求趋势</h2><p>接入真实用量数据后显示</p></div><div className="segmented">{(['24h', '7d', '30d'] as const).map((item) => <button className={range === item ? 'selected' : ''} key={item} onClick={() => setRange(item)}>{item}</button>)}</div></div><div className="empty-chart chart-empty-state"><Activity size={20} /><strong>暂无请求趋势数据</strong><span>当前 Worker 尚未返回趋势统计。</span></div></div>
       <div className="panel"><div className="panel-header"><div><h2>资源使用</h2><p>等待 Cloudflare Analytics 和本地计数</p></div><IconButton label="查看用量详情" onClick={() => onNavigate('usage')}><ArrowUpRight size={15} /></IconButton></div><div className="resource-list"><Resource label="Worker 请求" value="—" limit="未读取" icon={Cloud} /><Resource label="R2 中转容量" value="—" limit="未读取" icon={HardDrive} /><Resource label="D1 数据库" value="—" limit="未读取" icon={Database} /><Resource label="Durable Object" value="—" limit="未读取" icon={Activity} /></div><button className="text-link" onClick={() => onNavigate('usage')}>查看全部配额 <ArrowUpRight size={14} /></button></div>
     </section>
-    <section className="content-grid two-thirds bottom-grid"><div className="panel"><div className="panel-header"><div><h2>最近活动</h2><p>最新平台事件与配置变化</p></div><button className="text-link" onClick={() => onNavigate('audit')}>查看审计日志 <ArrowUpRight size={14} /></button></div><div className="empty-panel"><div className="empty-illustration"><Activity size={20} /></div><h3>暂无活动记录</h3><p>Worker 返回审计事件后会显示在这里。</p></div></div><div className="panel quick-panel"><div className="panel-header"><div><h2>快速开始</h2><p>完成平台接入需要三步</p></div></div><QuickStep number="01" title="绑定插件服务器" detail="安装本地服务器并输入注册码" onClick={() => onNavigate('servers')} /><QuickStep number="02" title="加载第一个插件" detail="同步 manifest 并完成健康检查" onClick={() => onNavigate('plugins')} /><QuickStep number="03" title="分配公开域名" detail="为插件选择唯一的子域名前缀" onClick={() => onNavigate('domains')} /></div></section>
+    <section className="content-grid two-thirds bottom-grid"><div className="panel"><div className="panel-header"><div><h2>最近活动</h2><p>最新平台事件与配置变化</p></div><button className="text-link" onClick={() => onNavigate('audit')}>查看审计日志 <ArrowUpRight size={14} /></button></div>{audits.length > 0 ? <div className="activity-list">{audits.slice(0, 3).map((item) => <div className="activity-item" key={item.id}><div className="activity-mark success"><Check size={13} /></div><div className="activity-copy"><strong>{auditActionLabel(item.action)}</strong><span>{auditDetail(item)}</span></div><time>{new Date(item.created_at).toLocaleString('zh-CN')}</time></div>)}</div> : <div className="empty-panel"><div className="empty-illustration"><Activity size={20} /></div><h3>暂无活动记录</h3><p>Worker 返回审计事件后会显示在这里。</p></div>}</div><div className="panel quick-panel"><div className="panel-header"><div><h2>快速开始</h2><p>完成平台接入需要三步</p></div></div><QuickStep number="01" title="绑定插件服务器" detail="安装本地服务器并输入注册码" onClick={() => onNavigate('servers')} /><QuickStep number="02" title="加载第一个插件" detail="同步 manifest 并完成健康检查" onClick={() => onNavigate('plugins')} /><QuickStep number="03" title="分配公开域名" detail="为插件选择唯一的子域名前缀" onClick={() => onNavigate('domains')} /></div></section>
   </>
 }
 
@@ -334,6 +356,35 @@ function capabilityLabel(plugin: ApiPlugin): string {
     return labels.length > 0 ? labels.join(' + ') : '未声明能力'
   } catch {
     return 'manifest 无效'
+  }
+}
+
+function auditActionLabel(action: string): string {
+  const labels: Record<string, string> = {
+    'invite.created': '创建平台邀请',
+    'server.registration_code.created': '生成服务器注册码',
+    'server.registered': '插件服务器已注册',
+    'plugin.load': '加载插件',
+    'plugin.unload': '卸载插件',
+    'plugin.enable': '启用插件',
+    'plugin.disable': '停用插件',
+    'plugin.reload': '重载插件',
+    'domain.assigned': '分配公开域名',
+    'platform.settings.updated': '更新平台设置',
+    'smtp.settings.updated': '更新 SMTP 设置',
+    'smtp.settings.revoked': '撤销 SMTP 设置',
+    'smtp.test.sent': '发送 SMTP 测试邮件',
+  }
+  return labels[action] ?? action
+}
+
+function auditDetail(item: ApiAudit): string {
+  try {
+    const details = JSON.parse(item.detail_json) as Record<string, unknown>
+    const values = Object.entries(details).filter(([, value]) => value !== null && value !== undefined && value !== '')
+    return values.length > 0 ? values.map(([key, value]) => `${key}: ${typeof value === 'string' ? value : JSON.stringify(value)}`).join(' · ') : '—'
+  } catch {
+    return item.detail_json || '—'
   }
 }
 
@@ -357,10 +408,25 @@ function Domains({ domains, loading, onAction, onAssign }: { domains: ApiDomain[
   return <div className="stack"><div className="panel table-panel"><div className="panel-header"><div><h2>公开入口</h2><p>插件域名由平台通配路由统一处理，无需逐个创建 DNS 记录。</p></div><button className="button secondary small" onClick={() => onAction(loading ? '正在读取域名状态' : '请使用页面顶部刷新状态')} disabled={loading}><RefreshCw size={14} />刷新</button></div>{domains.length === 0 ? <div className="empty-panel"><div className="empty-illustration"><Globe2 size={22} /></div><h3>暂无公开域名</h3><p>为已启用并通过健康检查的插件分配唯一子域名。</p></div> : <div className="domain-list">{domains.map((domain) => <div className="domain-row" key={domain.id}><div className="domain-icon"><Globe2 size={17} /></div><div className="domain-main"><strong>{domain.hostname}</strong><span>{domain.plugin_name} · {domain.plugin_instance_id}</span></div><StatusBadge tone={domain.status === 'online' ? 'success' : 'warning'}>{domain.status === 'online' ? '在线' : domain.status}</StatusBadge><span className="domain-latency">{domain.status === 'online' ? '公开入口可用' : '等待服务器恢复'}</span><button className="row-action" onClick={() => void copyDomain(domain.hostname)}><Copy size={16} /></button></div>)}</div>}</div><div className="empty-panel"><div className="empty-illustration"><Globe2 size={22} /></div><h3>分配新的公开域名</h3><p>域名前缀需要唯一、长度不超过 48 个字符，并避开平台保留字。</p><button className="button primary" onClick={onAssign}><Plus size={15} />分配公开域名</button></div></div>
 }
 
-function Usage({ onAction }: { onAction: (message: string) => void }) { return <div className="stack"><div className="notice-bar compact"><div className="notice-icon"><Cloud size={16} /></div><div><strong>官方数据尚未连接</strong><span>配置 Cloudflare OAuth 后，Analytics 数据会按 5 分钟至 1 小时缓存。</span></div><button onClick={() => onAction('请先在系统设置中配置 Cloudflare OAuth')}>去配置 <ArrowUpRight size={14} /></button></div><div className="usage-grid"><ResourceCard title="Worker 请求" current="—" limit="未读取" unit="" icon={Cloud} /><ResourceCard title="R2 存储" current="—" limit="未读取" unit="" icon={HardDrive} /><ResourceCard title="D1 操作" current="—" limit="未读取" unit="" icon={Database} /><ResourceCard title="连接上限" current="—" limit="未读取" unit="" icon={Activity} /></div><div className="panel"><div className="panel-header"><div><h2>数据源状态</h2><p>平台本地计数与 Cloudflare 官方数据的更新时间。</p></div></div><div className="source-row"><span className="source-name"><span className="source-dot pending" />Cloudflare Analytics API</span><span className="muted">未配置</span><button className="text-link" onClick={() => onAction('打开系统设置')}>配置 <ArrowUpRight size={14} /></button></div><div className="source-row"><span className="source-name"><span className="source-dot pending" />平台本地计数</span><span className="muted">未接入</span><span className="muted">暂无数据</span></div></div></div> }
-function ResourceCard({ title, current, limit, unit, icon: Icon }: { title: string; current: string; limit: string; unit: string; icon: typeof Cloud }) { return <div className="resource-card"><div className="resource-card-head"><div className="resource-card-icon"><Icon size={17} /></div><span>{title}</span></div><strong>{current}</strong><div className="resource-card-limit">上限 {limit} <span>{unit}</span></div><div className="progress"><span style={{ width: 0 }} /></div></div> }
+function Usage({ settings, usage, loading, error, onNavigate }: { settings: PlatformSettings | null; usage: CloudflareUsage | null; loading: boolean; error: string | null; onNavigate: (page: Page) => void }) {
+  const requestValue = typeof usage?.requests === 'number' ? usage.requests.toLocaleString('zh-CN') : '—'
+  const requestLimit = settings ? settings.quotas.requests.toLocaleString('zh-CN') : '未读取'
+  const connectionLimit = settings ? settings.quotas.activeConnections.toLocaleString('zh-CN') : '未读取'
+  const r2Limit = settings ? formatBytes(settings.quotas.r2Bytes) : '未读取'
+  const connected = usage?.configured === true && typeof usage.requests === 'number'
+  return <div className="stack">{error && <div className="notice-bar compact"><div className="notice-icon"><AlertCircle size={16} /></div><div><strong>用量读取失败</strong><span>{error}</span></div><button onClick={() => onNavigate('settings')}>检查配置 <ArrowUpRight size={14} /></button></div>}{!error && <div className="notice-bar compact"><div className="notice-icon"><Cloud size={16} /></div><div><strong>{loading ? '正在读取官方数据' : connected ? 'Cloudflare Analytics 已连接' : '官方数据尚未连接'}</strong><span>{connected && usage.period ? `Worker 请求统计周期：${new Date(usage.period.start).toLocaleString('zh-CN')} 至 ${new Date(usage.period.end).toLocaleString('zh-CN')}` : '配置 Cloudflare OAuth 后，Analytics 数据会按 5 分钟至 1 小时缓存。'}</span></div><button onClick={() => onNavigate('settings')}>去配置 <ArrowUpRight size={14} /></button></div>}<div className="usage-grid"><ResourceCard title="Worker 请求" current={requestValue} limit={requestLimit} unit={connected ? '平台阈值' : ''} percent={connected && settings ? Math.min(100, (usage.requests! / settings.quotas.requests) * 100) : 0} icon={Cloud} /><ResourceCard title="R2 存储" current="—" limit={r2Limit} unit={settings ? '平台阈值' : ''} icon={HardDrive} /><ResourceCard title="D1 操作" current="—" limit="未接入" unit="" icon={Database} /><ResourceCard title="连接上限" current="—" limit={connectionLimit} unit={settings ? '平台阈值' : ''} icon={Activity} /></div><div className="panel"><div className="panel-header"><div><h2>数据源状态</h2><p>平台本地计数与 Cloudflare 官方数据的更新时间。</p></div></div><div className="source-row"><span className="source-name"><span className={`source-dot ${connected ? 'green' : 'pending'}`} />Cloudflare Analytics API</span><span className="muted">{connected ? `${usage.cached ? '缓存' : '最新'} · ${usage.updatedAt ? new Date(usage.updatedAt).toLocaleString('zh-CN') : '时间未知'}` : '未配置'}</span><button className="text-link" onClick={() => onNavigate('settings')}>配置 <ArrowUpRight size={14} /></button></div><div className="source-row"><span className="source-name"><span className="source-dot pending" />平台本地计数</span><span className="muted">未接入</span><span className="muted">暂无数据</span></div></div></div>
+}
 
-function Audit() { return <div className="stack"><div className="filter-row"><div className="filter-summary"><ListFilter size={15} />全部事件 <span className="divider" />最近 180 天</div><button className="button secondary small" disabled><FileText size={14} />导出日志</button></div><div className="empty-panel"><div className="empty-illustration"><Activity size={20} /></div><h3>暂无审计记录</h3><p>Worker 返回审计事件后会显示在这里，导出功能尚未接入。</p></div></div> }
+function formatBytes(value: number): string {
+  if (!Number.isFinite(value) || value < 0) return '未读取'
+  if (value >= 1024 * 1024 * 1024) return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GB`
+  if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`
+  return `${Math.round(value / 1024)} KB`
+}
+
+function ResourceCard({ title, current, limit, unit, percent = 0, icon: Icon }: { title: string; current: string; limit: string; unit: string; percent?: number; icon: typeof Cloud }) { return <div className="resource-card"><div className="resource-card-head"><div className="resource-card-icon"><Icon size={17} /></div><span>{title}</span></div><strong>{current}</strong><div className="resource-card-limit">上限 {limit} <span>{unit}</span></div><div className="progress"><span style={{ width: `${percent}%` }} /></div></div> }
+
+function Audit({ audits, loading, error }: { audits: ApiAudit[]; loading: boolean; error: string | null }) { return <div className="stack">{error && <div className="notice-bar compact"><div className="notice-icon"><AlertCircle size={16} /></div><div><strong>审计日志读取失败</strong><span>{error}</span></div></div>}<div className="filter-row"><div className="filter-summary"><ListFilter size={15} />全部事件 <span className="divider" />最近 180 天</div><button className="button secondary small" disabled><FileText size={14} />导出日志</button></div>{loading ? <div className="empty-panel"><div className="empty-illustration"><RefreshCw size={20} /></div><h3>正在读取审计记录</h3><p>Worker 正在返回最近 180 天的事件。</p></div> : audits.length === 0 ? <div className="empty-panel"><div className="empty-illustration"><Activity size={20} /></div><h3>暂无审计记录</h3><p>平台产生审计事件后会显示在这里，导出功能尚未接入。</p></div> : <div className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>事件</th><th>详情</th><th>操作者</th><th>时间</th></tr></thead><tbody>{audits.map((item) => <tr key={item.id}><td><div className="cell-title"><div className="audit-icon"><Activity size={14} /></div><strong>{auditActionLabel(item.action)}</strong></div></td><td>{auditDetail(item)}</td><td><span className="operator"><div className="mini-avatar">—</div>当前用户</span></td><td className="muted">{new Date(item.created_at).toLocaleString('zh-CN')}</td></tr>)}</tbody></table></div></div>}</div> }
 
 function SettingsPage({ settings, onSettingsChange, cloudflareSettings, onCloudflareChange, smtpSettings, onSmtpChange, onAction }: { settings: PlatformSettings | null; onSettingsChange: (settings: PlatformSettings) => void; cloudflareSettings: CloudflareSettings | null; onCloudflareChange: (settings: CloudflareSettings) => void; smtpSettings: SmtpSettings | null; onSmtpChange: (settings: SmtpSettings) => void; onAction: (message: string) => void }) {
   const [saving, setSaving] = useState(false)

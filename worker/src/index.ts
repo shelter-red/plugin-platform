@@ -43,6 +43,10 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   if (request.method === 'GET' && url.pathname === '/api/servers') return json(await env.DB.prepare('SELECT id, name, status, last_seen_at, created_at FROM servers WHERE user_id = ? ORDER BY created_at DESC').bind(user.id).all())
   if (request.method === 'GET' && url.pathname === '/api/plugins') return json(await env.DB.prepare('SELECT plugin_instances.id, plugin_instances.plugin_id, plugin_instances.name, plugin_instances.version, plugin_instances.state, plugin_instances.server_id, servers.name AS server_name, domains.hostname AS domain_hostname, plugin_instances.manifest_json, plugin_instances.updated_at FROM plugin_instances JOIN servers ON servers.id = plugin_instances.server_id LEFT JOIN domains ON domains.plugin_instance_id = plugin_instances.id WHERE plugin_instances.user_id = ? ORDER BY plugin_instances.updated_at DESC').bind(user.id).all())
   if (request.method === 'GET' && url.pathname === '/api/domains') return json(await env.DB.prepare('SELECT domains.id, domains.hostname, domains.status, domains.plugin_instance_id, plugin_instances.name AS plugin_name, domains.created_at FROM domains JOIN plugin_instances ON plugin_instances.id = domains.plugin_instance_id WHERE domains.user_id = ? ORDER BY domains.created_at DESC').bind(user.id).all())
+  if (request.method === 'GET' && url.pathname === '/api/audit') {
+    const since = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString()
+    return json(await env.DB.prepare('SELECT id, action, detail_json, created_at FROM audit_log WHERE user_id = ? AND created_at >= ? ORDER BY created_at DESC LIMIT 100').bind(user.id, since).all())
+  }
   if (url.pathname === '/api/settings/platform') return platformSettingsApi(request, env, user)
   if (url.pathname === '/api/settings/cloudflare') return cloudflareSettingsApi(request, env, user)
   if (url.pathname === '/api/settings/smtp') return smtpSettingsApi(request, env, user)

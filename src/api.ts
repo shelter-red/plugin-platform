@@ -50,6 +50,23 @@ export interface DomainAssignmentResult {
   status: string
 }
 
+export interface ApiAudit {
+  id: string
+  action: string
+  detail_json: string
+  created_at: string
+}
+
+export interface CloudflareUsage {
+  configured?: boolean
+  accountIdConfigured?: boolean
+  period?: { start: string; end: string }
+  requests?: number
+  source?: string
+  cached?: boolean
+  updatedAt?: string
+}
+
 export interface PlatformSettings {
   maintenance: boolean
   quotas: {
@@ -118,6 +135,14 @@ export async function fetchDomains(): Promise<ApiDomain[]> {
   return data.results ?? []
 }
 
+export async function fetchAudit(): Promise<ApiAudit[]> {
+  const apiBase = import.meta.env.VITE_API_BASE ?? ''
+  const response = await fetch(`${apiBase}/api/audit`, { credentials: 'include' })
+  if (!response.ok) throw new Error(`audit request failed: ${response.status}`)
+  const data = await response.json() as { results?: ApiAudit[] }
+  return data.results ?? []
+}
+
 async function apiError(response: Response, fallback: string): Promise<Error> {
   const data = await response.json().catch(() => null) as { error?: string } | null
   return new Error(data?.error || fallback)
@@ -142,6 +167,13 @@ export async function assignDomain(pluginInstanceId: string, prefix: string): Pr
   const response = await fetch(`${apiBase}/api/domains`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pluginInstanceId, prefix }) })
   if (!response.ok) throw await apiError(response, `domain assignment failed: ${response.status}`)
   return response.json() as Promise<DomainAssignmentResult>
+}
+
+export async function fetchCloudflareUsage(): Promise<CloudflareUsage> {
+  const apiBase = import.meta.env.VITE_API_BASE ?? ''
+  const response = await fetch(`${apiBase}/api/usage/cloudflare`, { credentials: 'include' })
+  if (!response.ok) throw await apiError(response, `cloudflare usage request failed: ${response.status}`)
+  return response.json() as Promise<CloudflareUsage>
 }
 
 export async function updatePlatformSettings(settings: PlatformSettings): Promise<PlatformSettings> {
