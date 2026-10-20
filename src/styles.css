@@ -135,3 +135,4 @@ table { width: 100%; border-collapse: collapse; font-size: 11px; } th { padding:
 .check-row input { width: 14px; height: 14px; accent-color: var(--primary); }
 .smtp-test { display: flex; align-items: center; gap: 7px; margin-left: auto; }
 .smtp-test input { width: 190px; }
+.invite-url { min-width: 0; flex: 1; }

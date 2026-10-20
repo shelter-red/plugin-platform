@@ -58,6 +58,22 @@ export interface ApiAudit {
   created_at: string
 }
 
+export interface ApiInvite {
+  id: string
+  email: string | null
+  github_login: string | null
+  status: 'pending' | 'used' | 'expired' | 'revoked' | string
+  expires_at: string
+  used_at: string | null
+  created_at: string
+}
+
+export interface InviteCreation {
+  id: string
+  inviteUrl: string
+  expiresAt: string
+}
+
 export interface CloudflareUsage {
   configured?: boolean
   accountIdConfigured?: boolean
@@ -144,6 +160,14 @@ export async function fetchAudit(): Promise<ApiAudit[]> {
   return data.results ?? []
 }
 
+export async function fetchInvites(): Promise<ApiInvite[]> {
+  const apiBase = import.meta.env.VITE_API_BASE ?? ''
+  const response = await fetch(`${apiBase}/api/invites`, { credentials: 'include' })
+  if (!response.ok) throw await apiError(response, `invites request failed: ${response.status}`)
+  const data = await response.json() as { results?: ApiInvite[] }
+  return data.results ?? []
+}
+
 async function apiError(response: Response, fallback: string): Promise<Error> {
   const data = await response.json().catch(() => null) as { error?: string } | null
   return new Error(data?.error || fallback)
@@ -154,6 +178,19 @@ export async function createRegistrationCode(): Promise<RegistrationCode> {
   const response = await fetch(`${apiBase}/api/registration-codes`, { method: 'POST', credentials: 'include' })
   if (!response.ok) throw await apiError(response, `registration code request failed: ${response.status}`)
   return response.json() as Promise<RegistrationCode>
+}
+
+export async function createInvite(input: { email?: string; githubLogin?: string; expiresInHours: number }): Promise<InviteCreation> {
+  const apiBase = import.meta.env.VITE_API_BASE ?? ''
+  const response = await fetch(`${apiBase}/api/invites`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input) })
+  if (!response.ok) throw await apiError(response, `invite creation failed: ${response.status}`)
+  return response.json() as Promise<InviteCreation>
+}
+
+export async function revokeInvite(inviteId: string): Promise<void> {
+  const apiBase = import.meta.env.VITE_API_BASE ?? ''
+  const response = await fetch(`${apiBase}/api/invites/${encodeURIComponent(inviteId)}`, { method: 'DELETE', credentials: 'include' })
+  if (!response.ok) throw await apiError(response, `invite revoke failed: ${response.status}`)
 }
 
 export async function commandPlugin(pluginInstanceId: string, action: 'load' | 'unload' | 'enable' | 'disable' | 'reload'): Promise<PluginCommandResult> {
