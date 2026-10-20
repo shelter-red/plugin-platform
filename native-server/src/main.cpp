@@ -86,7 +86,7 @@ bool run_registration_setup(plugmesh::ServerConfig& config, uint16_t port, const
   bool registered = false;
   std::string server_error;
   plugmesh::LocalHttpServer local_http(port, nullptr, [initial_credential_file] {
-    return nlohmann::json{{"configured", false}, {"connected", false}, {"credentialFile", initial_credential_file}};
+    return nlohmann::json{{"configured", false}, {"connected", false}, {"credentialFile", initial_credential_file}, {"systemCredentialsAvailable", plugmesh::system_credentials_available()}};
   }, ui_directory, [&config, &registration_complete, &callback_active, &registered](const nlohmann::json& payload, std::string& callback_error) {
     callback_active = true;
     const auto text = [&](const char* key) {
@@ -97,8 +97,9 @@ bool run_registration_setup(plugmesh::ServerConfig& config, uint16_t port, const
     const auto code = text("registrationCode");
     const auto password = text("credentialPassword");
     const auto credential_file = text("credentialFile").empty() ? config.credential_file.string() : text("credentialFile");
-    if (worker_url.empty() || server_name.empty() || code.empty() || password.empty() || credential_file.empty()) {
-      callback_error = "Worker 地址、服务器名称、注册码、凭据口令和凭据文件路径均为必填";
+    const auto use_system_store = credential_file.empty();
+    if (worker_url.empty() || server_name.empty() || code.empty() || (!use_system_store && password.empty()) || (use_system_store && !plugmesh::system_credentials_available())) {
+      callback_error = use_system_store ? "当前平台没有可用的系统凭据存储，请填写凭据文件路径和口令" : "Worker 地址、服务器名称、注册码、凭据口令和凭据文件路径均为必填";
       callback_active = false;
       return nlohmann::json::object();
     }
@@ -192,7 +193,7 @@ int main(int argc, char** argv) {
   std::cout << "plugmesh-server discovered " << plugins.snapshot().size() << " plugin(s) for " << resolved_config.server_id << '\n';
   plugmesh::ControlClient client(resolved_config, plugins);
   plugmesh::LocalHttpServer local_http(local_port(), &plugins, [&client, &resolved_config] {
-    return nlohmann::json{{"configured", true}, {"serverId", resolved_config.server_id}, {"workerUrl", resolved_config.worker_url}, {"credentialFile", resolved_config.credential_file.string()}, {"connected", client.connected()}};
+    return nlohmann::json{{"configured", true}, {"serverId", resolved_config.server_id}, {"workerUrl", resolved_config.worker_url}, {"credentialFile", resolved_config.credential_file.string()}, {"systemCredentialsAvailable", plugmesh::system_credentials_available()}, {"connected", client.connected()}};
   }, local_ui_directory());
   std::string local_error;
   std::thread local_thread([&local_http, &local_error] {

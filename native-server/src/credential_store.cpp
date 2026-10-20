@@ -12,6 +12,14 @@
 #include <sys/stat.h>
 #endif
 
+#if defined(_WIN32)
+#include <windows.h>
+#include <wincred.h>
+#elif defined(__APPLE__)
+#include <CoreFoundation/CoreFoundation.h>
+#include <Security/Security.h>
+#endif
+
 namespace plugmesh {
 
 namespace {
@@ -22,6 +30,29 @@ constexpr std::size_t kSaltSize = 16;
 constexpr std::size_t kIvSize = 12;
 constexpr std::size_t kTagSize = 16;
 constexpr std::size_t kMaxCiphertextSize = 1024 * 1024;
+constexpr char kSystemService[] = "Plugmesh";
+constexpr char kSystemAccount[] = "default";
+
+std::string credentials_json(const StoredCredentials& credentials) {
+  return Json{{"workerUrl", credentials.worker_url}, {"serverId", credentials.server_id}, {"accessToken", credentials.access_token}}.dump();
+}
+
+bool parse_credentials_json(const std::string& plaintext, StoredCredentials& credentials, std::string& error) {
+  try {
+    const auto value = Json::parse(plaintext);
+    credentials.worker_url = value.at("workerUrl").get<std::string>();
+    credentials.server_id = value.at("serverId").get<std::string>();
+    credentials.access_token = value.at("accessToken").get<std::string>();
+  } catch (...) {
+    error = "credential payload is invalid";
+    return false;
+  }
+  if (credentials.worker_url.empty() || credentials.server_id.empty() || credentials.access_token.empty()) {
+    error = "credential payload is incomplete";
+    return false;
+  }
+  return true;
+}
 
 std::string encode_base64(const std::vector<unsigned char>& bytes) {
   if (bytes.empty()) return {};
@@ -155,13 +186,119 @@ bool write_file(const std::filesystem::path& path, const std::string& content, s
 
 }  // namespace
 
+bool system_credentials_available() {
+#if defined(_WIN32) || defined(__APPLE__)
+  return true;
+#else
+  return false;
+#endif
+}
+
+bool save_system_credentials(const StoredCredentials& credentials, std::string& error) {
+  if (credentials.worker_url.empty() || credentials.server_id.empty() || credentials.access_token.empty()) {
+    error = "all credentials are required";
+    return false;
+  }
+  const auto plaintext = credentials_json(credentials);
+#if defined(_WIN32)
+  CREDENTIALA credential{};
+  credential.Type = CRED_TYPE_GENERIC;
+  credential.TargetName = const_cast<char*>("Plugmesh/default");
+  credential.CredentialBlobSize = static_cast<DWORD>(plaintext.size());
+  credential.CredentialBlob = reinterpret_cast<LPBYTE>(const_cast<char*>(plaintext.data()));
+  credential.Persist = CRED_PERSIST_LOCAL_MACHINE;
+  if (!CredWriteA(&credential, 0)) {
+    error = "Windows Credential Manager write failed";
+    return false;
+  }
+  return true;
+#elif defined(__APPLE__)
+  CFDataRef data = CFDataCreate(kCFAllocatorDefault, reinterpret_cast<const UInt8*>(plaintext.data()), static_cast<CFIndex>(plaintext.size()));
+  CFStringRef service = CFStringCreateWithCString(kCFAllocatorDefault, kSystemService, kCFStringEncodingUTF8);
+  CFStringRef account = CFStringCreateWithCString(kCFAllocatorDefault, kSystemAccount, kCFStringEncodingUTF8);
+  const void* keys[] = {kSecClass, kSecAttrService, kSecAttrAccount, kSecValueData};
+  const void* values[] = {kSecClassGenericPassword, service, account, data};
+  CFDictionaryRef query = CFDictionaryCreate(kCFAllocatorDefault, keys, values, 4, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+  const auto status = SecItemAdd(query, nullptr);
+  CFRelease(query);
+  if (status == errSecDuplicateItem) {
+    const void* query_keys[] = {kSecClass, kSecAttrService, kSecAttrAccount};
+    const void* query_values[] = {kSecClassGenericPassword, service, account};
+    CFDictionaryRef update_query = CFDictionaryCreate(kCFAllocatorDefault, query_keys, query_values, 3, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+    const void* update_keys[] = {kSecValueData};
+    const void* update_values[] = {data};
+    CFDictionaryRef update_values_dictionary = CFDictionaryCreate(kCFAllocatorDefault, update_keys, update_values, 1, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+    const auto update_status = SecItemUpdate(update_query, update_values_dictionary);
+    CFRelease(update_values_dictionary);
+    CFRelease(update_query);
+    CFRelease(account);
+    CFRelease(service);
+    CFRelease(data);
+    if (update_status != errSecSuccess) {
+      error = "macOS Keychain update failed";
+      return false;
+    }
+    return true;
+  }
+  CFRelease(account);
+  CFRelease(service);
+  CFRelease(data);
+  if (status != errSecSuccess) {
+    error = "macOS Keychain write failed";
+    return false;
+  }
+  return true;
+#else
+  error = "system credential store is unavailable on this platform";
+  return false;
+#endif
+}
+
+bool load_system_credentials(StoredCredentials& credentials, std::string& error) {
+#if defined(_WIN32)
+  PCREDENTIALA credential = nullptr;
+  if (!CredReadA("Plugmesh/default", CRED_TYPE_GENERIC, 0, &credential)) {
+    error = "system credentials were not found";
+    return false;
+  }
+  const std::string plaintext(reinterpret_cast<const char*>(credential->CredentialBlob), credential->CredentialBlobSize);
+  CredFree(credential);
+  return parse_credentials_json(plaintext, credentials, error);
+#elif defined(__APPLE__)
+  CFStringRef service = CFStringCreateWithCString(kCFAllocatorDefault, kSystemService, kCFStringEncodingUTF8);
+  CFStringRef account = CFStringCreateWithCString(kCFAllocatorDefault, kSystemAccount, kCFStringEncodingUTF8);
+  const void* keys[] = {kSecClass, kSecAttrService, kSecAttrAccount, kSecReturnData};
+  const void* values[] = {kSecClassGenericPassword, service, account, kCFBooleanTrue};
+  CFDictionaryRef query = CFDictionaryCreate(kCFAllocatorDefault, keys, values, 4, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+  CFTypeRef result = nullptr;
+  const auto status = SecItemCopyMatching(query, &result);
+  CFRelease(query);
+  CFRelease(account);
+  CFRelease(service);
+  if (status != errSecSuccess || !result || CFGetTypeID(result) != CFDataGetTypeID()) {
+    if (result) CFRelease(result);
+    error = "system credentials were not found";
+    return false;
+  }
+  const auto* bytes = CFDataGetBytePtr(static_cast<CFDataRef>(result));
+  const auto size = CFDataGetLength(static_cast<CFDataRef>(result));
+  const std::string plaintext(reinterpret_cast<const char*>(bytes), static_cast<std::size_t>(size));
+  CFRelease(result);
+  return parse_credentials_json(plaintext, credentials, error);
+#else
+  error = "system credential store is unavailable on this platform";
+  return false;
+#endif
+}
+
 bool save_credentials(const std::filesystem::path& path, const StoredCredentials& credentials, const std::string& password, std::string& error) {
-  if (path.empty() || credentials.worker_url.empty() || credentials.server_id.empty() || credentials.access_token.empty()) {
+  if (path.empty()) return save_system_credentials(credentials, error);
+  if (credentials.worker_url.empty() || credentials.server_id.empty() || credentials.access_token.empty()) {
     error = "credential file path and all credentials are required";
     return false;
   }
   Json envelope;
-  const auto plaintext = Json{{"workerUrl", credentials.worker_url}, {"serverId", credentials.server_id}, {"accessToken", credentials.access_token}}.dump();
+  const auto plaintext = credentials_json(credentials);
   if (!encrypt(plaintext, password, envelope, error)) return false;
   return write_file(path, envelope.dump(2), error);
 }
@@ -181,25 +318,14 @@ bool load_credentials(const std::filesystem::path& path, const std::string& pass
   }
   std::string plaintext;
   if (!decrypt(envelope, password, plaintext, error)) return false;
-  try {
-    const auto value = Json::parse(plaintext);
-    credentials.worker_url = value.at("workerUrl").get<std::string>();
-    credentials.server_id = value.at("serverId").get<std::string>();
-    credentials.access_token = value.at("accessToken").get<std::string>();
-  } catch (...) {
-    error = "credential payload is invalid";
-    return false;
-  }
-  if (credentials.worker_url.empty() || credentials.server_id.empty() || credentials.access_token.empty()) {
-    error = "credential payload is incomplete";
-    return false;
-  }
-  return true;
+  return parse_credentials_json(plaintext, credentials, error);
 }
 
 bool load_credentials_into_config(const std::filesystem::path& path, const std::string& password, std::string& worker_url, std::string& server_id, std::string& access_token, std::string& error) {
   StoredCredentials credentials;
-  if (!load_credentials(path, password, credentials, error)) return false;
+  if (path.empty()) {
+    if (!load_system_credentials(credentials, error)) return false;
+  } else if (!load_credentials(path, password, credentials, error)) return false;
   if (worker_url.empty()) worker_url = credentials.worker_url;
   if (server_id.empty()) server_id = credentials.server_id;
   if (access_token.empty()) access_token = credentials.access_token;

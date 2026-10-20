@@ -36,6 +36,12 @@ int main() {
     std::cerr << "corrupted file was accepted\n";
     return 5;
   }
+  if (!plugmesh::system_credentials_available()) {
+    if (plugmesh::save_system_credentials(expected, error) || plugmesh::load_system_credentials(actual, error)) {
+      std::cerr << "unavailable system credential store was reported as usable\n";
+      return 6;
+    }
+  }
   std::filesystem::remove(path, ignored);
   std::cout << "credential store smoke test passed\n";
   return 0;

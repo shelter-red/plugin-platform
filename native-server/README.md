@@ -14,7 +14,7 @@
 - `PLUGMESH_SERVER_ID`
 - `PLUGMESH_ACCESS_TOKEN`
 - `PLUGMESH_PLUGIN_DIRECTORY`
-- `PLUGMESH_CREDENTIAL_FILE`
+- `PLUGMESH_CREDENTIAL_FILE`（Linux 等无系统凭据存储时使用的加密文件路径；留空时 Windows/macOS 优先使用系统凭据存储）
 - `PLUGMESH_CREDENTIAL_PASSWORD`
 - `PLUGMESH_LOCAL_PORT`（可选，默认 `8787`，仅绑定 `127.0.0.1`）
 - `PLUGMESH_LOCAL_UI_DIRECTORY`（可选，默认 `native-ui/dist`）
@@ -31,7 +31,7 @@
 
 当 Worker 地址、服务器 ID 或访问令牌缺失时，`plugmesh-server` 不会直接退出，而是进入 setup mode 并等待 localhost 控制台提交一次性注册码。注册成功后当前进程继续启动控制连接；注册接口在正常运行态关闭。CLI `--register` 仍作为无浏览器环境的备用入口。
 
-凭据文件使用 OpenSSL AES-256-GCM 加密，口令通过 PBKDF2-HMAC-SHA256 派生密钥；文件只保存加密 envelope，不保存明文 access token。Linux 下文件权限收紧为用户可读写。生产部署应通过本地配置 UI 或受保护的进程环境提供口令，当前版本尚未接入系统密钥链。
+Windows 使用 Credential Manager、macOS 使用 Keychain 保存系统凭据；当前 Linux 构建未检测到 Secret Service 开发依赖，因此使用 OpenSSL AES-256-GCM 加密文件回退。文件回退的口令通过 PBKDF2-HMAC-SHA256 派生密钥，文件只保存加密 envelope，不保存明文 access token，Linux 下权限收紧为用户可读写。
 
 凭据存储回归测试：
 
