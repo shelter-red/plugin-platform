@@ -7,6 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(plugmesh_core STATIC
   src/plugin_loader.cpp
+  src/plugin_manager.cpp
   src/server_config.cpp
 )
 target_include_directories(plugmesh_core PUBLIC include)
@@ -19,6 +20,9 @@ target_include_directories(plugmesh-sample PRIVATE include)
 
 add_executable(plugmesh-plugin-loader-smoke tests/plugin_loader_smoke.cpp)
 target_link_libraries(plugmesh-plugin-loader-smoke PRIVATE plugmesh_core)
+
+add_executable(plugmesh-plugin-manager-smoke tests/plugin_manager_smoke.cpp)
+target_link_libraries(plugmesh-plugin-manager-smoke PRIVATE plugmesh_core)
 
 if (WIN32)
   target_compile_definitions(plugmesh_core PRIVATE PLUGMESH_PLATFORM_WINDOWS=1)
