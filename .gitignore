@@ -1,3 +1,4 @@
 node_modules/
 dist/
+native-server/build/
 .DS_Store
