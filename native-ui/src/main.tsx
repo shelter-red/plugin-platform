@@ -152,6 +152,19 @@ function App() {
     }
   }
 
+  const runHealth = async (plugin: LocalPlugin) => {
+    setBusyPlugin(plugin.id)
+    try {
+      const result = await request<{ ok: boolean; status: number; bodySize: number; error?: string }>(`/api/plugins/${encodeURIComponent(plugin.id)}/health`)
+      if (!result.ok) throw new Error(result.error || '健康检查失败')
+      setMessage({ kind: 'success', text: `${plugin.name}：健康检查通过（${result.status}）` })
+    } catch (cause) {
+      setMessage({ kind: 'error', text: cause instanceof Error ? cause.message : '健康检查失败' })
+    } finally {
+      setBusyPlugin(null)
+    }
+  }
+
   const themeIcon = theme === 'light' ? <Sun size={15} /> : theme === 'system' ? <CircleHelp size={15} /> : <Moon size={15} />
   const enabledCount = diagnostics?.enabledPluginCount ?? plugins.filter((plugin) => plugin.state === 'enabled').length
 
@@ -184,7 +197,7 @@ function App() {
 
           <section className="metric-grid" aria-label="运行指标"><Metric label="已发现插件" value={diagnostics?.pluginCount ?? (loading ? '—' : plugins.length)} icon={<FileCode2 size={16} />} /><Metric label="已启用" value={enabledCount} icon={<Cpu size={16} />} accent /><Metric label="失败状态" value={diagnostics?.failedPluginCount ?? 0} icon={<CircleSlash size={16} />} danger={Boolean(diagnostics?.failedPluginCount)} /><Metric label="本地端口" value={status?.port ?? '—'} icon={<Network size={16} />} /></section>
 
-          <section id="plugins" className="section-block"><div className="section-heading"><div><span className="section-index">02 / 插件目录</span><h2>已发现插件</h2></div><span className="section-meta">{plugins.length} 个条目</span></div>{loading && <LoadingState />}{!loading && !error && plugins.length === 0 && <EmptyState title="尚未发现插件" body="将包含 manifest.json 的插件目录配置到服务器后，插件会出现在这里。" />}{!loading && !error && plugins.length > 0 && <div className="plugin-list">{plugins.map((plugin) => <PluginRow key={plugin.id} plugin={plugin} busy={busyPlugin === plugin.id} onAction={(action) => void runAction(plugin, action)} />)}</div>}</section>
+          <section id="plugins" className="section-block"><div className="section-heading"><div><span className="section-index">02 / 插件目录</span><h2>已发现插件</h2></div><span className="section-meta">{plugins.length} 个条目</span></div>{loading && <LoadingState />}{!loading && !error && plugins.length === 0 && <EmptyState title="尚未发现插件" body="将包含 manifest.json 的插件目录配置到服务器后，插件会出现在这里。" />}{!loading && !error && plugins.length > 0 && <div className="plugin-list">{plugins.map((plugin) => <PluginRow key={plugin.id} plugin={plugin} busy={busyPlugin === plugin.id} onAction={(action) => void runAction(plugin, action)} onHealth={() => void runHealth(plugin)} />)}</div>}</section>
 
           <section id="setup" className="section-block setup-section"><div className="section-heading"><div><span className="section-index">03 / 连接设置</span><h2>首次绑定</h2></div><span className="status-badge muted"><span className="status-dot" />CLI fallback</span></div><div className="setup-grid"><div className="setup-copy"><h3>通过注册码绑定服务器</h3><p>首次绑定和凭据密码输入目前使用 CLI 完成。成功保存加密凭据后，服务器重启会自动恢复连接。</p><div className="command-block"><span>$</span><code>plugmesh-server --register &lt;worker-url&gt; &lt;server-name&gt; &lt;credential-file&gt;</code></div><span className="text-link">配置说明见 native-server/README.md</span></div><div className="setup-state"><Terminal size={22} /><strong>本地配置 UI 尚未接入</strong><span>当前不会在浏览器中收集注册码或凭据口令。</span></div></div></section>
         </div>
@@ -198,11 +211,11 @@ function Metric({ label, value, icon, accent = false, danger = false }: { label:
   return <div className={`metric ${accent ? 'accent' : ''} ${danger ? 'danger' : ''}`}><span className="metric-icon">{icon}</span><span className="metric-label">{label}</span><strong>{value}</strong></div>
 }
 
-function PluginRow({ plugin, busy, onAction }: { plugin: LocalPlugin; busy: boolean; onAction: (action: 'load' | 'unload' | 'enable' | 'disable' | 'reload') => void }) {
+function PluginRow({ plugin, busy, onAction, onHealth }: { plugin: LocalPlugin; busy: boolean; onAction: (action: 'load' | 'unload' | 'enable' | 'disable' | 'reload') => void; onHealth: () => void }) {
   const canEnable = plugin.state === 'loaded' || plugin.state === 'disabled'
   const canDisable = plugin.state === 'enabled'
   const canUnload = plugin.state !== 'discovered' && plugin.state !== 'unloaded'
-  return <article className="plugin-row"><div className="plugin-main"><div className="plugin-icon"><FileCode2 size={18} /></div><div className="plugin-copy"><div className="plugin-title"><h3>{plugin.name}</h3><span className={`status-badge ${stateTone(plugin.state)}`}><span className="status-dot" />{stateLabel(plugin.state)}</span></div><span className="plugin-id">{plugin.id} · v{plugin.version} · ABI {plugin.abiVersion}</span><div className="capability-list">{plugin.capabilities.http && <span>HTTP</span>}{plugin.capabilities.websocket && <span>WebSocket</span>}{plugin.capabilities.sse && <span>SSE</span>}{plugin.capabilities.fileStream && <span>文件流</span>}</div></div></div><div className="plugin-actions">{busy ? <span className="action-loading"><LoaderCircle size={16} className="spin" />处理中</span> : <>{plugin.state === 'discovered' || plugin.state === 'unloaded' ? <ActionButton label="加载" onClick={() => onAction('load')} /> : <ActionButton label="重载" onClick={() => onAction('reload')} />}{canEnable && <ActionButton label="启用" onClick={() => onAction('enable')} primary />}{canDisable && <ActionButton label="停用" onClick={() => onAction('disable')} />}{canUnload && <ActionButton label="卸载" onClick={() => onAction('unload')} />}</>}</div></article>
+  return <article className="plugin-row"><div className="plugin-main"><div className="plugin-icon"><FileCode2 size={18} /></div><div className="plugin-copy"><div className="plugin-title"><h3>{plugin.name}</h3><span className={`status-badge ${stateTone(plugin.state)}`}><span className="status-dot" />{stateLabel(plugin.state)}</span></div><span className="plugin-id">{plugin.id} · v{plugin.version} · ABI {plugin.abiVersion}</span><div className="capability-list">{plugin.capabilities.http && <span>HTTP</span>}{plugin.capabilities.websocket && <span>WebSocket</span>}{plugin.capabilities.sse && <span>SSE</span>}{plugin.capabilities.fileStream && <span>文件流</span>}</div></div></div><div className="plugin-actions">{busy ? <span className="action-loading"><LoaderCircle size={16} className="spin" />处理中</span> : <>{plugin.state === 'enabled' && <ActionButton label="检查" onClick={onHealth} />}{plugin.state === 'discovered' || plugin.state === 'unloaded' ? <ActionButton label="加载" onClick={() => onAction('load')} /> : <ActionButton label="重载" onClick={() => onAction('reload')} />}{canEnable && <ActionButton label="启用" onClick={() => onAction('enable')} primary />}{canDisable && <ActionButton label="停用" onClick={() => onAction('disable')} />}{canUnload && <ActionButton label="卸载" onClick={() => onAction('unload')} />}</>}</div></article>
 }
 
 function ActionButton({ label, onClick, primary = false }: { label: string; onClick: () => void; primary?: boolean }) {

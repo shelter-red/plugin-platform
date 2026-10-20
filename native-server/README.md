@@ -24,6 +24,7 @@
 - `GET /api/health`、`GET /api/status`：服务和控制连接状态。
 - `GET /api/plugins`：已发现插件的 manifest 与生命周期状态。
 - `GET /api/diagnostics`：插件数量、加载状态和失败数量摘要。
+- `GET /api/plugins/{pluginId}/health`：执行已启用插件的 ABI 健康检查。
 - `POST /api/plugins/{pluginId}/{load|unload|enable|disable|reload}`：执行插件生命周期操作。
 - `GET /`、`GET /assets/*`：提供 `native-ui/dist` 中的 React 本地控制台；非资源路径回退到 `index.html`。
 

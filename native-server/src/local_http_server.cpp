@@ -185,6 +185,21 @@ void LocalHttpServer::handle_http(void* handle) {
   }
 
   constexpr std::string_view prefix = "/api/plugins/";
+  if (method == "GET" && plugins_ && resource.rfind(prefix, 0) == 0) {
+    const auto operation = resource.substr(prefix.size());
+    constexpr std::string_view health_suffix = "/health";
+    if (operation.size() > health_suffix.size() && operation.ends_with(health_suffix)) {
+      const auto plugin_id = operation.substr(0, operation.size() - health_suffix.size());
+      plugmesh_http_response response{};
+      std::string error;
+      const auto ok = plugins_->health(plugin_id, response, error);
+      auto result = nlohmann::json{{"ok", ok}, {"pluginId", plugin_id}, {"status", response.status}, {"bodySize", response.body.size}};
+      if (!ok) result["error"] = error;
+      set_json_response(connection, ok ? websocketpp::http::status_code::ok : websocketpp::http::status_code::bad_request, result);
+      return;
+    }
+  }
+
   if (method == "POST" && plugins_ && resource.rfind(prefix, 0) == 0) {
     const auto operation = resource.substr(prefix.size());
     const auto separator = operation.rfind('/');
