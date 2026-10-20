@@ -6,6 +6,7 @@ import { decryptSecret, encryptSecret } from './secrets'
 import { isEmail, parseSmtpSettings, publicSmtpSettings, sendInviteEmail, sendSmtpTest, type SmtpSettings } from './email'
 import { discoverCloudflareAccountId, exchangeCloudflareCode, readCloudflareCredential, revokeCloudflareToken, type CloudflareCredential } from './cloudflare-oauth'
 import { activateMaintenance, countStream, defaultPlatformSettings, getPlatformSettings, isMaintenanceMode, releaseR2Usage, reserveR2Usage, reserveRequest, setPlatformSettingsCache } from './usage'
+import { findPluginRoute, invalidatePluginRoute } from './route-cache'
 
 export { PluginBridge }
 
@@ -352,7 +353,7 @@ async function createRegistrationCode(env: Env, user: AuthenticatedUser): Promis
 
 async function commandPlugin(request: Request, env: Env, user: AuthenticatedUser, pluginInstanceId: string, action: 'load' | 'unload' | 'enable' | 'disable' | 'reload' | 'health'): Promise<Response> {
   if (await isMaintenanceMode(env)) return json({ error: 'Platform is in maintenance mode' }, 503)
-  const plugin = await env.DB.prepare('SELECT id, plugin_id, server_id, state, desired_state FROM plugin_instances WHERE id = ? AND user_id = ?').bind(pluginInstanceId, user.id).first<{ id: string; plugin_id: string; server_id: string; state: string; desired_state: string }>()
+  const plugin = await env.DB.prepare('SELECT plugin_instances.id, plugin_instances.plugin_id, plugin_instances.server_id, plugin_instances.state, plugin_instances.desired_state, domains.hostname AS domain_hostname FROM plugin_instances LEFT JOIN domains ON domains.plugin_instance_id = plugin_instances.id WHERE plugin_instances.id = ? AND plugin_instances.user_id = ?').bind(pluginInstanceId, user.id).first<{ id: string; plugin_id: string; server_id: string; state: string; desired_state: string; domain_hostname?: string }>()
   if (!plugin) return json({ error: 'Plugin instance not found' }, 404)
   const server = await env.DB.prepare('SELECT status FROM servers WHERE id = ? AND user_id = ?').bind(plugin.server_id, user.id).first<{ status: string }>()
   if (!server || server.status !== 'online') return json({ error: 'Plugin server is offline' }, 409)
@@ -360,15 +361,18 @@ async function commandPlugin(request: Request, env: Env, user: AuthenticatedUser
   const response = await bridge.fetch(new Request(new URL('/command', request.url), { method: 'POST', headers: { 'content-type': 'application/json', 'x-plugmesh-server-id': plugin.server_id }, body: JSON.stringify({ type: `plugin.${action}`, pluginId: plugin.plugin_id }) }))
   if (!response.ok) {
     if (action === 'health') await env.DB.prepare('UPDATE domains SET status = ? WHERE plugin_instance_id = ?').bind('offline', plugin.id).run()
+    invalidatePluginRoute(plugin.domain_hostname)
     return response
   }
   const result = await response.json().catch(() => null) as { state?: string; ok?: boolean; status?: number; bodySize?: number } | null
   if (action === 'health') {
     if (result?.ok !== true || typeof result.status !== 'number' || result.status < 200 || result.status >= 400) {
       await env.DB.prepare('UPDATE domains SET status = ? WHERE plugin_instance_id = ?').bind('offline', plugin.id).run()
+      invalidatePluginRoute(plugin.domain_hostname)
       return json({ error: 'Plugin health check failed', status: result?.status ?? null }, 409)
     }
     await env.DB.prepare('UPDATE domains SET status = ? WHERE plugin_instance_id = ?').bind('online', plugin.id).run()
+    invalidatePluginRoute(plugin.domain_hostname)
     await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'plugin.health', JSON.stringify({ pluginInstanceId: plugin.id, status: result.status, bodySize: result.bodySize ?? 0 }), new Date().toISOString()).run()
     return json({ id: plugin.id, ok: true, status: result.status, bodySize: result.bodySize ?? 0 }, 200)
   }
@@ -376,6 +380,7 @@ async function commandPlugin(request: Request, env: Env, user: AuthenticatedUser
   const nextDesiredState = action === 'reload' ? plugin.desired_state : action === 'load' ? 'loaded' : action === 'unload' ? 'unloaded' : action === 'enable' ? 'enabled' : 'disabled'
   await env.DB.prepare('UPDATE plugin_instances SET state = ?, desired_state = ?, updated_at = ? WHERE id = ?').bind(nextState, nextDesiredState, new Date().toISOString(), plugin.id).run()
   await env.DB.prepare('UPDATE domains SET status = ? WHERE plugin_instance_id = ?').bind('offline', plugin.id).run()
+  invalidatePluginRoute(plugin.domain_hostname)
   await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, `plugin.${action}`, JSON.stringify({ pluginInstanceId: plugin.id }), new Date().toISOString()).run()
   return json({ id: plugin.id, state: nextState, accepted: true }, 202)
 }
@@ -400,6 +405,7 @@ async function assignDomain(request: Request, env: Env, user: AuthenticatedUser)
   } catch {
     return json({ error: 'Domain is already assigned' }, 409)
   }
+  invalidatePluginRoute(hostname)
   await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'domain.assigned', JSON.stringify({ pluginInstanceId: plugin.id, hostname }), new Date().toISOString()).run()
   return json({ hostname, status: 'online' }, 201)
 }
@@ -479,7 +485,7 @@ async function proxyPublicHost(request: Request, env: Env, url: URL, ctx: Execut
   const settings = await getPlatformSettings(env)
   if (settings.maintenance) return maintenanceResponse()
   const hostname = url.hostname
-  const domain = await env.DB.prepare('SELECT domains.id AS domain_id, domains.user_id, domains.plugin_instance_id, domains.server_id, domains.status, domains.hostname, plugin_instances.plugin_id, plugin_instances.state AS plugin_state, servers.status AS server_status FROM domains JOIN plugin_instances ON plugin_instances.id = domains.plugin_instance_id JOIN servers ON servers.id = plugin_instances.server_id WHERE domains.hostname = ?').bind(hostname).first<{ domain_id: string; user_id: string; plugin_instance_id: string; server_id: string; status: string; hostname: string; plugin_id: string; plugin_state: string; server_status: string }>()
+  const domain = await findPluginRoute(env, hostname)
   if (!domain || domain.status !== 'online' || domain.server_status !== 'online' || domain.plugin_state !== 'enabled') return maintenanceResponse('插件暂时不可用', '公开入口尚未就绪、插件当前未启用或插件服务器当前离线。')
   const startedAt = Date.now()
   if (!await reserveRequest(env, settings.quotas)) {
