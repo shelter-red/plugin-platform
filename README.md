@@ -13,6 +13,7 @@
 - 控制 token 使用 SHA-256 摘要后与 D1 字段比对。
 - SMTP 配置使用 `worker-mailer` 开源依赖，支持密文保存、脱敏读取和管理员测试发送。
 - Cloudflare Analytics GraphQL 查询按 5 分钟写入 D1 缓存，权限错误和未配置状态会明确返回。
+- Cloudflare OAuth Authorization Code 回调：管理员状态校验、一次性 state、令牌密文保存、账号自动发现和官方撤销。
 - C++20 跨平台基础：Linux `.so` / Windows `.dll` 动态库加载、ABI 版本检查和配置校验。
 
 ## 本地运行
@@ -39,9 +40,19 @@ Worker 本地调试前需要把 `worker/wrangler.toml` 中的 D1、R2 和 Durabl
 npm run worker:dev
 ```
 
+Cloudflare OAuth 使用官方 Authorization Code 流程。创建 OAuth client 时使用服务端客户端认证，回调地址必须与 `CLOUDFLARE_OAUTH_REDIRECT_URI` 完全一致；Worker 需要配置以下变量：
+
+- `CLOUDFLARE_OAUTH_CLIENT_ID`
+- `CLOUDFLARE_OAUTH_CLIENT_SECRET`
+- `CLOUDFLARE_OAUTH_REDIRECT_URI`
+- `CLOUDFLARE_OAUTH_SCOPE`（可选，默认 `workers-platform.read workers-platform.write`）
+- `SESSION_SECRET`
+
+官方端点为授权 `https://dash.cloudflare.com/oauth2/auth`、令牌 `https://dash.cloudflare.com/oauth2/token` 和撤销 `https://dash.cloudflare.com/oauth2/revoke`。回调成功后令牌不会返回浏览器，平台尝试通过 Cloudflare Accounts API 自动识别唯一账号；若授权范围无法得到唯一账号，管理端会明确显示未识别账号，不会伪造 Analytics 可用状态。
+
 ## 当前边界
 
-当前提交建立了可编译的 MVP 基础，但还没有把生产凭据放入仓库，也没有伪装成已完成以下能力：Cloudflare OAuth 实际回调、本地服务器 Web UI 和 C++ 服务器侧 WebSocket 传输适配。Worker 侧已具备 GitHub OAuth、邀请会话、HTTP 流式响应、公开 WebSocket 桥接、R2 一次性对象、Cloudflare Analytics 查询和基于 `worker-mailer` 的 SMTP 测试发送能力，管理端已具备对应的 SMTP 配置表单；这些功能应在现有协议、D1 模型和 ABI 边界上继续完成端到端联调。
+当前提交建立了可编译的 MVP 基础，但还没有把生产凭据放入仓库，也没有伪装成已完成本地服务器 Web UI 和 C++ 服务器侧 WebSocket 传输适配。Worker 侧已具备 GitHub OAuth、Cloudflare OAuth、邀请会话、HTTP 流式响应、公开 WebSocket 桥接、R2 一次性对象、Cloudflare Analytics 查询和基于 `worker-mailer` 的 SMTP 测试发送能力，管理端已具备对应的 Cloudflare 和 SMTP 配置入口；这些功能仍需在真实 Cloudflare 资源、OAuth client 和本地服务器之间完成端到端联调。
 
 ## 目录
 
