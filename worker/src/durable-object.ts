@@ -41,19 +41,17 @@ export class PluginBridge {
     const client = pair[0]
     const server = pair[1]
     server.accept()
-    this.serverSocket?.close(1012, 'Replaced by a new connection')
+    const previousServer = this.serverSocket
     this.serverSocket = server
+    previousServer?.close(1012, 'Replaced by a new connection')
     server.addEventListener('message', (event) => this.handleServerMessage(event.data))
     server.addEventListener('close', () => {
-      if (this.serverSocket === server) this.serverSocket = null
+      if (this.serverSocket !== server) return
+      this.serverSocket = null
       void this.markServerOffline()
-      for (const socket of this.publicSockets.values()) socket.close(1011, 'Plugin server disconnected')
-      this.publicSockets.clear()
-      for (const [requestId, pending] of this.pendingCommands) {
-        clearTimeout(pending.timer)
-        pending.resolve({ ok: false, error: 'Plugin server disconnected' })
-        this.pendingCommands.delete(requestId)
-      }
+      this.failPendingRequests('Plugin server disconnected', 503)
+      this.failPendingCommands('Plugin server disconnected')
+      this.closePublicSockets(1011, 'Plugin server disconnected')
     })
     server.send(JSON.stringify(makeFrame('hello', this.serverId, { message: 'server connection accepted' })))
     return new Response(null, { status: 101, webSocket: client })
@@ -81,7 +79,8 @@ export class PluginBridge {
       const pending: PendingResponse = { resolve, timer: 0, buffered: [] }
       pending.timer = setTimeout(() => {
         this.pending.delete(requestId)
-        if (pending.writer) void pending.writer.abort('Plugin request timed out')
+        pending.buffered = []
+        if (pending.writer) void pending.writer.abort('Plugin request timed out').catch(() => undefined)
         else resolve(new Response('Plugin request timed out', { status: 504 }))
       }, 25_000) as unknown as number
       this.pending.set(requestId, pending)
@@ -110,8 +109,11 @@ export class PluginBridge {
       this.serverSocket?.send(JSON.stringify(makeFrame('stream.chunk', this.serverId, { connectionId, data, encoding: binary ? 'base64' : 'text' }, pluginId)))
     })
     socket.addEventListener('close', () => {
+      if (this.publicSockets.get(connectionId) !== socket) return
       this.publicSockets.delete(connectionId)
-      this.serverSocket?.send(JSON.stringify(makeFrame('stream.close', this.serverId, { connectionId }, pluginId)))
+      if (this.serverSocket?.readyState === WebSocket.OPEN) {
+        this.serverSocket.send(JSON.stringify(makeFrame('stream.close', this.serverId, { connectionId }, pluginId)))
+      }
     })
     this.serverSocket.send(JSON.stringify(makeFrame('stream.open', this.serverId, {
       connectionId,
@@ -150,6 +152,30 @@ export class PluginBridge {
       }
     })
     return { ...result, requestId: frame.requestId }
+  }
+
+  private failPendingRequests(message: string, status: number) {
+    for (const [requestId, pending] of this.pending) {
+      clearTimeout(pending.timer)
+      this.pending.delete(requestId)
+      pending.buffered = []
+      if (pending.writer) void pending.writer.abort(message).catch(() => undefined)
+      else pending.resolve(new Response(message, { status, headers: { 'content-type': 'text/plain; charset=utf-8' } }))
+    }
+  }
+
+  private failPendingCommands(error: string) {
+    for (const [requestId, pending] of this.pendingCommands) {
+      clearTimeout(pending.timer)
+      this.pendingCommands.delete(requestId)
+      pending.resolve({ ok: false, error })
+    }
+  }
+
+  private closePublicSockets(code: number, reason: string) {
+    const sockets = [...this.publicSockets.values()]
+    this.publicSockets.clear()
+    for (const socket of sockets) socket.close(code, reason)
   }
 
   private handleServerMessage(data: string | ArrayBuffer) {
@@ -230,7 +256,7 @@ export class PluginBridge {
     clearTimeout(pending.timer)
     this.pending.delete(requestId)
     if (pending.writer) {
-      void pending.writer.close()
+      void pending.writer.close().catch(() => undefined)
       return
     }
     const body = typeof payload.body === 'string' ? payload.body : toArrayBuffer(combineBytes(pending.buffered))
