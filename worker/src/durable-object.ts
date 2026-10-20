@@ -303,8 +303,13 @@ export class PluginBridge {
       const socket = this.publicSockets.get(connectionId)
       const data = frame.payload?.data
       const encoding = frame.payload?.encoding
-      if (socket && typeof data === 'string' && socket.readyState === WebSocket.OPEN) socket.send(encoding === 'base64' ? decodeBytes(data) : data)
-      else if (!socket) this.writeResponseChunk(connectionId, frame.payload ?? {}, true)
+      if (socket && typeof data === 'string' && socket.readyState === WebSocket.OPEN) {
+        try {
+          socket.send(encoding === 'base64' ? decodeBytes(data) : data)
+        } catch {
+          socket.close(1007, 'Invalid plugin stream data')
+        }
+      } else if (!socket) this.writeResponseChunk(connectionId, frame.payload ?? {}, true)
       return
     }
     if (frame.type === 'stream.close') {
