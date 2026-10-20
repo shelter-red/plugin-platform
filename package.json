@@ -21,6 +21,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "latest",
+    "@playwright/test": "^1.55.1",
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "typescript": "latest",
