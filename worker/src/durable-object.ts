@@ -322,6 +322,7 @@ export class PluginBridge {
       const updated = await this.env.DB.batch([
         this.env.DB.prepare('UPDATE servers SET status = ?, last_seen_at = ? WHERE id = ? AND status != ?').bind('revoked', new Date().toISOString(), this.serverId, 'revoked'),
         this.env.DB.prepare('UPDATE plugin_instances SET state = ?, updated_at = ? WHERE server_id = ? AND state != ?').bind('server_offline', new Date().toISOString(), this.serverId, 'server_offline'),
+        this.env.DB.prepare('UPDATE domains SET status = ? WHERE plugin_instance_id IN (SELECT id FROM plugin_instances WHERE server_id = ?)').bind('offline', this.serverId),
       ])
       if ((updated[0]?.meta.changes ?? 0) !== 1) {
         this.sendServerActionError(frame.requestId, 'Server binding is already revoked or unavailable')
@@ -421,6 +422,7 @@ export class PluginBridge {
     await this.env.DB.batch([
       this.env.DB.prepare('UPDATE servers SET status = ?, last_seen_at = ? WHERE id = ?').bind('offline', new Date().toISOString(), this.serverId),
       this.env.DB.prepare('UPDATE plugin_instances SET state = ?, updated_at = ? WHERE server_id = ? AND state != ?').bind('server_offline', new Date().toISOString(), this.serverId, 'server_offline'),
+      this.env.DB.prepare('UPDATE domains SET status = ? WHERE plugin_instance_id IN (SELECT id FROM plugin_instances WHERE server_id = ?)').bind('offline', this.serverId),
     ])
   }
 
@@ -455,6 +457,7 @@ export class PluginBridge {
       const state = plugin.desired_state
       await this.env.DB.prepare('UPDATE plugin_instances SET state = ?, updated_at = ? WHERE id = ?').bind(state, new Date().toISOString(), plugin.id).run()
     }
+    await this.env.DB.prepare("UPDATE domains SET status = CASE WHEN (SELECT state FROM plugin_instances WHERE plugin_instances.id = domains.plugin_instance_id) = 'enabled' THEN 'online' ELSE 'offline' END WHERE plugin_instance_id IN (SELECT id FROM plugin_instances WHERE server_id = ?)").bind(this.serverId).run()
   }
 }
 
