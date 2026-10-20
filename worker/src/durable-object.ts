@@ -433,7 +433,7 @@ export class PluginBridge {
     await this.markServerOnline()
     const server = await this.env.DB.prepare('SELECT user_id FROM servers WHERE id = ?').bind(this.serverId).first<{ user_id: string }>()
     const manifests = Array.isArray(payload.manifests) ? payload.manifests.filter(isManifest) : []
-    if (!server || manifests.length === 0) return
+    if (!server) return
     const now = new Date().toISOString()
     for (const manifest of manifests) {
       await this.env.DB.prepare(`
@@ -441,6 +441,12 @@ export class PluginBridge {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(server_id, plugin_id) DO UPDATE SET name = excluded.name, version = excluded.version, manifest_json = excluded.manifest_json, state = CASE WHEN plugin_instances.state = 'server_offline' THEN 'discovered' ELSE plugin_instances.state END, updated_at = excluded.updated_at
       `).bind(crypto.randomUUID(), server.user_id, this.serverId, manifest.id, manifest.name, manifest.version, 'discovered', 'discovered', JSON.stringify(manifest), now, now).run()
+    }
+    const knownPluginIds = new Set(manifests.map((manifest) => manifest.id))
+    const existing = await this.env.DB.prepare('SELECT id, plugin_id FROM plugin_instances WHERE server_id = ?').bind(this.serverId).all<{ id: string; plugin_id: string }>()
+    for (const plugin of existing.results) {
+      if (knownPluginIds.has(plugin.plugin_id)) continue
+      await this.env.DB.prepare('UPDATE plugin_instances SET state = ?, desired_state = ?, updated_at = ? WHERE id = ?').bind('unloaded', 'unloaded', now, plugin.id).run()
     }
     const desired = await this.env.DB.prepare('SELECT id, plugin_id, desired_state FROM plugin_instances WHERE server_id = ? AND desired_state IN (?, ?, ?)').bind(this.serverId, 'loaded', 'enabled', 'disabled').all<{ id: string; plugin_id: string; desired_state: string }>()
     for (const plugin of desired.results) {
