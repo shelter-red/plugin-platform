@@ -15,6 +15,7 @@ export default {
     if (url.pathname === '/auth/github/start') return startGithubAuth(request, env, url)
     if (url.pathname === '/auth/github/callback') return finishGithubAuth(request, env, url)
     if (url.pathname === '/auth/logout') return new Response(null, { status: 302, headers: { location: '/', 'set-cookie': clearSessionCookie(url.protocol === 'https:') } })
+    if (url.pathname === '/control/register') return registerServer(request, env)
     if (url.pathname.startsWith('/api/')) return api(request, env, url)
     if (url.pathname === '/control/connect') return connectServer(request, env, url)
     return proxyPublicHost(request, env, url)
@@ -41,6 +42,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     return json(await env.DB.prepare('SELECT id, email, github_login, status, expires_at, used_at, created_at FROM invites ORDER BY created_at DESC').all())
   }
   if (request.method === 'POST' && url.pathname === '/api/invites') return createInvite(request, env, user)
+  if (request.method === 'POST' && url.pathname === '/api/registration-codes') return createRegistrationCode(env, user)
   return json({ error: 'Not found' }, 404)
 }
 
@@ -94,6 +96,14 @@ async function createInvite(request: Request, env: Env, user: AuthenticatedUser)
   return json({ id: invite.id, inviteUrl: `${new URL('/', request.url).origin}/auth/github/start?invite=${encodeURIComponent(rawToken)}`, expiresAt: invite.expiresAt }, 201)
 }
 
+async function createRegistrationCode(env: Env, user: AuthenticatedUser): Promise<Response> {
+  const rawCode = crypto.randomUUID() + '-' + crypto.randomUUID().slice(0, 8)
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString()
+  await env.DB.prepare('INSERT INTO registration_codes (id, user_id, code_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, await hashControlToken(rawCode), expiresAt, new Date().toISOString()).run()
+  await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'server.registration_code.created', JSON.stringify({ expiresAt }), new Date().toISOString()).run()
+  return json({ code: rawCode, expiresAt }, 201)
+}
+
 async function connectServer(request: Request, env: Env, url: URL): Promise<Response> {
   if (request.headers.get('Upgrade') !== 'websocket') return new Response('WebSocket upgrade required', { status: 426 })
   const serverId = url.searchParams.get('serverId')
@@ -108,6 +118,23 @@ async function connectServer(request: Request, env: Env, url: URL): Promise<Resp
   const bridgeUrl = new URL('/connect', request.url)
   bridgeUrl.searchParams.set('serverId', serverId)
   return bridge.fetch(new Request(bridgeUrl, request))
+}
+
+async function registerServer(request: Request, env: Env): Promise<Response> {
+  if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+  const body = await request.json().catch(() => null) as { code?: string; name?: string } | null
+  if (!body?.code || !body.name?.trim()) return json({ error: 'code and name are required' }, 400)
+  const codeHash = await hashControlToken(body.code)
+  const registration = await env.DB.prepare('SELECT id, user_id FROM registration_codes WHERE code_hash = ? AND used_at IS NULL AND expires_at > ?').bind(codeHash, new Date().toISOString()).first<{ id: string; user_id: string }>()
+  if (!registration) return json({ error: 'Registration code is invalid or expired' }, 401)
+  const serverId = crypto.randomUUID()
+  const accessToken = crypto.randomUUID() + crypto.randomUUID()
+  await env.DB.batch([
+    env.DB.prepare('UPDATE registration_codes SET used_at = ? WHERE id = ?').bind(new Date().toISOString(), registration.id),
+    env.DB.prepare('INSERT INTO servers (id, user_id, name, token_hash, status, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(serverId, registration.user_id, body.name.trim(), await hashControlToken(accessToken), 'offline', new Date().toISOString()),
+    env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), registration.user_id, 'server.registered', JSON.stringify({ serverId }), new Date().toISOString()),
+  ])
+  return json({ serverId, accessToken, protocolVersion: 1 }, 201)
 }
 
 async function proxyPublicHost(request: Request, env: Env, url: URL): Promise<Response> {

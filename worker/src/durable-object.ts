@@ -1,14 +1,16 @@
-import { makeFrame, parseControlFrame } from './protocol'
+import { isManifest, makeFrame, parseControlFrame } from './protocol'
 import type { Env } from './types'
 
 export class PluginBridge {
   private state: DurableObjectState
   private serverSocket: WebSocket | null = null
   private serverId = ''
+  private env: Env
   private pending = new Map<string, { resolve: (response: Response) => void; timer: number }>()
 
-  constructor(state: DurableObjectState, _env: Env) {
+  constructor(state: DurableObjectState, env: Env) {
     this.state = state
+    this.env = env
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -30,6 +32,7 @@ export class PluginBridge {
     server.addEventListener('message', (event) => this.handleServerMessage(event.data))
     server.addEventListener('close', () => {
       if (this.serverSocket === server) this.serverSocket = null
+      void this.markServerOffline()
     })
     server.send(JSON.stringify(makeFrame('hello', this.serverId, { message: 'server connection accepted' })))
     return new Response(null, { status: 101, webSocket: client })
@@ -60,7 +63,16 @@ export class PluginBridge {
   private handleServerMessage(data: string | ArrayBuffer) {
     const raw = typeof data === 'string' ? data : new TextDecoder().decode(data)
     const frame = parseControlFrame(raw)
-    if (!frame || frame.type !== 'request.close') return
+    if (!frame) return
+    if (frame.type === 'server.register') {
+      void this.registerServer(frame.payload ?? {})
+      return
+    }
+    if (frame.type === 'server.heartbeat') {
+      void this.markServerOnline()
+      return
+    }
+    if (frame.type !== 'request.close') return
     const pending = this.pending.get(frame.requestId)
     if (!pending) return
     clearTimeout(pending.timer)
@@ -70,5 +82,30 @@ export class PluginBridge {
       status: typeof payload.status === 'number' ? payload.status : 502,
       headers: payload.headers && typeof payload.headers === 'object' ? payload.headers as Record<string, string> : undefined,
     }))
+  }
+
+  private async markServerOnline() {
+    if (!this.serverId) return
+    await this.env.DB.prepare('UPDATE servers SET status = ?, last_seen_at = ? WHERE id = ?').bind('online', new Date().toISOString(), this.serverId).run()
+  }
+
+  private async markServerOffline() {
+    if (!this.serverId) return
+    await this.env.DB.prepare('UPDATE servers SET status = ?, last_seen_at = ? WHERE id = ?').bind('offline', new Date().toISOString(), this.serverId).run()
+  }
+
+  private async registerServer(payload: Record<string, unknown>) {
+    await this.markServerOnline()
+    const server = await this.env.DB.prepare('SELECT user_id FROM servers WHERE id = ?').bind(this.serverId).first<{ user_id: string }>()
+    const manifests = Array.isArray(payload.manifests) ? payload.manifests.filter(isManifest) : []
+    if (!server || manifests.length === 0) return
+    const now = new Date().toISOString()
+    for (const manifest of manifests) {
+      await this.env.DB.prepare(`
+        INSERT INTO plugin_instances (id, user_id, server_id, plugin_id, name, version, state, manifest_json, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(server_id, plugin_id) DO UPDATE SET name = excluded.name, version = excluded.version, manifest_json = excluded.manifest_json, updated_at = excluded.updated_at
+      `).bind(crypto.randomUUID(), server.user_id, this.serverId, manifest.id, manifest.name, manifest.version, 'discovered', JSON.stringify(manifest), now, now).run()
+    }
   }
 }

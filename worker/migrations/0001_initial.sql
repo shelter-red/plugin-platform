@@ -34,6 +34,16 @@ CREATE TABLE IF NOT EXISTS sessions (
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
+CREATE TABLE IF NOT EXISTS registration_codes (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  code_hash TEXT UNIQUE NOT NULL,
+  expires_at TEXT NOT NULL,
+  used_at TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
 CREATE TABLE IF NOT EXISTS servers (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
@@ -85,3 +95,4 @@ CREATE INDEX IF NOT EXISTS idx_plugins_user_id ON plugin_instances(user_id);
 CREATE INDEX IF NOT EXISTS idx_domains_hostname ON domains(hostname);
 CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_invites_status ON invites(status);
+CREATE INDEX IF NOT EXISTS idx_registration_codes_user_id ON registration_codes(user_id);
