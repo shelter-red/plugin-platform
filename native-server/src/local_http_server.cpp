@@ -1,14 +1,21 @@
 #include "plugmesh/local_http_server.h"
 
+#include "plugmesh/credential_store.h"
 #include "plugmesh/plugin_manager.h"
 
 #include <websocketpp/config/asio_no_tls.hpp>
 #include <websocketpp/server.hpp>
 
 #include <nlohmann/json.hpp>
+#include <openssl/crypto.h>
+#include <openssl/rand.h>
 
+#include <array>
+#include <chrono>
 #include <fstream>
+#include <iomanip>
 #include <iterator>
+#include <sstream>
 #include <string_view>
 
 namespace plugmesh {
@@ -16,6 +23,10 @@ namespace plugmesh {
 namespace {
 
 using Server = websocketpp::server<websocketpp::config::asio>;
+constexpr char kSessionCookieName[] = "plugmesh_session";
+constexpr std::size_t kSessionTokenBytes = 32;
+constexpr std::size_t kMaxFailedLogins = 5;
+constexpr auto kFailedLoginWindow = std::chrono::seconds(60);
 
 nlohmann::json plugin_json(const PluginInfo& plugin) {
   return {
@@ -62,10 +73,25 @@ bool contains_parent_segment(const std::string& resource) {
   return false;
 }
 
+std::string cookie_value(const std::string& cookie_header, const std::string_view name) {
+  std::size_t start = 0;
+  while (start < cookie_header.size()) {
+    const auto end = cookie_header.find(';', start);
+    auto item = std::string_view(cookie_header).substr(start, end == std::string::npos ? std::string::npos : end - start);
+    while (!item.empty() && (item.front() == ' ' || item.front() == '\t')) item.remove_prefix(1);
+    while (!item.empty() && (item.back() == ' ' || item.back() == '\t')) item.remove_suffix(1);
+    const auto separator = item.find('=');
+    if (separator != std::string_view::npos && item.substr(0, separator) == name) return std::string(item.substr(separator + 1));
+    if (end == std::string::npos) break;
+    start = end + 1;
+  }
+  return {};
+}
+
 }  // namespace
 
-LocalHttpServer::LocalHttpServer(uint16_t port, PluginManager* plugins, StatusProvider status_provider, std::filesystem::path ui_directory, RegistrationHandler registration_handler, LogProvider log_provider, CredentialActionHandler credential_action_handler)
-    : port_(port), plugins_(plugins), status_provider_(std::move(status_provider)), ui_directory_(std::move(ui_directory)), registration_handler_(std::move(registration_handler)), log_provider_(std::move(log_provider)), credential_action_handler_(std::move(credential_action_handler)) {}
+LocalHttpServer::LocalHttpServer(uint16_t port, PluginManager* plugins, StatusProvider status_provider, std::filesystem::path ui_directory, RegistrationHandler registration_handler, LogProvider log_provider, CredentialActionHandler credential_action_handler, std::string local_ui_password_verifier)
+    : port_(port), plugins_(plugins), status_provider_(std::move(status_provider)), ui_directory_(std::move(ui_directory)), registration_handler_(std::move(registration_handler)), log_provider_(std::move(log_provider)), credential_action_handler_(std::move(credential_action_handler)), local_ui_password_verifier_(std::move(local_ui_password_verifier)) {}
 
 bool LocalHttpServer::run(std::string& error) {
   stopping_ = false;
@@ -139,6 +165,46 @@ bool LocalHttpServer::serve_static(void* handle, const std::string& resource, bo
   return true;
 }
 
+bool LocalHttpServer::is_authenticated(const std::string& cookie_header) const {
+  const auto token = cookie_value(cookie_header, kSessionCookieName);
+  std::lock_guard lock(session_mutex_);
+  return !token.empty() && token.size() == session_token_.size() && !session_token_.empty() && CRYPTO_memcmp(token.data(), session_token_.data(), token.size()) == 0;
+}
+
+bool LocalHttpServer::login_rate_limited() {
+  const auto cutoff = std::chrono::steady_clock::now() - kFailedLoginWindow;
+  std::lock_guard lock(session_mutex_);
+  while (!failed_logins_.empty() && failed_logins_.front() <= cutoff) failed_logins_.pop_front();
+  return failed_logins_.size() >= kMaxFailedLogins;
+}
+
+void LocalHttpServer::record_failed_login() {
+  std::lock_guard lock(session_mutex_);
+  failed_logins_.push_back(std::chrono::steady_clock::now());
+}
+
+bool LocalHttpServer::create_session(std::string& token, std::string& error) {
+  std::array<unsigned char, kSessionTokenBytes> bytes{};
+  if (RAND_bytes(bytes.data(), static_cast<int>(bytes.size())) != 1) {
+    error = "unable to generate local UI session";
+    return false;
+  }
+  std::ostringstream encoded;
+  encoded << std::hex << std::setfill('0');
+  for (const auto byte : bytes) encoded << std::setw(2) << static_cast<unsigned int>(byte);
+  token = encoded.str();
+  std::lock_guard lock(session_mutex_);
+  session_token_ = token;
+  failed_logins_.clear();
+  return true;
+}
+
+void LocalHttpServer::clear_session(const std::string& cookie_header) {
+  const auto token = cookie_value(cookie_header, kSessionCookieName);
+  std::lock_guard lock(session_mutex_);
+  if (!token.empty() && token.size() == session_token_.size() && !session_token_.empty() && CRYPTO_memcmp(token.data(), session_token_.data(), token.size()) == 0) session_token_.clear();
+}
+
 void LocalHttpServer::handle_http(void* handle) {
   auto* connection = static_cast<websocketpp::connection<websocketpp::config::asio>*>(handle);
   if (!connection) return;
@@ -151,6 +217,89 @@ void LocalHttpServer::handle_http(void* handle) {
   status["ok"] = true;
   status["service"] = "plugmesh-local-server";
   status["port"] = port_;
+  const auto configured = status.value("configured", false);
+  const auto cookie_header = connection->get_request().get_header("Cookie");
+
+  if (resource == "/api/session") {
+    connection->append_header("Cache-Control", "no-store");
+    if (method == "GET") {
+      set_json_response(connection, websocketpp::http::status_code::ok, {
+          {"ok", true},
+          {"authenticated", is_authenticated(cookie_header)},
+          {"configured", configured},
+          {"passwordConfigured", !local_ui_password_verifier_.empty()},
+          {"passwordSetupRequired", configured && local_ui_password_verifier_.empty()},
+      });
+      return;
+    }
+    if (method == "POST") {
+      if (local_ui_password_verifier_.empty()) {
+        set_json_response(connection, websocketpp::http::status_code::conflict, {{"ok", false}, {"error", "local UI password is not configured"}, {"code", "password_setup_required"}});
+        return;
+      }
+      if (login_rate_limited()) {
+        connection->append_header("Retry-After", "60");
+        set_json_response(connection, websocketpp::http::status_code::too_many_requests, {{"ok", false}, {"error", "too many login attempts"}});
+        return;
+      }
+      const auto body = connection->get_request_body();
+      if (body.size() > 4 * 1024) {
+        set_json_response(connection, websocketpp::http::status_code::request_entity_too_large, {{"ok", false}, {"error", "session request is too large"}});
+        return;
+      }
+      try {
+        const auto payload = nlohmann::json::parse(body.empty() ? "{}" : body);
+        const auto password = payload.is_object() ? payload.value("password", std::string()) : std::string();
+        if (!verify_local_ui_password(password, local_ui_password_verifier_)) {
+          record_failed_login();
+          set_json_response(connection, websocketpp::http::status_code::unauthorized, {{"ok", false}, {"error", "invalid local UI password"}});
+          return;
+        }
+        std::string token;
+        std::string error;
+        if (!create_session(token, error)) {
+          set_json_response(connection, websocketpp::http::status_code::internal_server_error, {{"ok", false}, {"error", error}});
+          return;
+        }
+        connection->append_header("Set-Cookie", std::string(kSessionCookieName) + "=" + token + "; Path=/; HttpOnly; SameSite=Strict");
+        set_json_response(connection, websocketpp::http::status_code::ok, {{"ok", true}, {"authenticated", true}});
+      } catch (const nlohmann::json::exception&) {
+        set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", "session payload must be valid JSON"}});
+      }
+      return;
+    }
+    if (method == "DELETE") {
+      clear_session(cookie_header);
+      connection->append_header("Set-Cookie", std::string(kSessionCookieName) + "=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0");
+      set_json_response(connection, websocketpp::http::status_code::ok, {{"ok", true}, {"authenticated", false}});
+      return;
+    }
+    set_json_response(connection, websocketpp::http::status_code::method_not_allowed, {{"ok", false}, {"error", "method not allowed"}});
+    return;
+  }
+
+  if (method == "GET" && resource.rfind("/api/", 0) != 0) {
+    bool forbidden = false;
+    if (serve_static(handle, resource, forbidden)) return;
+    if (forbidden) {
+      set_json_response(connection, websocketpp::http::status_code::forbidden, {{"ok", false}, {"error", "forbidden path"}});
+      return;
+    }
+  }
+
+  if (resource.rfind("/api/", 0) == 0) {
+    const auto setup_endpoint = !configured && (resource == "/api/health" || resource == "/api/status" || resource == "/api/register");
+    if (!setup_endpoint && !is_authenticated(cookie_header)) {
+      connection->append_header("Cache-Control", "no-store");
+      const auto password_setup_required = configured && local_ui_password_verifier_.empty();
+      set_json_response(connection, websocketpp::http::status_code::unauthorized, {
+          {"ok", false},
+          {"error", password_setup_required ? "local UI password setup is required" : "authentication required"},
+          {"code", password_setup_required ? "password_setup_required" : "authentication_required"},
+      });
+      return;
+    }
+  }
 
   if (method == "GET" && (resource == "/api/health" || resource == "/api/status")) {
     set_json_response(connection, websocketpp::http::status_code::ok, status);
@@ -290,16 +439,7 @@ void LocalHttpServer::handle_http(void* handle) {
     }
   }
 
-  if (method == "GET" && resource.rfind("/api/", 0) != 0) {
-    bool forbidden = false;
-    if (serve_static(handle, resource, forbidden)) return;
-    if (forbidden) {
-      set_json_response(connection, websocketpp::http::status_code::forbidden, {{"ok", false}, {"error", "forbidden path"}});
-      return;
-    }
-  }
-
-  if (method != "GET" && method != "POST") {
+  if (method != "GET" && method != "POST" && method != "DELETE") {
     set_json_response(connection, websocketpp::http::status_code::method_not_allowed, {{"ok", false}, {"error", "method not allowed"}});
     return;
   }

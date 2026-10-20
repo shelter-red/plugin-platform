@@ -252,7 +252,7 @@ int main(int argc, char** argv) {
       if (action == "rotate") {
         std::string access_token;
         if (!client.rotate_access_token(access_token, action_error)) return nlohmann::json::object();
-        const plugmesh::StoredCredentials credentials{resolved_config.worker_url, resolved_config.server_id, access_token};
+        const plugmesh::StoredCredentials credentials{resolved_config.worker_url, resolved_config.server_id, access_token, resolved_config.local_ui_password_verifier};
         if (!plugmesh::save_credentials(resolved_config.credential_file, credentials, password, action_error)) return nlohmann::json::object();
         return nlohmann::json{{"storage", resolved_config.credential_file.empty() ? "system" : "file"}};
       }
@@ -265,7 +265,7 @@ int main(int argc, char** argv) {
       }
       action_error = "unknown credential action";
       return nlohmann::json::object();
-    });
+    }, resolved_config.local_ui_password_verifier);
     std::string local_error;
     std::thread local_thread([&local_http, &local_error] {
       if (!local_http.run(local_error) && !local_error.empty()) std::cerr << "plugmesh-server local UI: " << local_error << '\n';
