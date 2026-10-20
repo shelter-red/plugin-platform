@@ -15,8 +15,9 @@ class PluginManager;
 class LocalHttpServer {
  public:
   using StatusProvider = std::function<nlohmann::json()>;
+  using RegistrationHandler = std::function<nlohmann::json(const nlohmann::json&, std::string&)>;
 
-  explicit LocalHttpServer(uint16_t port = 8787, PluginManager* plugins = nullptr, StatusProvider status_provider = {}, std::filesystem::path ui_directory = {});
+  explicit LocalHttpServer(uint16_t port = 8787, PluginManager* plugins = nullptr, StatusProvider status_provider = {}, std::filesystem::path ui_directory = {}, RegistrationHandler registration_handler = {});
   LocalHttpServer(const LocalHttpServer&) = delete;
   LocalHttpServer& operator=(const LocalHttpServer&) = delete;
 
@@ -31,6 +32,7 @@ class LocalHttpServer {
   PluginManager* plugins_;
   StatusProvider status_provider_;
   std::filesystem::path ui_directory_;
+  RegistrationHandler registration_handler_;
   std::atomic<bool> stopping_{false};
   std::atomic<void*> server_{nullptr};
 };

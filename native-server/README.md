@@ -26,7 +26,10 @@
 - `GET /api/diagnostics`：插件数量、加载状态和失败数量摘要。
 - `GET /api/plugins/{pluginId}/health`：执行已启用插件的 ABI 健康检查。
 - `POST /api/plugins/{pluginId}/{load|unload|enable|disable|reload}`：执行插件生命周期操作。
+- `POST /api/register`：仅在连接配置缺失时可用，调用 Worker 注册并把长期凭据加密保存到本地。
 - `GET /`、`GET /assets/*`：提供 `native-ui/dist` 中的 React 本地控制台；非资源路径回退到 `index.html`。
+
+当 Worker 地址、服务器 ID 或访问令牌缺失时，`plugmesh-server` 不会直接退出，而是进入 setup mode 并等待 localhost 控制台提交一次性注册码。注册成功后当前进程继续启动控制连接；注册接口在正常运行态关闭。CLI `--register` 仍作为无浏览器环境的备用入口。
 
 凭据文件使用 OpenSSL AES-256-GCM 加密，口令通过 PBKDF2-HMAC-SHA256 派生密钥；文件只保存加密 envelope，不保存明文 access token。Linux 下文件权限收紧为用户可读写。生产部署应通过本地配置 UI 或受保护的进程环境提供口令，当前版本尚未接入系统密钥链。
 

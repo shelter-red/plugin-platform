@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Activity,
   AlertCircle,
@@ -12,7 +12,6 @@ import {
   Moon,
   Network,
   RefreshCw,
-  RotateCcw,
   Settings2,
   Sun,
   Terminal,
@@ -29,9 +28,11 @@ interface LocalStatus {
   ok: boolean
   service: string
   port: number
+  configured: boolean
   connected: boolean
   serverId?: string
   workerUrl?: string
+  credentialFile?: string
 }
 
 interface LocalPlugin {
@@ -98,6 +99,8 @@ function App() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [busyPlugin, setBusyPlugin] = useState<string | null>(null)
   const [message, setMessage] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
+  const [setupBusy, setSetupBusy] = useState(false)
+  const [setupForm, setSetupForm] = useState({ workerUrl: '', serverName: '', registrationCode: '', credentialPassword: '', credentialFile: '' })
 
   const effectiveTheme = theme === 'system' ? (systemLight ? 'light' : 'dark') : theme
   const refresh = useCallback(async (manual = false) => {
@@ -134,6 +137,9 @@ function App() {
     return () => media.removeEventListener('change', update)
   }, [])
   useEffect(() => {
+    if (!setupForm.credentialFile && status?.credentialFile) setSetupForm((current) => ({ ...current, credentialFile: status.credentialFile ?? '' }))
+  }, [setupForm.credentialFile, status?.credentialFile])
+  useEffect(() => {
     if (!message) return
     const timer = window.setTimeout(() => setMessage(null), 3200)
     return () => window.clearTimeout(timer)
@@ -165,8 +171,25 @@ function App() {
     }
   }
 
+  const submitSetup = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setSetupBusy(true)
+    try {
+      await request('/api/register', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(setupForm) })
+      setMessage({ kind: 'success', text: '绑定成功，正在启动控制连接' })
+      setSetupForm((current) => ({ ...current, registrationCode: '', credentialPassword: '' }))
+      await refresh(true)
+    } catch (cause) {
+      setMessage({ kind: 'error', text: cause instanceof Error ? cause.message : '服务器绑定失败' })
+    } finally {
+      setSetupBusy(false)
+    }
+  }
+
   const themeIcon = theme === 'light' ? <Sun size={15} /> : theme === 'system' ? <CircleHelp size={15} /> : <Moon size={15} />
   const enabledCount = diagnostics?.enabledPluginCount ?? plugins.filter((plugin) => plugin.state === 'enabled').length
+  const setupLabel = status ? (status.configured ? '已配置' : '需要配置') : '读取中'
+  const setupTone = status?.configured === false ? 'warning' : status ? 'positive' : 'muted'
 
   return (
     <div className={`local-app theme-${effectiveTheme}`}>
@@ -199,7 +222,7 @@ function App() {
 
           <section id="plugins" className="section-block"><div className="section-heading"><div><span className="section-index">02 / 插件目录</span><h2>已发现插件</h2></div><span className="section-meta">{plugins.length} 个条目</span></div>{loading && <LoadingState />}{!loading && !error && plugins.length === 0 && <EmptyState title="尚未发现插件" body="将包含 manifest.json 的插件目录配置到服务器后，插件会出现在这里。" />}{!loading && !error && plugins.length > 0 && <div className="plugin-list">{plugins.map((plugin) => <PluginRow key={plugin.id} plugin={plugin} busy={busyPlugin === plugin.id} onAction={(action) => void runAction(plugin, action)} onHealth={() => void runHealth(plugin)} />)}</div>}</section>
 
-          <section id="setup" className="section-block setup-section"><div className="section-heading"><div><span className="section-index">03 / 连接设置</span><h2>首次绑定</h2></div><span className="status-badge muted"><span className="status-dot" />CLI fallback</span></div><div className="setup-grid"><div className="setup-copy"><h3>通过注册码绑定服务器</h3><p>首次绑定和凭据密码输入目前使用 CLI 完成。成功保存加密凭据后，服务器重启会自动恢复连接。</p><div className="command-block"><span>$</span><code>plugmesh-server --register &lt;worker-url&gt; &lt;server-name&gt; &lt;credential-file&gt;</code></div><span className="text-link">配置说明见 native-server/README.md</span></div><div className="setup-state"><Terminal size={22} /><strong>本地配置 UI 尚未接入</strong><span>当前不会在浏览器中收集注册码或凭据口令。</span></div></div></section>
+          <section id="setup" className="section-block setup-section"><div className="section-heading"><div><span className="section-index">03 / 连接设置</span><h2>首次绑定</h2></div><span className={`status-badge ${setupTone}`}><span className="status-dot" />{setupLabel}</span></div>{status?.configured === false ? <form className="setup-form" onSubmit={(event) => void submitSetup(event)}><div className="setup-form-grid"><label>Worker 地址<input value={setupForm.workerUrl} onChange={(event) => setSetupForm((current) => ({ ...current, workerUrl: event.target.value }))} placeholder="https://console.example.com" required /></label><label>服务器名称<input value={setupForm.serverName} onChange={(event) => setSetupForm((current) => ({ ...current, serverName: event.target.value }))} placeholder="工作站插件服务器" required /></label><label>一次性注册码<input value={setupForm.registrationCode} onChange={(event) => setSetupForm((current) => ({ ...current, registrationCode: event.target.value }))} required /></label><label>凭据口令<input type="password" value={setupForm.credentialPassword} onChange={(event) => setSetupForm((current) => ({ ...current, credentialPassword: event.target.value }))} required /></label><label className="wide-field">凭据文件路径<input value={setupForm.credentialFile} onChange={(event) => setSetupForm((current) => ({ ...current, credentialFile: event.target.value }))} placeholder="由服务器环境变量提供或手动填写" required /></label></div><div className="setup-form-footer"><span>注册码只使用一次；口令仅用于本地加密保存长期凭据。</span><button className="button primary" type="submit" disabled={setupBusy}>{setupBusy ? <><LoaderCircle size={14} className="spin" />绑定中</> : '绑定服务器'}</button></div></form> : status?.configured ? <div className="setup-grid"><div className="setup-copy"><h3>服务器已完成绑定</h3><p>长期凭据已保存到本地加密文件。服务器重启后会自动恢复控制连接。</p><div className="command-block"><span>id</span><code>{status.serverId ?? '尚未读取服务器标识'}</code></div><span className="text-link">凭据文件：{status.credentialFile ?? '未提供路径'}</span></div><div className="setup-state"><Terminal size={22} /><strong>CLI fallback 仍可用</strong><span>如需重新绑定，请停止服务器后使用 CLI 注册流程。</span></div></div> : <div className="setup-state"><LoaderCircle size={22} className="spin" /><strong>正在读取配置状态</strong><span>本地服务器状态读取完成后会显示绑定入口。</span></div>}</section>
         </div>
         <footer className="footer"><span>Plugmesh Local Server</span><span>API: {status?.service ?? 'unavailable'} · localhost only</span></footer>
       </main>
