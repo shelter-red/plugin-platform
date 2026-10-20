@@ -44,12 +44,15 @@ class PluginManager {
 
   bool discover(const std::filesystem::path& directory, std::string& error);
   const std::vector<PluginInfo>& plugins() const { return plugins_; }
+  const PluginInfo* info(const std::string& plugin_id) const;
   bool load(const std::string& plugin_id, std::string& error);
   bool enable(const std::string& plugin_id, std::string& error);
   bool disable(const std::string& plugin_id, std::string& error);
   bool unload(const std::string& plugin_id, std::string& error);
   bool reload(const std::string& plugin_id, std::string& error);
   bool health(const std::string& plugin_id, plugmesh_http_response& response, std::string& error) const;
+  bool http(const std::string& plugin_id, const plugmesh_http_request& request, plugmesh_http_response& response, std::string& error) const;
+  bool websocket(const std::string& plugin_id, const std::string& connection_id, const uint8_t* data, uint64_t size, bool is_text, std::string& error) const;
 
  private:
   struct LoadedPlugin {

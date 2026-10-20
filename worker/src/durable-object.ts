@@ -52,6 +52,7 @@ export class PluginBridge {
     if (!this.serverSocket || this.serverSocket.readyState !== WebSocket.OPEN) return new Response('Plugin server is offline', { status: 503 })
     const requestId = crypto.randomUUID()
     const body = await request.text()
+    const pluginId = request.headers.get('x-plugmesh-plugin-id') ?? undefined
     const requestPath = request.headers.get('x-plugmesh-request-path') ?? (() => {
       const url = new URL(request.url)
       return url.pathname + url.search
@@ -61,7 +62,7 @@ export class PluginBridge {
       path: requestPath,
       headers: Object.fromEntries(forwardedHeaders(request.headers)),
       body,
-    })
+    }, pluginId)
     frame.requestId = requestId
     const response = new Promise<Response>((resolve) => {
       const pending: PendingResponse = { resolve, timer: 0, buffered: [] }

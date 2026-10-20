@@ -166,6 +166,36 @@ bool PluginManager::health(const std::string& plugin_id, plugmesh_http_response&
   return true;
 }
 
+bool PluginManager::http(const std::string& plugin_id, const plugmesh_http_request& request, plugmesh_http_response& response, std::string& error) const {
+  const auto* plugin = find(plugin_id);
+  const auto* runtime = loaded(plugin_id);
+  if (!plugin || !runtime || !runtime->loader || plugin->state != PluginState::Enabled || !runtime->loader->api()->handle_http) {
+    error = "plugin is not enabled: " + plugin_id;
+    return false;
+  }
+  if (runtime->loader->api()->handle_http(&request, &response) != 0) {
+    error = "plugin HTTP handler failed: " + plugin_id;
+    return false;
+  }
+  return true;
+}
+
+bool PluginManager::websocket(const std::string& plugin_id, const std::string& connection_id, const uint8_t* data, uint64_t size, bool is_text, std::string& error) const {
+  const auto* plugin = find(plugin_id);
+  const auto* runtime = loaded(plugin_id);
+  if (!plugin || !runtime || !runtime->loader || plugin->state != PluginState::Enabled || !runtime->loader->api()->handle_websocket) {
+    error = "plugin WebSocket handler is unavailable: " + plugin_id;
+    return false;
+  }
+  if (runtime->loader->api()->handle_websocket(connection_id.c_str(), data, size, is_text ? 1 : 0) != 0) {
+    error = "plugin WebSocket handler failed: " + plugin_id;
+    return false;
+  }
+  return true;
+}
+
+const PluginInfo* PluginManager::info(const std::string& plugin_id) const { return find(plugin_id); }
+
 PluginInfo* PluginManager::find(const std::string& plugin_id) {
   const auto iterator = std::find_if(plugins_.begin(), plugins_.end(), [&](const PluginInfo& plugin) { return plugin.id == plugin_id; });
   return iterator == plugins_.end() ? nullptr : &*iterator;

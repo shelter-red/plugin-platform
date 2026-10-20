@@ -1,0 +1,247 @@
+#include "plugmesh/control_client.h"
+
+#include <chrono>
+#include <iostream>
+
+#include <asio/ssl/context.hpp>
+
+namespace plugmesh {
+
+namespace {
+
+std::string text(const Json& payload, const char* key) {
+  return payload.contains(key) && payload.at(key).is_string() ? payload.at(key).get<std::string>() : std::string();
+}
+
+std::string plugin_id(const ControlFrame& frame) {
+  return !frame.plugin_id.empty() ? frame.plugin_id : text(frame.payload, "pluginId");
+}
+
+Json manifest(const PluginInfo& plugin) {
+  return {
+      {"id", plugin.id},
+      {"name", plugin.name},
+      {"version", plugin.version},
+      {"abiVersion", std::to_string(PLUGMESH_PLUGIN_ABI_VERSION)},
+      {"library", plugin.library.filename().string()},
+      {"capabilities", {{"http", plugin.http}, {"websocket", plugin.websocket}, {"sse", plugin.sse}, {"fileStream", plugin.file_stream}}},
+      {"permissions", Json::array()},
+      {"healthPath", "/health"},
+  };
+}
+
+}  // namespace
+
+ControlClient::ControlClient(ServerConfig config, PluginManager& plugins) : config_(std::move(config)), plugins_(plugins) {
+  client_.clear_access_channels(websocketpp::log::alevel::all);
+  client_.clear_error_channels(websocketpp::log::elevel::all);
+  client_.init_asio();
+  client_.set_tls_init_handler(&ControlClient::tls_init);
+  client_.set_open_handler([this](websocketpp::connection_hdl handle) { on_open(handle); });
+  client_.set_message_handler([this](websocketpp::connection_hdl handle, Message message) { on_message(handle, std::move(message)); });
+  client_.set_close_handler([this](websocketpp::connection_hdl handle) { on_close(handle); });
+  client_.set_fail_handler([this](websocketpp::connection_hdl handle) { on_fail(handle); });
+}
+
+ControlClient::~ControlClient() { stop(); }
+
+bool ControlClient::run(std::string& error) {
+  websocketpp::lib::error_code code;
+  const auto connection = client_.get_connection(endpoint(), code);
+  if (code) {
+    error = code.message();
+    return false;
+  }
+  connection->append_header("Authorization", "Bearer " + config_.access_token);
+  client_.connect(connection);
+  client_.run();
+  if (!stopping_) error = "control connection stopped unexpectedly";
+  return stopping_;
+}
+
+void ControlClient::stop() {
+  if (stopping_.exchange(true)) return;
+  client_.get_io_service().post([this] {
+    if (heartbeat_timer_) heartbeat_timer_->cancel();
+    if (reconnect_timer_) reconnect_timer_->cancel();
+    if (opened_) {
+      websocketpp::lib::error_code code;
+      client_.close(connection_, websocketpp::close::status::going_away, "client stopped", code);
+      opened_ = false;
+    }
+    client_.stop();
+  });
+}
+
+ControlClient::TlsContext ControlClient::tls_init(websocketpp::connection_hdl) {
+  auto context = websocketpp::lib::make_shared<websocketpp::lib::asio::ssl::context>(websocketpp::lib::asio::ssl::context::sslv23);
+  context->set_options(websocketpp::lib::asio::ssl::context::default_workarounds | websocketpp::lib::asio::ssl::context::no_sslv2 | websocketpp::lib::asio::ssl::context::no_sslv3 | websocketpp::lib::asio::ssl::context::single_dh_use);
+  context->set_default_verify_paths();
+  context->set_verify_mode(websocketpp::lib::asio::ssl::verify_peer);
+  return context;
+}
+
+void ControlClient::connect() {
+  if (stopping_) return;
+  websocketpp::lib::error_code code;
+  const auto connection = client_.get_connection(endpoint(), code);
+  if (code) {
+    schedule_reconnect();
+    return;
+  }
+  connection->append_header("Authorization", "Bearer " + config_.access_token);
+  client_.connect(connection);
+}
+
+void ControlClient::schedule_reconnect() {
+  if (stopping_ || reconnect_timer_) return;
+  reconnect_timer_ = std::make_shared<websocketpp::lib::asio::steady_timer>(client_.get_io_service());
+  reconnect_timer_->expires_after(std::chrono::seconds(5));
+  reconnect_timer_->async_wait([this](const websocketpp::lib::error_code& code) {
+    reconnect_timer_.reset();
+    if (!code) connect();
+  });
+}
+
+void ControlClient::schedule_heartbeat() {
+  if (stopping_ || !opened_) return;
+  heartbeat_timer_ = std::make_shared<websocketpp::lib::asio::steady_timer>(client_.get_io_service());
+  heartbeat_timer_->expires_after(std::chrono::seconds(15));
+  heartbeat_timer_->async_wait([this](const websocketpp::lib::error_code& code) {
+    heartbeat_timer_.reset();
+    if (code || stopping_ || !opened_) return;
+    send_frame(make_control_frame("server.heartbeat", config_.server_id));
+    schedule_heartbeat();
+  });
+}
+
+void ControlClient::on_open(websocketpp::connection_hdl handle) {
+  connection_ = handle;
+  opened_ = true;
+  if (reconnect_timer_) reconnect_timer_->cancel();
+}
+
+void ControlClient::on_message(websocketpp::connection_hdl, Message message) {
+  if (message->get_opcode() != websocketpp::frame::opcode::text) return;
+  ControlFrame frame;
+  std::string error;
+  if (!parse_control_frame(message->get_payload(), frame, error) || frame.server_id != config_.server_id) return;
+  handle_frame(frame);
+}
+
+void ControlClient::on_close(websocketpp::connection_hdl) {
+  opened_ = false;
+  if (heartbeat_timer_) heartbeat_timer_->cancel();
+  schedule_reconnect();
+}
+
+void ControlClient::on_fail(websocketpp::connection_hdl) {
+  opened_ = false;
+  if (heartbeat_timer_) heartbeat_timer_->cancel();
+  schedule_reconnect();
+}
+
+void ControlClient::handle_frame(const ControlFrame& frame) {
+  if (frame.type == "hello") {
+    send_registration();
+    schedule_heartbeat();
+    return;
+  }
+  if (frame.type.rfind("plugin.", 0) == 0) {
+    handle_plugin_command(frame);
+    return;
+  }
+  if (frame.type == "request.open") {
+    handle_http_request(frame);
+    return;
+  }
+  if (frame.type == "stream.chunk") {
+    handle_websocket_chunk(frame);
+  }
+}
+
+void ControlClient::handle_plugin_command(const ControlFrame& frame) {
+  const auto id = plugin_id(frame);
+  const auto action = frame.type.substr(std::string("plugin.").size());
+  std::string error;
+  bool ok = false;
+  if (action == "load") ok = plugins_.load(id, error);
+  else if (action == "unload") ok = plugins_.unload(id, error);
+  else if (action == "enable") ok = plugins_.enable(id, error);
+  else if (action == "disable") ok = plugins_.disable(id, error);
+  else if (action == "reload") ok = plugins_.reload(id, error);
+  else return;
+  Json payload = {{"action", action}, {"ok", ok}};
+  if (const auto* info = plugins_.info(id)) payload["state"] = plugin_state_name(info->state);
+  if (!ok) payload["error"] = error;
+  auto response = make_control_frame("plugin.result", config_.server_id, std::move(payload), id);
+  response.request_id = frame.request_id;
+  send_frame(std::move(response));
+}
+
+void ControlClient::handle_http_request(const ControlFrame& frame) {
+  const auto id = plugin_id(frame);
+  const auto method = text(frame.payload, "method");
+  const auto path = text(frame.payload, "path");
+  const auto headers = frame.payload.value("headers", Json::object()).dump();
+  const auto body = text(frame.payload, "body");
+  plugmesh_http_request request{method.c_str(), path.c_str(), headers.c_str(), reinterpret_cast<const uint8_t*>(body.data()), body.size()};
+  plugmesh_http_response response{};
+  std::string error;
+  if (!plugins_.http(id, request, response, error)) {
+    send_error(frame, error);
+    return;
+  }
+  Json response_headers = Json::object();
+  if (response.headers_json) {
+    const auto parsed = Json::parse(response.headers_json, nullptr, false);
+    if (parsed.is_object()) response_headers = parsed;
+  }
+  auto opened = make_control_frame("request.open", config_.server_id, {{"status", response.status}, {"headers", response_headers}}, id);
+  opened.request_id = frame.request_id;
+  send_frame(std::move(opened));
+  if (response.body.data && response.body.size > 0) {
+    auto chunk = make_control_frame("request.chunk", config_.server_id, {{"data", std::string(reinterpret_cast<const char*>(response.body.data), response.body.size)}}, id);
+    chunk.request_id = frame.request_id;
+    send_frame(std::move(chunk));
+  }
+  auto closed = make_control_frame("request.close", config_.server_id, {{"status", response.status}}, id);
+  closed.request_id = frame.request_id;
+  send_frame(std::move(closed));
+}
+
+void ControlClient::handle_websocket_chunk(const ControlFrame& frame) {
+  const auto id = plugin_id(frame);
+  const auto connection_id = text(frame.payload, "connectionId");
+  const auto data = text(frame.payload, "data");
+  std::string error;
+  if (!plugins_.websocket(id, connection_id, reinterpret_cast<const uint8_t*>(data.data()), data.size(), true, error)) send_error(frame, error);
+}
+
+void ControlClient::send_frame(ControlFrame frame) {
+  if (!opened_ || stopping_) return;
+  websocketpp::lib::error_code code;
+  client_.send(connection_, serialize_control_frame(frame), websocketpp::frame::opcode::text, code);
+}
+
+void ControlClient::send_error(const ControlFrame& request, const std::string& message) {
+  auto response = make_control_frame("error", config_.server_id, {{"message", message}}, plugin_id(request));
+  response.request_id = request.request_id;
+  send_frame(std::move(response));
+}
+
+void ControlClient::send_registration() {
+  Json manifests = Json::array();
+  for (const auto& plugin : plugins_.plugins()) manifests.push_back(manifest(plugin));
+  send_frame(make_control_frame("server.register", config_.server_id, {{"manifests", std::move(manifests)}}));
+}
+
+std::string ControlClient::endpoint() const {
+  auto worker_url = config_.worker_url;
+  if (worker_url.rfind("https://", 0) == 0) worker_url.replace(0, 8, "wss://");
+  else if (worker_url.rfind("http://", 0) == 0) worker_url.replace(0, 7, "ws://");
+  if (!worker_url.empty() && worker_url.back() == '/') worker_url.pop_back();
+  return worker_url + "/control/connect?serverId=" + config_.server_id;
+}
+
+}  // namespace plugmesh

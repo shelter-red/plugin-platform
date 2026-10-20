@@ -14,7 +14,7 @@
 - SMTP 配置使用 `worker-mailer` 开源依赖，支持密文保存、脱敏读取和管理员测试发送。
 - Cloudflare Analytics GraphQL 查询按 5 分钟写入 D1 缓存，权限错误和未配置状态会明确返回。
 - Cloudflare OAuth Authorization Code 回调：管理员状态校验、一次性 state、令牌密文保存、账号自动发现和官方撤销。
-- C++20 跨平台基础：Linux `.so` / Windows `.dll` 动态库加载、ABI 版本检查和配置校验。
+- C++20 跨平台基础：Linux `.so` / Windows `.dll` 动态库加载、ABI 版本检查、插件生命周期管理和 WebSocket++ 出站控制连接。
 
 ## 本地运行
 
@@ -52,7 +52,7 @@ Cloudflare OAuth 使用官方 Authorization Code 流程。创建 OAuth client �
 
 ## 当前边界
 
-当前提交建立了可编译的 MVP 基础，但还没有把生产凭据放入仓库，也没有伪装成已完成本地服务器 Web UI 和 C++ 服务器侧 WebSocket 传输适配。Worker 侧已具备 GitHub OAuth、Cloudflare OAuth、邀请会话、HTTP 流式响应、公开 WebSocket 桥接、R2 一次性对象、Cloudflare Analytics 查询和基于 `worker-mailer` 的 SMTP 测试发送能力，管理端已具备对应的 Cloudflare 和 SMTP 配置入口；这些功能仍需在真实 Cloudflare 资源、OAuth client 和本地服务器之间完成端到端联调。
+当前提交建立了可编译的 MVP 基础，但还没有把生产凭据放入仓库，也没有伪装成已完成本地服务器 Web UI、独立 sidecar manifest 校验、SSE、文件流和完整公开 WebSocket 二进制回传。Worker 侧已具备 GitHub OAuth、Cloudflare OAuth、邀请会话、HTTP 流式响应、公开 WebSocket 桥接、R2 一次性对象、Cloudflare Analytics 查询和基于 `worker-mailer` 的 SMTP 测试发送能力；管理端已具备对应的 Cloudflare 和 SMTP 配置入口；C++ 服务器已具备插件生命周期和出站控制连接基础。这些功能仍需在真实 Cloudflare 资源、OAuth client 和本地服务器之间完成端到端联调。
 
 ## 目录
 
