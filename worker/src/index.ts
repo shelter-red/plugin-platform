@@ -466,13 +466,28 @@ async function smtpTestApi(request: Request, env: Env, user: AuthenticatedUser):
     return json({ error: 'SMTP credential decryption failed' }, 500)
   }
   if (!settings) return json({ error: 'SMTP settings are invalid' }, 500)
-  try {
-    await sendSmtpTest(settings, body.to)
-  } catch {
-    return json({ error: 'SMTP test send failed' }, 502)
+  const maxAttempts = 3
+  let lastError = 'unknown SMTP error'
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await sendSmtpTest(settings, body.to)
+      await recordAudit(env, user.id, 'smtp.test.sent', { to: body.to, attempts: attempt })
+      return json({ sent: true, attempts: attempt })
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error)
+      if (attempt < maxAttempts) await wait(250 * 2 ** (attempt - 1))
+    }
   }
-  await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'smtp.test.sent', JSON.stringify({ to: body.to }), new Date().toISOString()).run()
-  return json({ sent: true })
+  await recordAudit(env, user.id, 'smtp.test.failed', { to: body.to, attempts: maxAttempts, error: redactSmtpError(lastError, settings.password) })
+  return json({ error: 'SMTP test send failed', attempts: maxAttempts }, 502)
+}
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds))
+}
+
+function redactSmtpError(message: string, password: string): string {
+  return message.replaceAll(password, '[REDACTED]').slice(0, 256)
 }
 
 async function cloudflareUsageApi(env: Env, user: AuthenticatedUser): Promise<Response> {
