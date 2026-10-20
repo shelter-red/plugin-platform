@@ -68,13 +68,15 @@ int main(int argc, char** argv) {
     std::cerr << "plugmesh-server: " << error << '\n';
     return 2;
   }
-  std::cout << "plugmesh-server discovered " << plugins.plugins().size() << " plugin(s) for " << resolved_config.server_id << '\n';
-  plugmesh::LocalHttpServer local_http(local_port());
+  std::cout << "plugmesh-server discovered " << plugins.snapshot().size() << " plugin(s) for " << resolved_config.server_id << '\n';
+  plugmesh::ControlClient client(resolved_config, plugins);
+  plugmesh::LocalHttpServer local_http(local_port(), &plugins, [&client, &resolved_config] {
+    return nlohmann::json{{"serverId", resolved_config.server_id}, {"workerUrl", resolved_config.worker_url}, {"connected", client.connected()}};
+  });
   std::string local_error;
   std::thread local_thread([&local_http, &local_error] {
     if (!local_http.run(local_error) && !local_error.empty()) std::cerr << "plugmesh-server local UI: " << local_error << '\n';
   });
-  plugmesh::ControlClient client(resolved_config, plugins);
   const auto connected = client.run(error);
   local_http.stop();
   if (local_thread.joinable()) local_thread.join();

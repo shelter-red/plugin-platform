@@ -5,6 +5,8 @@
 #include <filesystem>
 #include <map>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -46,8 +48,8 @@ class PluginManager {
   ~PluginManager();
 
   bool discover(const std::filesystem::path& directory, std::string& error);
-  const std::vector<PluginInfo>& plugins() const { return plugins_; }
-  const PluginInfo* info(const std::string& plugin_id) const;
+  std::vector<PluginInfo> snapshot() const;
+  std::optional<PluginInfo> info_snapshot(const std::string& plugin_id) const;
   bool load(const std::string& plugin_id, std::string& error);
   bool enable(const std::string& plugin_id, std::string& error);
   bool disable(const std::string& plugin_id, std::string& error);
@@ -69,6 +71,7 @@ class PluginManager {
   bool set_failed(PluginInfo& plugin, std::string& error);
 
   plugmesh_host_api host_api_{};
+  mutable std::recursive_mutex mutex_;
   std::vector<PluginInfo> plugins_;
   std::map<std::string, LoadedPlugin> loaded_;
 };

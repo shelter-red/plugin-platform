@@ -10,15 +10,15 @@ int main(int argc, char** argv) {
   }
   plugmesh::PluginManager manager;
   std::string error;
-  if (!manager.discover(std::filesystem::path(argv[1]), error) || manager.plugins().size() != 1 || manager.plugins()[0].id != "sample.plugin" || manager.plugins()[0].health_path != "/health") {
+  if (!manager.discover(std::filesystem::path(argv[1]), error) || manager.snapshot().size() != 1 || manager.snapshot()[0].id != "sample.plugin" || manager.snapshot()[0].health_path != "/health") {
     std::cerr << "discovery failed: " << error << '\n';
     return 1;
   }
-  if (!manager.load("sample.plugin", error) || manager.plugins()[0].state != plugmesh::PluginState::Loaded) {
+  if (!manager.load("sample.plugin", error) || manager.snapshot()[0].state != plugmesh::PluginState::Loaded) {
     std::cerr << "load failed: " << error << '\n';
     return 1;
   }
-  if (!manager.enable("sample.plugin", error) || manager.plugins()[0].state != plugmesh::PluginState::Enabled) {
+  if (!manager.enable("sample.plugin", error) || manager.snapshot()[0].state != plugmesh::PluginState::Enabled) {
     std::cerr << "enable failed: " << error << '\n';
     return 1;
   }
@@ -27,7 +27,7 @@ int main(int argc, char** argv) {
     std::cerr << "health failed: " << error << '\n';
     return 1;
   }
-  if (!manager.disable("sample.plugin", error) || manager.plugins()[0].state != plugmesh::PluginState::Disabled || !manager.unload("sample.plugin", error) || manager.plugins()[0].state != plugmesh::PluginState::Unloaded) {
+  if (!manager.disable("sample.plugin", error) || manager.snapshot()[0].state != plugmesh::PluginState::Disabled || !manager.unload("sample.plugin", error) || manager.snapshot()[0].state != plugmesh::PluginState::Unloaded) {
     std::cerr << "disable/unload failed: " << error << '\n';
     return 1;
   }

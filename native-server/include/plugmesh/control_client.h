@@ -25,6 +25,7 @@ class ControlClient {
 
   bool run(std::string& error);
   void stop();
+  bool connected() const { return opened_.load(std::memory_order_acquire); }
 
  private:
   using TlsContext = websocketpp::lib::shared_ptr<websocketpp::lib::asio::ssl::context>;
@@ -53,7 +54,7 @@ class ControlClient {
   std::shared_ptr<websocketpp::lib::asio::steady_timer> heartbeat_timer_;
   std::shared_ptr<websocketpp::lib::asio::steady_timer> reconnect_timer_;
   std::atomic<bool> stopping_{false};
-  bool opened_ = false;
+  std::atomic<bool> opened_{false};
 };
 
 }  // namespace plugmesh

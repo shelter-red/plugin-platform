@@ -125,6 +125,7 @@ PluginManager::PluginManager(plugmesh_host_api host_api) : host_api_(host_api) {
 }
 
 PluginManager::~PluginManager() {
+  std::lock_guard lock(mutex_);
   for (auto& [plugin_id, loaded_plugin] : loaded_) {
     const auto* plugin = find(plugin_id);
     if (plugin && plugin->state == PluginState::Enabled && loaded_plugin.loader && loaded_plugin.loader->loaded() && loaded_plugin.loader->api()->stop) loaded_plugin.loader->api()->stop();
@@ -133,6 +134,7 @@ PluginManager::~PluginManager() {
 }
 
 bool PluginManager::discover(const std::filesystem::path& directory, std::string& error) {
+  std::lock_guard lock(mutex_);
   plugins_.clear();
   loaded_.clear();
   if (!std::filesystem::exists(directory) || !std::filesystem::is_directory(directory)) {
@@ -170,6 +172,7 @@ bool PluginManager::discover(const std::filesystem::path& directory, std::string
 }
 
 bool PluginManager::load(const std::string& plugin_id, std::string& error) {
+  std::lock_guard lock(mutex_);
   auto* plugin = find(plugin_id);
   if (!plugin) {
     error = "plugin not found: " + plugin_id;
@@ -184,6 +187,7 @@ bool PluginManager::load(const std::string& plugin_id, std::string& error) {
 }
 
 bool PluginManager::enable(const std::string& plugin_id, std::string& error) {
+  std::lock_guard lock(mutex_);
   auto* plugin = find(plugin_id);
   if (!plugin) {
     error = "plugin not found: " + plugin_id;
@@ -198,6 +202,7 @@ bool PluginManager::enable(const std::string& plugin_id, std::string& error) {
 }
 
 bool PluginManager::disable(const std::string& plugin_id, std::string& error) {
+  std::lock_guard lock(mutex_);
   auto* plugin = find(plugin_id);
   auto* runtime = loaded(plugin_id);
   if (!plugin || !runtime || !runtime->loader) {
@@ -214,6 +219,7 @@ bool PluginManager::disable(const std::string& plugin_id, std::string& error) {
 }
 
 bool PluginManager::unload(const std::string& plugin_id, std::string& error) {
+  std::lock_guard lock(mutex_);
   auto* plugin = find(plugin_id);
   auto* runtime = loaded(plugin_id);
   if (!plugin || !runtime || !runtime->loader) {
@@ -227,6 +233,7 @@ bool PluginManager::unload(const std::string& plugin_id, std::string& error) {
 }
 
 bool PluginManager::reload(const std::string& plugin_id, std::string& error) {
+  std::lock_guard lock(mutex_);
   const auto* existing = find(plugin_id);
   const bool was_enabled = existing && existing->state == PluginState::Enabled;
   if (loaded(plugin_id) && !unload(plugin_id, error)) return false;
@@ -235,6 +242,7 @@ bool PluginManager::reload(const std::string& plugin_id, std::string& error) {
 }
 
 bool PluginManager::health(const std::string& plugin_id, plugmesh_http_response& response, std::string& error) const {
+  std::lock_guard lock(mutex_);
   const auto* plugin = find(plugin_id);
   const auto* runtime = loaded(plugin_id);
   if (!plugin || !runtime || !runtime->loader || plugin->state != PluginState::Enabled) {
@@ -249,6 +257,7 @@ bool PluginManager::health(const std::string& plugin_id, plugmesh_http_response&
 }
 
 bool PluginManager::http(const std::string& plugin_id, const plugmesh_http_request& request, plugmesh_http_response& response, std::string& error) const {
+  std::lock_guard lock(mutex_);
   const auto* plugin = find(plugin_id);
   const auto* runtime = loaded(plugin_id);
   if (!plugin || !runtime || !runtime->loader || plugin->state != PluginState::Enabled || !runtime->loader->api()->handle_http) {
@@ -263,6 +272,7 @@ bool PluginManager::http(const std::string& plugin_id, const plugmesh_http_reque
 }
 
 bool PluginManager::websocket(const std::string& plugin_id, const std::string& connection_id, const uint8_t* data, uint64_t size, bool is_text, std::string& error) const {
+  std::lock_guard lock(mutex_);
   const auto* plugin = find(plugin_id);
   const auto* runtime = loaded(plugin_id);
   if (!plugin || !runtime || !runtime->loader || plugin->state != PluginState::Enabled || !runtime->loader->api()->handle_websocket) {
@@ -276,7 +286,16 @@ bool PluginManager::websocket(const std::string& plugin_id, const std::string& c
   return true;
 }
 
-const PluginInfo* PluginManager::info(const std::string& plugin_id) const { return find(plugin_id); }
+std::vector<PluginInfo> PluginManager::snapshot() const {
+  std::lock_guard lock(mutex_);
+  return plugins_;
+}
+
+std::optional<PluginInfo> PluginManager::info_snapshot(const std::string& plugin_id) const {
+  std::lock_guard lock(mutex_);
+  const auto* plugin = find(plugin_id);
+  return plugin ? std::optional<PluginInfo>(*plugin) : std::nullopt;
+}
 
 PluginInfo* PluginManager::find(const std::string& plugin_id) {
   const auto iterator = std::find_if(plugins_.begin(), plugins_.end(), [&](const PluginInfo& plugin) { return plugin.id == plugin_id; });

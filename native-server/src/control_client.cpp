@@ -173,7 +173,7 @@ void ControlClient::handle_plugin_command(const ControlFrame& frame) {
   else if (action == "reload") ok = plugins_.reload(id, error);
   else return;
   Json payload = {{"action", action}, {"ok", ok}};
-  if (const auto* info = plugins_.info(id)) payload["state"] = plugin_state_name(info->state);
+  if (const auto info = plugins_.info_snapshot(id)) payload["state"] = plugin_state_name(info->state);
   if (!ok) payload["error"] = error;
   auto response = make_control_frame("plugin.result", config_.server_id, std::move(payload), id);
   response.request_id = frame.request_id;
@@ -233,7 +233,7 @@ void ControlClient::send_error(const ControlFrame& request, const std::string& m
 
 void ControlClient::send_registration() {
   Json manifests = Json::array();
-  for (const auto& plugin : plugins_.plugins()) manifests.push_back(manifest(plugin));
+  for (const auto& plugin : plugins_.snapshot()) manifests.push_back(manifest(plugin));
   send_frame(make_control_frame("server.register", config_.server_id, {{"manifests", std::move(manifests)}}));
 }
 
