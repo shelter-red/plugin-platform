@@ -576,8 +576,10 @@ export class PluginBridge {
   private async registerServer(payload: Record<string, unknown>) {
     if (!await this.markServerOnline()) return
     const server = await this.env.DB.prepare('SELECT user_id FROM servers WHERE id = ? AND status != ?').bind(this.serverId, 'revoked').first<{ user_id: string }>()
-    const manifests = Array.isArray(payload.manifests) ? payload.manifests.filter(isManifest) : []
     if (!server) return
+    if (!Array.isArray(payload.manifests)) return
+    const manifests = payload.manifests.filter(isManifest)
+    if (manifests.length !== payload.manifests.length || new Set(manifests.map((manifest) => manifest.id)).size !== manifests.length) return
     const now = new Date().toISOString()
     for (const manifest of manifests) {
       await this.env.DB.prepare(`
