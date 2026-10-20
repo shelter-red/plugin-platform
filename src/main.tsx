@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Activity,
   AlertCircle,
@@ -98,7 +98,11 @@ function StatusBadge({ children, tone = 'neutral' }: { children: React.ReactNode
 
 function App() {
   const [page, setPage] = useState<Page>('overview')
-  const [theme, setTheme] = useState<Theme>('dark')
+  const [theme, setTheme] = useState<Theme>(() => {
+    const savedTheme = window.localStorage.getItem('plugmesh-theme')
+    return savedTheme === 'light' || savedTheme === 'system' ? savedTheme : 'dark'
+  })
+  const [systemTheme, setSystemTheme] = useState<'dark' | 'light'>(() => window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
   const [search, setSearch] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [modal, setModal] = useState<'server' | 'domain' | 'plugin' | null>(null)
@@ -107,6 +111,18 @@ function App() {
 
   const meta = pageMeta[page]
   const themeLabel = theme === 'dark' ? '深色' : theme === 'light' ? '浅色' : '系统'
+  const effectiveTheme = theme === 'system' ? systemTheme : theme
+
+  useEffect(() => {
+    window.localStorage.setItem('plugmesh-theme', theme)
+  }, [theme])
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: light)')
+    const updateSystemTheme = (event: MediaQueryListEvent) => setSystemTheme(event.matches ? 'light' : 'dark')
+    mediaQuery.addEventListener('change', updateSystemTheme)
+    return () => mediaQuery.removeEventListener('change', updateSystemTheme)
+  }, [])
 
   const showToast = (message: string) => {
     setToast(message)
@@ -125,7 +141,7 @@ function App() {
   }
 
   return (
-    <div className={`app-shell theme-${theme}`}>
+    <div className={`app-shell theme-${effectiveTheme}`}>
       <div className="ambient ambient-one" />
       <div className="ambient ambient-two" />
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
