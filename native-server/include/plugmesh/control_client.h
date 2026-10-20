@@ -5,7 +5,10 @@
 #include "plugmesh/server_config.h"
 
 #include <atomic>
+#include <condition_variable>
+#include <map>
 #include <memory>
+#include <mutex>
 #include <string>
 
 #include <websocketpp/client.hpp>
@@ -26,6 +29,8 @@ class ControlClient {
   bool run(std::string& error);
   void stop();
   bool connected() const { return opened_.load(std::memory_order_acquire); }
+  bool rotate_access_token(std::string& access_token, std::string& error);
+  bool revoke_binding(std::string& error);
 
  private:
   using TlsContext = websocketpp::lib::shared_ptr<websocketpp::lib::asio::ssl::context>;
@@ -49,7 +54,16 @@ class ControlClient {
   void send_error(const ControlFrame& request, const std::string& message);
   void send_request_error(const ControlFrame& request, const std::string& message);
   void send_registration();
+  bool request_binding_action(const std::string& type, std::string& access_token, std::string& error);
+  void update_access_token(std::string access_token);
   std::string endpoint() const;
+
+  struct BindingActionResult {
+    bool ok = false;
+    std::string action;
+    std::string access_token;
+    std::string error;
+  };
 
   ServerConfig config_;
   PluginManager& plugins_;
@@ -59,6 +73,9 @@ class ControlClient {
   std::shared_ptr<websocketpp::lib::asio::steady_timer> reconnect_timer_;
   std::atomic<bool> stopping_{false};
   std::atomic<bool> opened_{false};
+  std::mutex binding_action_mutex_;
+  std::condition_variable binding_action_cv_;
+  std::map<std::string, BindingActionResult> binding_actions_;
 };
 
 }  // namespace plugmesh

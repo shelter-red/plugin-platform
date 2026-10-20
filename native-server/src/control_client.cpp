@@ -81,6 +81,15 @@ void ControlClient::stop() {
   });
 }
 
+bool ControlClient::rotate_access_token(std::string& access_token, std::string& error) {
+  return request_binding_action("server.rotate", access_token, error);
+}
+
+bool ControlClient::revoke_binding(std::string& error) {
+  std::string unused;
+  return request_binding_action("server.revoke", unused, error);
+}
+
 ControlClient::TlsContext ControlClient::tls_init(websocketpp::connection_hdl) {
   auto context = websocketpp::lib::make_shared<websocketpp::lib::asio::ssl::context>(websocketpp::lib::asio::ssl::context::sslv23);
   context->set_options(websocketpp::lib::asio::ssl::context::default_workarounds | websocketpp::lib::asio::ssl::context::no_sslv2 | websocketpp::lib::asio::ssl::context::no_sslv3 | websocketpp::lib::asio::ssl::context::single_dh_use);
@@ -153,6 +162,22 @@ void ControlClient::handle_frame(const ControlFrame& frame) {
   if (frame.type == "hello") {
     send_registration();
     schedule_heartbeat();
+    return;
+  }
+  if (frame.type == "server.result" || frame.type == "error") {
+    std::lock_guard lock(binding_action_mutex_);
+    const auto iterator = binding_actions_.find(frame.request_id);
+    if (iterator == binding_actions_.end()) return;
+    if (frame.type == "server.result") {
+      iterator->second.ok = frame.payload.value("ok", false);
+      iterator->second.action = text(frame.payload, "action");
+      iterator->second.access_token = text(frame.payload, "accessToken");
+      if (!iterator->second.ok) iterator->second.error = text(frame.payload, "error");
+    } else {
+      iterator->second.ok = false;
+      iterator->second.error = text(frame.payload, "message");
+    }
+    binding_action_cv_.notify_all();
     return;
   }
   if (frame.type.rfind("plugin.", 0) == 0) {
@@ -318,6 +343,52 @@ void ControlClient::send_registration() {
   Json manifests = Json::array();
   for (const auto& plugin : plugins_.snapshot()) manifests.push_back(manifest(plugin));
   send_frame(make_control_frame("server.register", config_.server_id, {{"manifests", std::move(manifests)}}));
+}
+
+bool ControlClient::request_binding_action(const std::string& type, std::string& access_token, std::string& error) {
+  if (!opened_ || stopping_) {
+    error = "control connection is offline";
+    return false;
+  }
+  auto frame = make_control_frame(type, config_.server_id);
+  const auto request_id = frame.request_id;
+  {
+    std::lock_guard lock(binding_action_mutex_);
+    binding_actions_.emplace(request_id, BindingActionResult{});
+  }
+  client_.get_io_service().post([this, frame = std::move(frame)]() mutable {
+    if (opened_ && !stopping_) send_frame(std::move(frame));
+  });
+  std::unique_lock lock(binding_action_mutex_);
+  const auto completed = binding_action_cv_.wait_for(lock, std::chrono::seconds(15), [&] {
+    const auto iterator = binding_actions_.find(request_id);
+    return iterator == binding_actions_.end() || iterator->second.ok || !iterator->second.error.empty() || !opened_ || stopping_;
+  });
+  const auto iterator = binding_actions_.find(request_id);
+  if (!completed || iterator == binding_actions_.end()) {
+    binding_actions_.erase(request_id);
+    error = "server binding action timed out";
+    return false;
+  }
+  const auto result = iterator->second;
+  binding_actions_.erase(iterator);
+  if (!result.ok) {
+    error = result.error.empty() ? "server binding action failed" : result.error;
+    return false;
+  }
+  access_token = result.access_token;
+  if (type == "server.rotate") {
+    if (access_token.empty()) {
+      error = "server rotation response is incomplete";
+      return false;
+    }
+    update_access_token(access_token);
+  }
+  return true;
+}
+
+void ControlClient::update_access_token(std::string access_token) {
+  client_.get_io_service().post([this, access_token = std::move(access_token)]() mutable { config_.access_token = std::move(access_token); });
 }
 
 std::string ControlClient::endpoint() const {
