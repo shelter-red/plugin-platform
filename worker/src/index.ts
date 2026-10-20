@@ -4,6 +4,7 @@ import { createSession, digest, exchangeGithubCode, getCurrentUser, isAllowliste
 import type { AuthenticatedUser, Env } from './types'
 import { decryptSecret, encryptSecret } from './secrets'
 import { isEmail, parseSmtpSettings, publicSmtpSettings, sendSmtpTest, type SmtpSettings } from './email'
+import { discoverCloudflareAccountId, exchangeCloudflareCode, readCloudflareCredential, revokeCloudflareToken, type CloudflareCredential } from './cloudflare-oauth'
 
 export { PluginBridge }
 
@@ -16,6 +17,8 @@ export default {
     if (url.pathname === '/api/health') return json({ ok: true, service: 'plugmesh-worker', protocolVersion: 1 })
     if (url.pathname === '/auth/github/start') return startGithubAuth(request, env, url)
     if (url.pathname === '/auth/github/callback') return finishGithubAuth(request, env, url)
+    if (url.pathname === '/auth/cloudflare/start') return startCloudflareAuth(request, env, url)
+    if (url.pathname === '/auth/cloudflare/callback') return finishCloudflareAuth(request, env, url)
     if (url.pathname === '/auth/logout') return new Response(null, { status: 302, headers: { location: '/', 'set-cookie': clearSessionCookie(url.protocol === 'https:') } })
     if (url.pathname === '/control/register') return registerServer(request, env)
     if (url.pathname.startsWith('/api/')) return api(request, env, url)
@@ -124,6 +127,62 @@ async function finishGithubAuth(request: Request, env: Env, url: URL): Promise<R
   if (invite) await env.DB.prepare('UPDATE invites SET status = ?, used_at = ? WHERE id = ?').bind('used', new Date().toISOString(), invite.id).run()
   const token = await createSession(env, userId)
   return new Response(null, { status: 302, headers: { location: '/', 'set-cookie': sessionCookie(token, url.protocol === 'https:') } })
+}
+
+async function startCloudflareAuth(request: Request, env: Env, url: URL): Promise<Response> {
+  const user = await getCurrentUser(request, env)
+  if (!user) return json({ error: 'Authentication required' }, 401)
+  if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
+  if (!env.CLOUDFLARE_OAUTH_CLIENT_ID || !env.CLOUDFLARE_OAUTH_REDIRECT_URI) return json({ error: 'Cloudflare OAuth is not configured' }, 503)
+  const state = crypto.randomUUID() + crypto.randomUUID()
+  await env.DB.prepare('INSERT INTO cloudflare_oauth_states (state_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)').bind(await digest(state), user.id, new Date(Date.now() + 10 * 60 * 1000).toISOString(), new Date().toISOString()).run()
+  const authorizeUrl = new URL('https://dash.cloudflare.com/oauth2/auth')
+  authorizeUrl.searchParams.set('client_id', env.CLOUDFLARE_OAUTH_CLIENT_ID)
+  authorizeUrl.searchParams.set('redirect_uri', env.CLOUDFLARE_OAUTH_REDIRECT_URI)
+  authorizeUrl.searchParams.set('response_type', 'code')
+  authorizeUrl.searchParams.set('scope', env.CLOUDFLARE_OAUTH_SCOPE ?? 'workers-platform.read workers-platform.write')
+  authorizeUrl.searchParams.set('state', state)
+  return new Response(null, { status: 302, headers: { location: authorizeUrl.toString(), 'referrer-policy': 'no-referrer' } })
+}
+
+async function finishCloudflareAuth(request: Request, env: Env, url: URL): Promise<Response> {
+  const user = await getCurrentUser(request, env)
+  const state = url.searchParams.get('state')
+  const code = url.searchParams.get('code')
+  const oauthError = url.searchParams.get('error')
+  if (!user || user.role !== 'super_admin') return redirectWithError(request, '需要超级管理员会话才能完成 Cloudflare 授权')
+  if (oauthError || !state || !code) return redirectWithCloudflareError(request, 'Cloudflare 授权未完成')
+  const stateRow = await env.DB.prepare('SELECT state_hash, user_id FROM cloudflare_oauth_states WHERE state_hash = ? AND user_id = ? AND expires_at > ?').bind(await digest(state), user.id, new Date().toISOString()).first<{ state_hash: string; user_id: string }>()
+  if (!stateRow) return redirectWithCloudflareError(request, 'Cloudflare OAuth 状态已过期或已使用')
+  await env.DB.prepare('DELETE FROM cloudflare_oauth_states WHERE state_hash = ?').bind(stateRow.state_hash).run()
+  const credential = await exchangeCloudflareCode(env, code)
+  if (!credential) {
+    await recordAudit(env, user.id, 'cloudflare.oauth.failed', {})
+    return redirectWithCloudflareError(request, 'Cloudflare OAuth 令牌交换失败')
+  }
+  if (!credential.accountId) credential.accountId = await discoverCloudflareAccountId(credential.accessToken)
+  if (!env.SESSION_SECRET) return redirectWithCloudflareError(request, 'SESSION_SECRET 未配置，无法保存 Cloudflare 凭据')
+  const sealed = await encryptSecret(env.SESSION_SECRET, JSON.stringify(credential))
+  const updatedAt = new Date().toISOString()
+  await env.DB.prepare('INSERT INTO cloudflare_credentials (id, ciphertext, iv, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET ciphertext = excluded.ciphertext, iv = excluded.iv, updated_at = excluded.updated_at').bind('primary', sealed.ciphertext, sealed.iv, updatedAt).run()
+  await recordAudit(env, user.id, 'cloudflare.oauth.connected', { accountIdConfigured: Boolean(credential.accountId) })
+  return redirectWithCloudflareResult(request, Boolean(credential.accountId))
+}
+
+function redirectWithCloudflareResult(request: Request, accountConfigured: boolean): Response {
+  const location = new URL('/', request.url)
+  location.searchParams.set('cloudflare', accountConfigured ? 'connected' : 'connected_without_account')
+  return new Response(null, { status: 302, headers: { location: location.toString(), 'referrer-policy': 'no-referrer' } })
+}
+
+function redirectWithCloudflareError(request: Request, message: string): Response {
+  const location = new URL('/', request.url)
+  location.searchParams.set('cloudflare_error', message)
+  return new Response(null, { status: 302, headers: { location: location.toString(), 'referrer-policy': 'no-referrer' } })
+}
+
+async function recordAudit(env: Env, userId: string, action: string, detail: Record<string, unknown>): Promise<void> {
+  await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), userId, action, JSON.stringify(detail), new Date().toISOString()).run()
 }
 
 async function createInvite(request: Request, env: Env, user: AuthenticatedUser): Promise<Response> {
@@ -253,22 +312,34 @@ async function platformSettingsApi(request: Request, env: Env, user: Authenticat
 
 async function cloudflareSettingsApi(request: Request, env: Env, user: AuthenticatedUser): Promise<Response> {
   if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
-  const existing = await env.DB.prepare('SELECT updated_at FROM cloudflare_credentials WHERE id = ?').bind('primary').first<{ updated_at: string }>()
-  if (request.method === 'GET') return json({ configured: Boolean(existing), updatedAt: existing?.updated_at ?? null })
+  const existing = await env.DB.prepare('SELECT ciphertext, iv, updated_at FROM cloudflare_credentials WHERE id = ?').bind('primary').first<{ ciphertext: string; iv: string; updated_at: string }>()
+  if (request.method === 'GET') {
+    const credential = existing ? await readCloudflareCredential(env, existing.ciphertext, existing.iv) : null
+    return json({ configured: Boolean(credential), accountIdConfigured: Boolean(credential?.accountId), accountId: maskAccountId(credential?.accountId), updatedAt: existing?.updated_at ?? null })
+  }
   if (request.method === 'DELETE') {
+    if (existing) {
+      const credential = await readCloudflareCredential(env, existing.ciphertext, existing.iv)
+      if (credential) await revokeCloudflareToken(env, credential.accessToken)
+    }
     await env.DB.prepare('DELETE FROM cloudflare_credentials WHERE id = ?').bind('primary').run()
-    await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'cloudflare.credentials.revoked', '{}', new Date().toISOString()).run()
-    return json({ configured: false, updatedAt: null })
+    await recordAudit(env, user.id, 'cloudflare.credentials.revoked', {})
+    return json({ configured: false, accountIdConfigured: false, accountId: null, updatedAt: null })
   }
   if (request.method !== 'PUT') return json({ error: 'Method not allowed' }, 405)
   if (!env.SESSION_SECRET) return json({ error: 'SESSION_SECRET is not configured' }, 503)
   const body = await request.json().catch(() => null) as { accessToken?: string; accountId?: string } | null
   if (!body?.accessToken?.trim()) return json({ error: 'accessToken is required' }, 400)
-  const sealed = await encryptSecret(env.SESSION_SECRET, JSON.stringify({ accessToken: body.accessToken.trim(), accountId: body.accountId?.trim() || null }))
+  const sealed = await encryptSecret(env.SESSION_SECRET, JSON.stringify({ accessToken: body.accessToken.trim(), accountId: body.accountId?.trim() || null, tokenType: 'Bearer', expiresAt: null } satisfies CloudflareCredential))
   const updatedAt = new Date().toISOString()
   await env.DB.prepare('INSERT INTO cloudflare_credentials (id, ciphertext, iv, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET ciphertext = excluded.ciphertext, iv = excluded.iv, updated_at = excluded.updated_at').bind('primary', sealed.ciphertext, sealed.iv, updatedAt).run()
-  await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'cloudflare.credentials.updated', JSON.stringify({ accountId: body.accountId?.trim() || null }), updatedAt).run()
-  return json({ configured: true, updatedAt })
+  await recordAudit(env, user.id, 'cloudflare.credentials.updated', { accountIdConfigured: Boolean(body.accountId?.trim()) })
+  return json({ configured: true, accountIdConfigured: Boolean(body.accountId?.trim()), accountId: maskAccountId(body.accountId?.trim() || null), updatedAt })
+}
+
+function maskAccountId(accountId: string | null | undefined): string | null {
+  if (!accountId) return null
+  return accountId.length <= 8 ? '已配置' : `${accountId.slice(0, 4)}...${accountId.slice(-4)}`
 }
 
 async function smtpSettingsApi(request: Request, env: Env, user: AuthenticatedUser): Promise<Response> {

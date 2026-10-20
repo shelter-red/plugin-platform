@@ -11,6 +11,10 @@ export interface Env {
   GITHUB_REDIRECT_URI?: string
   GITHUB_ALLOWLIST?: string
   SESSION_SECRET?: string
+  CLOUDFLARE_OAUTH_CLIENT_ID?: string
+  CLOUDFLARE_OAUTH_CLIENT_SECRET?: string
+  CLOUDFLARE_OAUTH_REDIRECT_URI?: string
+  CLOUDFLARE_OAUTH_SCOPE?: string
 }
 
 export interface AuthenticatedUser {
