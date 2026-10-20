@@ -15,6 +15,7 @@ crons = ["*/15 * * * *"]
 binding = "DB"
 database_name = "plugmesh"
 database_id = "replace-with-d1-database-id"
+migrations_dir = "migrations"
 
 [[durable_objects.bindings]]
 name = "PLUGIN_BRIDGE"
