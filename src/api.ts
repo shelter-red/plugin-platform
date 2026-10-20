@@ -18,6 +18,7 @@ export interface ApiPlugin {
   name: string
   version: string
   state: string
+  desired_state: string
   server_id: string
   server_name: string
   domain_hostname: string | null
