@@ -427,6 +427,7 @@ function auditActionLabel(action: string): string {
     'server.registration_code.created': '生成服务器注册码',
     'server.registered': '插件服务器已注册',
     'cloudflare.oauth.connected': '完成 Cloudflare 授权',
+    'cloudflare.oauth.refreshed': '刷新 Cloudflare 授权',
     'cloudflare.oauth.failed': 'Cloudflare 授权失败',
     'cloudflare.credentials.updated': '更新 Cloudflare 凭据',
     'cloudflare.credentials.revoked': '撤销 Cloudflare 凭据',

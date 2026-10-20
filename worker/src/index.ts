@@ -4,7 +4,7 @@ import { createSession, digest, exchangeGithubCode, getCurrentUser, isAllowliste
 import type { AuthenticatedUser, Env } from './types'
 import { decryptSecret, encryptSecret } from './secrets'
 import { isEmail, parseSmtpSettings, publicSmtpSettings, sendInviteEmail, sendSmtpTest, type SmtpSettings } from './email'
-import { discoverCloudflareAccountId, exchangeCloudflareCode, readCloudflareCredential, revokeCloudflareToken, type CloudflareCredential } from './cloudflare-oauth'
+import { discoverCloudflareAccountId, exchangeCloudflareCode, readCloudflareCredential, refreshCloudflareCredential, revokeCloudflareToken, type CloudflareCredential } from './cloudflare-oauth'
 import { activateMaintenance, countStream, defaultPlatformSettings, getPlatformSettings, isMaintenanceMode, releaseR2Usage, reserveR2Usage, reserveRequest, setPlatformSettingsCache } from './usage'
 import { findPluginRoute, invalidatePluginRoute } from './route-cache'
 
@@ -257,9 +257,7 @@ async function finishCloudflareAuth(request: Request, env: Env, url: URL): Promi
   }
   if (!credential.accountId) credential.accountId = await discoverCloudflareAccountId(credential.accessToken)
   if (!env.SESSION_SECRET) return redirectWithCloudflareError(request, 'SESSION_SECRET 未配置，无法保存 Cloudflare 凭据')
-  const sealed = await encryptSecret(env.SESSION_SECRET, JSON.stringify(credential))
-  const updatedAt = new Date().toISOString()
-  await env.DB.prepare('INSERT INTO cloudflare_credentials (id, ciphertext, iv, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET ciphertext = excluded.ciphertext, iv = excluded.iv, updated_at = excluded.updated_at').bind('primary', sealed.ciphertext, sealed.iv, updatedAt).run()
+  await storeCloudflareCredential(env, credential)
   await recordAudit(env, user.id, 'cloudflare.oauth.connected', { accountIdConfigured: Boolean(credential.accountId) })
   return redirectWithCloudflareResult(request, Boolean(credential.accountId))
 }
@@ -278,6 +276,14 @@ function redirectWithCloudflareError(request: Request, message: string): Respons
 
 async function recordAudit(env: Env, userId: string, action: string, detail: Record<string, unknown>): Promise<void> {
   await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), userId, action, JSON.stringify(detail), new Date().toISOString()).run()
+}
+
+async function storeCloudflareCredential(env: Env, credential: CloudflareCredential): Promise<string> {
+  if (!env.SESSION_SECRET) throw new Error('SESSION_SECRET is not configured')
+  const sealed = await encryptSecret(env.SESSION_SECRET, JSON.stringify(credential))
+  const updatedAt = new Date().toISOString()
+  await env.DB.prepare('INSERT INTO cloudflare_credentials (id, ciphertext, iv, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET ciphertext = excluded.ciphertext, iv = excluded.iv, updated_at = excluded.updated_at').bind('primary', sealed.ciphertext, sealed.iv, updatedAt).run()
+  return updatedAt
 }
 
 type AccessLogRecord = {
@@ -675,23 +681,37 @@ async function cloudflareUsageApi(env: Env, user: AuthenticatedUser): Promise<Re
   if (!env.SESSION_SECRET) return json({ error: 'SESSION_SECRET is not configured' }, 503)
   const credentials = await env.DB.prepare('SELECT ciphertext, iv FROM cloudflare_credentials WHERE id = ?').bind('primary').first<{ ciphertext: string; iv: string }>()
   if (!credentials) return json({ configured: false, cached: false })
-  let accountId: string | null = null
-  let accessToken = ''
-  try {
-    const value = JSON.parse(await decryptSecret(env.SESSION_SECRET, credentials.ciphertext, credentials.iv)) as { accessToken?: string; accountId?: string | null }
-    accessToken = value.accessToken ?? ''
-    accountId = value.accountId ?? null
-  } catch {
-    return json({ error: 'Cloudflare credential decryption failed' }, 500)
+  let credential = await readCloudflareCredential(env, credentials.ciphertext, credentials.iv)
+  if (!credential) return json({ error: 'Cloudflare credential decryption failed' }, 500)
+  let refreshed = false
+  if (credential.expiresAt && Date.parse(credential.expiresAt) <= Date.now() + 60_000) {
+    const next = await refreshCloudflareCredential(env, credential)
+    if (!next) return json({ error: 'Cloudflare OAuth token refresh failed' }, 502)
+    credential = next
+    refreshed = true
+    await storeCloudflareCredential(env, credential)
+    await recordAudit(env, user.id, 'cloudflare.oauth.refreshed', {})
   }
-  if (!accessToken || !accountId) return json({ configured: true, accountIdConfigured: Boolean(accountId), cached: false })
+  if (!credential.accountId) return json({ configured: true, accountIdConfigured: false, cached: false })
+  const accountId = credential.accountId
   const end = new Date()
   const start = new Date(end.getTime() - 24 * 60 * 60 * 1000)
-  const response = await fetch('https://api.cloudflare.com/client/v4/graphql', {
+  const analyticsRequest = (accessToken: string) => fetch('https://api.cloudflare.com/client/v4/graphql', {
     method: 'POST',
     headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
     body: JSON.stringify({ query: `query Usage($accountTag: String!, $start: Time!, $end: Time!) { viewer { accounts(filter: { accountTag: $accountTag }) { workersInvocationsAdaptive(limit: 1, filter: { datetime_geq: $start, datetime_leq: $end }) { sum { requests } } } } }`, variables: { accountTag: accountId, start: start.toISOString(), end: end.toISOString() } }),
   })
+  let response = await analyticsRequest(credential.accessToken)
+  if (response.status === 401 && !refreshed) {
+    const next = await refreshCloudflareCredential(env, credential)
+    if (next) {
+      credential = next
+      refreshed = true
+      await storeCloudflareCredential(env, credential)
+      await recordAudit(env, user.id, 'cloudflare.oauth.refreshed', {})
+      response = await analyticsRequest(credential.accessToken)
+    }
+  }
   if (!response.ok) return json({ error: 'Cloudflare Analytics request failed', status: response.status }, 502)
   const payload = await response.json() as { errors?: unknown[]; data?: { viewer?: { accounts?: Array<{ workersInvocationsAdaptive?: Array<{ sum?: { requests?: number } }> }> } } }
   if (payload.errors?.length) return json({ error: 'Cloudflare Analytics returned errors', details: payload.errors }, 502)
