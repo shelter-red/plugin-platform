@@ -358,16 +358,24 @@ async function commandPlugin(request: Request, env: Env, user: AuthenticatedUser
   if (!server || server.status !== 'online') return json({ error: 'Plugin server is offline' }, 409)
   const bridge = env.PLUGIN_BRIDGE.get(env.PLUGIN_BRIDGE.idFromName(plugin.server_id))
   const response = await bridge.fetch(new Request(new URL('/command', request.url), { method: 'POST', headers: { 'content-type': 'application/json', 'x-plugmesh-server-id': plugin.server_id }, body: JSON.stringify({ type: `plugin.${action}`, pluginId: plugin.plugin_id }) }))
-  if (!response.ok) return response
+  if (!response.ok) {
+    if (action === 'health') await env.DB.prepare('UPDATE domains SET status = ? WHERE plugin_instance_id = ?').bind('offline', plugin.id).run()
+    return response
+  }
   const result = await response.json().catch(() => null) as { state?: string; ok?: boolean; status?: number; bodySize?: number } | null
   if (action === 'health') {
-    if (result?.ok !== true || typeof result.status !== 'number' || result.status < 200 || result.status >= 400) return json({ error: 'Plugin health check failed', status: result?.status ?? null }, 409)
+    if (result?.ok !== true || typeof result.status !== 'number' || result.status < 200 || result.status >= 400) {
+      await env.DB.prepare('UPDATE domains SET status = ? WHERE plugin_instance_id = ?').bind('offline', plugin.id).run()
+      return json({ error: 'Plugin health check failed', status: result?.status ?? null }, 409)
+    }
+    await env.DB.prepare('UPDATE domains SET status = ? WHERE plugin_instance_id = ?').bind('online', plugin.id).run()
     await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'plugin.health', JSON.stringify({ pluginInstanceId: plugin.id, status: result.status, bodySize: result.bodySize ?? 0 }), new Date().toISOString()).run()
     return json({ id: plugin.id, ok: true, status: result.status, bodySize: result.bodySize ?? 0 }, 200)
   }
   const nextState = result?.state ?? (action === 'load' ? 'loaded' : action === 'unload' ? 'unloaded' : action === 'enable' ? 'enabled' : action === 'disable' ? 'disabled' : plugin.state)
   const nextDesiredState = action === 'reload' ? plugin.desired_state : action === 'load' ? 'loaded' : action === 'unload' ? 'unloaded' : action === 'enable' ? 'enabled' : 'disabled'
   await env.DB.prepare('UPDATE plugin_instances SET state = ?, desired_state = ?, updated_at = ? WHERE id = ?').bind(nextState, nextDesiredState, new Date().toISOString(), plugin.id).run()
+  await env.DB.prepare('UPDATE domains SET status = ? WHERE plugin_instance_id = ?').bind('offline', plugin.id).run()
   await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, `plugin.${action}`, JSON.stringify({ pluginInstanceId: plugin.id }), new Date().toISOString()).run()
   return json({ id: plugin.id, state: nextState, accepted: true }, 202)
 }
@@ -505,16 +513,21 @@ async function platformSettingsApi(request: Request, env: Env, user: Authenticat
   const next = {
     maintenance: Boolean(body?.maintenance ?? settings.maintenance),
     quotas: {
-      requests: Math.max(1, Number(body?.quotas?.requests ?? settings.quotas.requests)),
-      activeConnections: Math.max(1, Number(body?.quotas?.activeConnections ?? settings.quotas.activeConnections)),
-      r2Bytes: Math.max(1, Number(body?.quotas?.r2Bytes ?? settings.quotas.r2Bytes)),
-      r2Objects: Math.max(1, Number(body?.quotas?.r2Objects ?? settings.quotas.r2Objects)),
+      requests: parsePositiveQuota(body?.quotas?.requests, settings.quotas.requests),
+      activeConnections: parsePositiveQuota(body?.quotas?.activeConnections, settings.quotas.activeConnections),
+      r2Bytes: parsePositiveQuota(body?.quotas?.r2Bytes, settings.quotas.r2Bytes),
+      r2Objects: parsePositiveQuota(body?.quotas?.r2Objects, settings.quotas.r2Objects),
     },
   }
   await env.DB.prepare('INSERT INTO platform_settings (key, value_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at').bind('platform', JSON.stringify(next), new Date().toISOString()).run()
   setPlatformSettingsCache(next)
   await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'platform.settings.updated', JSON.stringify(next), new Date().toISOString()).run()
   return json(next)
+}
+
+function parsePositiveQuota(value: unknown, fallback: number): number {
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback
 }
 
 async function cloudflareSettingsApi(request: Request, env: Env, user: AuthenticatedUser): Promise<Response> {
