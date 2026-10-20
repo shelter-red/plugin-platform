@@ -92,7 +92,7 @@ export class PluginBridge {
     if (sse) {
       const settings = await getPlatformSettings(this.env)
       if (!await reserveActiveConnection(this.env, settings.quotas)) {
-        await activateMaintenance(this.env)
+        await activateMaintenance(this.env, 'active connection quota reached')
         return new Response('Platform quota reached', { status: 503 })
       }
       activeConnection = true
@@ -126,7 +126,7 @@ export class PluginBridge {
     if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') return new Response('WebSocket upgrade required', { status: 426 })
     const settings = await getPlatformSettings(this.env)
     if (!await reserveActiveConnection(this.env, settings.quotas)) {
-      await activateMaintenance(this.env)
+      await activateMaintenance(this.env, 'active connection quota reached')
       return new Response('Platform quota reached', { status: 503 })
     }
     const pair = new WebSocketPair()

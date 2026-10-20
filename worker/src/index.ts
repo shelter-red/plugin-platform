@@ -99,7 +99,7 @@ async function createBlob(request: Request, env: Env): Promise<Response> {
   const settings = await getPlatformSettings(env)
   if (settings.maintenance) return json({ error: 'Platform is in maintenance mode' }, 503)
   if (!await reserveRequest(env, settings.quotas)) {
-    await activateMaintenance(env)
+    await activateMaintenance(env, 'request quota reached')
     return json({ error: 'Platform quota reached' }, 503)
   }
   await cleanupExpiredBlobs(env)
@@ -120,7 +120,7 @@ async function createBlob(request: Request, env: Env): Promise<Response> {
   const sizeBytes = counter.bytes
   if (!await reserveR2Usage(env, settings.quotas, sizeBytes)) {
     await env.BLOB_BUCKET.delete(objectKey)
-    await activateMaintenance(env)
+    await activateMaintenance(env, 'R2 storage quota reached')
     return json({ error: 'Platform quota reached' }, 503)
   }
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString()
@@ -483,7 +483,7 @@ async function proxyPublicHost(request: Request, env: Env, url: URL, ctx: Execut
   if (!domain || domain.status !== 'online' || domain.server_status !== 'online' || domain.plugin_state !== 'enabled') return maintenanceResponse('插件暂时不可用', '公开入口尚未就绪、插件当前未启用或插件服务器当前离线。')
   const startedAt = Date.now()
   if (!await reserveRequest(env, settings.quotas)) {
-    await activateMaintenance(env)
+    await activateMaintenance(env, 'request quota reached')
     ctx.waitUntil(recordAccessLog(env, { userId: domain.user_id, domainId: domain.domain_id, pluginInstanceId: domain.plugin_instance_id, hostname: domain.hostname, method: request.method, path: url.pathname, status: 503, durationMs: Date.now() - startedAt, error: 'platform quota reached' }))
     return maintenanceResponse()
   }

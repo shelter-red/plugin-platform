@@ -48,6 +48,14 @@ export async function sendInviteEmail(settings: SmtpSettings, to: string, invite
   })
 }
 
+export async function sendMaintenanceEmail(settings: SmtpSettings, to: string, reason: string): Promise<void> {
+  await sendEmail(settings, {
+    subject: 'Plugmesh 平台已进入维护模式',
+    text: `Plugmesh 平台已自动进入维护模式。\n\n触发原因：${reason}\n\n请登录管理端检查平台用量与配额。`,
+    to,
+  })
+}
+
 async function sendEmail(settings: SmtpSettings, message: { subject: string; text: string; to: string }): Promise<void> {
   const { WorkerMailer } = await import('worker-mailer')
   await WorkerMailer.send({ host: settings.host, port: settings.port, secure: settings.secure, authType: settings.authType, credentials: { username: settings.username, password: settings.password } }, {

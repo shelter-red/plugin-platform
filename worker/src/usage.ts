@@ -1,4 +1,6 @@
 import type { Env, PlatformQuotas, PlatformSettings } from './types'
+import { decryptSecret } from './secrets'
+import { parseSmtpSettings, sendMaintenanceEmail } from './email'
 
 export const defaultPlatformSettings: PlatformSettings = {
   maintenance: false,
@@ -42,12 +44,51 @@ export async function isMaintenanceMode(env: Env): Promise<boolean> {
   return (await getPlatformSettings(env)).maintenance
 }
 
-export async function activateMaintenance(env: Env): Promise<void> {
+export async function activateMaintenance(env: Env, reason = 'platform quota reached'): Promise<void> {
   const settings = await getPlatformSettings(env)
   if (settings.maintenance) return
   const next = { ...settings, maintenance: true }
   await env.DB.prepare('INSERT INTO platform_settings (key, value_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at').bind('platform', JSON.stringify(next), new Date().toISOString()).run()
   setPlatformSettingsCache(next)
+  await notifyMaintenance(env, reason)
+}
+
+async function notifyMaintenance(env: Env, reason: string): Promise<void> {
+  if (!env.SESSION_SECRET) return
+  const stored = await env.DB.prepare('SELECT ciphertext, iv FROM smtp_settings WHERE id = ?').bind('primary').first<{ ciphertext: string; iv: string }>()
+  const administrators = await env.DB.prepare('SELECT id, email FROM users WHERE role = ? AND email IS NOT NULL').bind('super_admin').all<{ id: string; email: string }>()
+  if (!stored || administrators.results.length === 0) {
+    await recordMaintenanceNotice(env, 'maintenance.email.skipped', { reason, configured: Boolean(stored), administratorCount: administrators.results.length })
+    return
+  }
+  let settings: ReturnType<typeof parseSmtpSettings> = null
+  try {
+    settings = parseSmtpSettings(JSON.parse(await decryptSecret(env.SESSION_SECRET, stored.ciphertext, stored.iv)))
+  } catch {
+    settings = null
+  }
+  if (!settings) {
+    await recordMaintenanceNotice(env, 'maintenance.email.skipped', { reason, configured: false, error: 'SMTP settings are invalid' })
+    return
+  }
+  for (const administrator of administrators.results) {
+    let sent = false
+    let attempts = 0
+    for (attempts = 1; attempts <= 3; attempts += 1) {
+      try {
+        await sendMaintenanceEmail(settings, administrator.email, reason)
+        sent = true
+        break
+      } catch {
+        if (attempts < 3) await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** (attempts - 1)))
+      }
+    }
+    await recordMaintenanceNotice(env, sent ? 'maintenance.email.sent' : 'maintenance.email.failed', { reason, administratorId: administrator.id, attempts })
+  }
+}
+
+async function recordMaintenanceNotice(env: Env, action: string, detail: Record<string, unknown>): Promise<void> {
+  await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), null, action, JSON.stringify(detail), new Date().toISOString()).run()
 }
 
 export function setPlatformSettingsCache(settings: PlatformSettings): void {
