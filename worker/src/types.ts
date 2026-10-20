@@ -1,6 +1,18 @@
 export type ServerStatus = 'online' | 'offline' | 'revoked'
 export type PluginState = 'discovered' | 'loaded' | 'enabled' | 'disabled' | 'unloaded' | 'failed' | 'server_offline'
 
+export interface PlatformQuotas {
+  requests: number
+  activeConnections: number
+  r2Bytes: number
+  r2Objects: number
+}
+
+export interface PlatformSettings {
+  maintenance: boolean
+  quotas: PlatformQuotas
+}
+
 export interface Env {
   DB: D1Database
   BLOB_BUCKET: R2Bucket

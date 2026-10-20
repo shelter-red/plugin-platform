@@ -5,11 +5,11 @@ import type { AuthenticatedUser, Env } from './types'
 import { decryptSecret, encryptSecret } from './secrets'
 import { isEmail, parseSmtpSettings, publicSmtpSettings, sendSmtpTest, type SmtpSettings } from './email'
 import { discoverCloudflareAccountId, exchangeCloudflareCode, readCloudflareCredential, revokeCloudflareToken, type CloudflareCredential } from './cloudflare-oauth'
+import { activateMaintenance, countStream, defaultPlatformSettings, getPlatformSettings, isMaintenanceMode, releaseR2Usage, reserveR2Usage, reserveRequest } from './usage'
 
 export { PluginBridge }
 
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json; charset=utf-8' } })
-const defaultPlatformSettings = { maintenance: false, quotas: { requests: 100000, activeConnections: 100, r2Bytes: 10 * 1024 * 1024 * 1024, r2Objects: 1000 } }
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -66,7 +66,13 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
 }
 
 async function createBlob(request: Request, env: Env): Promise<Response> {
-  if (await isMaintenanceMode(env)) return json({ error: 'Platform is in maintenance mode' }, 503)
+  const settings = await getPlatformSettings(env)
+  if (settings.maintenance) return json({ error: 'Platform is in maintenance mode' }, 503)
+  if (!await reserveRequest(env, settings.quotas)) {
+    await activateMaintenance(env)
+    return json({ error: 'Platform quota reached' }, 503)
+  }
+  await cleanupExpiredBlobs(env)
   const contentLength = Number(request.headers.get('content-length') ?? 0)
   const maxBytes = 50 * 1024 * 1024
   if (!request.body) return json({ error: 'Request body is required' }, 400)
@@ -74,10 +80,27 @@ async function createBlob(request: Request, env: Env): Promise<Response> {
   const objectKey = `temp/${crypto.randomUUID()}`
   const token = crypto.randomUUID() + crypto.randomUUID()
   const contentType = request.headers.get('content-type') ?? 'application/octet-stream'
-  const sizeBytes = contentLength || 0
-  await env.BLOB_BUCKET.put(objectKey, request.body, { httpMetadata: { contentType } })
+  const counter = { bytes: 0 }
+  try {
+    await env.BLOB_BUCKET.put(objectKey, countStream(request.body, counter, maxBytes), { httpMetadata: { contentType } })
+  } catch {
+    await env.BLOB_BUCKET.delete(objectKey)
+    return json({ error: counter.bytes > maxBytes ? 'File is too large' : 'File upload failed' }, counter.bytes > maxBytes ? 413 : 502)
+  }
+  const sizeBytes = counter.bytes
+  if (!await reserveR2Usage(env, settings.quotas, sizeBytes)) {
+    await env.BLOB_BUCKET.delete(objectKey)
+    await activateMaintenance(env)
+    return json({ error: 'Platform quota reached' }, 503)
+  }
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString()
-  await env.DB.prepare('INSERT INTO temp_objects (id, object_key, token_hash, content_type, size_bytes, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), objectKey, await digest(token), contentType, sizeBytes, expiresAt, new Date().toISOString()).run()
+  try {
+    await env.DB.prepare('INSERT INTO temp_objects (id, object_key, token_hash, content_type, size_bytes, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), objectKey, await digest(token), contentType, sizeBytes, expiresAt, new Date().toISOString()).run()
+  } catch {
+    await env.BLOB_BUCKET.delete(objectKey)
+    await releaseR2Usage(env, sizeBytes)
+    return json({ error: 'File metadata could not be saved' }, 502)
+  }
   return json({ url: `/blobs/${encodeURIComponent(token)}`, expiresAt }, 201)
 }
 
@@ -85,13 +108,25 @@ async function consumeBlob(request: Request, env: Env, ctx: ExecutionContext, ur
   if (request.method !== 'GET') return new Response('Method not allowed', { status: 405 })
   const token = decodeURIComponent(url.pathname.slice('/blobs/'.length))
   if (!token) return new Response('Not found', { status: 404 })
-  const object = await env.DB.prepare('SELECT id, object_key, content_type, expires_at FROM temp_objects WHERE token_hash = ? AND consumed_at IS NULL AND expires_at > ?').bind(await digest(token), new Date().toISOString()).first<{ id: string; object_key: string; content_type: string; expires_at: string }>()
+  const object = await env.DB.prepare('SELECT id, object_key, content_type, size_bytes, expires_at FROM temp_objects WHERE token_hash = ? AND consumed_at IS NULL AND expires_at > ?').bind(await digest(token), new Date().toISOString()).first<{ id: string; object_key: string; content_type: string; size_bytes: number; expires_at: string }>()
   if (!object) return new Response('Resource expired or already consumed', { status: 410 })
+  const consumed = await env.DB.prepare('UPDATE temp_objects SET consumed_at = ? WHERE id = ? AND consumed_at IS NULL').bind(new Date().toISOString(), object.id).run()
+  if ((consumed.meta.changes ?? 0) !== 1) return new Response('Resource expired or already consumed', { status: 410 })
   const blob = await env.BLOB_BUCKET.get(object.object_key)
+  ctx.waitUntil(releaseR2Usage(env, object.size_bytes))
   if (!blob) return new Response('Resource not found', { status: 404 })
-  await env.DB.prepare('UPDATE temp_objects SET consumed_at = ? WHERE id = ?').bind(new Date().toISOString(), object.id).run()
   ctx.waitUntil(env.BLOB_BUCKET.delete(object.object_key))
   return new Response(blob.body, { headers: { 'content-type': object.content_type, 'content-length': String(blob.size), 'cache-control': 'no-store' } })
+}
+
+async function cleanupExpiredBlobs(env: Env): Promise<void> {
+  const now = new Date().toISOString()
+  const expired = await env.DB.prepare('SELECT id, object_key, size_bytes FROM temp_objects WHERE consumed_at IS NULL AND expires_at <= ? LIMIT 100').bind(now).all<{ id: string; object_key: string; size_bytes: number }>()
+  for (const object of expired.results) {
+    await env.BLOB_BUCKET.delete(object.object_key)
+    await env.DB.prepare('UPDATE temp_objects SET consumed_at = ? WHERE id = ? AND consumed_at IS NULL').bind(now, object.id).run()
+    await releaseR2Usage(env, object.size_bytes)
+  }
 }
 
 async function startGithubAuth(request: Request, env: Env, url: URL): Promise<Response> {
@@ -316,12 +351,17 @@ async function createServerRegistration(env: Env, code: string | undefined, name
 }
 
 async function proxyPublicHost(request: Request, env: Env, url: URL): Promise<Response> {
-  if (await isMaintenanceMode(env)) return maintenanceResponse()
+  const settings = await getPlatformSettings(env)
+  if (settings.maintenance) return maintenanceResponse()
   const suffix = env.PLUGIN_DOMAIN_SUFFIX ?? '.plugins.example.com'
   if (!url.hostname.endsWith(suffix)) return new Response('Plugmesh console route', { status: 404 })
   const hostname = url.hostname
   const domain = await env.DB.prepare('SELECT domains.plugin_instance_id, domains.server_id, domains.status, plugin_instances.plugin_id, servers.status AS server_status FROM domains JOIN plugin_instances ON plugin_instances.id = domains.plugin_instance_id JOIN servers ON servers.id = plugin_instances.server_id WHERE domains.hostname = ?').bind(hostname).first<{ plugin_instance_id: string; server_id: string; status: string; plugin_id: string; server_status: string }>()
   if (!domain || domain.status !== 'online' || domain.server_status !== 'online') return maintenanceResponse('插件暂时不可用', '公开入口尚未就绪或插件服务器当前离线。')
+  if (!await reserveRequest(env, settings.quotas)) {
+    await activateMaintenance(env)
+    return maintenanceResponse()
+  }
   const bridge = env.PLUGIN_BRIDGE.get(env.PLUGIN_BRIDGE.idFromName(domain.server_id))
   const headers = new Headers(request.headers)
   headers.set('x-plugmesh-server-id', domain.server_id)
@@ -467,21 +507,6 @@ async function cloudflareUsageApi(env: Env, user: AuthenticatedUser): Promise<Re
   const updatedAt = new Date().toISOString()
   await env.DB.prepare('INSERT INTO usage_cache (key, value_json, expires_at, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, expires_at = excluded.expires_at, updated_at = excluded.updated_at').bind('cloudflare:workers', JSON.stringify(result), new Date(Date.now() + 5 * 60 * 1000).toISOString(), updatedAt).run()
   return json({ ...result, cached: false, updatedAt })
-}
-
-async function getPlatformSettings(env: Env): Promise<typeof defaultPlatformSettings> {
-  const row = await env.DB.prepare('SELECT value_json FROM platform_settings WHERE key = ?').bind('platform').first<{ value_json: string }>()
-  if (!row) return defaultPlatformSettings
-  try {
-    const value = JSON.parse(row.value_json) as Partial<typeof defaultPlatformSettings>
-    return { ...defaultPlatformSettings, ...value, quotas: { ...defaultPlatformSettings.quotas, ...(value.quotas ?? {}) } }
-  } catch {
-    return defaultPlatformSettings
-  }
-}
-
-async function isMaintenanceMode(env: Env): Promise<boolean> {
-  return (await getPlatformSettings(env)).maintenance
 }
 
 function maintenanceResponse(title = '平台维护中', detail = '平台当前暂停新流量，请稍后再试。'): Response {

@@ -1,11 +1,13 @@
 import { isManifest, makeFrame, parseControlFrame } from './protocol'
 import type { Env } from './types'
+import { activateMaintenance, getPlatformSettings, releaseActiveConnection, reserveActiveConnection } from './usage'
 
 type PendingResponse = {
   resolve: (value: Response | PromiseLike<Response>) => void
   timer: number
   writer?: WritableStreamDefaultWriter<Uint8Array>
   buffered: Uint8Array[]
+  activeConnection?: boolean
 }
 
 type PendingCommand = {
@@ -20,6 +22,7 @@ export class PluginBridge {
   private pending = new Map<string, PendingResponse>()
   private pendingCommands = new Map<string, PendingCommand>()
   private publicSockets = new Map<string, WebSocket>()
+  private reservedPublicConnections = new Set<string>()
 
   constructor(_state: DurableObjectState, env: Env) {
     this.env = env
@@ -75,23 +78,47 @@ export class PluginBridge {
       ...(sse ? { streamId: requestId } : {}),
     }, pluginId)
     frame.requestId = requestId
+    let activeConnection = false
+    if (sse) {
+      const settings = await getPlatformSettings(this.env)
+      if (!await reserveActiveConnection(this.env, settings.quotas)) {
+        await activateMaintenance(this.env)
+        return new Response('Platform quota reached', { status: 503 })
+      }
+      activeConnection = true
+    }
     const response = new Promise<Response>((resolve) => {
-      const pending: PendingResponse = { resolve, timer: 0, buffered: [] }
+      const pending: PendingResponse = { resolve, timer: 0, buffered: [], activeConnection }
       pending.timer = setTimeout(() => {
         this.pending.delete(requestId)
         pending.buffered = []
+        this.releasePendingConnection(pending)
         if (pending.writer) void pending.writer.abort('Plugin request timed out').catch(() => undefined)
         else resolve(new Response('Plugin request timed out', { status: 504 }))
       }, 25_000) as unknown as number
       this.pending.set(requestId, pending)
     })
-    this.serverSocket.send(JSON.stringify(frame))
+    try {
+      this.serverSocket.send(JSON.stringify(frame))
+    } catch {
+      this.pending.delete(requestId)
+      if (activeConnection) {
+        activeConnection = false
+        void releaseActiveConnection(this.env)
+      }
+      return new Response('Plugin request could not be sent', { status: 502 })
+    }
     return response
   }
 
-  private proxyWebSocket(request: Request): Response {
+  private async proxyWebSocket(request: Request): Promise<Response> {
     if (!this.serverSocket || this.serverSocket.readyState !== WebSocket.OPEN) return new Response('Plugin server is offline', { status: 503 })
     if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') return new Response('WebSocket upgrade required', { status: 426 })
+    const settings = await getPlatformSettings(this.env)
+    if (!await reserveActiveConnection(this.env, settings.quotas)) {
+      await activateMaintenance(this.env)
+      return new Response('Platform quota reached', { status: 503 })
+    }
     const pair = new WebSocketPair()
     const client = pair[0]
     const socket = pair[1]
@@ -103,6 +130,7 @@ export class PluginBridge {
     })()
     socket.accept()
     this.publicSockets.set(connectionId, socket)
+    this.reservedPublicConnections.add(connectionId)
     socket.addEventListener('message', (event) => {
       const binary = typeof event.data !== 'string'
       const data = binary ? encodeBytes(new Uint8Array(event.data as ArrayBuffer)) : event.data
@@ -111,15 +139,24 @@ export class PluginBridge {
     socket.addEventListener('close', () => {
       if (this.publicSockets.get(connectionId) !== socket) return
       this.publicSockets.delete(connectionId)
+      if (this.reservedPublicConnections.delete(connectionId)) void releaseActiveConnection(this.env)
       if (this.serverSocket?.readyState === WebSocket.OPEN) {
         this.serverSocket.send(JSON.stringify(makeFrame('stream.close', this.serverId, { connectionId }, pluginId)))
       }
     })
-    this.serverSocket.send(JSON.stringify(makeFrame('stream.open', this.serverId, {
-      connectionId,
-      path: requestPath,
-      headers: Object.fromEntries(forwardedHeaders(request.headers)),
-    }, pluginId)))
+    try {
+      this.serverSocket.send(JSON.stringify(makeFrame('stream.open', this.serverId, {
+        connectionId,
+        path: requestPath,
+        headers: Object.fromEntries(forwardedHeaders(request.headers)),
+      }, pluginId)))
+    } catch {
+      this.publicSockets.delete(connectionId)
+      this.reservedPublicConnections.delete(connectionId)
+      void releaseActiveConnection(this.env)
+      socket.close(1011, 'Plugin server unavailable')
+      return new Response('Plugin server unavailable', { status: 503 })
+    }
     return new Response(null, { status: 101, webSocket: client })
   }
 
@@ -159,6 +196,7 @@ export class PluginBridge {
       clearTimeout(pending.timer)
       this.pending.delete(requestId)
       pending.buffered = []
+      this.releasePendingConnection(pending)
       if (pending.writer) void pending.writer.abort(message).catch(() => undefined)
       else pending.resolve(new Response(message, { status, headers: { 'content-type': 'text/plain; charset=utf-8' } }))
     }
@@ -173,9 +211,12 @@ export class PluginBridge {
   }
 
   private closePublicSockets(code: number, reason: string) {
-    const sockets = [...this.publicSockets.values()]
+    const sockets = [...this.publicSockets.entries()]
     this.publicSockets.clear()
-    for (const socket of sockets) socket.close(code, reason)
+    for (const [connectionId, socket] of sockets) {
+      if (this.reservedPublicConnections.delete(connectionId)) void releaseActiveConnection(this.env)
+      socket.close(code, reason)
+    }
   }
 
   private handleServerMessage(data: string | ArrayBuffer) {
@@ -226,6 +267,7 @@ export class PluginBridge {
       if (socket) {
         socket.close(1000, 'Plugin stream closed')
         this.publicSockets.delete(connectionId)
+        if (this.reservedPublicConnections.delete(connectionId)) void releaseActiveConnection(this.env)
       } else this.closeResponse(connectionId, frame.payload ?? {})
     }
   }
@@ -235,6 +277,7 @@ export class PluginBridge {
     if (!pending || pending.writer) return
     const stream = new TransformStream<Uint8Array, Uint8Array>()
     pending.writer = stream.writable.getWriter()
+    void pending.writer.closed.catch(() => this.releasePendingConnection(pending))
     pending.resolve(new Response(stream.readable, { status: typeof payload.status === 'number' ? payload.status : 200, headers: responseHeaders(payload.headers) }))
     for (const chunk of pending.buffered.splice(0)) void pending.writer.write(chunk)
   }
@@ -255,12 +298,19 @@ export class PluginBridge {
     if (!pending) return
     clearTimeout(pending.timer)
     this.pending.delete(requestId)
+    this.releasePendingConnection(pending)
     if (pending.writer) {
       void pending.writer.close().catch(() => undefined)
       return
     }
     const body = typeof payload.body === 'string' ? payload.body : toArrayBuffer(combineBytes(pending.buffered))
     pending.resolve(new Response(body, { status: typeof payload.status === 'number' ? payload.status : 200, headers: responseHeaders(payload.headers) }))
+  }
+
+  private releasePendingConnection(pending: PendingResponse) {
+    if (!pending.activeConnection) return
+    pending.activeConnection = false
+    void releaseActiveConnection(this.env)
   }
 
   private async markServerOnline() {
