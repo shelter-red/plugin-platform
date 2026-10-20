@@ -15,9 +15,10 @@ int main(int argc, char** argv) {
       return 1;
     }
   }
+  const auto ui_directory = std::getenv("PLUGMESH_SMOKE_UI_DIRECTORY") ? std::filesystem::path(std::getenv("PLUGMESH_SMOKE_UI_DIRECTORY")) : std::filesystem::path();
   plugmesh::LocalHttpServer server(port, &plugins, [&plugins] {
     return nlohmann::json{{"connected", false}, {"pluginCount", plugins.snapshot().size()}};
-  });
+  }, ui_directory);
   std::string error;
   if (!server.run(error)) {
     std::cerr << "local HTTP server stopped: " << error << '\n';

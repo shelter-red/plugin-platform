@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <string>
 
@@ -15,7 +16,7 @@ class LocalHttpServer {
  public:
   using StatusProvider = std::function<nlohmann::json()>;
 
-  explicit LocalHttpServer(uint16_t port = 8787, PluginManager* plugins = nullptr, StatusProvider status_provider = {});
+  explicit LocalHttpServer(uint16_t port = 8787, PluginManager* plugins = nullptr, StatusProvider status_provider = {}, std::filesystem::path ui_directory = {});
   LocalHttpServer(const LocalHttpServer&) = delete;
   LocalHttpServer& operator=(const LocalHttpServer&) = delete;
 
@@ -24,10 +25,12 @@ class LocalHttpServer {
 
  private:
   void handle_http(void* handle);
+  bool serve_static(void* handle, const std::string& resource, bool& forbidden) const;
 
   uint16_t port_;
   PluginManager* plugins_;
   StatusProvider status_provider_;
+  std::filesystem::path ui_directory_;
   std::atomic<bool> stopping_{false};
   std::atomic<void*> server_{nullptr};
 };

@@ -7,6 +7,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <fstream>
+#include <iterator>
 #include <string_view>
 
 namespace plugmesh {
@@ -35,10 +37,35 @@ void set_json_response(websocketpp::connection<websocketpp::config::asio>* conne
   connection->set_body(body.dump());
 }
 
+const char* content_type(const std::filesystem::path& path) {
+  const auto extension = path.extension().string();
+  if (extension == ".html") return "text/html; charset=utf-8";
+  if (extension == ".css") return "text/css; charset=utf-8";
+  if (extension == ".js") return "text/javascript; charset=utf-8";
+  if (extension == ".json") return "application/json; charset=utf-8";
+  if (extension == ".svg") return "image/svg+xml";
+  if (extension == ".ico") return "image/x-icon";
+  if (extension == ".woff" || extension == ".woff2") return "font/woff2";
+  return "application/octet-stream";
+}
+
+bool contains_parent_segment(const std::string& resource) {
+  if (resource.find('\\') != std::string::npos) return true;
+  std::size_t start = 0;
+  while (start <= resource.size()) {
+    const auto end = resource.find('/', start);
+    const auto segment = resource.substr(start, end == std::string::npos ? std::string::npos : end - start);
+    if (segment == "..") return true;
+    if (end == std::string::npos) break;
+    start = end + 1;
+  }
+  return false;
+}
+
 }  // namespace
 
-LocalHttpServer::LocalHttpServer(uint16_t port, PluginManager* plugins, StatusProvider status_provider)
-    : port_(port), plugins_(plugins), status_provider_(std::move(status_provider)) {}
+LocalHttpServer::LocalHttpServer(uint16_t port, PluginManager* plugins, StatusProvider status_provider, std::filesystem::path ui_directory)
+    : port_(port), plugins_(plugins), status_provider_(std::move(status_provider)), ui_directory_(std::move(ui_directory)) {}
 
 bool LocalHttpServer::run(std::string& error) {
   stopping_ = false;
@@ -66,6 +93,50 @@ void LocalHttpServer::stop() {
   stopping_ = true;
   auto* server = static_cast<Server*>(server_.load(std::memory_order_acquire));
   if (server) server->stop();
+}
+
+bool LocalHttpServer::serve_static(void* handle, const std::string& resource, bool& forbidden) const {
+  forbidden = false;
+  if (ui_directory_.empty()) return false;
+  auto* connection = static_cast<websocketpp::connection<websocketpp::config::asio>*>(handle);
+  if (!connection || contains_parent_segment(resource)) {
+    forbidden = true;
+    return false;
+  }
+
+  const auto relative = resource == "/" ? std::filesystem::path("index.html") : std::filesystem::path(resource.substr(1));
+  const auto is_asset = resource.rfind("/assets/", 0) == 0;
+  std::error_code error;
+  const auto root = std::filesystem::weakly_canonical(ui_directory_, error);
+  if (error || !std::filesystem::is_directory(root, error)) return false;
+  auto candidate = std::filesystem::weakly_canonical(root / relative, error);
+  if (error) return false;
+  const auto root_string = root.generic_string();
+  const auto candidate_string = candidate.generic_string();
+  if (candidate_string != root_string && candidate_string.rfind(root_string + '/', 0) != 0) {
+    forbidden = true;
+    return false;
+  }
+
+  if (!std::filesystem::is_regular_file(candidate, error)) {
+    if (is_asset) return false;
+    candidate = std::filesystem::weakly_canonical(root / "index.html", error);
+    if (error || !std::filesystem::is_regular_file(candidate, error)) return false;
+  }
+  if (std::filesystem::file_size(candidate, error) > 10 * 1024 * 1024 || error) {
+    connection->set_status(websocketpp::http::status_code::request_entity_too_large);
+    connection->set_body("Static resource is too large");
+    return true;
+  }
+
+  std::ifstream input(candidate, std::ios::binary);
+  if (!input) return false;
+  std::string body((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+  connection->set_status(websocketpp::http::status_code::ok);
+  connection->append_header("Content-Type", content_type(candidate));
+  connection->append_header("Cache-Control", is_asset ? "public, max-age=31536000, immutable" : "no-cache");
+  connection->set_body(std::move(body));
+  return true;
 }
 
 void LocalHttpServer::handle_http(void* handle) {
@@ -134,6 +205,15 @@ void LocalHttpServer::handle_http(void* handle) {
       const auto info = plugins_->info_snapshot(plugin_id);
       const auto response = nlohmann::json{{"ok", ok}, {"pluginId", plugin_id}, {"action", action}, {"state", info ? plugin_state_name(info->state) : "unknown"}, {"error", ok ? "" : error}};
       set_json_response(connection, ok ? websocketpp::http::status_code::ok : websocketpp::http::status_code::bad_request, response);
+      return;
+    }
+  }
+
+  if (method == "GET" && resource.rfind("/api/", 0) != 0) {
+    bool forbidden = false;
+    if (serve_static(handle, resource, forbidden)) return;
+    if (forbidden) {
+      set_json_response(connection, websocketpp::http::status_code::forbidden, {{"ok", false}, {"error", "forbidden path"}});
       return;
     }
   }

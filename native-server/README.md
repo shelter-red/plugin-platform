@@ -17,6 +17,7 @@
 - `PLUGMESH_CREDENTIAL_FILE`
 - `PLUGMESH_CREDENTIAL_PASSWORD`
 - `PLUGMESH_LOCAL_PORT`（可选，默认 `8787`，仅绑定 `127.0.0.1`）
+- `PLUGMESH_LOCAL_UI_DIRECTORY`（可选，默认 `native-ui/dist`）
 
 本地管理端点仅监听回环地址：
 
@@ -24,6 +25,7 @@
 - `GET /api/plugins`：已发现插件的 manifest 与生命周期状态。
 - `GET /api/diagnostics`：插件数量、加载状态和失败数量摘要。
 - `POST /api/plugins/{pluginId}/{load|unload|enable|disable|reload}`：执行插件生命周期操作。
+- `GET /`、`GET /assets/*`：提供 `native-ui/dist` 中的 React 本地控制台；非资源路径回退到 `index.html`。
 
 凭据文件使用 OpenSSL AES-256-GCM 加密，口令通过 PBKDF2-HMAC-SHA256 派生密钥；文件只保存加密 envelope，不保存明文 access token。Linux 下文件权限收紧为用户可读写。生产部署应通过本地配置 UI 或受保护的进程环境提供口令，当前版本尚未接入系统密钥链。
 

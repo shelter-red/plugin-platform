@@ -29,6 +29,11 @@ uint16_t local_port() {
   return end != value && *end == '\0' && parsed > 0 && parsed <= 65535 ? static_cast<uint16_t>(parsed) : 8787;
 }
 
+std::filesystem::path local_ui_directory() {
+  if (const char* value = std::getenv("PLUGMESH_LOCAL_UI_DIRECTORY"); value && *value) return value;
+  return std::filesystem::path("native-ui") / "dist";
+}
+
 int register_server(int argc, char** argv) {
   if (argc != 5) {
     std::cerr << "usage: plugmesh-server --register <worker-url> <server-name> <credential-file>\n";
@@ -72,7 +77,7 @@ int main(int argc, char** argv) {
   plugmesh::ControlClient client(resolved_config, plugins);
   plugmesh::LocalHttpServer local_http(local_port(), &plugins, [&client, &resolved_config] {
     return nlohmann::json{{"serverId", resolved_config.server_id}, {"workerUrl", resolved_config.worker_url}, {"connected", client.connected()}};
-  });
+  }, local_ui_directory());
   std::string local_error;
   std::thread local_thread([&local_http, &local_error] {
     if (!local_http.run(local_error) && !local_error.empty()) std::cerr << "plugmesh-server local UI: " << local_error << '\n';
