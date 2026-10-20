@@ -19,7 +19,7 @@
 - Worker 静态资源绑定管理端 SPA，控制台、API、OAuth 和插件域名共用统一入口。
 - Cloudflare OAuth Authorization Code 回调：管理员状态校验、一次性 state、令牌密文保存、账号自动发现和官方撤销。
 - C++20 跨平台基础：Linux `.so` / Windows `.dll` 动态库加载、ABI v2 版本检查、插件生命周期管理、Windows Credential Manager/macOS Keychain 系统凭据存储和 WebSocket++ 出站控制连接。
-- 独立本地 React + TypeScript 控制台：连接状态、插件 manifest、生命周期操作、诊断摘要、运行日志和首次绑定表单。
+- 独立本地 React + TypeScript 控制台：连接状态、插件 manifest、生命周期操作、诊断摘要、运行日志、首次绑定以及访问密钥轮换/绑定撤销。
 
 ## 本地运行
 
