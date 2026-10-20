@@ -554,9 +554,12 @@ export class PluginBridge {
     await this.env.BLOB_BUCKET.delete(upload.key).catch(() => undefined)
   }
 
-  private async markServerOnline() {
-    if (!this.serverId) return
-    await this.env.DB.prepare('UPDATE servers SET status = ?, last_seen_at = ? WHERE id = ?').bind('online', new Date().toISOString(), this.serverId).run()
+  private async markServerOnline(): Promise<boolean> {
+    if (!this.serverId) return false
+    const updated = await this.env.DB.prepare('UPDATE servers SET status = ?, last_seen_at = ? WHERE id = ? AND status != ?').bind('online', new Date().toISOString(), this.serverId, 'revoked').run()
+    if ((updated.meta.changes ?? 0) === 1) return true
+    this.serverSocket?.close(1008, 'Server binding revoked')
+    return false
   }
 
   private async markServerOffline() {
@@ -571,8 +574,8 @@ export class PluginBridge {
   }
 
   private async registerServer(payload: Record<string, unknown>) {
-    await this.markServerOnline()
-    const server = await this.env.DB.prepare('SELECT user_id FROM servers WHERE id = ?').bind(this.serverId).first<{ user_id: string }>()
+    if (!await this.markServerOnline()) return
+    const server = await this.env.DB.prepare('SELECT user_id FROM servers WHERE id = ? AND status != ?').bind(this.serverId, 'revoked').first<{ user_id: string }>()
     const manifests = Array.isArray(payload.manifests) ? payload.manifests.filter(isManifest) : []
     if (!server) return
     const now = new Date().toISOString()
