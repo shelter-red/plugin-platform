@@ -1,5 +1,6 @@
 import { PluginBridge } from './durable-object'
 import { makeFrame, parseControlFrame } from './protocol'
+import { hashControlToken } from './security'
 import type { Env } from './types'
 
 export { PluginBridge }
@@ -37,21 +38,26 @@ async function connectServer(request: Request, env: Env, url: URL): Promise<Resp
   if (!serverId) return json({ error: 'serverId is required' }, 400)
   const token = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '')
   if (!token) return json({ error: 'Missing control token' }, 401)
-  const server = await env.DB.prepare('SELECT id FROM servers WHERE id = ? AND token_hash = ?').bind(serverId, token).first<{ id: string }>()
+  const tokenHash = await hashControlToken(token)
+  const server = await env.DB.prepare('SELECT id FROM servers WHERE id = ? AND token_hash = ?').bind(serverId, tokenHash).first<{ id: string }>()
   if (!server) return json({ error: 'Invalid control token' }, 401)
   const id = env.PLUGIN_BRIDGE.idFromName(serverId)
   const bridge = env.PLUGIN_BRIDGE.get(id)
-  return bridge.fetch(new Request(new URL('/connect', request.url), request))
+  const bridgeUrl = new URL('/connect', request.url)
+  bridgeUrl.searchParams.set('serverId', serverId)
+  return bridge.fetch(new Request(bridgeUrl, request))
 }
 
 async function proxyPublicHost(request: Request, env: Env, url: URL): Promise<Response> {
   const suffix = env.PLUGIN_DOMAIN_SUFFIX ?? '.plugins.example.com'
   if (!url.hostname.endsWith(suffix)) return new Response('Plugmesh console route', { status: 404 })
   const hostname = url.hostname
-  const domain = await env.DB.prepare('SELECT plugin_instance_id, status FROM domains WHERE hostname = ?').bind(hostname).first<{ plugin_instance_id: string; status: string }>()
+  const domain = await env.DB.prepare('SELECT plugin_instance_id, server_id, status FROM domains JOIN plugin_instances ON plugin_instances.id = domains.plugin_instance_id WHERE hostname = ?').bind(hostname).first<{ plugin_instance_id: string; server_id: string; status: string }>()
   if (!domain || domain.status !== 'online') return new Response('<!doctype html><title>维护中</title><main style="font-family:system-ui;padding:48px"><h1>插件暂时不可用</h1><p>公开入口尚未就绪或插件服务器当前离线。</p></main>', { status: 503, headers: { 'content-type': 'text/html; charset=utf-8' } })
   const bridge = env.PLUGIN_BRIDGE.get(env.PLUGIN_BRIDGE.idFromName(domain.plugin_instance_id))
-  return bridge.fetch(new Request(new URL('/proxy', request.url), request))
+  const headers = new Headers(request.headers)
+  headers.set('x-plugmesh-server-id', domain.server_id)
+  return bridge.fetch(new Request(new URL('/proxy', request.url), { method: request.method, headers, body: request.body }))
 }
 
 export function createRegistrationFrame(serverId: string) {

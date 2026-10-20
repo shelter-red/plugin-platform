@@ -4,6 +4,7 @@ import type { Env } from './types'
 export class PluginBridge {
   private state: DurableObjectState
   private serverSocket: WebSocket | null = null
+  private serverId = ''
   private pending = new Map<string, { resolve: (response: Response) => void; timer: number }>()
 
   constructor(state: DurableObjectState, _env: Env) {
@@ -20,6 +21,7 @@ export class PluginBridge {
   private connectServer(request: Request): Response {
     if (request.headers.get('Upgrade') !== 'websocket') return new Response('WebSocket upgrade required', { status: 426 })
     const pair = new WebSocketPair()
+    this.serverId = new URL(request.url).searchParams.get('serverId') ?? ''
     const client = pair[0]
     const server = pair[1]
     server.accept()
@@ -29,7 +31,7 @@ export class PluginBridge {
     server.addEventListener('close', () => {
       if (this.serverSocket === server) this.serverSocket = null
     })
-    server.send(JSON.stringify(makeFrame('hello', 'bridge', { message: 'server connection accepted' })))
+    server.send(JSON.stringify(makeFrame('hello', this.serverId, { message: 'server connection accepted' })))
     return new Response(null, { status: 101, webSocket: client })
   }
 
@@ -37,7 +39,7 @@ export class PluginBridge {
     if (!this.serverSocket || this.serverSocket.readyState !== WebSocket.OPEN) return new Response('Plugin server is offline', { status: 503 })
     const requestId = crypto.randomUUID()
     const body = await request.text()
-    const frame = makeFrame('request.open', 'bridge', {
+    const frame = makeFrame('request.open', this.serverId, {
       method: request.method,
       path: new URL(request.url).pathname + new URL(request.url).search,
       headers: Object.fromEntries(request.headers),
