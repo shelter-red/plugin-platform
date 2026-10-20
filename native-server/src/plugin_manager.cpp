@@ -286,7 +286,7 @@ bool PluginManager::http(const std::string& plugin_id, const plugmesh_http_reque
   std::lock_guard lock(mutex_);
   const auto* plugin = find(plugin_id);
   const auto* runtime = loaded(plugin_id);
-  if (!plugin || !runtime || !runtime->loader || plugin->state != PluginState::Enabled || !runtime->loader->api()->handle_http) {
+  if (!plugin || !plugin->http || !runtime || !runtime->loader || plugin->state != PluginState::Enabled || !runtime->loader->api()->handle_http) {
     error = "plugin is not enabled: " + plugin_id;
     return false;
   }
@@ -301,7 +301,7 @@ bool PluginManager::sse(const std::string& plugin_id, const std::string& stream_
   std::lock_guard lock(mutex_);
   const auto* plugin = find(plugin_id);
   const auto* runtime = loaded(plugin_id);
-  if (!plugin || !runtime || !runtime->loader || plugin->state != PluginState::Enabled || !runtime->loader->api()->handle_sse) {
+  if (!plugin || !plugin->sse || !runtime || !runtime->loader || plugin->state != PluginState::Enabled || !runtime->loader->api()->handle_sse) {
     error = "plugin SSE handler is unavailable: " + plugin_id;
     return false;
   }
@@ -316,7 +316,7 @@ bool PluginManager::file_stream(const std::string& plugin_id, const std::string&
   std::lock_guard lock(mutex_);
   const auto* plugin = find(plugin_id);
   const auto* runtime = loaded(plugin_id);
-  if (!plugin || !runtime || !runtime->loader || plugin->state != PluginState::Enabled || !runtime->loader->api()->handle_file) {
+  if (!plugin || !plugin->file_stream || !runtime || !runtime->loader || plugin->state != PluginState::Enabled || !runtime->loader->api()->handle_file) {
     error = "plugin file stream handler is unavailable: " + plugin_id;
     return false;
   }
@@ -331,7 +331,7 @@ bool PluginManager::websocket(const std::string& plugin_id, const std::string& c
   std::lock_guard lock(mutex_);
   const auto* plugin = find(plugin_id);
   const auto* runtime = loaded(plugin_id);
-  if (!plugin || !runtime || !runtime->loader || plugin->state != PluginState::Enabled || !runtime->loader->api()->handle_websocket) {
+  if (!plugin || !plugin->websocket || !runtime || !runtime->loader || plugin->state != PluginState::Enabled || !runtime->loader->api()->handle_websocket) {
     error = "plugin WebSocket handler is unavailable: " + plugin_id;
     return false;
   }
