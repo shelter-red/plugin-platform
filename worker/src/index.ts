@@ -287,7 +287,7 @@ async function assignDomain(request: Request, env: Env, user: AuthenticatedUser)
   const plugin = await env.DB.prepare('SELECT id, server_id, state FROM plugin_instances WHERE id = ? AND user_id = ?').bind(body.pluginInstanceId, user.id).first<{ id: string; server_id: string; state: string }>()
   if (!plugin) return json({ error: 'Plugin instance not found' }, 404)
   if (plugin.state !== 'enabled') return json({ error: 'Plugin must be enabled before assigning a domain' }, 409)
-  const suffix = env.PLUGIN_DOMAIN_SUFFIX ?? '.plugins.example.com'
+  const suffix = pluginDomainSuffix(env)
   const hostname = `${prefix}${suffix}`
   const server = await env.DB.prepare('SELECT status FROM servers WHERE id = ? AND user_id = ?').bind(plugin.server_id, user.id).first<{ status: string }>()
   if (!server || server.status !== 'online') return json({ error: 'Plugin server is offline' }, 409)
@@ -370,8 +370,10 @@ async function createServerRegistration(env: Env, code: string | undefined, name
 async function proxyPublicHost(request: Request, env: Env, url: URL): Promise<Response> {
   const settings = await getPlatformSettings(env)
   if (settings.maintenance) return maintenanceResponse()
-  const suffix = env.PLUGIN_DOMAIN_SUFFIX ?? '.plugins.example.com'
-  if (!url.hostname.endsWith(suffix)) return new Response('Plugmesh console route', { status: 404 })
+  const suffix = pluginDomainSuffix(env)
+  if (!url.hostname.endsWith(suffix) || url.hostname.length <= suffix.length) return new Response('Plugmesh console route', { status: 404 })
+  const prefix = url.hostname.slice(0, -suffix.length)
+  if (!/^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$/.test(prefix)) return new Response('Plugmesh console route', { status: 404 })
   const hostname = url.hostname
   const domain = await env.DB.prepare('SELECT domains.plugin_instance_id, domains.server_id, domains.status, plugin_instances.plugin_id, servers.status AS server_status FROM domains JOIN plugin_instances ON plugin_instances.id = domains.plugin_instance_id JOIN servers ON servers.id = plugin_instances.server_id WHERE domains.hostname = ?').bind(hostname).first<{ plugin_instance_id: string; server_id: string; status: string; plugin_id: string; server_status: string }>()
   if (!domain || domain.status !== 'online' || domain.server_status !== 'online') return maintenanceResponse('插件暂时不可用', '公开入口尚未就绪或插件服务器当前离线。')
@@ -556,5 +558,11 @@ async function localUsageApi(env: Env, user: AuthenticatedUser): Promise<Respons
 
 function maintenanceResponse(title = '平台维护中', detail = '平台当前暂停新流量，请稍后再试。'): Response {
   return new Response(`<!doctype html><title>${title}</title><main style="font-family:system-ui;padding:48px"><h1>${title}</h1><p>${detail}</p></main>`, { status: 503, headers: { 'content-type': 'text/html; charset=utf-8', 'retry-after': '300' } })
+}
+
+function pluginDomainSuffix(env: Env): string {
+  const configured = (env.PLUGIN_DOMAIN_SUFFIX ?? '.plugins.example.com').trim().toLowerCase()
+  const suffix = configured.startsWith('.') ? configured : `.${configured}`
+  return /^\.[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/.test(suffix) && !suffix.includes('..') ? suffix : '.plugins.example.com'
 }
 
