@@ -122,7 +122,15 @@ export class PluginBridge {
     if (!this.serverSocket || this.serverSocket.readyState !== WebSocket.OPEN) return new Response('Plugin server is offline', { status: 503 })
     const body = await request.json().catch(() => null) as { type?: string; pluginId?: string } | null
     if (!body?.type || !body.type.startsWith('plugin.')) return new Response('Invalid command', { status: 400 })
-    const frame = makeFrame(body.type, this.serverId, {}, body.pluginId)
+    const result = await this.sendPluginCommand(body.type, body.pluginId)
+    const requestId = result.requestId
+    if (!result.ok) return new Response(JSON.stringify({ accepted: false, requestId, error: result.error ?? 'Plugin command failed' }), { status: 502, headers: { 'content-type': 'application/json' } })
+    return new Response(JSON.stringify({ accepted: true, requestId, state: result.state ?? null }), { status: 202, headers: { 'content-type': 'application/json' } })
+  }
+
+  private async sendPluginCommand(type: string, pluginId?: string): Promise<{ ok: boolean; state?: string; error?: string; requestId: string }> {
+    const frame = makeFrame(type, this.serverId, {}, pluginId)
+    if (!this.serverSocket || this.serverSocket.readyState !== WebSocket.OPEN) return { ok: false, error: 'Plugin server is offline', requestId: frame.requestId }
     const result = await new Promise<{ ok: boolean; state?: string; error?: string }>((resolve) => {
       const pending: PendingCommand = { resolve, timer: 0 }
       pending.timer = setTimeout(() => {
@@ -138,8 +146,7 @@ export class PluginBridge {
         resolve({ ok: false, error: 'Plugin command could not be sent' })
       }
     })
-    if (!result.ok) return new Response(JSON.stringify({ accepted: false, requestId: frame.requestId, error: result.error ?? 'Plugin command failed' }), { status: 502, headers: { 'content-type': 'application/json' } })
-    return new Response(JSON.stringify({ accepted: true, requestId: frame.requestId, state: result.state ?? null }), { status: 202, headers: { 'content-type': 'application/json' } })
+    return { ...result, requestId: frame.requestId }
   }
 
   private handleServerMessage(data: string | ArrayBuffer) {
@@ -244,6 +251,24 @@ export class PluginBridge {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(server_id, plugin_id) DO UPDATE SET name = excluded.name, version = excluded.version, manifest_json = excluded.manifest_json, state = CASE WHEN plugin_instances.state = 'server_offline' THEN 'discovered' ELSE plugin_instances.state END, updated_at = excluded.updated_at
       `).bind(crypto.randomUUID(), server.user_id, this.serverId, manifest.id, manifest.name, manifest.version, 'discovered', 'discovered', JSON.stringify(manifest), now, now).run()
+    }
+    const desired = await this.env.DB.prepare('SELECT id, plugin_id, desired_state FROM plugin_instances WHERE server_id = ? AND desired_state IN (?, ?, ?)').bind(this.serverId, 'loaded', 'enabled', 'disabled').all<{ id: string; plugin_id: string; desired_state: string }>()
+    for (const plugin of desired.results) {
+      const action = plugin.desired_state === 'loaded' ? 'plugin.load' : plugin.desired_state === 'enabled' ? 'plugin.enable' : 'plugin.load'
+      const loaded = await this.sendPluginCommand(action, plugin.plugin_id)
+      if (!loaded.ok) {
+        await this.env.DB.prepare('UPDATE plugin_instances SET state = ?, updated_at = ? WHERE id = ?').bind('failed', new Date().toISOString(), plugin.id).run()
+        continue
+      }
+      if (plugin.desired_state === 'disabled') {
+        const disabled = await this.sendPluginCommand('plugin.disable', plugin.plugin_id)
+        if (!disabled.ok) {
+          await this.env.DB.prepare('UPDATE plugin_instances SET state = ?, updated_at = ? WHERE id = ?').bind('failed', new Date().toISOString(), plugin.id).run()
+          continue
+        }
+      }
+      const state = plugin.desired_state
+      await this.env.DB.prepare('UPDATE plugin_instances SET state = ?, updated_at = ? WHERE id = ?').bind(state, new Date().toISOString(), plugin.id).run()
     }
   }
 }
