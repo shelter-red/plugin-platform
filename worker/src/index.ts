@@ -6,6 +6,7 @@ import type { AuthenticatedUser, Env } from './types'
 export { PluginBridge }
 
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json; charset=utf-8' } })
+const defaultPlatformSettings = { maintenance: false, quotas: { requests: 100000, activeConnections: 100, r2Bytes: 10 * 1024 * 1024 * 1024, r2Objects: 1000 } }
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -37,6 +38,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   if (request.method === 'GET' && url.pathname === '/api/servers') return json(await env.DB.prepare('SELECT id, name, status, last_seen_at, created_at FROM servers WHERE user_id = ? ORDER BY created_at DESC').bind(user.id).all())
   if (request.method === 'GET' && url.pathname === '/api/plugins') return json(await env.DB.prepare('SELECT id, plugin_id, name, version, state, server_id, updated_at FROM plugin_instances WHERE user_id = ? ORDER BY updated_at DESC').bind(user.id).all())
   if (request.method === 'GET' && url.pathname === '/api/domains') return json(await env.DB.prepare('SELECT id, hostname, status, plugin_instance_id, created_at FROM domains WHERE user_id = ? ORDER BY created_at DESC').bind(user.id).all())
+  if (url.pathname === '/api/settings/platform') return platformSettingsApi(request, env, user)
   const pluginAction = url.pathname.match(/^\/api\/plugins\/([^/]+)\/(load|unload|enable|disable|reload)$/)
   if (request.method === 'POST' && pluginAction) return commandPlugin(request, env, user, decodeURIComponent(pluginAction[1]), pluginAction[2] as 'load' | 'unload' | 'enable' | 'disable' | 'reload')
   if (request.method === 'POST' && url.pathname === '/api/domains') return assignDomain(request, env, user)
@@ -51,6 +53,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
 }
 
 async function createBlob(request: Request, env: Env): Promise<Response> {
+  if (await isMaintenanceMode(env)) return json({ error: 'Platform is in maintenance mode' }, 503)
   const contentLength = Number(request.headers.get('content-length') ?? 0)
   const maxBytes = 50 * 1024 * 1024
   if (!request.body) return json({ error: 'Request body is required' }, 400)
@@ -129,6 +132,7 @@ async function createInvite(request: Request, env: Env, user: AuthenticatedUser)
 }
 
 async function createRegistrationCode(env: Env, user: AuthenticatedUser): Promise<Response> {
+  if (await isMaintenanceMode(env)) return json({ error: 'Platform is in maintenance mode' }, 503)
   const rawCode = crypto.randomUUID() + '-' + crypto.randomUUID().slice(0, 8)
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString()
   await env.DB.prepare('INSERT INTO registration_codes (id, user_id, code_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, await hashControlToken(rawCode), expiresAt, new Date().toISOString()).run()
@@ -137,6 +141,7 @@ async function createRegistrationCode(env: Env, user: AuthenticatedUser): Promis
 }
 
 async function commandPlugin(request: Request, env: Env, user: AuthenticatedUser, pluginInstanceId: string, action: 'load' | 'unload' | 'enable' | 'disable' | 'reload'): Promise<Response> {
+  if (await isMaintenanceMode(env)) return json({ error: 'Platform is in maintenance mode' }, 503)
   const plugin = await env.DB.prepare('SELECT id, plugin_id, server_id, state FROM plugin_instances WHERE id = ? AND user_id = ?').bind(pluginInstanceId, user.id).first<{ id: string; plugin_id: string; server_id: string; state: string }>()
   if (!plugin) return json({ error: 'Plugin instance not found' }, 404)
   const server = await env.DB.prepare('SELECT status FROM servers WHERE id = ? AND user_id = ?').bind(plugin.server_id, user.id).first<{ status: string }>()
@@ -151,6 +156,7 @@ async function commandPlugin(request: Request, env: Env, user: AuthenticatedUser
 }
 
 async function assignDomain(request: Request, env: Env, user: AuthenticatedUser): Promise<Response> {
+  if (await isMaintenanceMode(env)) return json({ error: 'Platform is in maintenance mode' }, 503)
   const body = await request.json().catch(() => null) as { pluginInstanceId?: string; prefix?: string } | null
   const prefix = body?.prefix?.trim().toLowerCase() ?? ''
   const reserved = new Set(['admin', 'api', 'auth', 'console', 'control', 'plugins', 'www'])
@@ -205,14 +211,54 @@ async function registerServer(request: Request, env: Env): Promise<Response> {
 }
 
 async function proxyPublicHost(request: Request, env: Env, url: URL): Promise<Response> {
+  if (await isMaintenanceMode(env)) return maintenanceResponse()
   const suffix = env.PLUGIN_DOMAIN_SUFFIX ?? '.plugins.example.com'
   if (!url.hostname.endsWith(suffix)) return new Response('Plugmesh console route', { status: 404 })
   const hostname = url.hostname
   const domain = await env.DB.prepare('SELECT domains.plugin_instance_id, domains.server_id, domains.status, servers.status AS server_status FROM domains JOIN plugin_instances ON plugin_instances.id = domains.plugin_instance_id JOIN servers ON servers.id = plugin_instances.server_id WHERE domains.hostname = ?').bind(hostname).first<{ plugin_instance_id: string; server_id: string; status: string; server_status: string }>()
-  if (!domain || domain.status !== 'online' || domain.server_status !== 'online') return new Response('<!doctype html><title>维护中</title><main style="font-family:system-ui;padding:48px"><h1>插件暂时不可用</h1><p>公开入口尚未就绪或插件服务器当前离线。</p></main>', { status: 503, headers: { 'content-type': 'text/html; charset=utf-8' } })
+  if (!domain || domain.status !== 'online' || domain.server_status !== 'online') return maintenanceResponse('插件暂时不可用', '公开入口尚未就绪或插件服务器当前离线。')
   const bridge = env.PLUGIN_BRIDGE.get(env.PLUGIN_BRIDGE.idFromName(domain.plugin_instance_id))
   const headers = new Headers(request.headers)
   headers.set('x-plugmesh-server-id', domain.server_id)
   return bridge.fetch(new Request(new URL('/proxy', request.url), { method: request.method, headers, body: request.body }))
+}
+
+async function platformSettingsApi(request: Request, env: Env, user: AuthenticatedUser): Promise<Response> {
+  if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
+  const settings = await getPlatformSettings(env)
+  if (request.method === 'GET') return json(settings)
+  if (request.method !== 'PUT') return json({ error: 'Method not allowed' }, 405)
+  const body = await request.json().catch(() => null) as { maintenance?: boolean; quotas?: Partial<typeof defaultPlatformSettings.quotas> } | null
+  const next = {
+    maintenance: Boolean(body?.maintenance ?? settings.maintenance),
+    quotas: {
+      requests: Math.max(1, Number(body?.quotas?.requests ?? settings.quotas.requests)),
+      activeConnections: Math.max(1, Number(body?.quotas?.activeConnections ?? settings.quotas.activeConnections)),
+      r2Bytes: Math.max(1, Number(body?.quotas?.r2Bytes ?? settings.quotas.r2Bytes)),
+      r2Objects: Math.max(1, Number(body?.quotas?.r2Objects ?? settings.quotas.r2Objects)),
+    },
+  }
+  await env.DB.prepare('INSERT INTO platform_settings (key, value_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at').bind('platform', JSON.stringify(next), new Date().toISOString()).run()
+  await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'platform.settings.updated', JSON.stringify(next), new Date().toISOString()).run()
+  return json(next)
+}
+
+async function getPlatformSettings(env: Env): Promise<typeof defaultPlatformSettings> {
+  const row = await env.DB.prepare('SELECT value_json FROM platform_settings WHERE key = ?').bind('platform').first<{ value_json: string }>()
+  if (!row) return defaultPlatformSettings
+  try {
+    const value = JSON.parse(row.value_json) as Partial<typeof defaultPlatformSettings>
+    return { ...defaultPlatformSettings, ...value, quotas: { ...defaultPlatformSettings.quotas, ...(value.quotas ?? {}) } }
+  } catch {
+    return defaultPlatformSettings
+  }
+}
+
+async function isMaintenanceMode(env: Env): Promise<boolean> {
+  return (await getPlatformSettings(env)).maintenance
+}
+
+function maintenanceResponse(title = '平台维护中', detail = '平台当前暂停新流量，请稍后再试。'): Response {
+  return new Response(`<!doctype html><title>${title}</title><main style="font-family:system-ui;padding:48px"><h1>${title}</h1><p>${detail}</p></main>`, { status: 503, headers: { 'content-type': 'text/html; charset=utf-8', 'retry-after': '300' } })
 }
 

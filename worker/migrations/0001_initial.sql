@@ -55,6 +55,12 @@ CREATE TABLE IF NOT EXISTS temp_objects (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS platform_settings (
+  key TEXT PRIMARY KEY,
+  value_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS servers (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
