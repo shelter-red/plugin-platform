@@ -1,5 +1,4 @@
 import { PluginBridge } from './durable-object'
-import { makeFrame, parseControlFrame } from './protocol'
 import { hashControlToken } from './security'
 import { createSession, digest, exchangeGithubCode, getCurrentUser, isAllowlisted, redirectWithError, sessionCookie, clearSessionCookie } from './auth'
 import type { AuthenticatedUser, Env } from './types'
@@ -217,10 +216,3 @@ async function proxyPublicHost(request: Request, env: Env, url: URL): Promise<Re
   return bridge.fetch(new Request(new URL('/proxy', request.url), { method: request.method, headers, body: request.body }))
 }
 
-export function createRegistrationFrame(serverId: string) {
-  return makeFrame('server.register', serverId, { capabilities: ['http', 'websocket', 'sse', 'fileStream'] })
-}
-
-export function isValidControlMessage(raw: string) {
-  return parseControlFrame(raw) !== null
-}

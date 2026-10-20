@@ -5,9 +5,7 @@ export interface Env {
   DB: D1Database
   BLOB_BUCKET: R2Bucket
   PLUGIN_BRIDGE: DurableObjectNamespace
-  CONSOLE_HOST?: string
   PLUGIN_DOMAIN_SUFFIX?: string
-  CONTROL_TOKEN_SECRET?: string
   GITHUB_CLIENT_ID?: string
   GITHUB_CLIENT_SECRET?: string
   GITHUB_REDIRECT_URI?: string

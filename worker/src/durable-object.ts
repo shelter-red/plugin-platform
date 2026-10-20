@@ -2,14 +2,12 @@ import { isManifest, makeFrame, parseControlFrame } from './protocol'
 import type { Env } from './types'
 
 export class PluginBridge {
-  private state: DurableObjectState
   private serverSocket: WebSocket | null = null
   private serverId = ''
   private env: Env
   private pending = new Map<string, { resolve: (response: Response) => void; timer: number }>()
 
-  constructor(state: DurableObjectState, env: Env) {
-    this.state = state
+  constructor(_state: DurableObjectState, env: Env) {
     this.env = env
   }
 
