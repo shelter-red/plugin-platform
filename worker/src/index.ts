@@ -20,7 +20,7 @@ export default {
     if (url.pathname === '/auth/cloudflare/start') return startCloudflareAuth(request, env, url)
     if (url.pathname === '/auth/cloudflare/callback') return finishCloudflareAuth(request, env, url)
     if (url.pathname === '/auth/logout') return new Response(null, { status: 302, headers: { location: '/', 'set-cookie': clearSessionCookie(url.protocol === 'https:') } })
-    if (url.pathname === '/control/register') return registerServer(request, env)
+    if (url.pathname === '/control/register') return request.headers.get('Upgrade')?.toLowerCase() === 'websocket' ? registerServerSocket(request, env) : registerServer(request, env)
     if (url.pathname.startsWith('/api/')) return api(request, env, url)
     if (url.pathname === '/control/connect') return connectServer(request, env, url)
     if (url.pathname.startsWith('/blobs/')) return consumeBlob(request, env, ctx, url)
@@ -267,18 +267,52 @@ async function connectServer(request: Request, env: Env, url: URL): Promise<Resp
 async function registerServer(request: Request, env: Env): Promise<Response> {
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
   const body = await request.json().catch(() => null) as { code?: string; name?: string } | null
-  if (!body?.code || !body.name?.trim()) return json({ error: 'code and name are required' }, 400)
-  const codeHash = await hashControlToken(body.code)
+  const result = await createServerRegistration(env, body?.code, body?.name)
+  if ('error' in result) return json({ error: result.error }, result.status)
+  return json(result.value, 201)
+}
+
+function registerServerSocket(request: Request, env: Env): Response {
+  const pair = new WebSocketPair()
+  const client = pair[0]
+  const server = pair[1]
+  let handled = false
+  server.accept()
+  server.addEventListener('message', (event) => {
+    if (handled || typeof event.data !== 'string' || event.data.length > 8192) return
+    handled = true
+    void (async () => {
+      let body: { code?: string; name?: string } | null = null
+      try {
+        body = JSON.parse(event.data) as { code?: string; name?: string }
+      } catch {
+        server.send(JSON.stringify({ ok: false, error: 'Invalid JSON' }))
+        server.close(1003, 'Invalid JSON')
+        return
+      }
+      const result = await createServerRegistration(env, body.code, body.name)
+      if ('error' in result) server.send(JSON.stringify({ ok: false, error: result.error }))
+      else server.send(JSON.stringify({ ok: true, ...result.value }))
+      server.close(1000, 'Registration complete')
+    })()
+  })
+  return new Response(null, { status: 101, webSocket: client })
+}
+
+async function createServerRegistration(env: Env, code: string | undefined, name: string | undefined): Promise<{ value: { serverId: string; accessToken: string; protocolVersion: number } } | { error: string; status: number }> {
+  if (!code || !name?.trim()) return { error: 'code and name are required', status: 400 }
+  const codeHash = await hashControlToken(code)
   const registration = await env.DB.prepare('SELECT id, user_id FROM registration_codes WHERE code_hash = ? AND used_at IS NULL AND expires_at > ?').bind(codeHash, new Date().toISOString()).first<{ id: string; user_id: string }>()
-  if (!registration) return json({ error: 'Registration code is invalid or expired' }, 401)
+  if (!registration) return { error: 'Registration code is invalid or expired', status: 401 }
+  const marked = await env.DB.prepare('UPDATE registration_codes SET used_at = ? WHERE id = ? AND used_at IS NULL AND expires_at > ?').bind(new Date().toISOString(), registration.id, new Date().toISOString()).run()
+  if ((marked.meta.changes ?? 0) !== 1) return { error: 'Registration code is invalid or expired', status: 401 }
   const serverId = crypto.randomUUID()
   const accessToken = crypto.randomUUID() + crypto.randomUUID()
   await env.DB.batch([
-    env.DB.prepare('UPDATE registration_codes SET used_at = ? WHERE id = ?').bind(new Date().toISOString(), registration.id),
-    env.DB.prepare('INSERT INTO servers (id, user_id, name, token_hash, status, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(serverId, registration.user_id, body.name.trim(), await hashControlToken(accessToken), 'offline', new Date().toISOString()),
+    env.DB.prepare('INSERT INTO servers (id, user_id, name, token_hash, status, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(serverId, registration.user_id, name.trim(), await hashControlToken(accessToken), 'offline', new Date().toISOString()),
     env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), registration.user_id, 'server.registered', JSON.stringify({ serverId }), new Date().toISOString()),
   ])
-  return json({ serverId, accessToken, protocolVersion: 1 }, 201)
+  return { value: { serverId, accessToken, protocolVersion: 1 } }
 }
 
 async function proxyPublicHost(request: Request, env: Env, url: URL): Promise<Response> {

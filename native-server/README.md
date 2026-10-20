@@ -25,4 +25,14 @@
 native-server/build/plugmesh-credential-store-smoke
 ```
 
+首次绑定可以使用 CLI fallback。管理端生成注册码后，在本地执行：
+
+```bash
+PLUGMESH_CREDENTIAL_PASSWORD='本地口令' \
+PLUGMESH_REGISTRATION_CODE='一次性注册码' \
+native-server/build/plugmesh-server --register https://console.example.com '工作站插件服务器' ~/.config/plugmesh/credentials.json
+```
+
+注册成功后，服务器启动时设置 `PLUGMESH_CREDENTIAL_FILE`、`PLUGMESH_CREDENTIAL_PASSWORD` 和 `PLUGMESH_PLUGIN_DIRECTORY`，即可从加密凭据文件恢复长期连接参数。注册码和口令也可以在交互提示中输入，不必放在环境变量中。
+
 网络传输层复用 `worker/src/protocol.ts` 的协议字段约定；当前已接入控制 WebSocket 和 HTTP 回调，SSE、文件流、公开 WebSocket 的二进制回传及本地 Web UI 仍未完成。

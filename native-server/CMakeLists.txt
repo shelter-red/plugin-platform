@@ -14,6 +14,7 @@ add_library(plugmesh_core STATIC
   src/credential_store.cpp
   src/plugin_loader.cpp
   src/plugin_manager.cpp
+  src/registration_client.cpp
   src/server_config.cpp
 )
 target_compile_definitions(plugmesh_core PUBLIC ASIO_STANDALONE)
@@ -43,6 +44,9 @@ target_link_libraries(plugmesh-control-protocol-smoke PRIVATE plugmesh_core)
 
 add_executable(plugmesh-credential-store-smoke tests/credential_store_smoke.cpp)
 target_link_libraries(plugmesh-credential-store-smoke PRIVATE plugmesh_core)
+
+add_executable(plugmesh-registration-client-smoke tests/registration_client_smoke.cpp)
+target_link_libraries(plugmesh-registration-client-smoke PRIVATE plugmesh_core)
 
 if (WIN32)
   target_compile_definitions(plugmesh_core PRIVATE PLUGMESH_PLATFORM_WINDOWS=1)
