@@ -124,6 +124,7 @@ const char* plugin_state_name(PluginState state) {
 
 PluginManager::PluginManager(plugmesh_host_api host_api) : host_api_(host_api) {
   if (host_api_.abi_version == 0) host_api_.abi_version = PLUGMESH_PLUGIN_ABI_VERSION;
+  if (!host_api_.log) host_api_.log = &PluginManager::log_trampoline;
   if (!host_api_.stream_open) host_api_.stream_open = &PluginManager::stream_open_trampoline;
   if (!host_api_.stream_write) host_api_.stream_write = &PluginManager::stream_write_trampoline;
   active_instance_ = this;
@@ -147,6 +148,11 @@ void PluginManager::set_stream_writer(StreamWriter writer) {
 void PluginManager::set_stream_opener(StreamOpener opener) {
   std::lock_guard lock(mutex_);
   stream_opener_ = std::move(opener);
+}
+
+void PluginManager::set_log_writer(LogWriter writer) {
+  std::lock_guard lock(mutex_);
+  log_writer_ = std::move(writer);
 }
 
 bool PluginManager::discover(const std::filesystem::path& directory, std::string& error) {
@@ -199,6 +205,7 @@ bool PluginManager::load(const std::string& plugin_id, std::string& error) {
   if (!loader->load(plugin->library, error)) return set_failed(*plugin, error);
   loaded_.emplace(plugin_id, LoadedPlugin{std::move(loader)});
   plugin->state = PluginState::Loaded;
+  write_log(1, ("plugin loaded: " + plugin_id).c_str());
   return true;
 }
 
@@ -214,6 +221,7 @@ bool PluginManager::enable(const std::string& plugin_id, std::string& error) {
   auto* runtime = loaded(plugin_id);
   if (!runtime || !runtime->loader || runtime->loader->api()->start(&host_api_) != 0) return set_failed(*plugin, error = "plugin start failed: " + plugin_id);
   plugin->state = PluginState::Enabled;
+  write_log(1, ("plugin enabled: " + plugin_id).c_str());
   return true;
 }
 
@@ -231,6 +239,7 @@ bool PluginManager::disable(const std::string& plugin_id, std::string& error) {
   }
   if (runtime->loader->api()->stop() != 0) return set_failed(*plugin, error = "plugin stop failed: " + plugin_id);
   plugin->state = PluginState::Disabled;
+  write_log(1, ("plugin disabled: " + plugin_id).c_str());
   return true;
 }
 
@@ -245,6 +254,7 @@ bool PluginManager::unload(const std::string& plugin_id, std::string& error) {
   if (plugin->state == PluginState::Enabled && runtime->loader->api()->stop() != 0) return set_failed(*plugin, error = "plugin stop failed: " + plugin_id);
   loaded_.erase(plugin_id);
   plugin->state = PluginState::Unloaded;
+  write_log(1, ("plugin unloaded: " + plugin_id).c_str());
   return true;
 }
 
@@ -386,6 +396,15 @@ int PluginManager::open_stream(const char* stream_id, uint16_t status, const cha
   std::lock_guard lock(mutex_);
   if (!stream_opener_ || !stream_id || !headers_json) return -1;
   return stream_opener_(stream_id, status, headers_json);
+}
+
+void PluginManager::log_trampoline(int level, const char* message) {
+  if (active_instance_) active_instance_->write_log(level, message);
+}
+
+void PluginManager::write_log(int level, const char* message) {
+  std::lock_guard lock(mutex_);
+  if (log_writer_ && message) log_writer_(level, message);
 }
 
 }  // namespace plugmesh

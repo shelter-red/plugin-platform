@@ -45,6 +45,7 @@ class PluginManager {
  public:
   using StreamWriter = std::function<int(const char*, const uint8_t*, uint64_t, int)>;
   using StreamOpener = std::function<int(const char*, uint16_t, const char*)>;
+  using LogWriter = std::function<void(int, const char*)>;
 
   explicit PluginManager(plugmesh_host_api host_api = {});
   PluginManager(const PluginManager&) = delete;
@@ -53,6 +54,7 @@ class PluginManager {
 
   void set_stream_writer(StreamWriter writer);
   void set_stream_opener(StreamOpener opener);
+  void set_log_writer(LogWriter writer);
 
   bool discover(const std::filesystem::path& directory, std::string& error);
   std::vector<PluginInfo> snapshot() const;
@@ -82,11 +84,14 @@ class PluginManager {
   int write_stream(const char* stream_id, const uint8_t* data, uint64_t size, int finished);
   static int stream_open_trampoline(const char* stream_id, uint16_t status, const char* headers_json);
   int open_stream(const char* stream_id, uint16_t status, const char* headers_json);
+  static void log_trampoline(int level, const char* message);
+  void write_log(int level, const char* message);
 
   plugmesh_host_api host_api_{};
   mutable std::recursive_mutex mutex_;
   StreamOpener stream_opener_;
   StreamWriter stream_writer_;
+  LogWriter log_writer_;
   static PluginManager* active_instance_;
   std::vector<PluginInfo> plugins_;
   std::map<std::string, LoadedPlugin> loaded_;

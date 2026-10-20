@@ -64,8 +64,8 @@ bool contains_parent_segment(const std::string& resource) {
 
 }  // namespace
 
-LocalHttpServer::LocalHttpServer(uint16_t port, PluginManager* plugins, StatusProvider status_provider, std::filesystem::path ui_directory, RegistrationHandler registration_handler)
-    : port_(port), plugins_(plugins), status_provider_(std::move(status_provider)), ui_directory_(std::move(ui_directory)), registration_handler_(std::move(registration_handler)) {}
+LocalHttpServer::LocalHttpServer(uint16_t port, PluginManager* plugins, StatusProvider status_provider, std::filesystem::path ui_directory, RegistrationHandler registration_handler, LogProvider log_provider)
+    : port_(port), plugins_(plugins), status_provider_(std::move(status_provider)), ui_directory_(std::move(ui_directory)), registration_handler_(std::move(registration_handler)), log_provider_(std::move(log_provider)) {}
 
 bool LocalHttpServer::run(std::string& error) {
   stopping_ = false;
@@ -210,6 +210,12 @@ void LocalHttpServer::handle_http(void* handle) {
     status["enabledPluginCount"] = enabled;
     status["failedPluginCount"] = failed;
     set_json_response(connection, websocketpp::http::status_code::ok, status);
+    return;
+  }
+
+  if (method == "GET" && resource == "/api/logs") {
+    const auto logs = log_provider_ ? log_provider_() : nlohmann::json::array();
+    set_json_response(connection, websocketpp::http::status_code::ok, {{"logs", logs}});
     return;
   }
 

@@ -13,6 +13,7 @@ int main(int argc, char** argv) {
   plugmesh::PluginManager manager;
   std::string stream_id;
   std::vector<uint8_t> streamed;
+  std::vector<std::string> logs;
   bool finished = false;
   uint16_t opened_status = 0;
   std::string opened_headers;
@@ -21,6 +22,9 @@ int main(int argc, char** argv) {
     opened_status = status;
     opened_headers = headers ? headers : "";
     return 0;
+  });
+  manager.set_log_writer([&](int, const char* message) {
+    if (message) logs.emplace_back(message);
   });
   manager.set_stream_writer([&](const char* id, const uint8_t* data, uint64_t size, int is_finished) {
     stream_id = id ? id : "";
@@ -35,6 +39,10 @@ int main(int argc, char** argv) {
   }
   if (!manager.load("sample.plugin", error) || manager.snapshot()[0].state != plugmesh::PluginState::Loaded) {
     std::cerr << "load failed: " << error << '\n';
+    return 1;
+  }
+  if (logs.empty() || logs.back() != "plugin loaded: sample.plugin") {
+    std::cerr << "plugin log callback failed\n";
     return 1;
   }
   if (!manager.enable("sample.plugin", error) || manager.snapshot()[0].state != plugmesh::PluginState::Enabled) {

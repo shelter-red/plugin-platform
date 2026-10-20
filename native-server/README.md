@@ -24,6 +24,7 @@
 - `GET /api/health`、`GET /api/status`：服务和控制连接状态。
 - `GET /api/plugins`：已发现插件的 manifest 与生命周期状态。
 - `GET /api/diagnostics`：插件数量、加载状态和失败数量摘要。
+- `GET /api/logs`：读取最近的本地插件日志，最多保留 200 条。
 - `GET /api/plugins/{pluginId}/health`：执行已启用插件的 ABI 健康检查。
 - `POST /api/plugins/{pluginId}/{load|unload|enable|disable|reload}`：执行插件生命周期操作。
 - `POST /api/register`：仅在连接配置缺失时可用，调用 Worker 注册并把长期凭据加密保存到本地。
