@@ -34,6 +34,22 @@ export interface ApiDomain {
   created_at: string
 }
 
+export interface RegistrationCode {
+  code: string
+  expiresAt: string
+}
+
+export interface PluginCommandResult {
+  id: string
+  state: string
+  accepted: boolean
+}
+
+export interface DomainAssignmentResult {
+  hostname: string
+  status: string
+}
+
 export interface PlatformSettings {
   maintenance: boolean
   quotas: {
@@ -100,6 +116,32 @@ export async function fetchDomains(): Promise<ApiDomain[]> {
   if (!response.ok) throw new Error(`domains request failed: ${response.status}`)
   const data = await response.json() as { results?: ApiDomain[] }
   return data.results ?? []
+}
+
+async function apiError(response: Response, fallback: string): Promise<Error> {
+  const data = await response.json().catch(() => null) as { error?: string } | null
+  return new Error(data?.error || fallback)
+}
+
+export async function createRegistrationCode(): Promise<RegistrationCode> {
+  const apiBase = import.meta.env.VITE_API_BASE ?? ''
+  const response = await fetch(`${apiBase}/api/registration-codes`, { method: 'POST', credentials: 'include' })
+  if (!response.ok) throw await apiError(response, `registration code request failed: ${response.status}`)
+  return response.json() as Promise<RegistrationCode>
+}
+
+export async function commandPlugin(pluginInstanceId: string, action: 'load' | 'unload' | 'enable' | 'disable' | 'reload'): Promise<PluginCommandResult> {
+  const apiBase = import.meta.env.VITE_API_BASE ?? ''
+  const response = await fetch(`${apiBase}/api/plugins/${encodeURIComponent(pluginInstanceId)}/${action}`, { method: 'POST', credentials: 'include' })
+  if (!response.ok) throw await apiError(response, `plugin command failed: ${response.status}`)
+  return response.json() as Promise<PluginCommandResult>
+}
+
+export async function assignDomain(pluginInstanceId: string, prefix: string): Promise<DomainAssignmentResult> {
+  const apiBase = import.meta.env.VITE_API_BASE ?? ''
+  const response = await fetch(`${apiBase}/api/domains`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pluginInstanceId, prefix }) })
+  if (!response.ok) throw await apiError(response, `domain assignment failed: ${response.status}`)
+  return response.json() as Promise<DomainAssignmentResult>
 }
 
 export async function updatePlatformSettings(settings: PlatformSettings): Promise<PlatformSettings> {

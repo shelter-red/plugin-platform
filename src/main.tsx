@@ -38,10 +38,12 @@ import {
   Zap,
 } from 'lucide-react'
 import './styles.css'
-import { fetchCloudflareSettings, fetchDomains, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchServers, fetchSmtpSettings, revokeCloudflareSettings, type ApiDomain, type ApiOverview, type ApiPlugin, type ApiServer, type CloudflareSettings, type PlatformSettings, type SmtpSettings, sendSmtpTest, updatePlatformSettings, updateSmtpSettings } from './api'
+import { assignDomain, commandPlugin, createRegistrationCode, fetchCloudflareSettings, fetchDomains, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchServers, fetchSmtpSettings, revokeCloudflareSettings, type ApiDomain, type ApiOverview, type ApiPlugin, type ApiServer, type CloudflareSettings, type PlatformSettings, type SmtpSettings, sendSmtpTest, updatePlatformSettings, updateSmtpSettings } from './api'
 
 type Page = 'overview' | 'servers' | 'plugins' | 'domains' | 'usage' | 'audit' | 'settings'
 type Theme = 'dark' | 'light' | 'system'
+type ModalInput = { prefix?: string; pluginInstanceId?: string }
+type ModalResult = { kind: 'registration'; code: string; expiresAt: string } | { kind: 'plugin'; state: string } | { kind: 'domain'; hostname: string }
 
 const pageMeta: Record<Page, { title: string; description: string }> = {
   overview: { title: '总览', description: '查看平台连接、插件实例和公开入口的运行状态。' },
@@ -194,7 +196,7 @@ function App() {
     window.setTimeout(() => setToast(null), 2600)
   }
 
-  const refreshData = async () => {
+  const refreshData = async (notify = true) => {
     setDataLoading(true)
     try {
       const [nextOverview, nextServers, nextPlugins, nextDomains] = await Promise.all([fetchOverview(), fetchServers(), fetchPlugins(), fetchDomains()])
@@ -204,13 +206,31 @@ function App() {
       setDomains(nextDomains)
       setApiLive(true)
       setDataError(null)
-      showToast('平台数据已刷新')
+      if (notify) showToast('平台数据已刷新')
     } catch {
       setDataError('Worker 数据暂时无法读取')
       showToast('平台数据刷新失败')
     } finally {
       setDataLoading(false)
     }
+  }
+
+  const confirmModal = async (type: 'server' | 'domain' | 'plugin', input: ModalInput): Promise<ModalResult> => {
+    if (type === 'server') {
+      const result = await createRegistrationCode()
+      await refreshData(false)
+      return { kind: 'registration', code: result.code, expiresAt: result.expiresAt }
+    }
+    if (!input.pluginInstanceId) throw new Error('请选择插件实例')
+    if (type === 'plugin') {
+      const result = await commandPlugin(input.pluginInstanceId, 'load')
+      await refreshData(false)
+      return { kind: 'plugin', state: result.state }
+    }
+    if (!input.prefix?.trim()) throw new Error('请输入域名前缀')
+    const result = await assignDomain(input.pluginInstanceId, input.prefix.trim())
+    await refreshData(false)
+    return { kind: 'domain', hostname: result.hostname }
   }
 
   const filteredPlugins = useMemo(() => {
@@ -272,7 +292,7 @@ function App() {
           </div>
         </div>
       </main>
-      {modal && <Modal type={modal} onClose={() => setModal(null)} />}
+      {modal && <Modal type={modal} plugins={plugins ?? []} onClose={() => setModal(null)} onConfirm={(input) => confirmModal(modal, input)} />}
       {toast && <div className="toast"><div className="toast-icon"><Check size={14} /></div>{toast}</div>}
     </div>
   )
@@ -399,13 +419,47 @@ function SmtpPanel({ settings, onChange, onAction }: { settings: SmtpSettings | 
   return <div className="panel settings-panel"><div className="settings-heading"><div className="settings-icon"><Mail size={18} /></div><div><h2>邮件 SMTP</h2><p>{settings ? '配置后可发送邀请和维护通知。密码只保存密文，不会回显。' : 'Worker API 未连接，不会连接 SMTP 服务。'}</p></div><StatusBadge tone={settings?.configured ? 'success' : 'neutral'}>{settings?.configured ? '已配置' : settings ? '未配置' : '未读取'}</StatusBadge></div><div className="form-grid"><label>SMTP Host<input value={form.host} onChange={(event) => update('host', event.target.value)} placeholder="smtp.example.com" disabled={!settings} /></label><label>端口<input type="number" min="1" max="65535" value={form.port} onChange={(event) => update('port', event.target.value)} disabled={!settings} /></label><label>用户名<input value={form.username} onChange={(event) => update('username', event.target.value)} disabled={!settings} /></label><label>密码 / 授权码<input type="password" value={form.password} onChange={(event) => update('password', event.target.value)} placeholder={settings?.configured ? '重新保存时填写' : 'SMTP 授权码'} disabled={!settings} /></label><label>认证方式<select value={form.authType} onChange={(event) => update('authType', event.target.value)} disabled={!settings}><option value="plain">PLAIN</option><option value="login">LOGIN</option><option value="cram-md5">CRAM-MD5</option></select></label><label>发件邮箱<input type="email" value={form.from} onChange={(event) => update('from', event.target.value)} placeholder="noreply@example.com" disabled={!settings} /></label><label>发件人名称<input value={form.fromName} onChange={(event) => update('fromName', event.target.value)} disabled={!settings} /></label><label>回复邮箱<input type="email" value={form.replyTo} onChange={(event) => update('replyTo', event.target.value)} disabled={!settings} /></label></div><div className="smtp-options"><label className="check-row"><input type="checkbox" checked={form.secure} onChange={(event) => update('secure', event.target.checked)} disabled={!settings} />使用 SMTPS / SSL</label><span className="form-hint">Workers 不能使用 25 端口，通常使用 465 或 587。</span></div><div className="settings-actions"><button className="button primary" onClick={save} disabled={saving || !settings}>{saving ? '保存中...' : '保存 SMTP 配置'}<Check size={14} /></button><div className="smtp-test"><input value={form.testTo} onChange={(event) => update('testTo', event.target.value)} placeholder="测试收件邮箱" disabled={!settings} /><button className="button secondary" onClick={test} disabled={testing || !settings}>{testing ? '发送中...' : '发送测试邮件'}<ArrowUpRight size={14} /></button></div></div></div>
 }
 
-function Modal({ type, onClose }: { type: 'server' | 'domain' | 'plugin'; onClose: () => void }) {
+function Modal({ type, plugins, onClose, onConfirm }: { type: 'server' | 'domain' | 'plugin'; plugins: ApiPlugin[]; onClose: () => void; onConfirm: (input: ModalInput) => Promise<ModalResult> }) {
+  const [value, setValue] = useState('')
+  const [selectedPluginId, setSelectedPluginId] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [result, setResult] = useState<ModalResult | null>(null)
+  const loadablePlugins = plugins.filter((plugin) => !['loaded', 'enabled'].includes(plugin.state))
+  const domainPlugins = plugins.filter((plugin) => plugin.state === 'enabled' && !plugin.domain_hostname)
+  const candidates = type === 'plugin' ? loadablePlugins : domainPlugins
   const content = type === 'server'
     ? { title: '绑定插件服务器', description: '生成一次性注册码，在服务器本地 Web UI 中完成绑定。' }
     : type === 'domain'
       ? { title: '分配公开域名', description: '域名会绑定到一个已通过健康检查的插件实例。' }
       : { title: '加载插件', description: '从已连接的服务器选择一个已发现的 manifest。' }
-  return <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}><div className="modal"><div className="modal-head"><div><h2>{content.title}</h2><p>{content.description}</p></div><IconButton label="关闭弹窗" onClick={onClose}><X size={17} /></IconButton></div><div className="empty-panel"><div className="empty-illustration"><AlertCircle size={22} /></div><h3>操作尚未接入</h3><p>Worker API 尚未提供此操作，当前不会创建注册码、插件命令或域名绑定。</p></div><div className="modal-actions"><button className="button secondary" onClick={onClose}>关闭</button></div></div></div>
+
+  const submit = async () => {
+    setSubmitting(true)
+    setError(null)
+    try {
+      setResult(await onConfirm({ prefix: type === 'domain' ? value : undefined, pluginInstanceId: type === 'server' ? undefined : selectedPluginId }))
+    } catch (submissionError) {
+      setError(submissionError instanceof Error ? submissionError.message : '操作失败')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const copyCode = async (code: string) => {
+    if (!navigator.clipboard) {
+      setError('当前浏览器不支持复制，请手动复制注册码')
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(code)
+      setError(null)
+    } catch {
+      setError('注册码复制失败，请手动复制')
+    }
+  }
+
+  return <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget && !submitting) onClose() }}><div className="modal"><div className="modal-head"><div><h2>{content.title}</h2><p>{content.description}</p></div><IconButton label="关闭弹窗" onClick={onClose}><X size={17} /></IconButton></div>{result?.kind === 'registration' && <div className="code-callout"><span>注册码有效至 {new Date(result.expiresAt).toLocaleString('zh-CN')}</span><div className="code-value"><strong>{result.code}</strong><button className="row-action" onClick={() => void copyCode(result.code)} aria-label="复制注册码" title="复制注册码"><Copy size={15} /></button></div></div>}{result?.kind === 'plugin' && <div className="empty-panel"><div className="empty-illustration"><Check size={22} /></div><h3>加载命令已确认</h3><p>插件当前状态：{result.state}</p></div>}{result?.kind === 'domain' && <div className="empty-panel"><div className="empty-illustration"><Check size={22} /></div><h3>公开域名已分配</h3><p>{result.hostname}</p></div>}{!result && type === 'server' && <div className="empty-panel"><div className="empty-illustration"><LockKeyhole size={22} /></div><h3>生成一次性注册码</h3><p>注册码仅显示在当前窗口，有效期 10 分钟且只能使用一次。</p></div>}{!result && type !== 'server' && <>{candidates.length > 0 ? <label className="modal-field">插件实例<select autoFocus value={selectedPluginId} onChange={(event) => setSelectedPluginId(event.target.value)}><option value="">请选择插件实例</option>{candidates.map((plugin) => <option value={plugin.id} key={plugin.id}>{plugin.name} · {plugin.plugin_id} · {plugin.server_name}</option>)}</select></label> : <div className="empty-panel"><div className="empty-illustration"><AlertCircle size={22} /></div><h3>{type === 'plugin' ? '暂无可加载插件' : '暂无可分配插件'}</h3><p>{type === 'plugin' ? '需要先由服务器同步尚未加载的 manifest。' : '需要已启用、通过健康检查且尚未分配域名的插件。'}</p></div>}{type === 'domain' && candidates.length > 0 && <label className="modal-field">域名前缀<input autoFocus value={value} onChange={(event) => setValue(event.target.value)} placeholder="例如：my-plugin" maxLength={48} /><span className="field-hint">仅允许小写字母、数字和连字符，长度不超过 48 个字符。</span></label>}</>}{error && <div className="auth-error"><AlertCircle size={14} />{error}</div>}<div className="modal-actions"><button className="button secondary" onClick={onClose} disabled={submitting}>关闭</button>{!result && <button className="button primary" onClick={() => void submit()} disabled={submitting || (type !== 'server' && (!selectedPluginId || candidates.length === 0))}>{submitting ? '提交中...' : type === 'server' ? '生成注册码' : type === 'domain' ? '分配域名' : '加载插件'}<ArrowUpRight size={14} /></button>}</div></div></div>
 }
 
 export default App
