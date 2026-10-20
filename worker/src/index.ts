@@ -7,6 +7,7 @@ import { isEmail, parseSmtpSettings, publicSmtpSettings, sendInviteEmail, sendSm
 import { discoverCloudflareAccountId, exchangeCloudflareCode, readCloudflareCredential, refreshCloudflareCredential, revokeCloudflareToken, type CloudflareCredential } from './cloudflare-oauth'
 import { activateMaintenance, countStream, defaultPlatformSettings, getPlatformSettings, isMaintenanceMode, releaseR2Usage, reserveR2Usage, reserveRequest, setPlatformSettingsCache } from './usage'
 import { findPluginRoute, invalidatePluginRoute } from './route-cache'
+import { selectPublicRequestMode } from './request-mode'
 
 export { PluginBridge }
 
@@ -533,6 +534,8 @@ async function proxyPublicHost(request: Request, env: Env, url: URL, ctx: Execut
   const hostname = url.hostname
   const domain = await findPluginRoute(env, hostname)
   if (!domain || domain.status !== 'online' || domain.server_status !== 'online' || domain.plugin_state !== 'enabled') return maintenanceResponse('插件暂时不可用', '公开入口尚未就绪、插件当前未启用或插件服务器当前离线。')
+  const mode = selectPublicRequestMode(request, domain.manifest_json)
+  if (!mode) return new Response('Plugin capability is not available', { status: 501, headers: { 'content-type': 'text/plain; charset=utf-8' } })
   const startedAt = Date.now()
   if (!await reserveRequest(env, settings.quotas)) {
     await activateMaintenance(env, 'request quota reached')
@@ -544,6 +547,7 @@ async function proxyPublicHost(request: Request, env: Env, url: URL, ctx: Execut
   headers.set('x-plugmesh-server-id', domain.server_id)
   headers.set('x-plugmesh-plugin-id', domain.plugin_id)
   headers.set('x-plugmesh-request-path', url.pathname + url.search)
+  headers.set('x-plugmesh-request-mode', mode)
   try {
     const response = request.headers.get('Upgrade')?.toLowerCase() === 'websocket'
       ? await bridge.fetch(new Request(new URL('/websocket', request.url), { method: 'GET', headers }))

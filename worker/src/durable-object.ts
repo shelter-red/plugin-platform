@@ -90,13 +90,15 @@ export class PluginBridge {
       const url = new URL(request.url)
       return url.pathname + url.search
     })()
-    const sse = request.headers.get('accept')?.toLowerCase().includes('text/event-stream') === true
+    const mode = request.headers.get('x-plugmesh-request-mode')
+    const sse = mode === 'sse' || (!mode && request.headers.get('accept')?.toLowerCase().includes('text/event-stream') === true)
     const frame = makeFrame(sse ? 'stream.open' : 'request.open', this.serverId, {
       method: request.method,
       path: requestPath,
       headers: Object.fromEntries(forwardedHeaders(request.headers)),
       body: encodeBytes(body),
       bodyEncoding: 'base64',
+      ...(!sse ? { mode: mode === 'file' ? 'file' : 'http' } : {}),
       ...(sse ? { streamId: requestId } : {}),
     }, pluginId)
     frame.requestId = requestId
@@ -691,6 +693,8 @@ function forwardedHeaders(headers: Headers): Headers {
   result.delete('x-plugmesh-server-id')
   result.delete('x-plugmesh-plugin-id')
   result.delete('x-plugmesh-request-path')
+  result.delete('x-plugmesh-request-mode')
+  result.delete('x-plugmesh-file-stream')
   return result
 }
 

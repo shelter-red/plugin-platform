@@ -247,8 +247,8 @@ void ControlClient::handle_http_request(const ControlFrame& frame) {
   plugmesh_http_request request{method.c_str(), path.c_str(), headers.c_str(), reinterpret_cast<const uint8_t*>(body.data()), body.size()};
   plugmesh_http_response response{};
   std::string error;
-  const auto info = plugins_.info_snapshot(id);
-  if (info && info->file_stream) {
+  const auto mode = text(frame.payload, "mode");
+  if (mode == "file") {
     if (!plugins_.file_stream(id, frame.request_id, request, error)) send_request_error(frame, error);
     return;
   }
