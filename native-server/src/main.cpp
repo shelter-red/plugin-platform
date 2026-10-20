@@ -135,10 +135,20 @@ bool run_registration_setup(plugmesh::ServerConfig& config, uint16_t port, const
     const auto server_name = text("serverName");
     const auto code = text("registrationCode");
     const auto password = text("credentialPassword");
+    const auto local_ui_password = text("localUiPassword");
+    const auto local_ui_password_confirmation = text("localUiPasswordConfirmation");
     const auto credential_file = text("credentialFile").empty() ? config.credential_file.string() : text("credentialFile");
     const auto use_system_store = credential_file.empty();
-    if (worker_url.empty() || server_name.empty() || code.empty() || (!use_system_store && password.empty()) || (use_system_store && !plugmesh::system_credentials_available())) {
-      callback_error = use_system_store ? "当前平台没有可用的系统凭据存储，请填写凭据文件路径和口令" : "Worker 地址、服务器名称、注册码、凭据口令和凭据文件路径均为必填";
+    if (worker_url.empty() || server_name.empty() || code.empty() || local_ui_password.size() < 8 || local_ui_password != local_ui_password_confirmation || (!use_system_store && password.empty()) || (use_system_store && !plugmesh::system_credentials_available())) {
+      if (local_ui_password.size() < 8) callback_error = "本地 UI 口令至少需要 8 个字符";
+      else if (local_ui_password != local_ui_password_confirmation) callback_error = "本地 UI 口令与确认口令不一致";
+      else callback_error = use_system_store ? "当前平台没有可用的系统凭据存储，请填写凭据文件路径和口令" : "Worker 地址、服务器名称、注册码、凭据口令和凭据文件路径均为必填";
+      callback_active = false;
+      return nlohmann::json::object();
+    }
+
+    std::string local_ui_password_verifier;
+    if (!plugmesh::make_local_ui_password_verifier(local_ui_password, local_ui_password_verifier, callback_error)) {
       callback_active = false;
       return nlohmann::json::object();
     }
@@ -148,7 +158,7 @@ bool run_registration_setup(plugmesh::ServerConfig& config, uint16_t port, const
       callback_active = false;
       return nlohmann::json::object();
     }
-    const plugmesh::StoredCredentials credentials{worker_url, registration.server_id, registration.access_token};
+    const plugmesh::StoredCredentials credentials{worker_url, registration.server_id, registration.access_token, local_ui_password_verifier};
     if (!plugmesh::save_credentials(credential_file, credentials, password, callback_error)) {
       callback_active = false;
       return nlohmann::json::object();
@@ -157,6 +167,7 @@ bool run_registration_setup(plugmesh::ServerConfig& config, uint16_t port, const
     config.worker_url = worker_url;
     config.server_id = registration.server_id;
     config.access_token = registration.access_token;
+    config.local_ui_password_verifier = local_ui_password_verifier;
     config.credential_file = credential_file;
     registered = true;
     callback_active = false;
@@ -189,14 +200,31 @@ int register_server(int argc, char** argv) {
     return 2;
   }
   const auto code = read_value("PLUGMESH_REGISTRATION_CODE", "Registration code: ");
-  const auto password = read_secret("PLUGMESH_CREDENTIAL_PASSWORD", "Credential password: ");
-  plugmesh::RegistrationResult registration;
+  const auto* local_ui_password_environment = std::getenv("PLUGMESH_LOCAL_UI_PASSWORD");
+  const auto local_ui_password_from_environment = local_ui_password_environment && *local_ui_password_environment;
+  const auto local_ui_password = read_secret("PLUGMESH_LOCAL_UI_PASSWORD", "Local UI password: ");
+  const auto local_ui_password_confirmation = local_ui_password_from_environment ? local_ui_password : read_secret("PLUGMESH_LOCAL_UI_PASSWORD_CONFIRMATION", "Confirm local UI password: ");
+  if (local_ui_password.size() < 8 || local_ui_password != local_ui_password_confirmation) {
+    std::cerr << "plugmesh-server: " << (local_ui_password.size() < 8 ? "local UI password must contain at least 8 characters" : "local UI password confirmation does not match") << '\n';
+    return 2;
+  }
+  std::string local_ui_password_verifier;
   std::string error;
+  if (!plugmesh::make_local_ui_password_verifier(local_ui_password, local_ui_password_verifier, error)) {
+    std::cerr << "plugmesh-server: " << error << '\n';
+    return 1;
+  }
+  const auto password = read_secret("PLUGMESH_CREDENTIAL_PASSWORD", "Credential file password: ");
+  if (password.empty()) {
+    std::cerr << "plugmesh-server: credential file password is required\n";
+    return 2;
+  }
+  plugmesh::RegistrationResult registration;
   if (!plugmesh::register_server(argv[2], code, argv[3], registration, error)) {
     std::cerr << "plugmesh-server: " << error << '\n';
     return 1;
   }
-  const plugmesh::StoredCredentials credentials{argv[2], registration.server_id, registration.access_token};
+  const plugmesh::StoredCredentials credentials{argv[2], registration.server_id, registration.access_token, local_ui_password_verifier};
   if (!plugmesh::save_credentials(argv[4], credentials, password, error)) {
     std::cerr << "plugmesh-server: " << error << '\n';
     return 1;
@@ -254,18 +282,33 @@ int main(int argc, char** argv) {
         if (!client.rotate_access_token(access_token, action_error)) return nlohmann::json::object();
         const plugmesh::StoredCredentials credentials{resolved_config.worker_url, resolved_config.server_id, access_token, resolved_config.local_ui_password_verifier};
         if (!plugmesh::save_credentials(resolved_config.credential_file, credentials, password, action_error)) return nlohmann::json::object();
+        resolved_config.access_token = access_token;
         return nlohmann::json{{"storage", resolved_config.credential_file.empty() ? "system" : "file"}};
       }
       if (action == "revoke") {
         if (!client.revoke_binding(action_error)) return nlohmann::json::object();
         if (!plugmesh::remove_credentials(resolved_config.credential_file, action_error)) return nlohmann::json::object();
+        resolved_config.local_ui_password_verifier.clear();
         rebind_requested = true;
         client.stop();
         return nlohmann::json{{"rebindRequired", true}};
       }
       action_error = "unknown credential action";
       return nlohmann::json::object();
-    }, resolved_config.local_ui_password_verifier);
+    }, resolved_config.local_ui_password_verifier, [&resolved_config](const std::string& verifier, const nlohmann::json& payload, std::string& setup_error) {
+      auto credential_password = payload.value("credentialPassword", std::string());
+      if (credential_password.empty()) {
+        if (const char* environment_password = std::getenv("PLUGMESH_CREDENTIAL_PASSWORD"); environment_password) credential_password = environment_password;
+      }
+      if (!resolved_config.credential_file.empty() && credential_password.empty()) {
+        setup_error = "凭据文件模式必须提供凭据口令";
+        return false;
+      }
+      const plugmesh::StoredCredentials credentials{resolved_config.worker_url, resolved_config.server_id, resolved_config.access_token, verifier};
+      if (!plugmesh::save_credentials(resolved_config.credential_file, credentials, credential_password, setup_error)) return false;
+      resolved_config.local_ui_password_verifier = verifier;
+      return true;
+    });
     std::string local_error;
     std::thread local_thread([&local_http, &local_error] {
       if (!local_http.run(local_error) && !local_error.empty()) std::cerr << "plugmesh-server local UI: " << local_error << '\n';
@@ -278,6 +321,7 @@ int main(int argc, char** argv) {
       resolved_config.worker_url.clear();
       resolved_config.server_id.clear();
       resolved_config.access_token.clear();
+      resolved_config.local_ui_password_verifier.clear();
       continue;
     }
     if (!connected) {

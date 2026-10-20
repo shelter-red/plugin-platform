@@ -90,8 +90,8 @@ std::string cookie_value(const std::string& cookie_header, const std::string_vie
 
 }  // namespace
 
-LocalHttpServer::LocalHttpServer(uint16_t port, PluginManager* plugins, StatusProvider status_provider, std::filesystem::path ui_directory, RegistrationHandler registration_handler, LogProvider log_provider, CredentialActionHandler credential_action_handler, std::string local_ui_password_verifier)
-    : port_(port), plugins_(plugins), status_provider_(std::move(status_provider)), ui_directory_(std::move(ui_directory)), registration_handler_(std::move(registration_handler)), log_provider_(std::move(log_provider)), credential_action_handler_(std::move(credential_action_handler)), local_ui_password_verifier_(std::move(local_ui_password_verifier)) {}
+LocalHttpServer::LocalHttpServer(uint16_t port, PluginManager* plugins, StatusProvider status_provider, std::filesystem::path ui_directory, RegistrationHandler registration_handler, LogProvider log_provider, CredentialActionHandler credential_action_handler, std::string local_ui_password_verifier, PasswordSetupHandler password_setup_handler)
+    : port_(port), plugins_(plugins), status_provider_(std::move(status_provider)), ui_directory_(std::move(ui_directory)), registration_handler_(std::move(registration_handler)), log_provider_(std::move(log_provider)), credential_action_handler_(std::move(credential_action_handler)), local_ui_password_verifier_(std::move(local_ui_password_verifier)), password_setup_handler_(std::move(password_setup_handler)) {}
 
 bool LocalHttpServer::run(std::string& error) {
   stopping_ = false;
@@ -219,6 +219,59 @@ void LocalHttpServer::handle_http(void* handle) {
   status["port"] = port_;
   const auto configured = status.value("configured", false);
   const auto cookie_header = connection->get_request().get_header("Cookie");
+
+  if (resource == "/api/session/password") {
+    connection->append_header("Cache-Control", "no-store");
+    if (method != "POST") {
+      set_json_response(connection, websocketpp::http::status_code::method_not_allowed, {{"ok", false}, {"error", "method not allowed"}});
+      return;
+    }
+    if (!configured || !local_ui_password_verifier_.empty() || !password_setup_handler_) {
+      set_json_response(connection, websocketpp::http::status_code::conflict, {{"ok", false}, {"error", "local UI password setup is unavailable"}});
+      return;
+    }
+    if (login_rate_limited()) {
+      connection->append_header("Retry-After", "60");
+      set_json_response(connection, websocketpp::http::status_code::too_many_requests, {{"ok", false}, {"error", "too many password setup attempts"}});
+      return;
+    }
+    const auto body = connection->get_request_body();
+    if (body.size() > 16 * 1024) {
+      set_json_response(connection, websocketpp::http::status_code::request_entity_too_large, {{"ok", false}, {"error", "password setup request is too large"}});
+      return;
+    }
+    try {
+      const auto payload = nlohmann::json::parse(body.empty() ? "{}" : body);
+      if (!payload.is_object()) {
+        set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", "password setup payload must be an object"}});
+        return;
+      }
+      const auto password = payload.value("password", std::string());
+      const auto confirmation = payload.value("passwordConfirmation", std::string());
+      if (password.size() < 8 || password != confirmation) {
+        set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", password.size() < 8 ? "local UI password must contain at least 8 characters" : "local UI password confirmation does not match"}});
+        return;
+      }
+      std::string verifier;
+      std::string error;
+      if (!make_local_ui_password_verifier(password, verifier, error) || !password_setup_handler_(verifier, payload, error)) {
+        record_failed_login();
+        set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", error.empty() ? "unable to save local UI password" : error}});
+        return;
+      }
+      local_ui_password_verifier_ = verifier;
+      std::string token;
+      if (!create_session(token, error)) {
+        set_json_response(connection, websocketpp::http::status_code::internal_server_error, {{"ok", false}, {"error", error}});
+        return;
+      }
+      connection->append_header("Set-Cookie", std::string(kSessionCookieName) + "=" + token + "; Path=/; HttpOnly; SameSite=Strict");
+      set_json_response(connection, websocketpp::http::status_code::ok, {{"ok", true}, {"authenticated", true}, {"passwordConfigured", true}});
+    } catch (const nlohmann::json::exception&) {
+      set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", "password setup payload must be valid JSON"}});
+    }
+    return;
+  }
 
   if (resource == "/api/session") {
     connection->append_header("Cache-Control", "no-store");
