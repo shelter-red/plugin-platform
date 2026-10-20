@@ -114,6 +114,7 @@ export class PluginBridge {
         this.pending.delete(requestId)
         pending.buffered = []
         this.releasePendingConnection(pending)
+        void this.discardR2Upload(pending)
         if (pending.writer) void pending.writer.abort('Plugin request timed out').catch(() => undefined)
         else resolve(new Response('Plugin request timed out', { status: 504 }))
       }, 25_000) as unknown as number
@@ -236,6 +237,7 @@ export class PluginBridge {
       this.pending.delete(requestId)
       pending.buffered = []
       this.releasePendingConnection(pending)
+      void this.discardR2Upload(pending)
       if (pending.writer) void pending.writer.abort(message).catch(() => undefined)
       else pending.resolve(new Response(message, { status, headers: { 'content-type': 'text/plain; charset=utf-8' } }))
     }
@@ -522,6 +524,7 @@ export class PluginBridge {
     this.pending.delete(requestId)
     pending.buffered = []
     this.releasePendingConnection(pending)
+    void this.discardR2Upload(pending)
     if (pending.writer) void pending.writer.abort(message).catch(() => undefined)
     else pending.resolve(new Response(message, { status: 502, headers: { 'content-type': 'text/plain; charset=utf-8' } }))
   }
@@ -530,6 +533,14 @@ export class PluginBridge {
     if (!pending.activeConnection) return
     pending.activeConnection = false
     void releaseActiveConnection(this.env)
+  }
+
+  private async discardR2Upload(pending: PendingResponse): Promise<void> {
+    const upload = pending.r2Upload
+    if (!upload) return
+    pending.r2Upload = undefined
+    await upload.writer.abort('Plugin file stream discarded').catch(() => undefined)
+    await this.env.BLOB_BUCKET.delete(upload.key).catch(() => undefined)
   }
 
   private async markServerOnline() {
