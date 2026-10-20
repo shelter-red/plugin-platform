@@ -327,8 +327,6 @@ function App() {
 
   return (
     <div className={`app-shell theme-${effectiveTheme}`}>
-      <div className="ambient ambient-one" />
-      <div className="ambient ambient-two" />
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
         <div className="brand-row">
           <div className="brand-mark"><Network size={17} strokeWidth={2.4} /></div>

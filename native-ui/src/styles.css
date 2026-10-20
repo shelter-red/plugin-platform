@@ -44,7 +44,7 @@ button { cursor: pointer; }
 .icon-button:disabled { cursor: wait; opacity: .65; }
 .content { width: min(1120px, calc(100% - 40px)); margin: 0 auto; }
 .hero-grid { display: grid; grid-template-columns: minmax(0, 1fr) 190px; gap: 40px; align-items: center; padding: 58px 0 50px; border-bottom: 1px solid var(--line); }
-.hero-grid h2 { margin: 17px 0 11px; font-size: clamp(24px, 3vw, 38px); font-weight: 400; line-height: 1.15; letter-spacing: -.04em; }
+.hero-grid h2 { margin: 17px 0 11px; font-size: clamp(24px, 3vw, 38px); font-weight: 400; line-height: 1.15; letter-spacing: 0; }
 .hero-grid p { max-width: 600px; margin: 0; color: var(--muted); font-size: 11px; line-height: 1.8; }
 .status-seal { width: 150px; height: 150px; justify-self: end; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; border: 1px solid var(--line-strong); color: var(--muted); }
 .status-seal.online { color: var(--signal); border-color: var(--signal); }
@@ -56,7 +56,7 @@ button { cursor: pointer; }
 .metric:last-child { border-right: 0; }
 .metric-icon { color: var(--muted); }
 .metric-label { align-self: center; color: var(--muted); font-size: 9px; }
-.metric strong { grid-column: 1 / -1; align-self: end; font-size: 24px; font-weight: 400; letter-spacing: -.04em; }
+.metric strong { grid-column: 1 / -1; align-self: end; font-size: 24px; font-weight: 400; letter-spacing: 0; }
 .metric.accent .metric-icon, .metric.accent strong { color: var(--signal); }
 .metric.danger .metric-icon, .metric.danger strong { color: var(--danger); }
 .section-block { padding: 48px 0; border-bottom: 1px solid var(--line); }
