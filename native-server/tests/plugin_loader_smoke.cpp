@@ -1,5 +1,6 @@
 #include "plugmesh/plugin_loader.h"
 
+#include <filesystem>
 #include <iostream>
 
 int main(int argc, char** argv) {
@@ -9,6 +10,12 @@ int main(int argc, char** argv) {
   }
   plugmesh::PluginLoader loader;
   std::string error;
+  const auto library = std::filesystem::path(argv[1]);
+  if (loader.load(library.parent_path() / "missing-plugin-library", error) || error.empty()) {
+    std::cerr << "missing plugin library was not rejected\n";
+    return 1;
+  }
+  error.clear();
   if (!loader.load(argv[1], error)) {
     std::cerr << error << '\n';
     return 1;

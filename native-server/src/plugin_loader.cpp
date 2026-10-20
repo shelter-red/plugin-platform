@@ -22,7 +22,8 @@ bool PluginLoader::load(const std::filesystem::path& library_path, std::string& 
 #else
   handle_ = dlopen(library_path.c_str(), RTLD_NOW | RTLD_LOCAL);
   if (!handle_) {
-    error = dlerror() ? dlerror() : "dlopen failed";
+    const auto* detail = dlerror();
+    error = detail ? detail : "dlopen failed";
     return false;
   }
   auto entry = reinterpret_cast<plugmesh_plugin_get_api_v2_fn>(dlsym(handle_, "plugmesh_plugin_get_api_v2"));
