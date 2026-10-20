@@ -130,3 +130,8 @@ table { width: 100%; border-collapse: collapse; font-size: 11px; } th { padding:
 .toggle span { margin-left: 0; transition: .16s ease; }
 .toggle.on span { margin-left: 14px; }
 .toggle:disabled { cursor: wait; opacity: .6; }
+.smtp-options { display: flex; align-items: center; gap: 14px; margin-top: 16px; }
+.check-row { display: inline-flex; align-items: center; gap: 7px; color: var(--text-2); font-size: 10px; }
+.check-row input { width: 14px; height: 14px; accent-color: var(--primary); }
+.smtp-test { display: flex; align-items: center; gap: 7px; margin-left: auto; }
+.smtp-test input { width: 190px; }

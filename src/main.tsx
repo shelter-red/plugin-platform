@@ -14,6 +14,7 @@ import {
   Database,
   ExternalLink,
   FileText,
+  Mail,
   Gauge,
   Globe2,
   HardDrive,
@@ -38,7 +39,7 @@ import {
   Zap,
 } from 'lucide-react'
 import './styles.css'
-import { fetchOverview, fetchPlatformSettings, type ApiOverview, type PlatformSettings, updatePlatformSettings } from './api'
+import { fetchOverview, fetchPlatformSettings, fetchSmtpSettings, type ApiOverview, type PlatformSettings, type SmtpSettings, sendSmtpTest, updatePlatformSettings, updateSmtpSettings } from './api'
 
 type Page = 'overview' | 'servers' | 'plugins' | 'domains' | 'usage' | 'audit' | 'settings'
 type Theme = 'dark' | 'light' | 'system'
@@ -114,6 +115,7 @@ function App() {
   const [authUser, setAuthUser] = useState<{ display_name: string; email: string } | null>(null)
   const [overview, setOverview] = useState<ApiOverview | null>(null)
   const [platformSettings, setPlatformSettings] = useState<PlatformSettings | null>(null)
+  const [smtpSettings, setSmtpSettings] = useState<SmtpSettings | null>(null)
   const [apiLive, setApiLive] = useState(false)
   const [page, setPage] = useState<Page>('overview')
   const [theme, setTheme] = useState<Theme>(() => {
@@ -141,6 +143,11 @@ function App() {
         setAuthState('authenticated')
       })
       .catch(() => setAuthState('anonymous'))
+  }, [authEnabled])
+
+  useEffect(() => {
+    if (!authEnabled && !import.meta.env.VITE_API_BASE) return
+    fetchSmtpSettings().then(setSmtpSettings).catch(() => setSmtpSettings(null))
   }, [authEnabled])
 
   useEffect(() => {
@@ -225,7 +232,7 @@ function App() {
             {page === 'domains' && <Domains onAction={showToast} onAssign={() => setModal('domain')} />}
             {page === 'usage' && <Usage onAction={showToast} />}
             {page === 'audit' && <Audit />}
-            {page === 'settings' && <SettingsPage settings={platformSettings} onSettingsChange={setPlatformSettings} onAction={showToast} />}
+            {page === 'settings' && <SettingsPage settings={platformSettings} onSettingsChange={setPlatformSettings} smtpSettings={smtpSettings} onSmtpChange={setSmtpSettings} onAction={showToast} />}
           </div>
         </div>
       </main>
@@ -270,7 +277,7 @@ function ResourceCard({ title, current, limit, unit, icon: Icon }: { title: stri
 
 function Audit() { return <div className="stack"><div className="filter-row"><div className="filter-summary"><ListFilter size={15} />全部事件 <span className="divider" />最近 180 天</div><button className="button secondary small"><FileText size={14} />导出日志</button></div><div className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>事件</th><th>详情</th><th>操作者</th><th>时间</th></tr></thead><tbody>{auditItems.map((item) => <tr key={item.action}><td><div className="cell-title"><div className={`audit-icon ${item.tone}`}><Activity size={14} /></div><strong>{item.action}</strong></div></td><td>{item.detail}</td><td><span className="operator"><div className="mini-avatar">AD</div>管理员</span></td><td className="muted">{item.time}</td></tr>)}</tbody></table></div></div></div> }
 
-function SettingsPage({ settings, onSettingsChange, onAction }: { settings: PlatformSettings | null; onSettingsChange: (settings: PlatformSettings) => void; onAction: (message: string) => void }) {
+function SettingsPage({ settings, onSettingsChange, smtpSettings, onSmtpChange, onAction }: { settings: PlatformSettings | null; onSettingsChange: (settings: PlatformSettings) => void; smtpSettings: SmtpSettings | null; onSmtpChange: (settings: SmtpSettings) => void; onAction: (message: string) => void }) {
   const [saving, setSaving] = useState(false)
   const maintenance = settings?.maintenance ?? false
   const toggleMaintenance = async () => {
@@ -288,7 +295,33 @@ function SettingsPage({ settings, onSettingsChange, onAction }: { settings: Plat
       setSaving(false)
     }
   }
-  return <div className="settings-layout"><div className="settings-nav"><button className="selected"><Cloud size={15} />Cloudflare</button><button><Users size={15} />用户与邀请</button><button><FileText size={15} />邮件 SMTP</button><button><ShieldCheck size={15} />维护与配额</button></div><div className="settings-content"><div className="panel settings-panel"><div className="settings-heading"><div className="settings-icon"><Cloud size={18} /></div><div><h2>Cloudflare 授权</h2><p>平台账号统一管理 Worker、D1、R2 和 Durable Object 资源。</p></div><StatusBadge>未配置</StatusBadge></div><div className="form-grid"><label>账号标识<input placeholder="尚未连接" disabled /></label><label>授权状态<input placeholder="等待管理员授权" disabled /></label></div><div className="settings-actions"><button className="button primary" onClick={() => onAction('Cloudflare OAuth 配置即将开放')}>开始授权 <ArrowUpRight size={14} /></button><span className="form-hint"><LockKeyhole size={13} />凭据仅由后台服务使用，并加密保存。</span></div></div><div className="panel settings-panel"><div className="settings-heading"><div className="settings-icon"><ShieldCheck size={18} /></div><div><h2>全局维护状态</h2><p>{settings ? '读取自 Worker 平台配置。' : '演示模式不会修改真实平台状态。'}</p></div><StatusBadge tone={maintenance ? 'warning' : 'success'}>{maintenance ? '维护中' : settings ? '运行中' : '演示'}</StatusBadge></div><div className="maintenance-row"><div><strong>{maintenance ? '暂停新连接' : '允许新连接'}</strong><span>{maintenance ? '公开入口和新增配置请求会被暂时拒绝。' : '插件服务器和公开域名当前可以正常连接。'}</span></div><button className={`toggle ${maintenance ? '' : 'on'}`} disabled={saving} onClick={toggleMaintenance}><span /></button></div></div></div></div>
+  return <div className="settings-layout"><div className="settings-nav"><button className="selected"><Cloud size={15} />Cloudflare</button><button><Users size={15} />用户与邀请</button><button><FileText size={15} />邮件 SMTP</button><button><ShieldCheck size={15} />维护与配额</button></div><div className="settings-content"><div className="panel settings-panel"><div className="settings-heading"><div className="settings-icon"><Cloud size={18} /></div><div><h2>Cloudflare 授权</h2><p>平台账号统一管理 Worker、D1、R2 和 Durable Object 资源。</p></div><StatusBadge>未配置</StatusBadge></div><div className="form-grid"><label>账号标识<input placeholder="尚未连接" disabled /></label><label>授权状态<input placeholder="等待管理员授权" disabled /></label></div><div className="settings-actions"><button className="button primary" onClick={() => onAction('Cloudflare OAuth 配置即将开放')}>开始授权 <ArrowUpRight size={14} /></button><span className="form-hint"><LockKeyhole size={13} />凭据仅由后台服务使用，并加密保存。</span></div></div><SmtpPanel settings={smtpSettings} onChange={onSmtpChange} onAction={onAction} /><div className="panel settings-panel"><div className="settings-heading"><div className="settings-icon"><ShieldCheck size={18} /></div><div><h2>全局维护状态</h2><p>{settings ? '读取自 Worker 平台配置。' : '演示模式不会修改真实平台状态。'}</p></div><StatusBadge tone={maintenance ? 'warning' : 'success'}>{maintenance ? '维护中' : settings ? '运行中' : '演示'}</StatusBadge></div><div className="maintenance-row"><div><strong>{maintenance ? '暂停新连接' : '允许新连接'}</strong><span>{maintenance ? '公开入口和新增配置请求会被暂时拒绝。' : '插件服务器和公开域名当前可以正常连接。'}</span></div><button className={`toggle ${maintenance ? '' : 'on'}`} disabled={saving} onClick={toggleMaintenance}><span /></button></div></div></div></div>
+}
+
+function SmtpPanel({ settings, onChange, onAction }: { settings: SmtpSettings | null; onChange: (settings: SmtpSettings) => void; onAction: (message: string) => void }) {
+  const [form, setForm] = useState({ host: '', port: '587', secure: false, username: '', password: '', authType: 'plain' as 'plain' | 'login' | 'cram-md5', from: '', fromName: '', replyTo: '', testTo: '' })
+  const [saving, setSaving] = useState(false)
+  const [testing, setTesting] = useState(false)
+  useEffect(() => {
+    if (!settings?.configured) return
+    setForm((current) => ({ ...current, host: settings.host ?? '', port: String(settings.port ?? 587), secure: settings.secure ?? false, username: settings.username ?? '', authType: settings.authType ?? 'plain', from: settings.from ?? '', fromName: settings.fromName ?? '', replyTo: settings.replyTo ?? '' }))
+  }, [settings])
+  const update = (key: string, value: string | boolean) => setForm((current) => ({ ...current, [key]: value }))
+  const save = async () => {
+    if (!settings) return onAction('演示模式不会保存 SMTP 配置')
+    setSaving(true)
+    try {
+      onChange(await updateSmtpSettings({ host: form.host, port: Number(form.port), secure: form.secure, username: form.username, password: form.password, authType: form.authType, from: form.from, fromName: form.fromName, replyTo: form.replyTo }))
+      update('password', '')
+      onAction('SMTP 配置已保存')
+    } catch { onAction('SMTP 配置保存失败') } finally { setSaving(false) }
+  }
+  const test = async () => {
+    if (!settings) return onAction('演示模式不会发送测试邮件')
+    setTesting(true)
+    try { await sendSmtpTest(form.testTo); onAction('测试邮件已发送') } catch { onAction('测试邮件发送失败') } finally { setTesting(false) }
+  }
+  return <div className="panel settings-panel"><div className="settings-heading"><div className="settings-icon"><Mail size={18} /></div><div><h2>邮件 SMTP</h2><p>{settings ? '配置后可发送邀请和维护通知。密码只保存密文，不会回显。' : '演示模式不会连接 SMTP 服务。'}</p></div><StatusBadge tone={settings?.configured ? 'success' : 'neutral'}>{settings?.configured ? '已配置' : settings ? '未配置' : '演示'}</StatusBadge></div><div className="form-grid"><label>SMTP Host<input value={form.host} onChange={(event) => update('host', event.target.value)} placeholder="smtp.example.com" disabled={!settings} /></label><label>端口<input type="number" min="1" max="65535" value={form.port} onChange={(event) => update('port', event.target.value)} disabled={!settings} /></label><label>用户名<input value={form.username} onChange={(event) => update('username', event.target.value)} disabled={!settings} /></label><label>密码 / 授权码<input type="password" value={form.password} onChange={(event) => update('password', event.target.value)} placeholder={settings?.configured ? '重新保存时填写' : 'SMTP 授权码'} disabled={!settings} /></label><label>认证方式<select value={form.authType} onChange={(event) => update('authType', event.target.value)} disabled={!settings}><option value="plain">PLAIN</option><option value="login">LOGIN</option><option value="cram-md5">CRAM-MD5</option></select></label><label>发件邮箱<input type="email" value={form.from} onChange={(event) => update('from', event.target.value)} placeholder="noreply@example.com" disabled={!settings} /></label><label>发件人名称<input value={form.fromName} onChange={(event) => update('fromName', event.target.value)} disabled={!settings} /></label><label>回复邮箱<input type="email" value={form.replyTo} onChange={(event) => update('replyTo', event.target.value)} disabled={!settings} /></label></div><div className="smtp-options"><label className="check-row"><input type="checkbox" checked={form.secure} onChange={(event) => update('secure', event.target.checked)} disabled={!settings} />使用 SMTPS / SSL</label><span className="form-hint">Workers 不能使用 25 端口，通常使用 465 或 587。</span></div><div className="settings-actions"><button className="button primary" onClick={save} disabled={saving || !settings}>{saving ? '保存中...' : '保存 SMTP 配置'}<Check size={14} /></button><div className="smtp-test"><input value={form.testTo} onChange={(event) => update('testTo', event.target.value)} placeholder="测试收件邮箱" disabled={!settings} /><button className="button secondary" onClick={test} disabled={testing || !settings}>{testing ? '发送中...' : '发送测试邮件'}<ArrowUpRight size={14} /></button></div></div></div>
 }
 
 function Modal({ type, onClose, onConfirm }: { type: 'server' | 'domain' | 'plugin'; onClose: () => void; onConfirm: (message: string) => void }) { const content = type === 'server' ? { title: '绑定插件服务器', description: '生成一次性注册码，在服务器本地 Web UI 中完成绑定。', button: '生成注册码', message: '注册码已生成，复制后在本地服务器中使用。', label: '服务器名称', placeholder: '例如：工作站插件服务器' } : type === 'domain' ? { title: '分配公开域名', description: '域名会绑定到一个已通过健康检查的插件实例。', button: '分配域名', message: '公开域名分配请求已创建。', label: '域名前缀', placeholder: '例如：my-plugin' } : { title: '加载插件', description: '从已连接的服务器选择一个已发现的 manifest。', button: '发送加载命令', message: '加载命令已发送，等待服务器确认。', label: '插件标识', placeholder: 'example.plugin' }; return <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}><div className="modal"><div className="modal-head"><div><h2>{content.title}</h2><p>{content.description}</p></div><IconButton label="关闭弹窗" onClick={onClose}><X size={17} /></IconButton></div><label className="modal-field">{content.label}<input autoFocus placeholder={content.placeholder} /><span className="field-hint">这是演示表单，接入 Worker API 后会进行服务端校验。</span></label>{type === 'domain' && <label className="modal-field">插件实例<select><option>示例插件 · example.plugin</option></select></label>}{type === 'server' && <div className="code-callout"><span>注册码有效期 10 分钟</span><strong>将在确认后生成</strong></div>}<div className="modal-actions"><button className="button secondary" onClick={onClose}>取消</button><button className="button primary" onClick={() => onConfirm(content.message)}>{content.button}<ArrowUpRight size={14} /></button></div></div></div> }
