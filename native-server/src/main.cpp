@@ -11,11 +11,53 @@
 #include <string>
 #include <thread>
 
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <termios.h>
+#include <unistd.h>
+#endif
+
 namespace {
 
 std::string read_value(const char* environment_name, const char* prompt) {
   if (const char* value = std::getenv(environment_name); value && *value) return value;
   std::cout << prompt;
+  std::string value;
+  std::getline(std::cin, value);
+  return value;
+}
+
+std::string read_secret(const char* environment_name, const char* prompt) {
+  if (const char* value = std::getenv(environment_name); value && *value) return value;
+  std::cout << prompt << std::flush;
+
+#ifdef _WIN32
+  const auto input = GetStdHandle(STD_INPUT_HANDLE);
+  DWORD mode = 0;
+  if (input != INVALID_HANDLE_VALUE && GetConsoleMode(input, &mode)) {
+    SetConsoleMode(input, mode & ~ENABLE_ECHO_INPUT);
+    std::string value;
+    std::getline(std::cin, value);
+    SetConsoleMode(input, mode);
+    std::cout << '\n';
+    return value;
+  }
+#else
+  termios original{};
+  if (tcgetattr(STDIN_FILENO, &original) == 0) {
+    auto hidden = original;
+    hidden.c_lflag &= static_cast<tcflag_t>(~ECHO);
+    if (tcsetattr(STDIN_FILENO, TCSANOW, &hidden) == 0) {
+      std::string value;
+      std::getline(std::cin, value);
+      tcsetattr(STDIN_FILENO, TCSANOW, &original);
+      std::cout << '\n';
+      return value;
+    }
+  }
+#endif
+
   std::string value;
   std::getline(std::cin, value);
   return value;
@@ -40,7 +82,7 @@ int register_server(int argc, char** argv) {
     return 2;
   }
   const auto code = read_value("PLUGMESH_REGISTRATION_CODE", "Registration code: ");
-  const auto password = read_value("PLUGMESH_CREDENTIAL_PASSWORD", "Credential password: ");
+  const auto password = read_secret("PLUGMESH_CREDENTIAL_PASSWORD", "Credential password: ");
   plugmesh::RegistrationResult registration;
   std::string error;
   if (!plugmesh::register_server(argv[2], code, argv[3], registration, error)) {
