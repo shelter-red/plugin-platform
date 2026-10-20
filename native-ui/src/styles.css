@@ -116,6 +116,15 @@ button { cursor: pointer; }
 .text-link:hover { text-decoration: underline; }
 .setup-state { display: flex; flex-direction: column; gap: 10px; color: var(--muted); }
 .setup-state strong { color: var(--text); font-size: 12px; font-weight: 500; }
+.credential-state { align-items: stretch; }
+.credential-password { display: flex; flex-direction: column; gap: 8px; margin-top: 5px; color: var(--muted); font-size: 9px; }
+.credential-password input { width: 100%; min-height: 36px; padding: 0 10px; color: var(--text); border: 1px solid var(--line-strong); outline: none; background: var(--bg); font-size: 10px; }
+.credential-password input:focus { border-color: var(--signal); }
+.credential-password input::placeholder { color: var(--faint); }
+.credential-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.credential-actions .button { display: inline-flex; align-items: center; gap: 7px; }
+.button.danger-button { color: var(--danger); border-color: rgba(240,118,118,.45); }
+.button.danger-button:hover { color: var(--danger); border-color: var(--danger); background: rgba(240,118,118,.08); }
 .error-strip, .toast { display: flex; align-items: center; gap: 11px; border: 1px solid rgba(240,118,118,.35); color: var(--danger); background: var(--panel); }
 .error-strip { width: min(1120px, calc(100% - 40px)); margin: 20px auto 0; padding: 14px 16px; }
 .error-strip div { display: flex; flex: 1; flex-direction: column; gap: 4px; }
