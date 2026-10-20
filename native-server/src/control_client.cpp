@@ -22,11 +22,12 @@ Json manifest(const PluginInfo& plugin) {
       {"id", plugin.id},
       {"name", plugin.name},
       {"version", plugin.version},
-      {"abiVersion", std::to_string(PLUGMESH_PLUGIN_ABI_VERSION)},
+      {"abiVersion", plugin.abi_version},
       {"library", plugin.library.filename().string()},
       {"capabilities", {{"http", plugin.http}, {"websocket", plugin.websocket}, {"sse", plugin.sse}, {"fileStream", plugin.file_stream}}},
-      {"permissions", Json::array()},
-      {"healthPath", "/health"},
+      {"permissions", plugin.permissions},
+      {"healthPath", plugin.health_path},
+      {"state", plugin_state_name(plugin.state)},
   };
 }
 

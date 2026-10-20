@@ -4,8 +4,8 @@
 
 - `plugin_api.h` 定义稳定 C ABI，插件通过 `plugmesh_plugin_get_api_v1` 导出能力。
 - `PluginLoader` 负责按平台加载 `.so` / `.dll`，校验 ABI 版本和必需入口。
-- `PluginManager` 负责扫描插件目录、读取 C ABI 描述、编排加载/启停/重载和健康检查生命周期。
-- `ControlClient` 使用 WebSocket++、standalone Asio 和 nlohmann/json 建立 `wss` 出站连接，处理注册、心跳、插件命令和 HTTP 请求帧；注册描述当前由 C ABI 字段生成。
+- `PluginManager` 负责扫描包含 `manifest.json` 的插件目录、校验 manifest 与 C ABI 描述、编排加载/启停/重载和健康检查生命周期。
+- `ControlClient` 使用 WebSocket++、standalone Asio 和 nlohmann/json 建立 `wss` 出站连接，处理注册、心跳、插件命令和 HTTP 请求帧；注册描述来自已校验的 manifest。
 - `examples/sample_plugin.cpp` 和 `tests/plugin_loader_smoke.cpp` 验证动态库导出、ABI 检查和基本生命周期。
 
 配置由环境变量提供，便于后续接入本地 Web UI、系统密钥链和一次性注册码流程：

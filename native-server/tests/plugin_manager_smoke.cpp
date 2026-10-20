@@ -10,7 +10,7 @@ int main(int argc, char** argv) {
   }
   plugmesh::PluginManager manager;
   std::string error;
-  if (!manager.discover(std::filesystem::path(argv[1]), error) || manager.plugins().size() != 1 || manager.plugins()[0].id != "sample.plugin") {
+  if (!manager.discover(std::filesystem::path(argv[1]), error) || manager.plugins().size() != 1 || manager.plugins()[0].id != "sample.plugin" || manager.plugins()[0].health_path != "/health") {
     std::cerr << "discovery failed: " << error << '\n';
     return 1;
   }

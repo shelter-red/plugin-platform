@@ -23,7 +23,10 @@ struct PluginInfo {
   std::string id;
   std::string name;
   std::string version;
+  std::string abi_version;
   std::filesystem::path library;
+  std::string health_path;
+  std::vector<std::string> permissions;
   PluginState state = PluginState::Discovered;
   bool http = false;
   bool websocket = false;
