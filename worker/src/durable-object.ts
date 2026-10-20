@@ -1,11 +1,19 @@
 import { isManifest, makeFrame, parseControlFrame } from './protocol'
 import type { Env } from './types'
 
+type PendingResponse = {
+  resolve: (value: Response | PromiseLike<Response>) => void
+  timer: number
+  writer?: WritableStreamDefaultWriter<Uint8Array>
+  buffered: string[]
+}
+
 export class PluginBridge {
   private serverSocket: WebSocket | null = null
   private serverId = ''
   private env: Env
-  private pending = new Map<string, { resolve: (response: Response) => void; timer: number }>()
+  private pending = new Map<string, PendingResponse>()
+  private publicSockets = new Map<string, WebSocket>()
 
   constructor(_state: DurableObjectState, env: Env) {
     this.env = env
@@ -16,6 +24,7 @@ export class PluginBridge {
     if (url.pathname === '/connect') return this.connectServer(request)
     if (url.pathname === '/proxy') return this.proxyRequest(request)
     if (url.pathname === '/command') return this.command(request)
+    if (url.pathname === '/websocket') return this.proxyWebSocket(request)
     return new Response('Not found', { status: 404 })
   }
 
@@ -32,6 +41,8 @@ export class PluginBridge {
     server.addEventListener('close', () => {
       if (this.serverSocket === server) this.serverSocket = null
       void this.markServerOffline()
+      for (const socket of this.publicSockets.values()) socket.close(1011, 'Plugin server disconnected')
+      this.publicSockets.clear()
     })
     server.send(JSON.stringify(makeFrame('hello', this.serverId, { message: 'server connection accepted' })))
     return new Response(null, { status: 101, webSocket: client })
@@ -49,14 +60,42 @@ export class PluginBridge {
     })
     frame.requestId = requestId
     const response = new Promise<Response>((resolve) => {
-      const timer = setTimeout(() => {
+      const pending: PendingResponse = { resolve, timer: 0, buffered: [] }
+      pending.timer = setTimeout(() => {
         this.pending.delete(requestId)
-        resolve(new Response('Plugin request timed out', { status: 504 }))
+        if (pending.writer) void pending.writer.abort('Plugin request timed out')
+        else resolve(new Response('Plugin request timed out', { status: 504 }))
       }, 25_000) as unknown as number
-      this.pending.set(requestId, { resolve, timer })
+      this.pending.set(requestId, pending)
     })
     this.serverSocket.send(JSON.stringify(frame))
     return response
+  }
+
+  private proxyWebSocket(request: Request): Response {
+    if (!this.serverSocket || this.serverSocket.readyState !== WebSocket.OPEN) return new Response('Plugin server is offline', { status: 503 })
+    if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') return new Response('WebSocket upgrade required', { status: 426 })
+    const pair = new WebSocketPair()
+    const client = pair[0]
+    const socket = pair[1]
+    const connectionId = crypto.randomUUID()
+    const pluginId = request.headers.get('x-plugmesh-plugin-id') ?? undefined
+    socket.accept()
+    this.publicSockets.set(connectionId, socket)
+    socket.addEventListener('message', (event) => {
+      const data = typeof event.data === 'string' ? event.data : encodeBytes(new Uint8Array(event.data as ArrayBuffer))
+      this.serverSocket?.send(JSON.stringify(makeFrame('stream.chunk', this.serverId, { connectionId, data }, pluginId)))
+    })
+    socket.addEventListener('close', () => {
+      this.publicSockets.delete(connectionId)
+      this.serverSocket?.send(JSON.stringify(makeFrame('stream.close', this.serverId, { connectionId }, pluginId)))
+    })
+    this.serverSocket.send(JSON.stringify(makeFrame('stream.open', this.serverId, {
+      connectionId,
+      path: new URL(request.url).pathname + new URL(request.url).search,
+      headers: Object.fromEntries(request.headers),
+    }, pluginId)))
+    return new Response(null, { status: 101, webSocket: client })
   }
 
   private async command(request: Request): Promise<Response> {
@@ -80,16 +119,60 @@ export class PluginBridge {
       void this.markServerOnline()
       return
     }
-    if (frame.type !== 'request.close') return
-    const pending = this.pending.get(frame.requestId)
+    if (frame.type === 'request.open') {
+      this.openResponse(frame.requestId, frame.payload ?? {})
+      return
+    }
+    if (frame.type === 'request.chunk') {
+      this.writeResponseChunk(frame.requestId, frame.payload ?? {})
+      return
+    }
+    if (frame.type === 'request.close') {
+      this.closeResponse(frame.requestId, frame.payload ?? {})
+      return
+    }
+    if (frame.type === 'stream.chunk') {
+      const connectionId = typeof frame.payload?.connectionId === 'string' ? frame.payload.connectionId : frame.requestId
+      const socket = this.publicSockets.get(connectionId)
+      const data = frame.payload?.data
+      if (socket && typeof data === 'string' && socket.readyState === WebSocket.OPEN) socket.send(data)
+      return
+    }
+    if (frame.type === 'stream.close') {
+      const connectionId = typeof frame.payload?.connectionId === 'string' ? frame.payload.connectionId : frame.requestId
+      this.publicSockets.get(connectionId)?.close(1000, 'Plugin stream closed')
+      this.publicSockets.delete(connectionId)
+    }
+  }
+
+  private openResponse(requestId: string, payload: Record<string, unknown>) {
+    const pending = this.pending.get(requestId)
+    if (!pending || pending.writer) return
+    const stream = new TransformStream<Uint8Array, Uint8Array>()
+    pending.writer = stream.writable.getWriter()
+    pending.resolve(new Response(stream.readable, { status: typeof payload.status === 'number' ? payload.status : 200, headers: responseHeaders(payload.headers) }))
+    for (const chunk of pending.buffered.splice(0)) void pending.writer.write(new TextEncoder().encode(chunk))
+  }
+
+  private writeResponseChunk(requestId: string, payload: Record<string, unknown>) {
+    const pending = this.pending.get(requestId)
+    const chunk = typeof payload.data === 'string' ? payload.data : typeof payload.chunk === 'string' ? payload.chunk : ''
+    if (!pending || !chunk) return
+    if (pending.writer) void pending.writer.write(new TextEncoder().encode(chunk))
+    else pending.buffered.push(chunk)
+  }
+
+  private closeResponse(requestId: string, payload: Record<string, unknown>) {
+    const pending = this.pending.get(requestId)
     if (!pending) return
     clearTimeout(pending.timer)
-    this.pending.delete(frame.requestId)
-    const payload = frame.payload ?? {}
-    pending.resolve(new Response(typeof payload.body === 'string' ? payload.body : '', {
-      status: typeof payload.status === 'number' ? payload.status : 502,
-      headers: payload.headers && typeof payload.headers === 'object' ? payload.headers as Record<string, string> : undefined,
-    }))
+    this.pending.delete(requestId)
+    if (pending.writer) {
+      void pending.writer.close()
+      return
+    }
+    const body = typeof payload.body === 'string' ? payload.body : pending.buffered.join('')
+    pending.resolve(new Response(body, { status: typeof payload.status === 'number' ? payload.status : 200, headers: responseHeaders(payload.headers) }))
   }
 
   private async markServerOnline() {
@@ -116,4 +199,17 @@ export class PluginBridge {
       `).bind(crypto.randomUUID(), server.user_id, this.serverId, manifest.id, manifest.name, manifest.version, 'discovered', JSON.stringify(manifest), now, now).run()
     }
   }
+}
+
+function responseHeaders(value: unknown): Headers {
+  const headers = new Headers()
+  if (!value || typeof value !== 'object') return headers
+  for (const [key, item] of Object.entries(value)) if (typeof item === 'string') headers.set(key, item)
+  return headers
+}
+
+function encodeBytes(bytes: Uint8Array): string {
+  let value = ''
+  for (const byte of bytes) value += String.fromCharCode(byte)
+  return btoa(value)
 }
