@@ -194,9 +194,12 @@ async function finishGithubAuth(request: Request, env: Env, url: URL): Promise<R
   const state = url.searchParams.get('state')
   const code = url.searchParams.get('code')
   if (!state || !code) return redirectWithError(request, 'OAuth 回调参数不完整')
-  const oauthState = await env.DB.prepare('SELECT state_hash, invite_token_hash FROM oauth_states WHERE state_hash = ? AND expires_at > ?').bind(await digest(state), new Date().toISOString()).first<{ state_hash: string; invite_token_hash: string | null }>()
+  const stateHash = await digest(state)
+  const now = new Date().toISOString()
+  const oauthState = await env.DB.prepare('SELECT state_hash, invite_token_hash FROM oauth_states WHERE state_hash = ? AND expires_at > ?').bind(stateHash, now).first<{ state_hash: string; invite_token_hash: string | null }>()
   if (!oauthState) return redirectWithError(request, 'OAuth 状态已过期')
-  await env.DB.prepare('DELETE FROM oauth_states WHERE state_hash = ?').bind(oauthState.state_hash).run()
+  const consumedState = await env.DB.prepare('DELETE FROM oauth_states WHERE state_hash = ? AND expires_at > ?').bind(oauthState.state_hash, now).run()
+  if ((consumedState.meta.changes ?? 0) !== 1) return redirectWithError(request, 'OAuth 状态已过期或已使用')
   const identity = await exchangeGithubCode(env, code)
   if (!identity) return redirectWithError(request, '无法读取 GitHub 身份')
   const allowlisted = isAllowlisted(env, { login: identity.login, emails: identity.emails })
@@ -204,6 +207,8 @@ async function finishGithubAuth(request: Request, env: Env, url: URL): Promise<R
   if (oauthState.invite_token_hash) {
     invite = await env.DB.prepare('SELECT id, email, github_login FROM invites WHERE token_hash = ? AND status = ? AND expires_at > ?').bind(oauthState.invite_token_hash, 'pending', new Date().toISOString()).first()
     if (!invite || (invite.email && !identity.emails.some((email) => email.toLowerCase() === invite?.email?.toLowerCase())) || (invite.github_login && invite.github_login.toLowerCase() !== identity.login.toLowerCase())) return redirectWithError(request, '邀请身份不匹配或已失效')
+    const claimedInvite = await env.DB.prepare('UPDATE invites SET status = ?, used_at = ? WHERE id = ? AND status = ? AND expires_at > ?').bind('used', now, invite.id, 'pending', now).run()
+    if ((claimedInvite.meta.changes ?? 0) !== 1) return redirectWithError(request, '邀请身份不匹配或已失效')
   }
   if (!allowlisted && !invite) return redirectWithError(request, '该 GitHub 身份未被邀请')
   const role = allowlisted ? 'super_admin' : 'member'
@@ -211,7 +216,6 @@ async function finishGithubAuth(request: Request, env: Env, url: URL): Promise<R
   const userId = existing?.id ?? crypto.randomUUID()
   if (existing) await env.DB.prepare('UPDATE users SET email = ?, display_name = ?, role = ? WHERE id = ?').bind(identity.emails[0], identity.displayName, role, userId).run()
   else await env.DB.prepare('INSERT INTO users (id, github_id, email, display_name, role, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(userId, identity.githubId, identity.emails[0], identity.displayName, role, new Date().toISOString()).run()
-  if (invite) await env.DB.prepare('UPDATE invites SET status = ?, used_at = ? WHERE id = ?').bind('used', new Date().toISOString(), invite.id).run()
   const token = await createSession(env, userId)
   return new Response(null, { status: 302, headers: { location: '/', 'set-cookie': sessionCookie(token, url.protocol === 'https:') } })
 }
@@ -239,9 +243,12 @@ async function finishCloudflareAuth(request: Request, env: Env, url: URL): Promi
   const oauthError = url.searchParams.get('error')
   if (!user || user.role !== 'super_admin') return redirectWithError(request, '需要超级管理员会话才能完成 Cloudflare 授权')
   if (oauthError || !state || !code) return redirectWithCloudflareError(request, 'Cloudflare 授权未完成')
-  const stateRow = await env.DB.prepare('SELECT state_hash, user_id FROM cloudflare_oauth_states WHERE state_hash = ? AND user_id = ? AND expires_at > ?').bind(await digest(state), user.id, new Date().toISOString()).first<{ state_hash: string; user_id: string }>()
+  const stateHash = await digest(state)
+  const now = new Date().toISOString()
+  const stateRow = await env.DB.prepare('SELECT state_hash, user_id FROM cloudflare_oauth_states WHERE state_hash = ? AND user_id = ? AND expires_at > ?').bind(stateHash, user.id, now).first<{ state_hash: string; user_id: string }>()
   if (!stateRow) return redirectWithCloudflareError(request, 'Cloudflare OAuth 状态已过期或已使用')
-  await env.DB.prepare('DELETE FROM cloudflare_oauth_states WHERE state_hash = ?').bind(stateRow.state_hash).run()
+  const consumedState = await env.DB.prepare('DELETE FROM cloudflare_oauth_states WHERE state_hash = ? AND user_id = ? AND expires_at > ?').bind(stateRow.state_hash, user.id, now).run()
+  if ((consumedState.meta.changes ?? 0) !== 1) return redirectWithCloudflareError(request, 'Cloudflare OAuth 状态已过期或已使用')
   const credential = await exchangeCloudflareCode(env, code)
   if (!credential) {
     await recordAudit(env, user.id, 'cloudflare.oauth.failed', {})
