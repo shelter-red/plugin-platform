@@ -312,7 +312,7 @@ function App() {
           <div className="page-content">
             <div className="page-header"><div><div className="eyebrow"><span className="live-pulse" />{apiLive ? '实时数据' : '等待真实数据'}</div><h1>{meta.title}</h1><p>{meta.description}</p></div><div className="header-actions">{page === 'overview' && <button className="button secondary" onClick={() => void refreshData()} disabled={dataLoading}><RefreshCw size={15} />刷新状态</button>}{page === 'servers' && <button className="button primary" onClick={() => setModal('server')}><Plus size={16} />绑定服务器</button>}{page === 'domains' && <button className="button primary" onClick={() => setModal('domain')}><Plus size={16} />分配域名</button>}{page === 'plugins' && <button className="button primary" onClick={() => setModal('plugin')}><Plus size={16} />加载插件</button>}</div></div>
             {dataError && <div className="notice-bar compact"><div className="notice-icon"><AlertCircle size={16} /></div><div><strong>数据读取失败</strong><span>{dataError}</span></div><button onClick={() => void refreshData()}>重试 <RefreshCw size={14} /></button></div>}
-            {page === 'overview' && <Overview overview={overview} audits={audits ?? []} range={range} setRange={setRange} onNavigate={selectPage} />}
+            {page === 'overview' && <Overview overview={overview} localUsage={localUsage} settings={platformSettings} audits={audits ?? []} range={range} setRange={setRange} onNavigate={selectPage} />}
             {page === 'servers' && <Servers servers={servers ?? []} loading={dataLoading} onAction={showToast} onBind={() => setModal('server')} />}
             {page === 'plugins' && <Plugins plugins={filteredPlugins} loading={dataLoading} onAction={showToast} onLoad={() => setModal('plugin')} />}
             {page === 'domains' && <Domains domains={domains ?? []} loading={dataLoading} onAction={showToast} onAssign={() => setModal('domain')} />}
@@ -328,21 +328,27 @@ function App() {
   )
 }
 
-function Overview({ overview, audits, range, setRange, onNavigate }: { overview: ApiOverview | null; audits: ApiAudit[]; range: '24h' | '7d' | '30d'; setRange: (value: '24h' | '7d' | '30d') => void; onNavigate: (page: Page) => void }) {
+function Overview({ overview, localUsage, settings, audits, range, setRange, onNavigate }: { overview: ApiOverview | null; localUsage: LocalUsage | null; settings: PlatformSettings | null; audits: ApiAudit[]; range: '24h' | '7d' | '30d'; setRange: (value: '24h' | '7d' | '30d') => void; onNavigate: (page: Page) => void }) {
   const onlineServers = overview ? String(overview.onlineServers) : '—'
   const enabledPlugins = overview ? String(overview.enabledPlugins) : '—'
   const domains = overview ? String(overview.domains) : '—'
+  const activeConnections = localUsage ? localUsage.activeConnections.toLocaleString('zh-CN') : '—'
+  const requestCount = localUsage ? localUsage.requestCount.toLocaleString('zh-CN') : '—'
+  const requestLimit = settings ? settings.quotas.requests.toLocaleString('zh-CN') : '未读取'
+  const r2Value = localUsage ? formatBytes(localUsage.r2Bytes) : '—'
+  const r2Limit = settings ? formatBytes(settings.quotas.r2Bytes) : '未读取'
+  const connectionLimit = settings ? settings.quotas.activeConnections.toLocaleString('zh-CN') : '未读取'
   return <>
     <div className="notice-bar"><div className="notice-icon"><ShieldCheck size={16} /></div><div><strong>{overview ? '平台数据已连接' : '等待 Worker 数据'}</strong><span>{overview ? '以下统计来自当前用户的 Worker API。' : '登录并连接 Worker API 后，这里会显示真实的平台状态。'}</span></div><button onClick={() => onNavigate('settings')}>配置平台 <ArrowUpRight size={14} /></button></div>
     <section className="metric-grid">
       <Metric label="在线服务器" value={onlineServers} suffix="" note={overview ? '来自 Worker API' : '暂无数据'} icon={Server} tone="green" onClick={() => onNavigate('servers')} />
       <Metric label="已启用插件" value={enabledPlugins} suffix="" note={overview ? '来自 Worker API' : '暂无数据'} icon={Box} tone="blue" onClick={() => onNavigate('plugins')} />
       <Metric label="公开域名" value={domains} suffix="" note={overview ? '来自 Worker API' : '暂无数据'} icon={Globe2} tone="purple" onClick={() => onNavigate('domains')} />
-      <Metric label="当前连接" value="—" suffix="" note="暂无本地连接计数" icon={Zap} tone="amber" onClick={() => onNavigate('usage')} />
+      <Metric label="当前连接" value={activeConnections} suffix="" note={localUsage ? '平台本地计数' : '暂无本地连接计数'} icon={Zap} tone="amber" onClick={() => onNavigate('usage')} />
     </section>
     <section className="content-grid two-thirds">
       <div className="panel chart-panel"><div className="panel-header"><div><h2>请求趋势</h2><p>接入真实用量数据后显示</p></div><div className="segmented">{(['24h', '7d', '30d'] as const).map((item) => <button className={range === item ? 'selected' : ''} key={item} onClick={() => setRange(item)}>{item}</button>)}</div></div><div className="empty-chart chart-empty-state"><Activity size={20} /><strong>暂无请求趋势数据</strong><span>当前 Worker 尚未返回趋势统计。</span></div></div>
-      <div className="panel"><div className="panel-header"><div><h2>资源使用</h2><p>等待 Cloudflare Analytics 和本地计数</p></div><IconButton label="查看用量详情" onClick={() => onNavigate('usage')}><ArrowUpRight size={15} /></IconButton></div><div className="resource-list"><Resource label="Worker 请求" value="—" limit="未读取" icon={Cloud} /><Resource label="R2 中转容量" value="—" limit="未读取" icon={HardDrive} /><Resource label="D1 数据库" value="—" limit="未读取" icon={Database} /><Resource label="Durable Object" value="—" limit="未读取" icon={Activity} /></div><button className="text-link" onClick={() => onNavigate('usage')}>查看全部配额 <ArrowUpRight size={14} /></button></div>
+      <div className="panel"><div className="panel-header"><div><h2>资源使用</h2><p>平台本地计数，官方 Analytics 详见用量页</p></div><IconButton label="查看用量详情" onClick={() => onNavigate('usage')}><ArrowUpRight size={15} /></IconButton></div><div className="resource-list"><Resource label="平台请求" value={requestCount} limit={requestLimit} icon={Cloud} /><Resource label="R2 中转容量" value={r2Value} limit={r2Limit} icon={HardDrive} /><Resource label="D1 数据库" value="—" limit="未接入" icon={Database} /><Resource label="Durable Object" value={activeConnections} limit={connectionLimit} icon={Activity} /></div><button className="text-link" onClick={() => onNavigate('usage')}>查看全部配额 <ArrowUpRight size={14} /></button></div>
     </section>
     <section className="content-grid two-thirds bottom-grid"><div className="panel"><div className="panel-header"><div><h2>最近活动</h2><p>最新平台事件与配置变化</p></div><button className="text-link" onClick={() => onNavigate('audit')}>查看审计日志 <ArrowUpRight size={14} /></button></div>{audits.length > 0 ? <div className="activity-list">{audits.slice(0, 3).map((item) => <div className="activity-item" key={item.id}><div className="activity-mark success"><Check size={13} /></div><div className="activity-copy"><strong>{auditActionLabel(item.action)}</strong><span>{auditDetail(item)}</span></div><time>{new Date(item.created_at).toLocaleString('zh-CN')}</time></div>)}</div> : <div className="empty-panel"><div className="empty-illustration"><Activity size={20} /></div><h3>暂无活动记录</h3><p>Worker 返回审计事件后会显示在这里。</p></div>}</div><div className="panel quick-panel"><div className="panel-header"><div><h2>快速开始</h2><p>完成平台接入需要三步</p></div></div><QuickStep number="01" title="绑定插件服务器" detail="安装本地服务器并输入注册码" onClick={() => onNavigate('servers')} /><QuickStep number="02" title="加载第一个插件" detail="同步 manifest 并完成健康检查" onClick={() => onNavigate('plugins')} /><QuickStep number="03" title="分配公开域名" detail="为插件选择唯一的子域名前缀" onClick={() => onNavigate('domains')} /></div></section>
   </>
