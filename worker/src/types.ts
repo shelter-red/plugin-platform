@@ -1,0 +1,38 @@
+export type ServerStatus = 'online' | 'offline' | 'revoked'
+export type PluginState = 'discovered' | 'loaded' | 'enabled' | 'disabled' | 'unloaded' | 'failed' | 'server_offline'
+
+export interface Env {
+  DB: D1Database
+  BLOB_BUCKET: R2Bucket
+  PLUGIN_BRIDGE: DurableObjectNamespace
+  CONSOLE_HOST?: string
+  PLUGIN_DOMAIN_SUFFIX?: string
+  CONTROL_TOKEN_SECRET?: string
+}
+
+export interface ControlFrame {
+  protocolVersion: 1
+  type: string
+  requestId: string
+  serverId: string
+  pluginId?: string
+  timestamp: string
+  nonce: string
+  payload?: Record<string, unknown>
+}
+
+export interface PluginManifest {
+  id: string
+  name: string
+  version: string
+  abiVersion: string
+  library: string
+  capabilities: {
+    http: boolean
+    websocket: boolean
+    sse: boolean
+    fileStream: boolean
+  }
+  permissions: string[]
+  healthPath: string
+}

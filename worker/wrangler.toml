@@ -1,0 +1,20 @@
+name = "plugmesh-worker"
+main = "src/index.ts"
+compatibility_date = "2026-10-20"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "plugmesh"
+database_id = "replace-with-d1-database-id"
+
+[[durable_objects.bindings]]
+name = "PLUGIN_BRIDGE"
+class_name = "PluginBridge"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["PluginBridge"]
+
+[[r2_buckets]]
+binding = "BLOB_BUCKET"
+bucket_name = "plugmesh-blobs"
