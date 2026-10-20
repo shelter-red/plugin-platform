@@ -37,6 +37,9 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   if (request.method === 'GET' && url.pathname === '/api/servers') return json(await env.DB.prepare('SELECT id, name, status, last_seen_at, created_at FROM servers WHERE user_id = ? ORDER BY created_at DESC').bind(user.id).all())
   if (request.method === 'GET' && url.pathname === '/api/plugins') return json(await env.DB.prepare('SELECT id, plugin_id, name, version, state, server_id, updated_at FROM plugin_instances WHERE user_id = ? ORDER BY updated_at DESC').bind(user.id).all())
   if (request.method === 'GET' && url.pathname === '/api/domains') return json(await env.DB.prepare('SELECT id, hostname, status, plugin_instance_id, created_at FROM domains WHERE user_id = ? ORDER BY created_at DESC').bind(user.id).all())
+  const pluginAction = url.pathname.match(/^\/api\/plugins\/([^/]+)\/(load|unload|enable|disable|reload)$/)
+  if (request.method === 'POST' && pluginAction) return commandPlugin(request, env, user, decodeURIComponent(pluginAction[1]), pluginAction[2] as 'load' | 'unload' | 'enable' | 'disable' | 'reload')
+  if (request.method === 'POST' && url.pathname === '/api/domains') return assignDomain(request, env, user)
   if (request.method === 'GET' && url.pathname === '/api/invites') {
     if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
     return json(await env.DB.prepare('SELECT id, email, github_login, status, expires_at, used_at, created_at FROM invites ORDER BY created_at DESC').all())
@@ -104,6 +107,41 @@ async function createRegistrationCode(env: Env, user: AuthenticatedUser): Promis
   return json({ code: rawCode, expiresAt }, 201)
 }
 
+async function commandPlugin(request: Request, env: Env, user: AuthenticatedUser, pluginInstanceId: string, action: 'load' | 'unload' | 'enable' | 'disable' | 'reload'): Promise<Response> {
+  const plugin = await env.DB.prepare('SELECT id, plugin_id, server_id, state FROM plugin_instances WHERE id = ? AND user_id = ?').bind(pluginInstanceId, user.id).first<{ id: string; plugin_id: string; server_id: string; state: string }>()
+  if (!plugin) return json({ error: 'Plugin instance not found' }, 404)
+  const server = await env.DB.prepare('SELECT status FROM servers WHERE id = ? AND user_id = ?').bind(plugin.server_id, user.id).first<{ status: string }>()
+  if (!server || server.status !== 'online') return json({ error: 'Plugin server is offline' }, 409)
+  const bridge = env.PLUGIN_BRIDGE.get(env.PLUGIN_BRIDGE.idFromName(plugin.server_id))
+  const response = await bridge.fetch(new Request(new URL('/command', request.url), { method: 'POST', headers: { 'content-type': 'application/json', 'x-plugmesh-server-id': plugin.server_id }, body: JSON.stringify({ type: `plugin.${action}`, pluginId: plugin.plugin_id }) }))
+  if (!response.ok) return response
+  const nextState = action === 'load' ? 'loaded' : action === 'unload' ? 'unloaded' : action === 'enable' ? 'enabled' : action === 'disable' ? 'disabled' : plugin.state
+  await env.DB.prepare('UPDATE plugin_instances SET state = ?, updated_at = ? WHERE id = ?').bind(nextState, new Date().toISOString(), plugin.id).run()
+  await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, `plugin.${action}`, JSON.stringify({ pluginInstanceId: plugin.id }), new Date().toISOString()).run()
+  return json({ id: plugin.id, state: nextState, accepted: true }, 202)
+}
+
+async function assignDomain(request: Request, env: Env, user: AuthenticatedUser): Promise<Response> {
+  const body = await request.json().catch(() => null) as { pluginInstanceId?: string; prefix?: string } | null
+  const prefix = body?.prefix?.trim().toLowerCase() ?? ''
+  const reserved = new Set(['admin', 'api', 'auth', 'console', 'control', 'plugins', 'www'])
+  if (!body?.pluginInstanceId || !/^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$/.test(prefix) || reserved.has(prefix)) return json({ error: 'Invalid domain prefix' }, 400)
+  const plugin = await env.DB.prepare('SELECT id, server_id, state FROM plugin_instances WHERE id = ? AND user_id = ?').bind(body.pluginInstanceId, user.id).first<{ id: string; server_id: string; state: string }>()
+  if (!plugin) return json({ error: 'Plugin instance not found' }, 404)
+  if (plugin.state !== 'enabled') return json({ error: 'Plugin must be enabled before assigning a domain' }, 409)
+  const suffix = env.PLUGIN_DOMAIN_SUFFIX ?? '.plugins.example.com'
+  const hostname = `${prefix}${suffix}`
+  const server = await env.DB.prepare('SELECT status FROM servers WHERE id = ? AND user_id = ?').bind(plugin.server_id, user.id).first<{ status: string }>()
+  if (!server || server.status !== 'online') return json({ error: 'Plugin server is offline' }, 409)
+  try {
+    await env.DB.prepare('INSERT INTO domains (id, user_id, plugin_instance_id, hostname, status, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, plugin.id, hostname, 'online', new Date().toISOString()).run()
+  } catch {
+    return json({ error: 'Domain is already assigned' }, 409)
+  }
+  await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'domain.assigned', JSON.stringify({ pluginInstanceId: plugin.id, hostname }), new Date().toISOString()).run()
+  return json({ hostname, status: 'online' }, 201)
+}
+
 async function connectServer(request: Request, env: Env, url: URL): Promise<Response> {
   if (request.headers.get('Upgrade') !== 'websocket') return new Response('WebSocket upgrade required', { status: 426 })
   const serverId = url.searchParams.get('serverId')
@@ -141,8 +179,8 @@ async function proxyPublicHost(request: Request, env: Env, url: URL): Promise<Re
   const suffix = env.PLUGIN_DOMAIN_SUFFIX ?? '.plugins.example.com'
   if (!url.hostname.endsWith(suffix)) return new Response('Plugmesh console route', { status: 404 })
   const hostname = url.hostname
-  const domain = await env.DB.prepare('SELECT plugin_instance_id, server_id, status FROM domains JOIN plugin_instances ON plugin_instances.id = domains.plugin_instance_id WHERE hostname = ?').bind(hostname).first<{ plugin_instance_id: string; server_id: string; status: string }>()
-  if (!domain || domain.status !== 'online') return new Response('<!doctype html><title>维护中</title><main style="font-family:system-ui;padding:48px"><h1>插件暂时不可用</h1><p>公开入口尚未就绪或插件服务器当前离线。</p></main>', { status: 503, headers: { 'content-type': 'text/html; charset=utf-8' } })
+  const domain = await env.DB.prepare('SELECT domains.plugin_instance_id, domains.server_id, domains.status, servers.status AS server_status FROM domains JOIN plugin_instances ON plugin_instances.id = domains.plugin_instance_id JOIN servers ON servers.id = plugin_instances.server_id WHERE domains.hostname = ?').bind(hostname).first<{ plugin_instance_id: string; server_id: string; status: string; server_status: string }>()
+  if (!domain || domain.status !== 'online' || domain.server_status !== 'online') return new Response('<!doctype html><title>维护中</title><main style="font-family:system-ui;padding:48px"><h1>插件暂时不可用</h1><p>公开入口尚未就绪或插件服务器当前离线。</p></main>', { status: 503, headers: { 'content-type': 'text/html; charset=utf-8' } })
   const bridge = env.PLUGIN_BRIDGE.get(env.PLUGIN_BRIDGE.idFromName(domain.plugin_instance_id))
   const headers = new Headers(request.headers)
   headers.set('x-plugmesh-server-id', domain.server_id)

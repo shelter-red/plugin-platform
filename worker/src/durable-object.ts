@@ -17,6 +17,7 @@ export class PluginBridge {
     const url = new URL(request.url)
     if (url.pathname === '/connect') return this.connectServer(request)
     if (url.pathname === '/proxy') return this.proxyRequest(request)
+    if (url.pathname === '/command') return this.command(request)
     return new Response('Not found', { status: 404 })
   }
 
@@ -58,6 +59,15 @@ export class PluginBridge {
     })
     this.serverSocket.send(JSON.stringify(frame))
     return response
+  }
+
+  private async command(request: Request): Promise<Response> {
+    if (!this.serverSocket || this.serverSocket.readyState !== WebSocket.OPEN) return new Response('Plugin server is offline', { status: 503 })
+    const body = await request.json().catch(() => null) as { type?: string; pluginId?: string } | null
+    if (!body?.type || !body.type.startsWith('plugin.')) return new Response('Invalid command', { status: 400 })
+    const frame = makeFrame(body.type, this.serverId, {}, body.pluginId)
+    this.serverSocket.send(JSON.stringify(frame))
+    return new Response(JSON.stringify({ accepted: true, requestId: frame.requestId }), { status: 202, headers: { 'content-type': 'application/json' } })
   }
 
   private handleServerMessage(data: string | ArrayBuffer) {
