@@ -12,6 +12,12 @@ export interface ApiServer {
   created_at: string
 }
 
+export interface ApiServerDetail {
+  server: ApiServer
+  plugins: ApiPlugin[]
+  recentErrors: ApiAccessLog[]
+}
+
 export interface ApiPlugin {
   id: string
   plugin_id: string
@@ -24,6 +30,16 @@ export interface ApiPlugin {
   domain_hostname: string | null
   manifest_json: string
   updated_at: string
+}
+
+export interface ApiPluginDetail {
+  plugin: ApiPlugin & {
+    created_at: string
+    server_status: string
+    domain_id: string | null
+    domain_status: string | null
+  }
+  recentErrors: ApiAccessLog[]
 }
 
 export interface ApiDomain {
@@ -163,12 +179,26 @@ export async function fetchServers(): Promise<ApiServer[]> {
   return data.results ?? []
 }
 
+export async function fetchServerDetails(serverId: string): Promise<ApiServerDetail> {
+  const apiBase = import.meta.env.VITE_API_BASE ?? ''
+  const response = await fetch(`${apiBase}/api/servers/${encodeURIComponent(serverId)}`, { credentials: 'include' })
+  if (!response.ok) throw await apiError(response, `server detail request failed: ${response.status}`)
+  return response.json() as Promise<ApiServerDetail>
+}
+
 export async function fetchPlugins(): Promise<ApiPlugin[]> {
   const apiBase = import.meta.env.VITE_API_BASE ?? ''
   const response = await fetch(`${apiBase}/api/plugins`, { credentials: 'include' })
   if (!response.ok) throw new Error(`plugins request failed: ${response.status}`)
   const data = await response.json() as { results?: ApiPlugin[] }
   return data.results ?? []
+}
+
+export async function fetchPluginDetails(pluginInstanceId: string): Promise<ApiPluginDetail> {
+  const apiBase = import.meta.env.VITE_API_BASE ?? ''
+  const response = await fetch(`${apiBase}/api/plugins/${encodeURIComponent(pluginInstanceId)}`, { credentials: 'include' })
+  if (!response.ok) throw await apiError(response, `plugin detail request failed: ${response.status}`)
+  return response.json() as Promise<ApiPluginDetail>
 }
 
 export async function fetchDomains(): Promise<ApiDomain[]> {

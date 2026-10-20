@@ -57,6 +57,10 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   if (url.pathname === '/api/settings/smtp/test') return smtpTestApi(request, env, user)
   if (url.pathname === '/api/usage/cloudflare') return cloudflareUsageApi(env, user)
   if (url.pathname === '/api/usage/local') return localUsageApi(env, user)
+  const serverDetail = url.pathname.match(/^\/api\/servers\/([^/]+)$/)
+  if (request.method === 'GET' && serverDetail) return serverDetailsApi(env, user, decodeURIComponent(serverDetail[1]))
+  const pluginDetail = url.pathname.match(/^\/api\/plugins\/([^/]+)$/)
+  if (request.method === 'GET' && pluginDetail) return pluginDetailsApi(env, user, decodeURIComponent(pluginDetail[1]))
   const pluginAction = url.pathname.match(/^\/api\/plugins\/([^/]+)\/(load|unload|enable|disable|reload)$/)
   if (request.method === 'POST' && pluginAction) return commandPlugin(request, env, user, decodeURIComponent(pluginAction[1]), pluginAction[2] as 'load' | 'unload' | 'enable' | 'disable' | 'reload')
   if (request.method === 'POST' && url.pathname === '/api/domains') return assignDomain(request, env, user)
@@ -71,6 +75,23 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   if (request.method === 'POST' && url.pathname === '/api/registration-codes') return createRegistrationCode(env, user)
   if (request.method === 'POST' && url.pathname === '/api/blobs') return createBlob(request, env)
   return json({ error: 'Not found' }, 404)
+}
+
+async function serverDetailsApi(env: Env, user: AuthenticatedUser, serverId: string): Promise<Response> {
+  const server = await env.DB.prepare('SELECT id, name, status, last_seen_at, created_at FROM servers WHERE id = ? AND user_id = ?').bind(serverId, user.id).first()
+  if (!server) return json({ error: 'Plugin server not found' }, 404)
+  const [plugins, errors] = await Promise.all([
+    env.DB.prepare('SELECT plugin_instances.id, plugin_instances.plugin_id, plugin_instances.name, plugin_instances.version, plugin_instances.state, plugin_instances.desired_state, plugin_instances.server_id, servers.name AS server_name, plugin_instances.manifest_json, plugin_instances.updated_at, domains.hostname AS domain_hostname FROM plugin_instances JOIN servers ON servers.id = plugin_instances.server_id LEFT JOIN domains ON domains.plugin_instance_id = plugin_instances.id WHERE plugin_instances.server_id = ? AND plugin_instances.user_id = ? ORDER BY plugin_instances.updated_at DESC').bind(serverId, user.id).all(),
+    env.DB.prepare('SELECT request_logs.id, request_logs.hostname, request_logs.method, request_logs.path, request_logs.status, request_logs.duration_ms, request_logs.error, request_logs.created_at FROM request_logs JOIN plugin_instances ON plugin_instances.id = request_logs.plugin_instance_id WHERE request_logs.user_id = ? AND plugin_instances.server_id = ? AND request_logs.status >= 500 ORDER BY request_logs.created_at DESC LIMIT 20').bind(user.id, serverId).all(),
+  ])
+  return json({ server, plugins: plugins.results, recentErrors: errors.results })
+}
+
+async function pluginDetailsApi(env: Env, user: AuthenticatedUser, pluginInstanceId: string): Promise<Response> {
+  const plugin = await env.DB.prepare('SELECT plugin_instances.id, plugin_instances.plugin_id, plugin_instances.name, plugin_instances.version, plugin_instances.state, plugin_instances.desired_state, plugin_instances.server_id, plugin_instances.manifest_json, plugin_instances.created_at, plugin_instances.updated_at, servers.name AS server_name, servers.status AS server_status, domains.id AS domain_id, domains.hostname AS domain_hostname, domains.status AS domain_status FROM plugin_instances JOIN servers ON servers.id = plugin_instances.server_id LEFT JOIN domains ON domains.plugin_instance_id = plugin_instances.id WHERE plugin_instances.id = ? AND plugin_instances.user_id = ?').bind(pluginInstanceId, user.id).first()
+  if (!plugin) return json({ error: 'Plugin instance not found' }, 404)
+  const recentErrors = await env.DB.prepare('SELECT id, hostname, method, path, status, duration_ms, error, created_at FROM request_logs WHERE user_id = ? AND plugin_instance_id = ? AND status >= 500 ORDER BY created_at DESC LIMIT 20').bind(user.id, pluginInstanceId).all()
+  return json({ plugin, recentErrors: recentErrors.results })
 }
 
 async function createBlob(request: Request, env: Env): Promise<Response> {
