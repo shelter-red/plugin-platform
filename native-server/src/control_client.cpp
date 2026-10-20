@@ -192,6 +192,8 @@ void ControlClient::handle_plugin_command(const ControlFrame& frame) {
 }
 
 void ControlClient::handle_http_request(const ControlFrame& frame) {
+  constexpr uint64_t kMaxHttpResponseSize = 16 * 1024 * 1024;
+  constexpr uint64_t kResponseChunkSize = 8 * 1024;
   const auto id = plugin_id(frame);
   const auto method = text(frame.payload, "method");
   const auto path = text(frame.payload, "path");
@@ -209,6 +211,10 @@ void ControlClient::handle_http_request(const ControlFrame& frame) {
     send_request_error(frame, error);
     return;
   }
+  if (response.body.size > kMaxHttpResponseSize) {
+    send_request_error(frame, "plugin HTTP response is too large");
+    return;
+  }
   Json response_headers = Json::object();
   if (response.headers_json) {
     const auto parsed = Json::parse(response.headers_json, nullptr, false);
@@ -217,8 +223,9 @@ void ControlClient::handle_http_request(const ControlFrame& frame) {
   auto opened = make_control_frame("request.open", config_.server_id, {{"status", response.status}, {"headers", response_headers}}, id);
   opened.request_id = frame.request_id;
   send_frame(std::move(opened));
-  if (response.body.data && response.body.size > 0) {
-    auto chunk = make_control_frame("request.chunk", config_.server_id, {{"data", std::string(reinterpret_cast<const char*>(response.body.data), response.body.size)}}, id);
+  for (uint64_t offset = 0; response.body.data && offset < response.body.size; offset += kResponseChunkSize) {
+    const auto length = std::min<uint64_t>(kResponseChunkSize, response.body.size - offset);
+    auto chunk = make_control_frame("request.chunk", config_.server_id, {{"data", std::string(reinterpret_cast<const char*>(response.body.data + offset), static_cast<size_t>(length))}}, id);
     chunk.request_id = frame.request_id;
     send_frame(std::move(chunk));
   }

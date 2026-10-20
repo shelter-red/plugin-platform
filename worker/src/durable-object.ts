@@ -1,6 +1,10 @@
-import { isManifest, makeFrame, parseControlFrame } from './protocol'
+import { isManifest, makeFrame, MAX_CONTROL_FRAME_BYTES, parseControlFrame } from './protocol'
 import type { Env } from './types'
 import { activateMaintenance, getPlatformSettings, releaseActiveConnection, reserveActiveConnection } from './usage'
+
+const MAX_PROXY_REQUEST_BODY_BYTES = 32 * 1024
+const MAX_PROXY_RESPONSE_BODY_BYTES = 16 * 1024 * 1024
+const MAX_WEBSOCKET_MESSAGE_BYTES = 32 * 1024
 
 type PendingResponse = {
   resolve: (value: Response | PromiseLike<Response>) => void
@@ -8,6 +12,7 @@ type PendingResponse = {
   writer?: WritableStreamDefaultWriter<Uint8Array>
   buffered: Uint8Array[]
   activeConnection?: boolean
+  bytes: number
 }
 
 type PendingCommand = {
@@ -63,7 +68,9 @@ export class PluginBridge {
   private async proxyRequest(request: Request): Promise<Response> {
     if (!this.serverSocket || this.serverSocket.readyState !== WebSocket.OPEN) return new Response('Plugin server is offline', { status: 503 })
     const requestId = crypto.randomUUID()
-    const body = await request.text()
+    const bodyResult = await readRequestBody(request, MAX_PROXY_REQUEST_BODY_BYTES)
+    if (!bodyResult.ok) return new Response('Plugin request body is too large', { status: 413 })
+    const body = bodyResult.body
     const pluginId = request.headers.get('x-plugmesh-plugin-id') ?? undefined
     const requestPath = request.headers.get('x-plugmesh-request-path') ?? (() => {
       const url = new URL(request.url)
@@ -78,6 +85,8 @@ export class PluginBridge {
       ...(sse ? { streamId: requestId } : {}),
     }, pluginId)
     frame.requestId = requestId
+    const serializedFrame = JSON.stringify(frame)
+    if (new TextEncoder().encode(serializedFrame).byteLength > MAX_CONTROL_FRAME_BYTES) return new Response('Plugin request is too large for the control channel', { status: 413 })
     let activeConnection = false
     if (sse) {
       const settings = await getPlatformSettings(this.env)
@@ -88,7 +97,7 @@ export class PluginBridge {
       activeConnection = true
     }
     const response = new Promise<Response>((resolve) => {
-      const pending: PendingResponse = { resolve, timer: 0, buffered: [], activeConnection }
+      const pending: PendingResponse = { resolve, timer: 0, buffered: [], activeConnection, bytes: 0 }
       pending.timer = setTimeout(() => {
         this.pending.delete(requestId)
         pending.buffered = []
@@ -99,7 +108,7 @@ export class PluginBridge {
       this.pending.set(requestId, pending)
     })
     try {
-      this.serverSocket.send(JSON.stringify(frame))
+      this.serverSocket.send(serializedFrame)
     } catch {
       this.pending.delete(requestId)
       if (activeConnection) {
@@ -133,8 +142,23 @@ export class PluginBridge {
     this.reservedPublicConnections.add(connectionId)
     socket.addEventListener('message', (event) => {
       const binary = typeof event.data !== 'string'
-      const data = binary ? encodeBytes(new Uint8Array(event.data as ArrayBuffer)) : event.data
-      this.serverSocket?.send(JSON.stringify(makeFrame('stream.chunk', this.serverId, { connectionId, data, encoding: binary ? 'base64' : 'text' }, pluginId)))
+      const raw = binary ? new Uint8Array(event.data as ArrayBuffer) : new TextEncoder().encode(event.data)
+      if (raw.byteLength > MAX_WEBSOCKET_MESSAGE_BYTES) {
+        socket.close(1009, 'WebSocket message is too large')
+        return
+      }
+      const data = binary ? encodeBytes(raw) : event.data
+      const frame = makeFrame('stream.chunk', this.serverId, { connectionId, data, encoding: binary ? 'base64' : 'text' }, pluginId)
+      const serializedFrame = JSON.stringify(frame)
+      if (new TextEncoder().encode(serializedFrame).byteLength > MAX_CONTROL_FRAME_BYTES) {
+        socket.close(1009, 'WebSocket message is too large')
+        return
+      }
+      try {
+        this.serverSocket?.send(serializedFrame)
+      } catch {
+        socket.close(1011, 'Plugin server unavailable')
+      }
     })
     socket.addEventListener('close', () => {
       if (this.publicSockets.get(connectionId) !== socket) return
@@ -145,11 +169,14 @@ export class PluginBridge {
       }
     })
     try {
-      this.serverSocket.send(JSON.stringify(makeFrame('stream.open', this.serverId, {
+      const frame = makeFrame('stream.open', this.serverId, {
         connectionId,
         path: requestPath,
         headers: Object.fromEntries(forwardedHeaders(request.headers)),
-      }, pluginId)))
+      }, pluginId)
+      const serializedFrame = JSON.stringify(frame)
+      if (new TextEncoder().encode(serializedFrame).byteLength > MAX_CONTROL_FRAME_BYTES) throw new Error('control frame is too large')
+      this.serverSocket.send(serializedFrame)
     } catch {
       this.publicSockets.delete(connectionId)
       this.reservedPublicConnections.delete(connectionId)
@@ -279,7 +306,7 @@ export class PluginBridge {
     pending.writer = stream.writable.getWriter()
     void pending.writer.closed.catch(() => this.releasePendingConnection(pending))
     pending.resolve(new Response(stream.readable, { status: typeof payload.status === 'number' ? payload.status : 200, headers: responseHeaders(payload.headers) }))
-    for (const chunk of pending.buffered.splice(0)) void pending.writer.write(chunk)
+    for (const chunk of pending.buffered.splice(0)) void pending.writer.write(chunk).catch(() => this.rejectPendingResponse(requestId, pending, 'Plugin response stream failed'))
   }
 
   private writeResponseChunk(requestId: string, payload: Record<string, unknown>, streaming: boolean) {
@@ -287,9 +314,20 @@ export class PluginBridge {
     const pending = this.pending.get(targetId)
     const chunk = typeof payload.data === 'string' ? payload.data : typeof payload.chunk === 'string' ? payload.chunk : ''
     if (!pending || !chunk) return
-    const bytes = payload.encoding === 'base64' ? decodeBytes(chunk) : new TextEncoder().encode(chunk)
+    let bytes: Uint8Array
+    try {
+      bytes = payload.encoding === 'base64' ? decodeBytes(chunk) : new TextEncoder().encode(chunk)
+    } catch {
+      this.rejectPendingResponse(targetId, pending, 'Plugin response encoding is invalid')
+      return
+    }
+    if (pending.bytes + bytes.byteLength > MAX_PROXY_RESPONSE_BODY_BYTES) {
+      this.rejectPendingResponse(targetId, pending, 'Plugin response is too large')
+      return
+    }
+    pending.bytes += bytes.byteLength
     if (!pending.writer && streaming) this.openResponse(targetId, { status: 200, headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' } })
-    if (pending.writer) void pending.writer.write(bytes)
+    if (pending.writer) void pending.writer.write(bytes).catch(() => this.rejectPendingResponse(targetId, pending, 'Plugin response stream failed'))
     else pending.buffered.push(bytes)
   }
 
@@ -297,14 +335,31 @@ export class PluginBridge {
     const pending = this.pending.get(requestId)
     if (!pending) return
     clearTimeout(pending.timer)
-    this.pending.delete(requestId)
-    this.releasePendingConnection(pending)
     if (pending.writer) {
+      this.pending.delete(requestId)
+      this.releasePendingConnection(pending)
       void pending.writer.close().catch(() => undefined)
       return
     }
     const body = typeof payload.body === 'string' ? payload.body : toArrayBuffer(combineBytes(pending.buffered))
+    const bodyBytes = typeof body === 'string' ? new TextEncoder().encode(body) : new Uint8Array(body)
+    if (bodyBytes.byteLength > MAX_PROXY_RESPONSE_BODY_BYTES) {
+      this.rejectPendingResponse(requestId, pending, 'Plugin response is too large')
+      return
+    }
+    this.pending.delete(requestId)
+    this.releasePendingConnection(pending)
     pending.resolve(new Response(body, { status: typeof payload.status === 'number' ? payload.status : 200, headers: responseHeaders(payload.headers) }))
+  }
+
+  private rejectPendingResponse(requestId: string, pending: PendingResponse, message: string) {
+    if (this.pending.get(requestId) !== pending) return
+    clearTimeout(pending.timer)
+    this.pending.delete(requestId)
+    pending.buffered = []
+    this.releasePendingConnection(pending)
+    if (pending.writer) void pending.writer.abort(message).catch(() => undefined)
+    else pending.resolve(new Response(message, { status: 502, headers: { 'content-type': 'text/plain; charset=utf-8' } }))
   }
 
   private releasePendingConnection(pending: PendingResponse) {
@@ -365,6 +420,28 @@ function responseHeaders(value: unknown): Headers {
   if (!value || typeof value !== 'object') return headers
   for (const [key, item] of Object.entries(value)) if (typeof item === 'string') headers.set(key, item)
   return headers
+}
+
+async function readRequestBody(request: Request, maxBytes: number): Promise<{ ok: true; body: string } | { ok: false }> {
+  if (!request.body) return { ok: true, body: '' }
+  const reader = request.body.getReader()
+  const chunks: Uint8Array[] = []
+  let size = 0
+  try {
+    for (;;) {
+      const result = await reader.read()
+      if (result.done) break
+      size += result.value.byteLength
+      if (size > maxBytes) {
+        await reader.cancel('Request body is too large')
+        return { ok: false }
+      }
+      chunks.push(result.value)
+    }
+  } catch {
+    return { ok: false }
+  }
+  return { ok: true, body: new TextDecoder().decode(combineBytes(chunks)) }
 }
 
 function forwardedHeaders(headers: Headers): Headers {
