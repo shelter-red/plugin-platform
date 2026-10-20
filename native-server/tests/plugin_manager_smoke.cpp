@@ -14,6 +14,14 @@ int main(int argc, char** argv) {
   std::string stream_id;
   std::vector<uint8_t> streamed;
   bool finished = false;
+  uint16_t opened_status = 0;
+  std::string opened_headers;
+  manager.set_stream_opener([&](const char* id, uint16_t status, const char* headers) {
+    stream_id = id ? id : "";
+    opened_status = status;
+    opened_headers = headers ? headers : "";
+    return 0;
+  });
   manager.set_stream_writer([&](const char* id, const uint8_t* data, uint64_t size, int is_finished) {
     stream_id = id ? id : "";
     streamed.assign(data, data + size);
@@ -46,6 +54,10 @@ int main(int argc, char** argv) {
   plugmesh_http_request sse_request{"GET", "/events", "{}", nullptr, 0};
   if (!manager.sse("sample.plugin", "stream-1", sse_request, error) || stream_id != "stream-1" || std::string(streamed.begin(), streamed.end()) != "data: sample-plugin\n\n" || !finished) {
     std::cerr << "SSE stream callback failed: " << error << '\n';
+    return 1;
+  }
+  if (!manager.file_stream("sample.plugin", "file-1", sse_request, error) || stream_id != "file-1" || opened_status != 200 || opened_headers.find("application/octet-stream") == std::string::npos || std::string(streamed.begin(), streamed.end()) != "sample-file-stream" || !finished) {
+    std::cerr << "file stream callback failed: " << error << '\n';
     return 1;
   }
   if (!manager.disable("sample.plugin", error) || manager.snapshot()[0].state != plugmesh::PluginState::Disabled || !manager.unload("sample.plugin", error) || manager.snapshot()[0].state != plugmesh::PluginState::Unloaded) {

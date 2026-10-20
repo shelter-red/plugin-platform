@@ -2,9 +2,9 @@
 
 这是跨 Linux / Windows 的本地服务器基础层。当前阶段固定了两项运行时边界：
 
-- `plugin_api.h` 定义稳定 C ABI，插件通过 `plugmesh_plugin_get_api_v1` 导出能力。
+- `plugin_api.h` 定义稳定 C ABI v2，插件通过 `plugmesh_plugin_get_api_v2` 导出 HTTP、WebSocket、SSE 和文件流能力。
 - `PluginLoader` 负责按平台加载 `.so` / `.dll`，校验 ABI 版本和必需入口。
-- `PluginManager` 负责扫描包含 `manifest.json` 的插件目录、校验 manifest 与 C ABI 描述、编排加载/启停/重载和健康检查生命周期。
+- `PluginManager` 负责扫描包含 `manifest.json` 的插件目录、校验 manifest 与 C ABI v2 描述、编排加载/启停/重载、健康检查和文件流生命周期。
 - `ControlClient` 使用 WebSocket++、standalone Asio 和 nlohmann/json 建立 `wss` 出站连接，处理注册、心跳、插件命令和 HTTP 请求帧；注册描述来自已校验的 manifest。
 - `examples/sample_plugin.cpp` 和 `tests/plugin_loader_smoke.cpp` 验证动态库导出、ABI 检查和基本生命周期。
 
@@ -49,4 +49,4 @@ native-server/build/plugmesh-server --register https://console.example.com '工�
 
 注册成功后，服务器启动时设置 `PLUGMESH_CREDENTIAL_FILE`、`PLUGMESH_CREDENTIAL_PASSWORD` 和 `PLUGMESH_PLUGIN_DIRECTORY`，即可从加密凭据文件恢复长期连接参数。注册码和口令也可以在交互提示中输入，不必放在环境变量中。
 
-网络传输层复用 `worker/src/protocol.ts` 的协议字段约定；当前已接入控制 WebSocket、HTTP 回调、SSE 流和公开 WebSocket 的 base64 二进制桥接。文件流和插件级日志回传仍未完成。
+网络传输层复用 `worker/src/protocol.ts` 的协议字段约定；当前已接入控制 WebSocket、HTTP 回调、SSE/文件流和公开 WebSocket 的 base64 二进制桥接。插件级日志回传仍未完成。

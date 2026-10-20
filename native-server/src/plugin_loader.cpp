@@ -18,22 +18,22 @@ bool PluginLoader::load(const std::filesystem::path& library_path, std::string& 
     error = "LoadLibraryW failed";
     return false;
   }
-  auto entry = reinterpret_cast<plugmesh_plugin_get_api_v1_fn>(GetProcAddress(static_cast<HMODULE>(handle_), "plugmesh_plugin_get_api_v1"));
+  auto entry = reinterpret_cast<plugmesh_plugin_get_api_v2_fn>(GetProcAddress(static_cast<HMODULE>(handle_), "plugmesh_plugin_get_api_v2"));
 #else
   handle_ = dlopen(library_path.c_str(), RTLD_NOW | RTLD_LOCAL);
   if (!handle_) {
     error = dlerror() ? dlerror() : "dlopen failed";
     return false;
   }
-  auto entry = reinterpret_cast<plugmesh_plugin_get_api_v1_fn>(dlsym(handle_, "plugmesh_plugin_get_api_v1"));
+  auto entry = reinterpret_cast<plugmesh_plugin_get_api_v2_fn>(dlsym(handle_, "plugmesh_plugin_get_api_v2"));
 #endif
   if (!entry) {
-    error = "plugmesh_plugin_get_api_v1 was not exported";
+    error = "plugmesh_plugin_get_api_v2 was not exported";
     unload();
     return false;
   }
   api_ = entry();
-  if (!api_ || api_->abi_version != PLUGMESH_PLUGIN_ABI_VERSION || !api_->start || !api_->stop || !api_->health || !api_->handle_http) {
+  if (!api_ || api_->abi_version != PLUGMESH_PLUGIN_ABI_VERSION || !api_->start || !api_->stop || !api_->health) {
     error = "plugin ABI version or required entry points are invalid";
     unload();
     return false;

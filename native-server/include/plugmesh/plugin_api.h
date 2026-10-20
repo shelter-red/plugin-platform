@@ -8,7 +8,7 @@
 #define PLUGMESH_EXPORT __attribute__((visibility("default")))
 #endif
 
-#define PLUGMESH_PLUGIN_ABI_VERSION 1u
+#define PLUGMESH_PLUGIN_ABI_VERSION 2u
 
 #ifdef __cplusplus
 extern "C" {
@@ -37,10 +37,11 @@ typedef struct plugmesh_host_api {
   uint32_t abi_version;
   void (*log)(int level, const char* message);
   int (*http_request)(const plugmesh_http_request*, plugmesh_http_response*);
+  int (*stream_open)(const char* stream_id, uint16_t status, const char* headers_json);
   int (*stream_write)(const char* stream_id, const uint8_t* data, uint64_t size, int finished);
 } plugmesh_host_api;
 
-typedef struct plugmesh_plugin_api_v1 {
+typedef struct plugmesh_plugin_api_v2 {
   uint32_t abi_version;
   const char* plugin_id;
   const char* plugin_name;
@@ -51,9 +52,10 @@ typedef struct plugmesh_plugin_api_v1 {
   int (*handle_http)(const plugmesh_http_request* request, plugmesh_http_response* response);
   int (*handle_websocket)(const char* connection_id, const uint8_t* data, uint64_t size, int is_text);
   int (*handle_sse)(const char* stream_id, const plugmesh_http_request* request);
-} plugmesh_plugin_api_v1;
+  int (*handle_file)(const char* stream_id, const plugmesh_http_request* request);
+} plugmesh_plugin_api_v2;
 
-typedef const plugmesh_plugin_api_v1* (*plugmesh_plugin_get_api_v1_fn)();
+typedef const plugmesh_plugin_api_v2* (*plugmesh_plugin_get_api_v2_fn)();
 
 #ifdef __cplusplus
 }

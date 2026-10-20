@@ -28,7 +28,14 @@ int handle_sse(const char* stream_id, const plugmesh_http_request*) {
   return host && host->stream_write ? host->stream_write(stream_id, event, sizeof(event) - 1, 1) : -1;
 }
 
-const plugmesh_plugin_api_v1 API = {
+int handle_file(const char* stream_id, const plugmesh_http_request*) {
+  static const uint8_t body[] = "sample-file-stream";
+  if (!host || !host->stream_open || !host->stream_write) return -1;
+  if (host->stream_open(stream_id, 200, "{\"content-type\":\"application/octet-stream\"}") != 0) return -1;
+  return host->stream_write(stream_id, body, sizeof(body) - 1, 1);
+}
+
+const plugmesh_plugin_api_v2 API = {
     PLUGMESH_PLUGIN_ABI_VERSION,
     "sample.plugin",
     "Sample Plugin",
@@ -39,10 +46,11 @@ const plugmesh_plugin_api_v1 API = {
     handle_http,
     handle_websocket,
     handle_sse,
+    handle_file,
 };
 
 }  // namespace
 
-extern "C" PLUGMESH_EXPORT const plugmesh_plugin_api_v1* plugmesh_plugin_get_api_v1() {
+extern "C" PLUGMESH_EXPORT const plugmesh_plugin_api_v2* plugmesh_plugin_get_api_v2() {
   return &API;
 }

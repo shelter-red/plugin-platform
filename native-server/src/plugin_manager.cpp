@@ -85,7 +85,7 @@ bool read_manifest(const std::filesystem::path& path, Manifest& manifest, std::s
   }
 }
 
-PluginInfo make_info(const std::filesystem::path& path, const Manifest& manifest, const plugmesh_plugin_api_v1& api) {
+PluginInfo make_info(const std::filesystem::path& path, const Manifest& manifest, const plugmesh_plugin_api_v2& api) {
   return {
       manifest.id,
       manifest.name,
@@ -124,6 +124,7 @@ const char* plugin_state_name(PluginState state) {
 
 PluginManager::PluginManager(plugmesh_host_api host_api) : host_api_(host_api) {
   if (host_api_.abi_version == 0) host_api_.abi_version = PLUGMESH_PLUGIN_ABI_VERSION;
+  if (!host_api_.stream_open) host_api_.stream_open = &PluginManager::stream_open_trampoline;
   if (!host_api_.stream_write) host_api_.stream_write = &PluginManager::stream_write_trampoline;
   active_instance_ = this;
 }
@@ -141,6 +142,11 @@ PluginManager::~PluginManager() {
 void PluginManager::set_stream_writer(StreamWriter writer) {
   std::lock_guard lock(mutex_);
   stream_writer_ = std::move(writer);
+}
+
+void PluginManager::set_stream_opener(StreamOpener opener) {
+  std::lock_guard lock(mutex_);
+  stream_opener_ = std::move(opener);
 }
 
 bool PluginManager::discover(const std::filesystem::path& directory, std::string& error) {
@@ -166,7 +172,7 @@ bool PluginManager::discover(const std::filesystem::path& directory, std::string
     PluginLoader loader;
     if (!loader.load(library, error)) return false;
     const auto* api = loader.api();
-    if (!api->plugin_id || !api->plugin_name || !api->plugin_version || manifest.id != api->plugin_id || manifest.name != api->plugin_name || manifest.version != api->plugin_version || (manifest.http && !api->handle_http) || (manifest.websocket && !api->handle_websocket) || (manifest.sse && !api->handle_sse) || manifest.file_stream) {
+    if (!api->plugin_id || !api->plugin_name || !api->plugin_version || manifest.id != api->plugin_id || manifest.name != api->plugin_name || manifest.version != api->plugin_version || (manifest.http && !api->handle_http) || (manifest.websocket && !api->handle_websocket) || (manifest.sse && !api->handle_sse) || (manifest.file_stream && !api->handle_file)) {
       error = "manifest does not match plugin ABI: " + manifest.id;
       return false;
     }
@@ -296,6 +302,21 @@ bool PluginManager::sse(const std::string& plugin_id, const std::string& stream_
   return true;
 }
 
+bool PluginManager::file_stream(const std::string& plugin_id, const std::string& stream_id, const plugmesh_http_request& request, std::string& error) const {
+  std::lock_guard lock(mutex_);
+  const auto* plugin = find(plugin_id);
+  const auto* runtime = loaded(plugin_id);
+  if (!plugin || !runtime || !runtime->loader || plugin->state != PluginState::Enabled || !runtime->loader->api()->handle_file) {
+    error = "plugin file stream handler is unavailable: " + plugin_id;
+    return false;
+  }
+  if (runtime->loader->api()->handle_file(stream_id.c_str(), &request) != 0) {
+    error = "plugin file stream handler failed: " + plugin_id;
+    return false;
+  }
+  return true;
+}
+
 bool PluginManager::websocket(const std::string& plugin_id, const std::string& connection_id, const uint8_t* data, uint64_t size, bool is_text, std::string& error) const {
   std::lock_guard lock(mutex_);
   const auto* plugin = find(plugin_id);
@@ -351,10 +372,20 @@ int PluginManager::stream_write_trampoline(const char* stream_id, const uint8_t*
   return active_instance_ ? active_instance_->write_stream(stream_id, data, size, finished) : -1;
 }
 
+int PluginManager::stream_open_trampoline(const char* stream_id, uint16_t status, const char* headers_json) {
+  return active_instance_ ? active_instance_->open_stream(stream_id, status, headers_json) : -1;
+}
+
 int PluginManager::write_stream(const char* stream_id, const uint8_t* data, uint64_t size, int finished) {
   std::lock_guard lock(mutex_);
   if (!stream_writer_ || !stream_id || (!data && size > 0)) return -1;
   return stream_writer_(stream_id, data, size, finished);
+}
+
+int PluginManager::open_stream(const char* stream_id, uint16_t status, const char* headers_json) {
+  std::lock_guard lock(mutex_);
+  if (!stream_opener_ || !stream_id || !headers_json) return -1;
+  return stream_opener_(stream_id, status, headers_json);
 }
 
 }  // namespace plugmesh

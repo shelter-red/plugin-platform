@@ -35,6 +35,7 @@ Json manifest(const PluginInfo& plugin) {
 }  // namespace
 
 ControlClient::ControlClient(ServerConfig config, PluginManager& plugins) : config_(std::move(config)), plugins_(plugins) {
+  plugins_.set_stream_opener([this](const char* stream_id, uint16_t status, const char* headers_json) { return open_stream(stream_id, status, headers_json); });
   plugins_.set_stream_writer([this](const char* stream_id, const uint8_t* data, uint64_t size, int finished) { return write_stream(stream_id, data, size, finished); });
   client_.clear_access_channels(websocketpp::log::alevel::all);
   client_.clear_error_channels(websocketpp::log::elevel::all);
@@ -48,6 +49,7 @@ ControlClient::ControlClient(ServerConfig config, PluginManager& plugins) : conf
 
 ControlClient::~ControlClient() {
   stop();
+  plugins_.set_stream_opener({});
   plugins_.set_stream_writer({});
 }
 
@@ -198,8 +200,13 @@ void ControlClient::handle_http_request(const ControlFrame& frame) {
   plugmesh_http_request request{method.c_str(), path.c_str(), headers.c_str(), reinterpret_cast<const uint8_t*>(body.data()), body.size()};
   plugmesh_http_response response{};
   std::string error;
+  const auto info = plugins_.info_snapshot(id);
+  if (info && info->file_stream) {
+    if (!plugins_.file_stream(id, frame.request_id, request, error)) send_request_error(frame, error);
+    return;
+  }
   if (!plugins_.http(id, request, response, error)) {
-    send_error(frame, error);
+    send_request_error(frame, error);
     return;
   }
   Json response_headers = Json::object();
@@ -230,16 +237,7 @@ void ControlClient::handle_sse_request(const ControlFrame& frame) {
   plugmesh_http_request request{method.c_str(), path.c_str(), headers.c_str(), reinterpret_cast<const uint8_t*>(body.data()), body.size()};
   std::string error;
   if (stream_id.empty() || !plugins_.sse(id, stream_id, request, error)) {
-    const auto message = error.empty() ? "invalid SSE stream" : error;
-    auto opened = make_control_frame("request.open", config_.server_id, {{"status", 502}, {"headers", {{"content-type", "application/json; charset=utf-8"}}}}, id);
-    opened.request_id = frame.request_id;
-    send_frame(std::move(opened));
-    auto chunk = make_control_frame("request.chunk", config_.server_id, {{"data", Json{{"error", message}}.dump()}}, id);
-    chunk.request_id = frame.request_id;
-    send_frame(std::move(chunk));
-    auto closed = make_control_frame("request.close", config_.server_id, {{"status", 502}}, id);
-    closed.request_id = frame.request_id;
-    send_frame(std::move(closed));
+    send_request_error(frame, error.empty() ? "invalid SSE stream" : error);
   }
 }
 
@@ -261,15 +259,27 @@ int ControlClient::write_stream(const char* stream_id, const uint8_t* data, uint
   for (uint64_t offset = 0; offset < size || (size == 0 && offset == 0);) {
     const auto length = std::min<uint64_t>(kChunkSize, size - offset);
     const auto encoded = length == 0 ? std::string() : websocketpp::base64_encode(data + offset, static_cast<size_t>(length));
-    auto frame = make_control_frame("stream.chunk", config_.server_id, { {"connectionId", connection_id}, {"data", encoded}, {"encoding", "base64"} });
+    auto frame = make_control_frame("stream.chunk", config_.server_id, { {"connectionId", connection_id}, {"streamId", connection_id}, {"data", encoded}, {"encoding", "base64"} });
+    frame.request_id = connection_id;
     client_.get_io_service().post([this, frame = std::move(frame)]() mutable { send_frame(std::move(frame)); });
     offset += length;
     if (size == 0) break;
   }
   if (finished) {
-    auto close = make_control_frame("stream.close", config_.server_id, {{"connectionId", connection_id}});
+    auto close = make_control_frame("stream.close", config_.server_id, {{"connectionId", connection_id}, {"streamId", connection_id}});
+    close.request_id = connection_id;
     client_.get_io_service().post([this, close = std::move(close)]() mutable { send_frame(std::move(close)); });
   }
+  return 0;
+}
+
+int ControlClient::open_stream(const char* stream_id, uint16_t status, const char* headers_json) {
+  if (!stream_id || !headers_json) return -1;
+  Json headers = Json::parse(headers_json, nullptr, false);
+  if (!headers.is_object()) headers = Json::object();
+  auto frame = make_control_frame("request.open", config_.server_id, {{"status", status}, {"headers", headers}});
+  frame.request_id = stream_id;
+  client_.get_io_service().post([this, frame = std::move(frame)]() mutable { send_frame(std::move(frame)); });
   return 0;
 }
 
@@ -283,6 +293,18 @@ void ControlClient::send_error(const ControlFrame& request, const std::string& m
   auto response = make_control_frame("error", config_.server_id, {{"message", message}}, plugin_id(request));
   response.request_id = request.request_id;
   send_frame(std::move(response));
+}
+
+void ControlClient::send_request_error(const ControlFrame& request, const std::string& message) {
+  auto opened = make_control_frame("request.open", config_.server_id, {{"status", 502}, {"headers", {{"content-type", "application/json; charset=utf-8"}}}}, plugin_id(request));
+  opened.request_id = request.request_id;
+  send_frame(std::move(opened));
+  auto chunk = make_control_frame("request.chunk", config_.server_id, {{"data", Json{{"error", message}}.dump()}}, plugin_id(request));
+  chunk.request_id = request.request_id;
+  send_frame(std::move(chunk));
+  auto closed = make_control_frame("request.close", config_.server_id, {{"status", 502}}, plugin_id(request));
+  closed.request_id = request.request_id;
+  send_frame(std::move(closed));
 }
 
 void ControlClient::send_registration() {

@@ -44,6 +44,7 @@ class PluginLoader;
 class PluginManager {
  public:
   using StreamWriter = std::function<int(const char*, const uint8_t*, uint64_t, int)>;
+  using StreamOpener = std::function<int(const char*, uint16_t, const char*)>;
 
   explicit PluginManager(plugmesh_host_api host_api = {});
   PluginManager(const PluginManager&) = delete;
@@ -51,6 +52,7 @@ class PluginManager {
   ~PluginManager();
 
   void set_stream_writer(StreamWriter writer);
+  void set_stream_opener(StreamOpener opener);
 
   bool discover(const std::filesystem::path& directory, std::string& error);
   std::vector<PluginInfo> snapshot() const;
@@ -63,6 +65,7 @@ class PluginManager {
   bool health(const std::string& plugin_id, plugmesh_http_response& response, std::string& error) const;
   bool http(const std::string& plugin_id, const plugmesh_http_request& request, plugmesh_http_response& response, std::string& error) const;
   bool sse(const std::string& plugin_id, const std::string& stream_id, const plugmesh_http_request& request, std::string& error) const;
+  bool file_stream(const std::string& plugin_id, const std::string& stream_id, const plugmesh_http_request& request, std::string& error) const;
   bool websocket(const std::string& plugin_id, const std::string& connection_id, const uint8_t* data, uint64_t size, bool is_text, std::string& error) const;
 
  private:
@@ -77,9 +80,12 @@ class PluginManager {
   bool set_failed(PluginInfo& plugin, std::string& error);
   static int stream_write_trampoline(const char* stream_id, const uint8_t* data, uint64_t size, int finished);
   int write_stream(const char* stream_id, const uint8_t* data, uint64_t size, int finished);
+  static int stream_open_trampoline(const char* stream_id, uint16_t status, const char* headers_json);
+  int open_stream(const char* stream_id, uint16_t status, const char* headers_json);
 
   plugmesh_host_api host_api_{};
   mutable std::recursive_mutex mutex_;
+  StreamOpener stream_opener_;
   StreamWriter stream_writer_;
   static PluginManager* active_instance_;
   std::vector<PluginInfo> plugins_;

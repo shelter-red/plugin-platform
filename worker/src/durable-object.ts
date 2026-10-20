@@ -5,7 +5,7 @@ type PendingResponse = {
   resolve: (value: Response | PromiseLike<Response>) => void
   timer: number
   writer?: WritableStreamDefaultWriter<Uint8Array>
-  buffered: string[]
+  buffered: Uint8Array[]
 }
 
 type PendingCommand = {
@@ -178,7 +178,7 @@ export class PluginBridge {
       return
     }
     if (frame.type === 'request.chunk') {
-      this.writeResponseChunk(frame.requestId, frame.payload ?? {})
+      this.writeResponseChunk(frame.requestId, frame.payload ?? {}, false)
       return
     }
     if (frame.type === 'request.close') {
@@ -191,7 +191,7 @@ export class PluginBridge {
       const data = frame.payload?.data
       const encoding = frame.payload?.encoding
       if (socket && typeof data === 'string' && socket.readyState === WebSocket.OPEN) socket.send(encoding === 'base64' ? decodeBytes(data) : data)
-      else if (!socket) this.writeResponseChunk(connectionId, frame.payload ?? {})
+      else if (!socket) this.writeResponseChunk(connectionId, frame.payload ?? {}, true)
       return
     }
     if (frame.type === 'stream.close') {
@@ -210,17 +210,18 @@ export class PluginBridge {
     const stream = new TransformStream<Uint8Array, Uint8Array>()
     pending.writer = stream.writable.getWriter()
     pending.resolve(new Response(stream.readable, { status: typeof payload.status === 'number' ? payload.status : 200, headers: responseHeaders(payload.headers) }))
-    for (const chunk of pending.buffered.splice(0)) void pending.writer.write(new TextEncoder().encode(chunk))
+    for (const chunk of pending.buffered.splice(0)) void pending.writer.write(chunk)
   }
 
-  private writeResponseChunk(requestId: string, payload: Record<string, unknown>) {
-    const targetId = typeof payload.connectionId === 'string' ? payload.connectionId : requestId
+  private writeResponseChunk(requestId: string, payload: Record<string, unknown>, streaming: boolean) {
+    const targetId = typeof payload.connectionId === 'string' ? payload.connectionId : typeof payload.streamId === 'string' ? payload.streamId : requestId
     const pending = this.pending.get(targetId)
     const chunk = typeof payload.data === 'string' ? payload.data : typeof payload.chunk === 'string' ? payload.chunk : ''
     if (!pending || !chunk) return
-    if (!pending.writer) this.openResponse(targetId, { status: 200, headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' } })
-    if (pending.writer) void pending.writer.write(new TextEncoder().encode(chunk))
-    else pending.buffered.push(chunk)
+    const bytes = payload.encoding === 'base64' ? decodeBytes(chunk) : new TextEncoder().encode(chunk)
+    if (!pending.writer && streaming) this.openResponse(targetId, { status: 200, headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' } })
+    if (pending.writer) void pending.writer.write(bytes)
+    else pending.buffered.push(bytes)
   }
 
   private closeResponse(requestId: string, payload: Record<string, unknown>) {
@@ -232,7 +233,7 @@ export class PluginBridge {
       void pending.writer.close()
       return
     }
-    const body = typeof payload.body === 'string' ? payload.body : pending.buffered.join('')
+    const body = typeof payload.body === 'string' ? payload.body : toArrayBuffer(combineBytes(pending.buffered))
     pending.resolve(new Response(body, { status: typeof payload.status === 'number' ? payload.status : 200, headers: responseHeaders(payload.headers) }))
   }
 
@@ -309,4 +310,21 @@ function decodeBytes(value: string): Uint8Array {
   const bytes = new Uint8Array(binary.length)
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
   return bytes
+}
+
+function combineBytes(chunks: Uint8Array[]): Uint8Array {
+  const size = chunks.reduce((total, chunk) => total + chunk.byteLength, 0)
+  const result = new Uint8Array(size)
+  let offset = 0
+  for (const chunk of chunks) {
+    result.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return result
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const result = new ArrayBuffer(bytes.byteLength)
+  new Uint8Array(result).set(bytes)
+  return result
 }
