@@ -282,10 +282,11 @@ async function proxyPublicHost(request: Request, env: Env, url: URL): Promise<Re
   const hostname = url.hostname
   const domain = await env.DB.prepare('SELECT domains.plugin_instance_id, domains.server_id, domains.status, plugin_instances.plugin_id, servers.status AS server_status FROM domains JOIN plugin_instances ON plugin_instances.id = domains.plugin_instance_id JOIN servers ON servers.id = plugin_instances.server_id WHERE domains.hostname = ?').bind(hostname).first<{ plugin_instance_id: string; server_id: string; status: string; plugin_id: string; server_status: string }>()
   if (!domain || domain.status !== 'online' || domain.server_status !== 'online') return maintenanceResponse('插件暂时不可用', '公开入口尚未就绪或插件服务器当前离线。')
-  const bridge = env.PLUGIN_BRIDGE.get(env.PLUGIN_BRIDGE.idFromName(domain.plugin_instance_id))
+  const bridge = env.PLUGIN_BRIDGE.get(env.PLUGIN_BRIDGE.idFromName(domain.server_id))
   const headers = new Headers(request.headers)
   headers.set('x-plugmesh-server-id', domain.server_id)
   headers.set('x-plugmesh-plugin-id', domain.plugin_id)
+  headers.set('x-plugmesh-request-path', url.pathname + url.search)
   if (request.headers.get('Upgrade')?.toLowerCase() === 'websocket') return bridge.fetch(new Request(new URL('/websocket', request.url), { method: 'GET', headers }))
   return bridge.fetch(new Request(new URL('/proxy', request.url), { method: request.method, headers, body: request.body }))
 }

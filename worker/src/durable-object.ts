@@ -52,10 +52,14 @@ export class PluginBridge {
     if (!this.serverSocket || this.serverSocket.readyState !== WebSocket.OPEN) return new Response('Plugin server is offline', { status: 503 })
     const requestId = crypto.randomUUID()
     const body = await request.text()
+    const requestPath = request.headers.get('x-plugmesh-request-path') ?? (() => {
+      const url = new URL(request.url)
+      return url.pathname + url.search
+    })()
     const frame = makeFrame('request.open', this.serverId, {
       method: request.method,
-      path: new URL(request.url).pathname + new URL(request.url).search,
-      headers: Object.fromEntries(request.headers),
+      path: requestPath,
+      headers: Object.fromEntries(forwardedHeaders(request.headers)),
       body,
     })
     frame.requestId = requestId
@@ -80,6 +84,10 @@ export class PluginBridge {
     const socket = pair[1]
     const connectionId = crypto.randomUUID()
     const pluginId = request.headers.get('x-plugmesh-plugin-id') ?? undefined
+    const requestPath = request.headers.get('x-plugmesh-request-path') ?? (() => {
+      const url = new URL(request.url)
+      return url.pathname + url.search
+    })()
     socket.accept()
     this.publicSockets.set(connectionId, socket)
     socket.addEventListener('message', (event) => {
@@ -92,8 +100,8 @@ export class PluginBridge {
     })
     this.serverSocket.send(JSON.stringify(makeFrame('stream.open', this.serverId, {
       connectionId,
-      path: new URL(request.url).pathname + new URL(request.url).search,
-      headers: Object.fromEntries(request.headers),
+      path: requestPath,
+      headers: Object.fromEntries(forwardedHeaders(request.headers)),
     }, pluginId)))
     return new Response(null, { status: 101, webSocket: client })
   }
@@ -206,6 +214,14 @@ function responseHeaders(value: unknown): Headers {
   if (!value || typeof value !== 'object') return headers
   for (const [key, item] of Object.entries(value)) if (typeof item === 'string') headers.set(key, item)
   return headers
+}
+
+function forwardedHeaders(headers: Headers): Headers {
+  const result = new Headers(headers)
+  result.delete('x-plugmesh-server-id')
+  result.delete('x-plugmesh-plugin-id')
+  result.delete('x-plugmesh-request-path')
+  return result
 }
 
 function encodeBytes(bytes: Uint8Array): string {
