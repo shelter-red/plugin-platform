@@ -4,6 +4,36 @@ export interface ApiOverview {
   domains: number
 }
 
+export interface ApiServer {
+  id: string
+  name: string
+  status: 'online' | 'offline' | 'revoked' | string
+  last_seen_at: string | null
+  created_at: string
+}
+
+export interface ApiPlugin {
+  id: string
+  plugin_id: string
+  name: string
+  version: string
+  state: string
+  server_id: string
+  server_name: string
+  domain_hostname: string | null
+  manifest_json: string
+  updated_at: string
+}
+
+export interface ApiDomain {
+  id: string
+  hostname: string
+  status: string
+  plugin_instance_id: string
+  plugin_name: string
+  created_at: string
+}
+
 export interface PlatformSettings {
   maintenance: boolean
   quotas: {
@@ -46,6 +76,30 @@ export async function fetchPlatformSettings(): Promise<PlatformSettings> {
   const response = await fetch(`${apiBase}/api/settings/platform`, { credentials: 'include' })
   if (!response.ok) throw new Error(`platform settings request failed: ${response.status}`)
   return response.json() as Promise<PlatformSettings>
+}
+
+export async function fetchServers(): Promise<ApiServer[]> {
+  const apiBase = import.meta.env.VITE_API_BASE ?? ''
+  const response = await fetch(`${apiBase}/api/servers`, { credentials: 'include' })
+  if (!response.ok) throw new Error(`servers request failed: ${response.status}`)
+  const data = await response.json() as { results?: ApiServer[] }
+  return data.results ?? []
+}
+
+export async function fetchPlugins(): Promise<ApiPlugin[]> {
+  const apiBase = import.meta.env.VITE_API_BASE ?? ''
+  const response = await fetch(`${apiBase}/api/plugins`, { credentials: 'include' })
+  if (!response.ok) throw new Error(`plugins request failed: ${response.status}`)
+  const data = await response.json() as { results?: ApiPlugin[] }
+  return data.results ?? []
+}
+
+export async function fetchDomains(): Promise<ApiDomain[]> {
+  const apiBase = import.meta.env.VITE_API_BASE ?? ''
+  const response = await fetch(`${apiBase}/api/domains`, { credentials: 'include' })
+  if (!response.ok) throw new Error(`domains request failed: ${response.status}`)
+  const data = await response.json() as { results?: ApiDomain[] }
+  return data.results ?? []
 }
 
 export async function updatePlatformSettings(settings: PlatformSettings): Promise<PlatformSettings> {

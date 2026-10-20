@@ -32,14 +32,13 @@ import {
   Settings,
   ShieldCheck,
   Sun,
-  TerminalSquare,
   UserRound,
   Users,
   X,
   Zap,
 } from 'lucide-react'
 import './styles.css'
-import { fetchCloudflareSettings, fetchOverview, fetchPlatformSettings, fetchSmtpSettings, revokeCloudflareSettings, type ApiOverview, type CloudflareSettings, type PlatformSettings, type SmtpSettings, sendSmtpTest, updatePlatformSettings, updateSmtpSettings } from './api'
+import { fetchCloudflareSettings, fetchDomains, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchServers, fetchSmtpSettings, revokeCloudflareSettings, type ApiDomain, type ApiOverview, type ApiPlugin, type ApiServer, type CloudflareSettings, type PlatformSettings, type SmtpSettings, sendSmtpTest, updatePlatformSettings, updateSmtpSettings } from './api'
 
 type Page = 'overview' | 'servers' | 'plugins' | 'domains' | 'usage' | 'audit' | 'settings'
 type Theme = 'dark' | 'light' | 'system'
@@ -74,22 +73,6 @@ const navGroups: { label: string; items: { id: Page; label: string; icon: typeof
   },
 ]
 
-const demoServers = [
-  { name: '本地开发服务器', host: 'localhost', status: '在线', detail: '刚刚同步', icon: TerminalSquare },
-  { name: '等待绑定的服务器', host: '尚未配置', status: '待连接', detail: '使用一次性注册码开始', icon: Server },
-]
-
-const demoPlugins = [
-  { name: '示例插件', id: 'example.plugin', version: '0.1.0', server: '本地开发服务器', state: '已启用', domain: 'example.plugins.example.com', kind: 'HTTP + SSE' },
-  { name: '未加载插件', id: '等待服务器同步 manifest', version: '—', server: '等待绑定的服务器', state: '待发现', domain: '—', kind: '—' },
-]
-
-const auditItems = [
-  { action: '平台初始化', detail: '创建演示工作区', time: '今天', tone: 'success' },
-  { action: '等待 GitHub OAuth', detail: '管理员授权后可启用真实数据', time: '待配置', tone: 'muted' },
-  { action: '等待第一台服务器', detail: '服务器连接后会在此记录注册事件', time: '待配置', tone: 'muted' },
-]
-
 function IconButton({ label, children, onClick }: { label: string; children: React.ReactNode; onClick?: () => void }) {
   return <button className="icon-button" aria-label={label} title={label} onClick={onClick}>{children}</button>
 }
@@ -114,6 +97,11 @@ function App() {
   const [authState, setAuthState] = useState<'loading' | 'authenticated' | 'anonymous'>(authEnabled ? 'loading' : 'authenticated')
   const [authUser, setAuthUser] = useState<{ display_name: string; email: string } | null>(null)
   const [overview, setOverview] = useState<ApiOverview | null>(null)
+  const [servers, setServers] = useState<ApiServer[] | null>(null)
+  const [plugins, setPlugins] = useState<ApiPlugin[] | null>(null)
+  const [domains, setDomains] = useState<ApiDomain[] | null>(null)
+  const [dataLoading, setDataLoading] = useState(false)
+  const [dataError, setDataError] = useState<string | null>(null)
   const [platformSettings, setPlatformSettings] = useState<PlatformSettings | null>(null)
   const [cloudflareSettings, setCloudflareSettings] = useState<CloudflareSettings | null>(null)
   const [smtpSettings, setSmtpSettings] = useState<SmtpSettings | null>(null)
@@ -180,6 +168,17 @@ function App() {
   }, [authEnabled])
 
   useEffect(() => {
+    if (!authEnabled && !import.meta.env.VITE_API_BASE) return
+    setDataLoading(true)
+    Promise.all([fetchServers(), fetchPlugins(), fetchDomains()]).then(([nextServers, nextPlugins, nextDomains]) => {
+      setServers(nextServers)
+      setPlugins(nextPlugins)
+      setDomains(nextDomains)
+      setDataError(null)
+    }).catch(() => setDataError('Worker 数据暂时无法读取')).finally(() => setDataLoading(false))
+  }, [authEnabled])
+
+  useEffect(() => {
     window.localStorage.setItem('plugmesh-theme', theme)
   }, [theme])
 
@@ -195,11 +194,31 @@ function App() {
     window.setTimeout(() => setToast(null), 2600)
   }
 
+  const refreshData = async () => {
+    setDataLoading(true)
+    try {
+      const [nextOverview, nextServers, nextPlugins, nextDomains] = await Promise.all([fetchOverview(), fetchServers(), fetchPlugins(), fetchDomains()])
+      setOverview(nextOverview)
+      setServers(nextServers)
+      setPlugins(nextPlugins)
+      setDomains(nextDomains)
+      setApiLive(true)
+      setDataError(null)
+      showToast('平台数据已刷新')
+    } catch {
+      setDataError('Worker 数据暂时无法读取')
+      showToast('平台数据刷新失败')
+    } finally {
+      setDataLoading(false)
+    }
+  }
+
   const filteredPlugins = useMemo(() => {
-    if (!search.trim()) return demoPlugins
+    const current = plugins ?? []
+    if (!search.trim()) return current
     const q = search.toLowerCase()
-    return demoPlugins.filter((plugin) => `${plugin.name} ${plugin.id} ${plugin.domain}`.toLowerCase().includes(q))
-  }, [search])
+    return current.filter((plugin) => `${plugin.name} ${plugin.plugin_id} ${plugin.domain_hostname ?? ''}`.toLowerCase().includes(q))
+  }, [plugins, search])
 
   const selectPage = (next: Page) => {
     setPage(next)
@@ -219,13 +238,13 @@ function App() {
           <div><div className="brand-name">Plugmesh</div><div className="brand-caption">插件平台</div></div>
           <IconButton label="关闭导航" onClick={() => setSidebarOpen(false)}><X size={17} /></IconButton>
         </div>
-        <div className="workspace-switcher"><div className="workspace-icon">P</div><div className="workspace-copy"><strong>预览工作区</strong><span>演示环境</span></div><ChevronDown size={14} /></div>
+        <div className="workspace-switcher"><div className="workspace-icon">P</div><div className="workspace-copy"><strong>平台工作区</strong><span>等待 Worker 数据</span></div><ChevronDown size={14} /></div>
         <nav className="nav-area">
-          {navGroups.map((group) => <div className="nav-group" key={group.label}><div className="nav-label">{group.label}</div>{group.items.map(({ id, label, icon: NavIcon }) => <button className={`nav-item ${page === id ? 'active' : ''}`} key={id} onClick={() => selectPage(id)}><NavIcon size={16} /><span>{label}</span>{id === 'servers' && <span className="nav-count">1</span>}</button>)}</div>)}
+          {navGroups.map((group) => <div className="nav-group" key={group.label}><div className="nav-label">{group.label}</div>{group.items.map(({ id, label, icon: NavIcon }) => <button className={`nav-item ${page === id ? 'active' : ''}`} key={id} onClick={() => selectPage(id)}><NavIcon size={16} /><span>{label}</span>{id === 'servers' && servers && servers.length > 0 && <span className="nav-count">{servers.length}</span>}</button>)}</div>)}
         </nav>
         <div className="sidebar-bottom">
           <div className="support-link"><CircleHelp size={15} /><span>帮助与协议</span><ExternalLink size={12} /></div>
-          <div className="user-card"><div className="avatar">{(authUser?.display_name ?? '管理员').slice(0, 2).toUpperCase()}</div><div className="user-copy"><strong>{authUser?.display_name ?? '管理员'}</strong><span>{authUser?.email ?? 'admin@example.com'}</span></div><MoreHorizontal size={16} /></div>
+          <div className="user-card"><div className="avatar">{(authUser?.display_name ?? '—').slice(0, 2).toUpperCase()}</div><div className="user-copy"><strong>{authUser?.display_name ?? '未读取用户'}</strong><span>{authUser?.email ?? '未读取身份'}</span></div><MoreHorizontal size={16} /></div>
         </div>
       </aside>
 
@@ -241,64 +260,94 @@ function App() {
         </header>
         <div className="page-scroll">
           <div className="page-content">
-            <div className="page-header"><div><div className="eyebrow"><span className="live-pulse" />{apiLive ? '实时数据' : '演示工作区'}</div><h1>{meta.title}</h1><p>{meta.description}</p></div><div className="header-actions">{page === 'overview' && <button className="button secondary" onClick={() => showToast(apiLive ? '已刷新平台状态' : '演示数据无需刷新')}><RefreshCw size={15} />刷新状态</button>}{page === 'servers' && <button className="button primary" onClick={() => setModal('server')}><Plus size={16} />绑定服务器</button>}{page === 'domains' && <button className="button primary" onClick={() => setModal('domain')}><Plus size={16} />分配域名</button>}{page === 'plugins' && <button className="button primary" onClick={() => setModal('plugin')}><Plus size={16} />加载插件</button>}</div></div>
+            <div className="page-header"><div><div className="eyebrow"><span className="live-pulse" />{apiLive ? '实时数据' : '等待真实数据'}</div><h1>{meta.title}</h1><p>{meta.description}</p></div><div className="header-actions">{page === 'overview' && <button className="button secondary" onClick={() => void refreshData()} disabled={dataLoading}><RefreshCw size={15} />刷新状态</button>}{page === 'servers' && <button className="button primary" onClick={() => setModal('server')}><Plus size={16} />绑定服务器</button>}{page === 'domains' && <button className="button primary" onClick={() => setModal('domain')}><Plus size={16} />分配域名</button>}{page === 'plugins' && <button className="button primary" onClick={() => setModal('plugin')}><Plus size={16} />加载插件</button>}</div></div>
+            {dataError && <div className="notice-bar compact"><div className="notice-icon"><AlertCircle size={16} /></div><div><strong>数据读取失败</strong><span>{dataError}</span></div><button onClick={() => void refreshData()}>重试 <RefreshCw size={14} /></button></div>}
             {page === 'overview' && <Overview overview={overview} range={range} setRange={setRange} onAction={showToast} onNavigate={selectPage} />}
-            {page === 'servers' && <Servers onAction={showToast} onBind={() => setModal('server')} />}
-            {page === 'plugins' && <Plugins plugins={filteredPlugins} onAction={showToast} onLoad={() => setModal('plugin')} />}
-            {page === 'domains' && <Domains onAction={showToast} onAssign={() => setModal('domain')} />}
+            {page === 'servers' && <Servers servers={servers ?? []} loading={dataLoading} onAction={showToast} onBind={() => setModal('server')} />}
+            {page === 'plugins' && <Plugins plugins={filteredPlugins} loading={dataLoading} onAction={showToast} onLoad={() => setModal('plugin')} />}
+            {page === 'domains' && <Domains domains={domains ?? []} loading={dataLoading} onAction={showToast} onAssign={() => setModal('domain')} />}
             {page === 'usage' && <Usage onAction={showToast} />}
             {page === 'audit' && <Audit />}
             {page === 'settings' && <SettingsPage settings={platformSettings} onSettingsChange={setPlatformSettings} cloudflareSettings={cloudflareSettings} onCloudflareChange={setCloudflareSettings} smtpSettings={smtpSettings} onSmtpChange={setSmtpSettings} onAction={showToast} />}
           </div>
         </div>
       </main>
-      {modal && <Modal type={modal} onClose={() => setModal(null)} onConfirm={(message) => { setModal(null); showToast(message) }} />}
+      {modal && <Modal type={modal} onClose={() => setModal(null)} />}
       {toast && <div className="toast"><div className="toast-icon"><Check size={14} /></div>{toast}</div>}
     </div>
   )
 }
 
 function Overview({ overview, range, setRange, onAction, onNavigate }: { overview: ApiOverview | null; range: '24h' | '7d' | '30d'; setRange: (value: '24h' | '7d' | '30d') => void; onAction: (message: string) => void; onNavigate: (page: Page) => void }) {
-  const onlineServers = overview?.onlineServers ?? 1
-  const enabledPlugins = overview?.enabledPlugins ?? 1
-  const domains = overview?.domains ?? 1
+  const onlineServers = overview ? String(overview.onlineServers) : '—'
+  const enabledPlugins = overview ? String(overview.enabledPlugins) : '—'
+  const domains = overview ? String(overview.domains) : '—'
   return <>
-    <div className="notice-bar"><div className="notice-icon"><ShieldCheck size={16} /></div><div><strong>演示工作区已就绪</strong><span>连接 GitHub OAuth 和第一台插件服务器后，平台会开始写入实时数据。</span></div><button onClick={() => onNavigate('settings')}>配置平台 <ArrowUpRight size={14} /></button></div>
+    <div className="notice-bar"><div className="notice-icon"><ShieldCheck size={16} /></div><div><strong>{overview ? '平台数据已连接' : '等待 Worker 数据'}</strong><span>{overview ? '以下统计来自当前用户的 Worker API。' : '登录并连接 Worker API 后，这里会显示真实的平台状态。'}</span></div><button onClick={() => onNavigate('settings')}>配置平台 <ArrowUpRight size={14} /></button></div>
     <section className="metric-grid">
-      <Metric label="在线服务器" value={String(onlineServers)} suffix={overview ? '' : '/ 1'} note={overview ? '来自 Worker API' : '演示数据'} icon={Server} tone="green" onClick={() => onNavigate('servers')} />
-      <Metric label="已启用插件" value={String(enabledPlugins)} suffix="" note={overview ? '来自 Worker API' : '演示数据'} icon={Box} tone="blue" onClick={() => onNavigate('plugins')} />
-      <Metric label="公开域名" value={String(domains)} suffix="" note={overview ? '来自 Worker API' : '演示数据'} icon={Globe2} tone="purple" onClick={() => onNavigate('domains')} />
-      <Metric label="当前连接" value="0" suffix="" note="暂无 SSE / WebSocket" icon={Zap} tone="amber" onClick={() => onNavigate('usage')} />
+      <Metric label="在线服务器" value={onlineServers} suffix="" note={overview ? '来自 Worker API' : '暂无数据'} icon={Server} tone="green" onClick={() => onNavigate('servers')} />
+      <Metric label="已启用插件" value={enabledPlugins} suffix="" note={overview ? '来自 Worker API' : '暂无数据'} icon={Box} tone="blue" onClick={() => onNavigate('plugins')} />
+      <Metric label="公开域名" value={domains} suffix="" note={overview ? '来自 Worker API' : '暂无数据'} icon={Globe2} tone="purple" onClick={() => onNavigate('domains')} />
+      <Metric label="当前连接" value="—" suffix="" note="暂无本地连接计数" icon={Zap} tone="amber" onClick={() => onNavigate('usage')} />
     </section>
     <section className="content-grid two-thirds">
-      <div className="panel chart-panel"><div className="panel-header"><div><h2>请求趋势</h2><p>平台本地计数，接入真实流量后更新</p></div><div className="segmented">{(['24h', '7d', '30d'] as const).map((item) => <button className={range === item ? 'selected' : ''} key={item} onClick={() => setRange(item)}>{item}</button>)}</div></div><div className="empty-chart"><div className="chart-grid-lines"><span /><span /><span /><span /></div><div className="chart-bars">{[20, 34, 25, 44, 30, 52, 36, 61, 46, 72, 54, 38, 26, 19].map((height, index) => <div className="bar-wrap" key={index}><div className={`chart-bar ${index === 9 ? 'accent' : ''}`} style={{ height: `${height}%` }} /></div>)}</div><div className="chart-axis"><span>起始</span><span>中段</span><span>现在</span></div><div className="chart-footnote"><span><i className="legend-dot" />暂无真实请求数据</span><span>范围：{range === '24h' ? '过去 24 小时' : range === '7d' ? '过去 7 天' : '过去 30 天'}</span></div></div></div>
-      <div className="panel"><div className="panel-header"><div><h2>资源使用</h2><p>全局阈值控制</p></div><IconButton label="查看用量详情" onClick={() => onNavigate('usage')}><ArrowUpRight size={15} /></IconButton></div><div className="resource-list"><Resource label="Worker 请求" value="0" limit="100,000 / 月" percent={0} icon={Cloud} /><Resource label="R2 中转容量" value="0 B" limit="10 GB" percent={0} icon={HardDrive} /><Resource label="D1 数据库" value="0" limit="100,000 次" percent={0} icon={Database} /><Resource label="Durable Object" value="0" limit="100 并发" percent={0} icon={Activity} /></div><button className="text-link" onClick={() => onNavigate('usage')}>查看全部配额 <ArrowUpRight size={14} /></button></div>
+      <div className="panel chart-panel"><div className="panel-header"><div><h2>请求趋势</h2><p>接入真实用量数据后显示</p></div><div className="segmented">{(['24h', '7d', '30d'] as const).map((item) => <button className={range === item ? 'selected' : ''} key={item} onClick={() => setRange(item)}>{item}</button>)}</div></div><div className="empty-chart chart-empty-state"><Activity size={20} /><strong>暂无请求趋势数据</strong><span>当前 Worker 尚未返回趋势统计。</span></div></div>
+      <div className="panel"><div className="panel-header"><div><h2>资源使用</h2><p>等待 Cloudflare Analytics 和本地计数</p></div><IconButton label="查看用量详情" onClick={() => onNavigate('usage')}><ArrowUpRight size={15} /></IconButton></div><div className="resource-list"><Resource label="Worker 请求" value="—" limit="未读取" icon={Cloud} /><Resource label="R2 中转容量" value="—" limit="未读取" icon={HardDrive} /><Resource label="D1 数据库" value="—" limit="未读取" icon={Database} /><Resource label="Durable Object" value="—" limit="未读取" icon={Activity} /></div><button className="text-link" onClick={() => onNavigate('usage')}>查看全部配额 <ArrowUpRight size={14} /></button></div>
     </section>
-    <section className="content-grid two-thirds bottom-grid"><div className="panel"><div className="panel-header"><div><h2>最近活动</h2><p>最新平台事件与配置变化</p></div><button className="text-link" onClick={() => onNavigate('audit')}>查看审计日志 <ArrowUpRight size={14} /></button></div><div className="activity-list">{auditItems.map((item) => <div className="activity-item" key={item.action}><div className={`activity-mark ${item.tone}`}><Check size={13} /></div><div className="activity-copy"><strong>{item.action}</strong><span>{item.detail}</span></div><time>{item.time}</time></div>)}</div></div><div className="panel quick-panel"><div className="panel-header"><div><h2>快速开始</h2><p>完成平台接入需要三步</p></div></div><QuickStep number="01" title="绑定插件服务器" detail="安装本地服务器并输入注册码" done onClick={() => onNavigate('servers')} /><QuickStep number="02" title="加载第一个插件" detail="同步 manifest 并完成健康检查" done onClick={() => onNavigate('plugins')} /><QuickStep number="03" title="分配公开域名" detail="为插件选择唯一的子域名前缀" done onClick={() => onNavigate('domains')} /></div></section>
+    <section className="content-grid two-thirds bottom-grid"><div className="panel"><div className="panel-header"><div><h2>最近活动</h2><p>最新平台事件与配置变化</p></div><button className="text-link" onClick={() => onNavigate('audit')}>查看审计日志 <ArrowUpRight size={14} /></button></div><div className="empty-panel"><div className="empty-illustration"><Activity size={20} /></div><h3>暂无活动记录</h3><p>Worker 返回审计事件后会显示在这里。</p></div></div><div className="panel quick-panel"><div className="panel-header"><div><h2>快速开始</h2><p>完成平台接入需要三步</p></div></div><QuickStep number="01" title="绑定插件服务器" detail="安装本地服务器并输入注册码" onClick={() => onNavigate('servers')} /><QuickStep number="02" title="加载第一个插件" detail="同步 manifest 并完成健康检查" onClick={() => onNavigate('plugins')} /><QuickStep number="03" title="分配公开域名" detail="为插件选择唯一的子域名前缀" onClick={() => onNavigate('domains')} /></div></section>
   </>
 }
 
 function Metric({ label, value, suffix, note, icon: Icon, tone, onClick }: { label: string; value: string; suffix: string; note: string; icon: typeof Server; tone: string; onClick: () => void }) { return <button className="metric-card" onClick={onClick}><div className={`metric-icon ${tone}`}><Icon size={17} /></div><div className="metric-label">{label}<ArrowUpRight size={13} /></div><div className="metric-number">{value}<small>{suffix}</small></div><div className="metric-note"><span className="status-dot green" />{note}</div></button> }
-function Resource({ label, value, limit, percent, icon: Icon }: { label: string; value: string; limit: string; percent: number; icon: typeof Cloud }) { return <div className="resource"><div className="resource-top"><div className="resource-label"><Icon size={15} />{label}</div><strong>{value}</strong></div><div className="progress"><span style={{ width: `${percent}%` }} /></div><div className="resource-bottom"><span>当前用量</span><span>{limit}</span></div></div> }
+function Resource({ label, value, limit, icon: Icon }: { label: string; value: string; limit: string; icon: typeof Cloud }) { return <div className="resource"><div className="resource-top"><div className="resource-label"><Icon size={15} />{label}</div><strong>{value}</strong></div><div className="progress"><span style={{ width: 0 }} /></div><div className="resource-bottom"><span>当前用量</span><span>{limit}</span></div></div> }
 function QuickStep({ number, title, detail, done, onClick }: { number: string; title: string; detail: string; done?: boolean; onClick: () => void }) { return <button className="quick-step" onClick={onClick}><span className={`step-number ${done ? 'done' : ''}`}>{done ? <Check size={13} /> : number}</span><span className="step-copy"><strong>{title}</strong><small>{detail}</small></span><ArrowUpRight size={14} /></button> }
 
-function Servers({ onAction, onBind }: { onAction: (message: string) => void; onBind: () => void }) { return <div className="stack"><div className="panel table-panel"><div className="panel-header"><div><h2>已绑定服务器</h2><p>每台服务器通过一条出站 WebSocket 连接平台。</p></div><button className="button secondary small" onClick={() => onAction('正在刷新服务器状态')}><RefreshCw size={14} />刷新</button></div><div className="server-list">{demoServers.map((server, index) => <div className="server-row" key={server.name}><div className="server-symbol"><server.icon size={18} /></div><div className="server-main"><strong>{server.name}</strong><span>{server.host} · {index === 0 ? '协议 v1' : '尚未注册'}</span></div><StatusBadge tone={index === 0 ? 'success' : 'neutral'}>{server.status}</StatusBadge><div className="server-meta"><span>{server.detail}</span><button className="row-action" onClick={() => onAction(index === 0 ? '已发送健康检查' : '请先完成服务器绑定')}><MoreHorizontal size={17} /></button></div></div>)}</div></div><div className="empty-panel"><div className="empty-illustration"><LockKeyhole size={22} /></div><h3>需要绑定更多服务器？</h3><p>从管理端生成一次性注册码，在服务器本地 Web UI 中完成绑定。</p><button className="button primary" onClick={onBind}><Plus size={15} />生成注册码</button></div></div> }
+function capabilityLabel(plugin: ApiPlugin): string {
+  try {
+    const manifest = JSON.parse(plugin.manifest_json) as { capabilities?: Record<string, unknown> }
+    const labels = [
+      ['http', 'HTTP'],
+      ['websocket', 'WebSocket'],
+      ['sse', 'SSE'],
+      ['fileStream', '文件流'],
+    ].filter(([key]) => manifest.capabilities?.[key] === true).map(([, label]) => label)
+    return labels.length > 0 ? labels.join(' + ') : '未声明能力'
+  } catch {
+    return 'manifest 无效'
+  }
+}
 
-function Plugins({ plugins, onAction, onLoad }: { plugins: typeof demoPlugins; onAction: (message: string) => void; onLoad: () => void }) { return <div className="stack"><div className="filter-row"><div className="filter-summary"><span className="filter-dot" />已加载 1 个插件 <span className="divider" />等待发现 1 个</div><button className="button secondary small" onClick={() => onAction('正在请求服务器同步 manifest')}><RefreshCw size={14} />同步 manifest</button></div><div className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>插件</th><th>服务器</th><th>状态</th><th>能力</th><th>公开入口</th><th /></tr></thead><tbody>{plugins.map((plugin) => <tr key={plugin.id}><td><div className="cell-title"><div className="table-icon"><Code2 size={15} /></div><div><strong>{plugin.name}</strong><small>{plugin.id} · v{plugin.version}</small></div></div></td><td>{plugin.server}</td><td><StatusBadge tone={plugin.state === '已启用' ? 'success' : 'neutral'}>{plugin.state}</StatusBadge></td><td><span className="capability">{plugin.kind}</span></td><td>{plugin.domain === '—' ? <span className="muted">未分配</span> : <a href="#domain" onClick={(e) => e.preventDefault()}>{plugin.domain}</a>}</td><td><button className="row-action" onClick={() => onAction(plugin.state === '已启用' ? '已发送重载命令' : '插件尚未加载')}><MoreHorizontal size={17} /></button></td></tr>)}</tbody></table></div><div className="table-footer"><span>显示 {plugins.length} 个插件</span><button className="text-link" onClick={onLoad}>加载插件 <Plus size={14} /></button></div></div></div> }
+function Servers({ servers, loading, onAction, onBind }: { servers: ApiServer[]; loading: boolean; onAction: (message: string) => void; onBind: () => void }) { return <div className="stack"><div className="panel table-panel"><div className="panel-header"><div><h2>已绑定服务器</h2><p>每台服务器通过一条出站 WebSocket 连接平台。</p></div><button className="button secondary small" onClick={() => onAction(loading ? '正在读取服务器状态' : '请使用页面顶部刷新状态')} disabled={loading}><RefreshCw size={14} />刷新</button></div>{servers.length === 0 ? <div className="empty-panel"><div className="empty-illustration"><Server size={22} /></div><h3>暂无已绑定服务器</h3><p>生成一次性注册码，在服务器本地完成绑定后会显示在这里。</p></div> : <div className="server-list">{servers.map((server) => <div className="server-row" key={server.id}><div className="server-symbol"><Server size={18} /></div><div className="server-main"><strong>{server.name}</strong><span>{server.id} · 协议 v1</span></div><StatusBadge tone={server.status === 'online' ? 'success' : server.status === 'revoked' ? 'danger' : 'warning'}>{server.status === 'online' ? '在线' : server.status === 'revoked' ? '已撤销' : '离线'}</StatusBadge><div className="server-meta"><span>{server.last_seen_at ? `最近心跳 ${new Date(server.last_seen_at).toLocaleString('zh-CN')}` : '尚未连接'}</span><button className="row-action" onClick={() => onAction(`${server.name} 当前状态：${server.status}`)}><MoreHorizontal size={17} /></button></div></div>)}</div>}</div><div className="empty-panel"><div className="empty-illustration"><LockKeyhole size={22} /></div><h3>绑定新的插件服务器</h3><p>从管理端生成一次性注册码，在服务器本地 Web UI 中完成绑定。</p><button className="button primary" onClick={onBind}><Plus size={15} />生成注册码</button></div></div> }
 
-function Domains({ onAction, onAssign }: { onAction: (message: string) => void; onAssign: () => void }) { return <div className="stack"><div className="panel table-panel"><div className="panel-header"><div><h2>公开入口</h2><p>插件域名由平台通配路由统一处理，无需逐个创建 DNS 记录。</p></div><button className="button secondary small" onClick={() => onAction('已复制平台域名格式')}><Copy size={14} />复制格式</button></div><div className="domain-list"><div className="domain-row"><div className="domain-icon"><Globe2 size={17} /></div><div className="domain-main"><strong>example.plugins.example.com</strong><span>示例插件 · 本地开发服务器</span></div><StatusBadge tone="success">在线</StatusBadge><span className="domain-latency">健康检查通过</span><button className="row-action" onClick={() => onAction('已复制公开域名')}><Copy size={16} /></button></div></div></div><div className="empty-panel"><div className="empty-illustration"><Globe2 size={22} /></div><h3>为下一个插件分配域名</h3><p>域名前缀需要唯一、长度不超过 48 个字符，并避开平台保留字。</p><button className="button primary" onClick={onAssign}><Plus size={15} />分配公开域名</button></div></div> }
+function Plugins({ plugins, loading, onAction, onLoad }: { plugins: ApiPlugin[]; loading: boolean; onAction: (message: string) => void; onLoad: () => void }) { const enabled = plugins.filter((plugin) => plugin.state === 'enabled').length; return <div className="stack"><div className="filter-row"><div className="filter-summary"><span className="filter-dot" />已启用 {enabled} 个插件 <span className="divider" />共发现 {plugins.length} 个</div><button className="button secondary small" onClick={() => onAction(loading ? '正在读取插件状态' : 'manifest 会在服务器心跳时同步')} disabled={loading}><RefreshCw size={14} />同步 manifest</button></div>{plugins.length === 0 ? <div className="empty-panel"><div className="empty-illustration"><Code2 size={22} /></div><h3>暂无插件 manifest</h3><p>服务器连接并完成 manifest 同步后，插件会显示在这里。</p><button className="button primary" onClick={onLoad}><Plus size={15} />加载插件</button></div> : <div className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>插件</th><th>服务器</th><th>状态</th><th>能力</th><th>公开入口</th><th /></tr></thead><tbody>{plugins.map((plugin) => <tr key={plugin.id}><td><div className="cell-title"><div className="table-icon"><Code2 size={15} /></div><div><strong>{plugin.name}</strong><small>{plugin.plugin_id} · v{plugin.version}</small></div></div></td><td>{plugin.server_name}</td><td><StatusBadge tone={plugin.state === 'enabled' ? 'success' : plugin.state === 'failed' ? 'danger' : 'neutral'}>{plugin.state}</StatusBadge></td><td><span className="capability">{capabilityLabel(plugin)}</span></td><td>{plugin.domain_hostname ? <a href={`https://${plugin.domain_hostname}`} target="_blank" rel="noreferrer">{plugin.domain_hostname}</a> : <span className="muted">未分配</span>}</td><td><button className="row-action" onClick={() => onAction(`插件 ${plugin.name} 当前状态：${plugin.state}`)}><MoreHorizontal size={17} /></button></td></tr>)}</tbody></table></div><div className="table-footer"><span>显示 {plugins.length} 个插件</span><button className="text-link" onClick={onLoad}>加载插件 <Plus size={14} /></button></div></div>}</div> }
 
-function Usage({ onAction }: { onAction: (message: string) => void }) { return <div className="stack"><div className="notice-bar compact"><div className="notice-icon"><Cloud size={16} /></div><div><strong>官方数据尚未连接</strong><span>配置 Cloudflare OAuth 后，Analytics 数据会按 5 分钟至 1 小时缓存。</span></div><button onClick={() => onAction('请先在系统设置中配置 Cloudflare OAuth')}>去配置 <ArrowUpRight size={14} /></button></div><div className="usage-grid"><ResourceCard title="Worker 请求" current="0" limit="100,000" unit="次 / 月" icon={Cloud} /><ResourceCard title="R2 存储" current="0 B" limit="10 GB" unit="容量" icon={HardDrive} /><ResourceCard title="D1 操作" current="0" limit="100,000" unit="次 / 月" icon={Database} /><ResourceCard title="连接上限" current="0" limit="100" unit="并发连接" icon={Activity} /></div><div className="panel"><div className="panel-header"><div><h2>数据源状态</h2><p>平台本地计数与 Cloudflare 官方数据的更新时间。</p></div></div><div className="source-row"><span className="source-name"><span className="source-dot pending" />Cloudflare Analytics API</span><span className="muted">未配置</span><button className="text-link" onClick={() => onAction('打开系统设置')}>配置 <ArrowUpRight size={14} /></button></div><div className="source-row"><span className="source-name"><span className="source-dot green" />平台本地计数</span><span className="muted">实时</span><span className="muted">演示数据</span></div></div></div> }
+function Domains({ domains, loading, onAction, onAssign }: { domains: ApiDomain[]; loading: boolean; onAction: (message: string) => void; onAssign: () => void }) {
+  const copyDomain = async (hostname: string) => {
+    if (!navigator.clipboard) {
+      onAction('当前浏览器不支持复制')
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(hostname)
+      onAction('公开域名已复制')
+    } catch {
+      onAction('公开域名复制失败')
+    }
+  }
+  return <div className="stack"><div className="panel table-panel"><div className="panel-header"><div><h2>公开入口</h2><p>插件域名由平台通配路由统一处理，无需逐个创建 DNS 记录。</p></div><button className="button secondary small" onClick={() => onAction(loading ? '正在读取域名状态' : '请使用页面顶部刷新状态')} disabled={loading}><RefreshCw size={14} />刷新</button></div>{domains.length === 0 ? <div className="empty-panel"><div className="empty-illustration"><Globe2 size={22} /></div><h3>暂无公开域名</h3><p>为已启用并通过健康检查的插件分配唯一子域名。</p></div> : <div className="domain-list">{domains.map((domain) => <div className="domain-row" key={domain.id}><div className="domain-icon"><Globe2 size={17} /></div><div className="domain-main"><strong>{domain.hostname}</strong><span>{domain.plugin_name} · {domain.plugin_instance_id}</span></div><StatusBadge tone={domain.status === 'online' ? 'success' : 'warning'}>{domain.status === 'online' ? '在线' : domain.status}</StatusBadge><span className="domain-latency">{domain.status === 'online' ? '公开入口可用' : '等待服务器恢复'}</span><button className="row-action" onClick={() => void copyDomain(domain.hostname)}><Copy size={16} /></button></div>)}</div>}</div><div className="empty-panel"><div className="empty-illustration"><Globe2 size={22} /></div><h3>分配新的公开域名</h3><p>域名前缀需要唯一、长度不超过 48 个字符，并避开平台保留字。</p><button className="button primary" onClick={onAssign}><Plus size={15} />分配公开域名</button></div></div>
+}
+
+function Usage({ onAction }: { onAction: (message: string) => void }) { return <div className="stack"><div className="notice-bar compact"><div className="notice-icon"><Cloud size={16} /></div><div><strong>官方数据尚未连接</strong><span>配置 Cloudflare OAuth 后，Analytics 数据会按 5 分钟至 1 小时缓存。</span></div><button onClick={() => onAction('请先在系统设置中配置 Cloudflare OAuth')}>去配置 <ArrowUpRight size={14} /></button></div><div className="usage-grid"><ResourceCard title="Worker 请求" current="—" limit="未读取" unit="" icon={Cloud} /><ResourceCard title="R2 存储" current="—" limit="未读取" unit="" icon={HardDrive} /><ResourceCard title="D1 操作" current="—" limit="未读取" unit="" icon={Database} /><ResourceCard title="连接上限" current="—" limit="未读取" unit="" icon={Activity} /></div><div className="panel"><div className="panel-header"><div><h2>数据源状态</h2><p>平台本地计数与 Cloudflare 官方数据的更新时间。</p></div></div><div className="source-row"><span className="source-name"><span className="source-dot pending" />Cloudflare Analytics API</span><span className="muted">未配置</span><button className="text-link" onClick={() => onAction('打开系统设置')}>配置 <ArrowUpRight size={14} /></button></div><div className="source-row"><span className="source-name"><span className="source-dot pending" />平台本地计数</span><span className="muted">未接入</span><span className="muted">暂无数据</span></div></div></div> }
 function ResourceCard({ title, current, limit, unit, icon: Icon }: { title: string; current: string; limit: string; unit: string; icon: typeof Cloud }) { return <div className="resource-card"><div className="resource-card-head"><div className="resource-card-icon"><Icon size={17} /></div><span>{title}</span></div><strong>{current}</strong><div className="resource-card-limit">上限 {limit} <span>{unit}</span></div><div className="progress"><span style={{ width: 0 }} /></div></div> }
 
-function Audit() { return <div className="stack"><div className="filter-row"><div className="filter-summary"><ListFilter size={15} />全部事件 <span className="divider" />最近 180 天</div><button className="button secondary small"><FileText size={14} />导出日志</button></div><div className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>事件</th><th>详情</th><th>操作者</th><th>时间</th></tr></thead><tbody>{auditItems.map((item) => <tr key={item.action}><td><div className="cell-title"><div className={`audit-icon ${item.tone}`}><Activity size={14} /></div><strong>{item.action}</strong></div></td><td>{item.detail}</td><td><span className="operator"><div className="mini-avatar">AD</div>管理员</span></td><td className="muted">{item.time}</td></tr>)}</tbody></table></div></div></div> }
+function Audit() { return <div className="stack"><div className="filter-row"><div className="filter-summary"><ListFilter size={15} />全部事件 <span className="divider" />最近 180 天</div><button className="button secondary small" disabled><FileText size={14} />导出日志</button></div><div className="empty-panel"><div className="empty-illustration"><Activity size={20} /></div><h3>暂无审计记录</h3><p>Worker 返回审计事件后会显示在这里，导出功能尚未接入。</p></div></div> }
 
 function SettingsPage({ settings, onSettingsChange, cloudflareSettings, onCloudflareChange, smtpSettings, onSmtpChange, onAction }: { settings: PlatformSettings | null; onSettingsChange: (settings: PlatformSettings) => void; cloudflareSettings: CloudflareSettings | null; onCloudflareChange: (settings: CloudflareSettings) => void; smtpSettings: SmtpSettings | null; onSmtpChange: (settings: SmtpSettings) => void; onAction: (message: string) => void }) {
   const [saving, setSaving] = useState(false)
   const maintenance = settings?.maintenance ?? false
   const toggleMaintenance = async () => {
     if (!settings) {
-      onAction('演示模式不会修改平台配置')
+      onAction('Worker API 未连接，不会修改平台配置')
       return
     }
     setSaving(true)
@@ -321,7 +370,7 @@ function SettingsPage({ settings, onSettingsChange, cloudflareSettings, onCloudf
       onAction('Cloudflare 授权撤销失败')
     }
   }
-  return <div className="settings-layout"><div className="settings-nav"><button className="selected"><Cloud size={15} />Cloudflare</button><button><Users size={15} />用户与邀请</button><button><FileText size={15} />邮件 SMTP</button><button><ShieldCheck size={15} />维护与配额</button></div><div className="settings-content"><div className="panel settings-panel"><div className="settings-heading"><div className="settings-icon"><Cloud size={18} /></div><div><h2>Cloudflare 授权</h2><p>平台账号统一管理 Worker、D1、R2 和 Durable Object 资源。</p></div><StatusBadge tone={cloudflareSettings?.configured ? 'success' : 'neutral'}>{cloudflareSettings?.configured ? '已授权' : cloudflareSettings ? '未配置' : '读取中'}</StatusBadge></div><div className="form-grid"><label>账号标识<input value={cloudflareSettings?.accountId ?? ''} placeholder={cloudflareSettings?.configured ? '等待识别账号' : '尚未连接'} disabled /></label><label>授权状态<input value={cloudflareSettings?.configured ? (cloudflareSettings.accountIdConfigured ? 'OAuth 已完成' : 'OAuth 已完成，缺少唯一账号') : ''} placeholder={cloudflareSettings ? '等待管理员授权' : '读取中'} disabled /></label></div><div className="settings-actions"><button className="button primary" onClick={startCloudflareAuth} disabled={!cloudflareSettings}>{cloudflareSettings?.configured ? '重新授权' : '开始授权'} <ArrowUpRight size={14} /></button>{cloudflareSettings?.configured && <button className="button secondary" onClick={revokeCloudflare}>撤销授权</button>}<span className="form-hint"><LockKeyhole size={13} />令牌仅由后台服务使用，并加密保存。</span></div></div><SmtpPanel settings={smtpSettings} onChange={onSmtpChange} onAction={onAction} /><div className="panel settings-panel"><div className="settings-heading"><div className="settings-icon"><ShieldCheck size={18} /></div><div><h2>全局维护状态</h2><p>{settings ? '读取自 Worker 平台配置。' : '演示模式不会修改真实平台状态。'}</p></div><StatusBadge tone={maintenance ? 'warning' : 'success'}>{maintenance ? '维护中' : settings ? '运行中' : '演示'}</StatusBadge></div><div className="maintenance-row"><div><strong>{maintenance ? '暂停新连接' : '允许新连接'}</strong><span>{maintenance ? '公开入口和新增配置请求会被暂时拒绝。' : '插件服务器和公开域名当前可以正常连接。'}</span></div><button className={`toggle ${maintenance ? '' : 'on'}`} disabled={saving} onClick={toggleMaintenance}><span /></button></div></div></div></div>
+  return <div className="settings-layout"><div className="settings-nav"><button className="selected"><Cloud size={15} />Cloudflare</button><button><Users size={15} />用户与邀请</button><button><FileText size={15} />邮件 SMTP</button><button><ShieldCheck size={15} />维护与配额</button></div><div className="settings-content"><div className="panel settings-panel"><div className="settings-heading"><div className="settings-icon"><Cloud size={18} /></div><div><h2>Cloudflare 授权</h2><p>平台账号统一管理 Worker、D1、R2 和 Durable Object 资源。</p></div><StatusBadge tone={cloudflareSettings?.configured ? 'success' : 'neutral'}>{cloudflareSettings?.configured ? '已授权' : cloudflareSettings ? '未配置' : '读取中'}</StatusBadge></div><div className="form-grid"><label>账号标识<input value={cloudflareSettings?.accountId ?? ''} placeholder={cloudflareSettings?.configured ? '等待识别账号' : '尚未连接'} disabled /></label><label>授权状态<input value={cloudflareSettings?.configured ? (cloudflareSettings.accountIdConfigured ? 'OAuth 已完成' : 'OAuth 已完成，缺少唯一账号') : ''} placeholder={cloudflareSettings ? '等待管理员授权' : '读取中'} disabled /></label></div><div className="settings-actions"><button className="button primary" onClick={startCloudflareAuth} disabled={!cloudflareSettings}>{cloudflareSettings?.configured ? '重新授权' : '开始授权'} <ArrowUpRight size={14} /></button>{cloudflareSettings?.configured && <button className="button secondary" onClick={revokeCloudflare}>撤销授权</button>}<span className="form-hint"><LockKeyhole size={13} />令牌仅由后台服务使用，并加密保存。</span></div></div><SmtpPanel settings={smtpSettings} onChange={onSmtpChange} onAction={onAction} /><div className="panel settings-panel"><div className="settings-heading"><div className="settings-icon"><ShieldCheck size={18} /></div><div><h2>全局维护状态</h2><p>{settings ? '读取自 Worker 平台配置。' : 'Worker API 未连接，不会修改真实平台状态。'}</p></div><StatusBadge tone={maintenance ? 'warning' : settings ? 'success' : 'neutral'}>{maintenance ? '维护中' : settings ? '运行中' : '未读取'}</StatusBadge></div><div className="maintenance-row"><div><strong>{maintenance ? '暂停新连接' : '允许新连接'}</strong><span>{maintenance ? '公开入口和新增配置请求会被暂时拒绝。' : '插件服务器和公开域名当前可以正常连接。'}</span></div><button className={`toggle ${maintenance ? '' : 'on'}`} disabled={saving || !settings} onClick={toggleMaintenance}><span /></button></div></div></div></div>
 }
 
 function SmtpPanel({ settings, onChange, onAction }: { settings: SmtpSettings | null; onChange: (settings: SmtpSettings) => void; onAction: (message: string) => void }) {
@@ -334,7 +383,7 @@ function SmtpPanel({ settings, onChange, onAction }: { settings: SmtpSettings | 
   }, [settings])
   const update = (key: string, value: string | boolean) => setForm((current) => ({ ...current, [key]: value }))
   const save = async () => {
-    if (!settings) return onAction('演示模式不会保存 SMTP 配置')
+    if (!settings) return onAction('Worker API 未连接，不会保存 SMTP 配置')
     setSaving(true)
     try {
       onChange(await updateSmtpSettings({ host: form.host, port: Number(form.port), secure: form.secure, username: form.username, password: form.password, authType: form.authType, from: form.from, fromName: form.fromName, replyTo: form.replyTo }))
@@ -343,13 +392,20 @@ function SmtpPanel({ settings, onChange, onAction }: { settings: SmtpSettings | 
     } catch { onAction('SMTP 配置保存失败') } finally { setSaving(false) }
   }
   const test = async () => {
-    if (!settings) return onAction('演示模式不会发送测试邮件')
+    if (!settings) return onAction('Worker API 未连接，不会发送测试邮件')
     setTesting(true)
     try { await sendSmtpTest(form.testTo); onAction('测试邮件已发送') } catch { onAction('测试邮件发送失败') } finally { setTesting(false) }
   }
-  return <div className="panel settings-panel"><div className="settings-heading"><div className="settings-icon"><Mail size={18} /></div><div><h2>邮件 SMTP</h2><p>{settings ? '配置后可发送邀请和维护通知。密码只保存密文，不会回显。' : '演示模式不会连接 SMTP 服务。'}</p></div><StatusBadge tone={settings?.configured ? 'success' : 'neutral'}>{settings?.configured ? '已配置' : settings ? '未配置' : '演示'}</StatusBadge></div><div className="form-grid"><label>SMTP Host<input value={form.host} onChange={(event) => update('host', event.target.value)} placeholder="smtp.example.com" disabled={!settings} /></label><label>端口<input type="number" min="1" max="65535" value={form.port} onChange={(event) => update('port', event.target.value)} disabled={!settings} /></label><label>用户名<input value={form.username} onChange={(event) => update('username', event.target.value)} disabled={!settings} /></label><label>密码 / 授权码<input type="password" value={form.password} onChange={(event) => update('password', event.target.value)} placeholder={settings?.configured ? '重新保存时填写' : 'SMTP 授权码'} disabled={!settings} /></label><label>认证方式<select value={form.authType} onChange={(event) => update('authType', event.target.value)} disabled={!settings}><option value="plain">PLAIN</option><option value="login">LOGIN</option><option value="cram-md5">CRAM-MD5</option></select></label><label>发件邮箱<input type="email" value={form.from} onChange={(event) => update('from', event.target.value)} placeholder="noreply@example.com" disabled={!settings} /></label><label>发件人名称<input value={form.fromName} onChange={(event) => update('fromName', event.target.value)} disabled={!settings} /></label><label>回复邮箱<input type="email" value={form.replyTo} onChange={(event) => update('replyTo', event.target.value)} disabled={!settings} /></label></div><div className="smtp-options"><label className="check-row"><input type="checkbox" checked={form.secure} onChange={(event) => update('secure', event.target.checked)} disabled={!settings} />使用 SMTPS / SSL</label><span className="form-hint">Workers 不能使用 25 端口，通常使用 465 或 587。</span></div><div className="settings-actions"><button className="button primary" onClick={save} disabled={saving || !settings}>{saving ? '保存中...' : '保存 SMTP 配置'}<Check size={14} /></button><div className="smtp-test"><input value={form.testTo} onChange={(event) => update('testTo', event.target.value)} placeholder="测试收件邮箱" disabled={!settings} /><button className="button secondary" onClick={test} disabled={testing || !settings}>{testing ? '发送中...' : '发送测试邮件'}<ArrowUpRight size={14} /></button></div></div></div>
+  return <div className="panel settings-panel"><div className="settings-heading"><div className="settings-icon"><Mail size={18} /></div><div><h2>邮件 SMTP</h2><p>{settings ? '配置后可发送邀请和维护通知。密码只保存密文，不会回显。' : 'Worker API 未连接，不会连接 SMTP 服务。'}</p></div><StatusBadge tone={settings?.configured ? 'success' : 'neutral'}>{settings?.configured ? '已配置' : settings ? '未配置' : '未读取'}</StatusBadge></div><div className="form-grid"><label>SMTP Host<input value={form.host} onChange={(event) => update('host', event.target.value)} placeholder="smtp.example.com" disabled={!settings} /></label><label>端口<input type="number" min="1" max="65535" value={form.port} onChange={(event) => update('port', event.target.value)} disabled={!settings} /></label><label>用户名<input value={form.username} onChange={(event) => update('username', event.target.value)} disabled={!settings} /></label><label>密码 / 授权码<input type="password" value={form.password} onChange={(event) => update('password', event.target.value)} placeholder={settings?.configured ? '重新保存时填写' : 'SMTP 授权码'} disabled={!settings} /></label><label>认证方式<select value={form.authType} onChange={(event) => update('authType', event.target.value)} disabled={!settings}><option value="plain">PLAIN</option><option value="login">LOGIN</option><option value="cram-md5">CRAM-MD5</option></select></label><label>发件邮箱<input type="email" value={form.from} onChange={(event) => update('from', event.target.value)} placeholder="noreply@example.com" disabled={!settings} /></label><label>发件人名称<input value={form.fromName} onChange={(event) => update('fromName', event.target.value)} disabled={!settings} /></label><label>回复邮箱<input type="email" value={form.replyTo} onChange={(event) => update('replyTo', event.target.value)} disabled={!settings} /></label></div><div className="smtp-options"><label className="check-row"><input type="checkbox" checked={form.secure} onChange={(event) => update('secure', event.target.checked)} disabled={!settings} />使用 SMTPS / SSL</label><span className="form-hint">Workers 不能使用 25 端口，通常使用 465 或 587。</span></div><div className="settings-actions"><button className="button primary" onClick={save} disabled={saving || !settings}>{saving ? '保存中...' : '保存 SMTP 配置'}<Check size={14} /></button><div className="smtp-test"><input value={form.testTo} onChange={(event) => update('testTo', event.target.value)} placeholder="测试收件邮箱" disabled={!settings} /><button className="button secondary" onClick={test} disabled={testing || !settings}>{testing ? '发送中...' : '发送测试邮件'}<ArrowUpRight size={14} /></button></div></div></div>
 }
 
-function Modal({ type, onClose, onConfirm }: { type: 'server' | 'domain' | 'plugin'; onClose: () => void; onConfirm: (message: string) => void }) { const content = type === 'server' ? { title: '绑定插件服务器', description: '生成一次性注册码，在服务器本地 Web UI 中完成绑定。', button: '生成注册码', message: '注册码已生成，复制后在本地服务器中使用。', label: '服务器名称', placeholder: '例如：工作站插件服务器' } : type === 'domain' ? { title: '分配公开域名', description: '域名会绑定到一个已通过健康检查的插件实例。', button: '分配域名', message: '公开域名分配请求已创建。', label: '域名前缀', placeholder: '例如：my-plugin' } : { title: '加载插件', description: '从已连接的服务器选择一个已发现的 manifest。', button: '发送加载命令', message: '加载命令已发送，等待服务器确认。', label: '插件标识', placeholder: 'example.plugin' }; return <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}><div className="modal"><div className="modal-head"><div><h2>{content.title}</h2><p>{content.description}</p></div><IconButton label="关闭弹窗" onClick={onClose}><X size={17} /></IconButton></div><label className="modal-field">{content.label}<input autoFocus placeholder={content.placeholder} /><span className="field-hint">这是演示表单，接入 Worker API 后会进行服务端校验。</span></label>{type === 'domain' && <label className="modal-field">插件实例<select><option>示例插件 · example.plugin</option></select></label>}{type === 'server' && <div className="code-callout"><span>注册码有效期 10 分钟</span><strong>将在确认后生成</strong></div>}<div className="modal-actions"><button className="button secondary" onClick={onClose}>取消</button><button className="button primary" onClick={() => onConfirm(content.message)}>{content.button}<ArrowUpRight size={14} /></button></div></div></div> }
+function Modal({ type, onClose }: { type: 'server' | 'domain' | 'plugin'; onClose: () => void }) {
+  const content = type === 'server'
+    ? { title: '绑定插件服务器', description: '生成一次性注册码，在服务器本地 Web UI 中完成绑定。' }
+    : type === 'domain'
+      ? { title: '分配公开域名', description: '域名会绑定到一个已通过健康检查的插件实例。' }
+      : { title: '加载插件', description: '从已连接的服务器选择一个已发现的 manifest。' }
+  return <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}><div className="modal"><div className="modal-head"><div><h2>{content.title}</h2><p>{content.description}</p></div><IconButton label="关闭弹窗" onClick={onClose}><X size={17} /></IconButton></div><div className="empty-panel"><div className="empty-illustration"><AlertCircle size={22} /></div><h3>操作尚未接入</h3><p>Worker API 尚未提供此操作，当前不会创建注册码、插件命令或域名绑定。</p></div><div className="modal-actions"><button className="button secondary" onClick={onClose}>关闭</button></div></div></div>
+}
 
 export default App
