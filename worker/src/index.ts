@@ -5,7 +5,7 @@ import type { AuthenticatedUser, Env } from './types'
 import { decryptSecret, encryptSecret } from './secrets'
 import { isEmail, parseSmtpSettings, publicSmtpSettings, sendSmtpTest, type SmtpSettings } from './email'
 import { discoverCloudflareAccountId, exchangeCloudflareCode, readCloudflareCredential, revokeCloudflareToken, type CloudflareCredential } from './cloudflare-oauth'
-import { activateMaintenance, countStream, defaultPlatformSettings, getPlatformSettings, isMaintenanceMode, releaseR2Usage, reserveR2Usage, reserveRequest } from './usage'
+import { activateMaintenance, countStream, defaultPlatformSettings, getPlatformSettings, isMaintenanceMode, releaseR2Usage, reserveR2Usage, reserveRequest, setPlatformSettingsCache } from './usage'
 
 export { PluginBridge }
 
@@ -406,6 +406,7 @@ async function platformSettingsApi(request: Request, env: Env, user: Authenticat
     },
   }
   await env.DB.prepare('INSERT INTO platform_settings (key, value_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at').bind('platform', JSON.stringify(next), new Date().toISOString()).run()
+  setPlatformSettingsCache(next)
   await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'platform.settings.updated', JSON.stringify(next), new Date().toISOString()).run()
   return json(next)
 }

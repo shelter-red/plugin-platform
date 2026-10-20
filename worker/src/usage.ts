@@ -11,20 +11,29 @@ export const defaultPlatformSettings: PlatformSettings = {
 }
 
 const usageKey = 'global'
+const settingsCacheTtlMs = 30_000
+let settingsCache: { value: PlatformSettings; expiresAt: number } | null = null
 
 export async function getPlatformSettings(env: Env): Promise<PlatformSettings> {
+  if (settingsCache && settingsCache.expiresAt > Date.now()) return settingsCache.value
   const row = await env.DB.prepare('SELECT value_json FROM platform_settings WHERE key = ?').bind('platform').first<{ value_json: string }>()
-  if (!row) return defaultPlatformSettings
+  if (!row) {
+    settingsCache = { value: defaultPlatformSettings, expiresAt: Date.now() + settingsCacheTtlMs }
+    return defaultPlatformSettings
+  }
   try {
     const value = JSON.parse(row.value_json) as Partial<PlatformSettings>
-    return {
+    const settings = {
       maintenance: Boolean(value.maintenance),
       quotas: {
         ...defaultPlatformSettings.quotas,
         ...(value.quotas ?? {}),
       },
     }
+    settingsCache = { value: settings, expiresAt: Date.now() + settingsCacheTtlMs }
+    return settings
   } catch {
+    settingsCache = { value: defaultPlatformSettings, expiresAt: Date.now() + settingsCacheTtlMs }
     return defaultPlatformSettings
   }
 }
@@ -36,7 +45,13 @@ export async function isMaintenanceMode(env: Env): Promise<boolean> {
 export async function activateMaintenance(env: Env): Promise<void> {
   const settings = await getPlatformSettings(env)
   if (settings.maintenance) return
-  await env.DB.prepare('INSERT INTO platform_settings (key, value_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at').bind('platform', JSON.stringify({ ...settings, maintenance: true }), new Date().toISOString()).run()
+  const next = { ...settings, maintenance: true }
+  await env.DB.prepare('INSERT INTO platform_settings (key, value_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at').bind('platform', JSON.stringify(next), new Date().toISOString()).run()
+  setPlatformSettingsCache(next)
+}
+
+export function setPlatformSettingsCache(settings: PlatformSettings): void {
+  settingsCache = { value: settings, expiresAt: Date.now() + settingsCacheTtlMs }
 }
 
 export async function reserveRequest(env: Env, quotas: PlatformQuotas): Promise<boolean> {
