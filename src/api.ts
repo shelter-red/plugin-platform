@@ -72,6 +72,7 @@ export interface InviteCreation {
   id: string
   inviteUrl: string
   expiresAt: string
+  emailSent: boolean | null
 }
 
 export interface CloudflareUsage {

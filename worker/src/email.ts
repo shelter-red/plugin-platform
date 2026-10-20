@@ -33,13 +33,29 @@ export function publicSmtpSettings(settings: SmtpSettings, updatedAt: string) {
 }
 
 export async function sendSmtpTest(settings: SmtpSettings, to: string): Promise<void> {
+  await sendEmail(settings, {
+    subject: 'Plugmesh SMTP 测试邮件',
+    text: '这是一封来自 Plugmesh 的 SMTP 测试邮件。',
+    to,
+  })
+}
+
+export async function sendInviteEmail(settings: SmtpSettings, to: string, inviteUrl: string, expiresAt: string): Promise<void> {
+  await sendEmail(settings, {
+    subject: 'Plugmesh 平台邀请',
+    text: `你已被邀请加入 Plugmesh 插件平台。\n\n请在邀请有效期内打开以下链接完成 GitHub 身份验证：\n${inviteUrl}\n\n邀请有效至：${expiresAt}`,
+    to,
+  })
+}
+
+async function sendEmail(settings: SmtpSettings, message: { subject: string; text: string; to: string }): Promise<void> {
   const { WorkerMailer } = await import('worker-mailer')
   await WorkerMailer.send({ host: settings.host, port: settings.port, secure: settings.secure, authType: settings.authType, credentials: { username: settings.username, password: settings.password } }, {
     from: settings.fromName ? { email: settings.from, name: settings.fromName } : settings.from,
-    to,
+    to: message.to,
     ...(settings.replyTo ? { reply: settings.replyTo } : {}),
-    subject: 'Plugmesh SMTP 测试邮件',
-    text: '这是一封来自 Plugmesh 的 SMTP 测试邮件。',
+    subject: message.subject,
+    text: message.text,
   })
 }
 

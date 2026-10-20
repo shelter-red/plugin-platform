@@ -484,7 +484,7 @@ function InvitePanel({ invites, onChange, onAction }: { invites: ApiInvite[] | n
       setEmail('')
       setGithubLogin('')
       await refresh()
-      onAction('邀请已创建')
+      onAction(result.emailSent === false && email.trim() ? '邀请已创建，但邮件发送失败，请复制链接' : '邀请已创建')
     } catch (error) {
       onAction(error instanceof Error ? error.message : '邀请创建失败')
     } finally {

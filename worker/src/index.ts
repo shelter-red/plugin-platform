@@ -3,7 +3,7 @@ import { hashControlToken } from './security'
 import { createSession, digest, exchangeGithubCode, getCurrentUser, isAllowlisted, redirectWithError, sessionCookie, clearSessionCookie } from './auth'
 import type { AuthenticatedUser, Env } from './types'
 import { decryptSecret, encryptSecret } from './secrets'
-import { isEmail, parseSmtpSettings, publicSmtpSettings, sendSmtpTest, type SmtpSettings } from './email'
+import { isEmail, parseSmtpSettings, publicSmtpSettings, sendInviteEmail, sendSmtpTest, type SmtpSettings } from './email'
 import { discoverCloudflareAccountId, exchangeCloudflareCode, readCloudflareCredential, revokeCloudflareToken, type CloudflareCredential } from './cloudflare-oauth'
 import { activateMaintenance, countStream, defaultPlatformSettings, getPlatformSettings, isMaintenanceMode, releaseR2Usage, reserveR2Usage, reserveRequest, setPlatformSettingsCache } from './usage'
 
@@ -235,8 +235,24 @@ async function createInvite(request: Request, env: Env, user: AuthenticatedUser)
   const rawToken = crypto.randomUUID() + crypto.randomUUID()
   const invite = { id: crypto.randomUUID(), email: body?.email?.trim() || null, githubLogin: body?.githubLogin?.trim() || null, expiresAt: new Date(Date.now() + expiresInHours * 60 * 60 * 1000).toISOString() }
   await env.DB.prepare('INSERT INTO invites (id, token_hash, email, github_login, status, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(invite.id, await digest(rawToken), invite.email, invite.githubLogin, 'pending', invite.expiresAt, new Date().toISOString()).run()
-  await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'invite.created', JSON.stringify({ inviteId: invite.id }), new Date().toISOString()).run()
-  return json({ id: invite.id, inviteUrl: `${new URL('/', request.url).origin}/auth/github/start?invite=${encodeURIComponent(rawToken)}`, expiresAt: invite.expiresAt }, 201)
+  const inviteUrl = `${new URL('/', request.url).origin}/auth/github/start?invite=${encodeURIComponent(rawToken)}`
+  let emailSent: boolean | null = null
+  let emailAttempts = 0
+  if (invite.email) {
+    emailSent = false
+    const smtp = await loadSmtpSettings(env)
+    if (smtp) {
+      try {
+        emailAttempts = await sendWithRetry(() => sendInviteEmail(smtp, invite.email!, inviteUrl, invite.expiresAt))
+        emailSent = true
+      } catch {
+        emailAttempts = 3
+        await recordAudit(env, user.id, 'invite.email.failed', { inviteId: invite.id, to: invite.email, attempts: emailAttempts })
+      }
+    }
+  }
+  await recordAudit(env, user.id, 'invite.created', { inviteId: invite.id, emailSent, emailAttempts })
+  return json({ id: invite.id, inviteUrl, expiresAt: invite.expiresAt, emailSent }, 201)
 }
 
 async function expireInvites(env: Env): Promise<void> {
@@ -436,6 +452,31 @@ async function cloudflareSettingsApi(request: Request, env: Env, user: Authentic
   await env.DB.prepare('INSERT INTO cloudflare_credentials (id, ciphertext, iv, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET ciphertext = excluded.ciphertext, iv = excluded.iv, updated_at = excluded.updated_at').bind('primary', sealed.ciphertext, sealed.iv, updatedAt).run()
   await recordAudit(env, user.id, 'cloudflare.credentials.updated', { accountIdConfigured: Boolean(body.accountId?.trim()) })
   return json({ configured: true, accountIdConfigured: Boolean(body.accountId?.trim()), accountId: maskAccountId(body.accountId?.trim() || null), updatedAt })
+}
+
+async function loadSmtpSettings(env: Env): Promise<SmtpSettings | null> {
+  if (!env.SESSION_SECRET) return null
+  const stored = await env.DB.prepare('SELECT ciphertext, iv FROM smtp_settings WHERE id = ?').bind('primary').first<{ ciphertext: string; iv: string }>()
+  if (!stored) return null
+  try {
+    return parseSmtpSettings(JSON.parse(await decryptSecret(env.SESSION_SECRET, stored.ciphertext, stored.iv)))
+  } catch {
+    return null
+  }
+}
+
+async function sendWithRetry(send: () => Promise<void>, maxAttempts = 3): Promise<number> {
+  let lastError: unknown
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await send()
+      return attempt
+    } catch (error) {
+      lastError = error
+      if (attempt < maxAttempts) await wait(250 * 2 ** (attempt - 1))
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('SMTP send failed')
 }
 
 function maskAccountId(accountId: string | null | undefined): string | null {
