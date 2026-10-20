@@ -2,6 +2,7 @@ import { PluginBridge } from './durable-object'
 import { hashControlToken } from './security'
 import { createSession, digest, exchangeGithubCode, getCurrentUser, isAllowlisted, redirectWithError, sessionCookie, clearSessionCookie } from './auth'
 import type { AuthenticatedUser, Env } from './types'
+import { encryptSecret } from './secrets'
 
 export { PluginBridge }
 
@@ -39,6 +40,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   if (request.method === 'GET' && url.pathname === '/api/plugins') return json(await env.DB.prepare('SELECT id, plugin_id, name, version, state, server_id, updated_at FROM plugin_instances WHERE user_id = ? ORDER BY updated_at DESC').bind(user.id).all())
   if (request.method === 'GET' && url.pathname === '/api/domains') return json(await env.DB.prepare('SELECT id, hostname, status, plugin_instance_id, created_at FROM domains WHERE user_id = ? ORDER BY created_at DESC').bind(user.id).all())
   if (url.pathname === '/api/settings/platform') return platformSettingsApi(request, env, user)
+  if (url.pathname === '/api/settings/cloudflare') return cloudflareSettingsApi(request, env, user)
   const pluginAction = url.pathname.match(/^\/api\/plugins\/([^/]+)\/(load|unload|enable|disable|reload)$/)
   if (request.method === 'POST' && pluginAction) return commandPlugin(request, env, user, decodeURIComponent(pluginAction[1]), pluginAction[2] as 'load' | 'unload' | 'enable' | 'disable' | 'reload')
   if (request.method === 'POST' && url.pathname === '/api/domains') return assignDomain(request, env, user)
@@ -241,6 +243,26 @@ async function platformSettingsApi(request: Request, env: Env, user: Authenticat
   await env.DB.prepare('INSERT INTO platform_settings (key, value_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at').bind('platform', JSON.stringify(next), new Date().toISOString()).run()
   await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'platform.settings.updated', JSON.stringify(next), new Date().toISOString()).run()
   return json(next)
+}
+
+async function cloudflareSettingsApi(request: Request, env: Env, user: AuthenticatedUser): Promise<Response> {
+  if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
+  const existing = await env.DB.prepare('SELECT updated_at FROM cloudflare_credentials WHERE id = ?').bind('primary').first<{ updated_at: string }>()
+  if (request.method === 'GET') return json({ configured: Boolean(existing), updatedAt: existing?.updated_at ?? null })
+  if (request.method === 'DELETE') {
+    await env.DB.prepare('DELETE FROM cloudflare_credentials WHERE id = ?').bind('primary').run()
+    await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'cloudflare.credentials.revoked', '{}', new Date().toISOString()).run()
+    return json({ configured: false, updatedAt: null })
+  }
+  if (request.method !== 'PUT') return json({ error: 'Method not allowed' }, 405)
+  if (!env.SESSION_SECRET) return json({ error: 'SESSION_SECRET is not configured' }, 503)
+  const body = await request.json().catch(() => null) as { accessToken?: string; accountId?: string } | null
+  if (!body?.accessToken?.trim()) return json({ error: 'accessToken is required' }, 400)
+  const sealed = await encryptSecret(env.SESSION_SECRET, JSON.stringify({ accessToken: body.accessToken.trim(), accountId: body.accountId?.trim() || null }))
+  const updatedAt = new Date().toISOString()
+  await env.DB.prepare('INSERT INTO cloudflare_credentials (id, ciphertext, iv, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET ciphertext = excluded.ciphertext, iv = excluded.iv, updated_at = excluded.updated_at').bind('primary', sealed.ciphertext, sealed.iv, updatedAt).run()
+  await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'cloudflare.credentials.updated', JSON.stringify({ accountId: body.accountId?.trim() || null }), updatedAt).run()
+  return json({ configured: true, updatedAt })
 }
 
 async function getPlatformSettings(env: Env): Promise<typeof defaultPlatformSettings> {

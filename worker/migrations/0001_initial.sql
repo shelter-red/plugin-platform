@@ -61,6 +61,13 @@ CREATE TABLE IF NOT EXISTS platform_settings (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS cloudflare_credentials (
+  id TEXT PRIMARY KEY,
+  ciphertext TEXT NOT NULL,
+  iv TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS servers (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
