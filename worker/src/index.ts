@@ -24,7 +24,7 @@ export default {
     if (url.pathname.startsWith('/api/')) return api(request, env, url)
     if (url.pathname === '/control/connect') return connectServer(request, env, url)
     if (url.pathname.startsWith('/blobs/')) return consumeBlob(request, env, ctx, url)
-    return proxyPublicHost(request, env, url)
+    return proxyPublicHost(request, env, url, ctx)
   },
 }
 
@@ -47,6 +47,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     const since = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString()
     return json(await env.DB.prepare('SELECT id, action, detail_json, created_at FROM audit_log WHERE user_id = ? AND created_at >= ? ORDER BY created_at DESC LIMIT 100').bind(user.id, since).all())
   }
+  if (request.method === 'GET' && url.pathname === '/api/access-logs') return accessLogsApi(env, user)
   if (url.pathname === '/api/settings/platform') return platformSettingsApi(request, env, user)
   if (url.pathname === '/api/settings/cloudflare') return cloudflareSettingsApi(request, env, user)
   if (url.pathname === '/api/settings/smtp') return smtpSettingsApi(request, env, user)
@@ -228,6 +229,32 @@ async function recordAudit(env: Env, userId: string, action: string, detail: Rec
   await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), userId, action, JSON.stringify(detail), new Date().toISOString()).run()
 }
 
+type AccessLogRecord = {
+  userId: string
+  domainId: string
+  pluginInstanceId: string
+  hostname: string
+  method: string
+  path: string
+  status: number
+  durationMs: number
+  error?: string
+}
+
+async function recordAccessLog(env: Env, log: AccessLogRecord): Promise<void> {
+  await env.DB.prepare('INSERT INTO request_logs (id, user_id, domain_id, plugin_instance_id, hostname, method, path, status, duration_ms, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), log.userId, log.domainId, log.pluginInstanceId, log.hostname, log.method.slice(0, 16), log.path.slice(0, 2048), log.status, Math.max(0, Math.round(log.durationMs)), log.error?.slice(0, 160) ?? null, new Date().toISOString()).run()
+}
+
+async function accessLogsApi(env: Env, user: AuthenticatedUser): Promise<Response> {
+  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+  await env.DB.prepare('DELETE FROM request_logs WHERE created_at < ?').bind(since).run()
+  const [logs, errors] = await Promise.all([
+    env.DB.prepare('SELECT id, hostname, method, path, status, duration_ms, error, created_at FROM request_logs WHERE user_id = ? AND created_at >= ? ORDER BY created_at DESC LIMIT 200').bind(user.id, since).all(),
+    env.DB.prepare('SELECT COUNT(*) AS count FROM request_logs WHERE user_id = ? AND created_at >= ? AND status >= 500').bind(user.id, since).first<{ count: number }>(),
+  ])
+  return json({ results: logs.results, errorCount: errors?.count ?? 0, since })
+}
+
 async function createInvite(request: Request, env: Env, user: AuthenticatedUser): Promise<Response> {
   if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
   const body = await request.json().catch(() => null) as { email?: string; githubLogin?: string; expiresInHours?: number } | null
@@ -383,7 +410,7 @@ async function createServerRegistration(env: Env, code: string | undefined, name
   return { value: { serverId, accessToken, protocolVersion: 1 } }
 }
 
-async function proxyPublicHost(request: Request, env: Env, url: URL): Promise<Response> {
+async function proxyPublicHost(request: Request, env: Env, url: URL, ctx: ExecutionContext): Promise<Response> {
   const suffix = pluginDomainSuffix(env)
   if (!url.hostname.endsWith(suffix) || url.hostname.length <= suffix.length) return env.ASSETS ? env.ASSETS.fetch(request) : new Response('Plugmesh console route', { status: 404 })
   const prefix = url.hostname.slice(0, -suffix.length)
@@ -391,10 +418,12 @@ async function proxyPublicHost(request: Request, env: Env, url: URL): Promise<Re
   const settings = await getPlatformSettings(env)
   if (settings.maintenance) return maintenanceResponse()
   const hostname = url.hostname
-  const domain = await env.DB.prepare('SELECT domains.plugin_instance_id, domains.server_id, domains.status, plugin_instances.plugin_id, servers.status AS server_status FROM domains JOIN plugin_instances ON plugin_instances.id = domains.plugin_instance_id JOIN servers ON servers.id = plugin_instances.server_id WHERE domains.hostname = ?').bind(hostname).first<{ plugin_instance_id: string; server_id: string; status: string; plugin_id: string; server_status: string }>()
+  const domain = await env.DB.prepare('SELECT domains.id AS domain_id, domains.user_id, domains.plugin_instance_id, domains.server_id, domains.status, domains.hostname, plugin_instances.plugin_id, servers.status AS server_status FROM domains JOIN plugin_instances ON plugin_instances.id = domains.plugin_instance_id JOIN servers ON servers.id = plugin_instances.server_id WHERE domains.hostname = ?').bind(hostname).first<{ domain_id: string; user_id: string; plugin_instance_id: string; server_id: string; status: string; hostname: string; plugin_id: string; server_status: string }>()
   if (!domain || domain.status !== 'online' || domain.server_status !== 'online') return maintenanceResponse('插件暂时不可用', '公开入口尚未就绪或插件服务器当前离线。')
+  const startedAt = Date.now()
   if (!await reserveRequest(env, settings.quotas)) {
     await activateMaintenance(env)
+    ctx.waitUntil(recordAccessLog(env, { userId: domain.user_id, domainId: domain.domain_id, pluginInstanceId: domain.plugin_instance_id, hostname: domain.hostname, method: request.method, path: url.pathname, status: 503, durationMs: Date.now() - startedAt, error: 'platform quota reached' }))
     return maintenanceResponse()
   }
   const bridge = env.PLUGIN_BRIDGE.get(env.PLUGIN_BRIDGE.idFromName(domain.server_id))
@@ -402,8 +431,16 @@ async function proxyPublicHost(request: Request, env: Env, url: URL): Promise<Re
   headers.set('x-plugmesh-server-id', domain.server_id)
   headers.set('x-plugmesh-plugin-id', domain.plugin_id)
   headers.set('x-plugmesh-request-path', url.pathname + url.search)
-  if (request.headers.get('Upgrade')?.toLowerCase() === 'websocket') return bridge.fetch(new Request(new URL('/websocket', request.url), { method: 'GET', headers }))
-  return bridge.fetch(new Request(new URL('/proxy', request.url), { method: request.method, headers, body: request.body }))
+  try {
+    const response = request.headers.get('Upgrade')?.toLowerCase() === 'websocket'
+      ? await bridge.fetch(new Request(new URL('/websocket', request.url), { method: 'GET', headers }))
+      : await bridge.fetch(new Request(new URL('/proxy', request.url), { method: request.method, headers, body: request.body }))
+    ctx.waitUntil(recordAccessLog(env, { userId: domain.user_id, domainId: domain.domain_id, pluginInstanceId: domain.plugin_instance_id, hostname: domain.hostname, method: request.method, path: url.pathname, status: response.status, durationMs: Date.now() - startedAt }))
+    return response
+  } catch {
+    ctx.waitUntil(recordAccessLog(env, { userId: domain.user_id, domainId: domain.domain_id, pluginInstanceId: domain.plugin_instance_id, hostname: domain.hostname, method: request.method, path: url.pathname, status: 502, durationMs: Date.now() - startedAt, error: 'bridge request failed' }))
+    return new Response('Plugin bridge request failed', { status: 502 })
+  }
 }
 
 async function platformSettingsApi(request: Request, env: Env, user: AuthenticatedUser): Promise<Response> {
