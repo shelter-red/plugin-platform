@@ -72,6 +72,8 @@ export interface ApiAudit {
   action: string
   detail_json: string
   created_at: string
+  actor_name: string | null
+  actor_email: string | null
 }
 
 export interface ApiAccessLog {

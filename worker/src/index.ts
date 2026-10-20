@@ -48,7 +48,8 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   if (request.method === 'GET' && url.pathname === '/api/domains') return json(await env.DB.prepare('SELECT domains.id, domains.hostname, domains.status, domains.plugin_instance_id, plugin_instances.name AS plugin_name, domains.created_at FROM domains JOIN plugin_instances ON plugin_instances.id = domains.plugin_instance_id WHERE domains.user_id = ? ORDER BY domains.created_at DESC').bind(user.id).all())
   if (request.method === 'GET' && url.pathname === '/api/audit') {
     const since = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString()
-    return json(await env.DB.prepare('SELECT id, action, detail_json, created_at FROM audit_log WHERE user_id = ? AND created_at >= ? ORDER BY created_at DESC LIMIT 100').bind(user.id, since).all())
+    if (user.role === 'super_admin') return json(await env.DB.prepare('SELECT audit_log.id, audit_log.action, audit_log.detail_json, audit_log.created_at, users.display_name AS actor_name, users.email AS actor_email FROM audit_log LEFT JOIN users ON users.id = audit_log.user_id WHERE audit_log.created_at >= ? ORDER BY audit_log.created_at DESC LIMIT 200').bind(since).all())
+    return json(await env.DB.prepare('SELECT audit_log.id, audit_log.action, audit_log.detail_json, audit_log.created_at, users.display_name AS actor_name, users.email AS actor_email FROM audit_log LEFT JOIN users ON users.id = audit_log.user_id WHERE audit_log.user_id = ? AND audit_log.created_at >= ? ORDER BY audit_log.created_at DESC LIMIT 100').bind(user.id, since).all())
   }
   if (request.method === 'GET' && url.pathname === '/api/access-logs') return accessLogsApi(env, user)
   if (url.pathname === '/api/settings/platform') return platformSettingsApi(request, env, user)
