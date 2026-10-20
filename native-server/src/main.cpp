@@ -1,12 +1,15 @@
 #include "plugmesh/control_client.h"
 #include "plugmesh/credential_store.h"
+#include "plugmesh/local_http_server.h"
 #include "plugmesh/plugin_manager.h"
 #include "plugmesh/registration_client.h"
 #include "plugmesh/server_config.h"
 
 #include <cstdlib>
+#include <cstdint>
 #include <iostream>
 #include <string>
+#include <thread>
 
 namespace {
 
@@ -16,6 +19,14 @@ std::string read_value(const char* environment_name, const char* prompt) {
   std::string value;
   std::getline(std::cin, value);
   return value;
+}
+
+uint16_t local_port() {
+  const char* value = std::getenv("PLUGMESH_LOCAL_PORT");
+  if (!value || !*value) return 8787;
+  char* end = nullptr;
+  const auto parsed = std::strtoul(value, &end, 10);
+  return end != value && *end == '\0' && parsed > 0 && parsed <= 65535 ? static_cast<uint16_t>(parsed) : 8787;
 }
 
 int register_server(int argc, char** argv) {
@@ -58,8 +69,16 @@ int main(int argc, char** argv) {
     return 2;
   }
   std::cout << "plugmesh-server discovered " << plugins.plugins().size() << " plugin(s) for " << resolved_config.server_id << '\n';
+  plugmesh::LocalHttpServer local_http(local_port());
+  std::string local_error;
+  std::thread local_thread([&local_http, &local_error] {
+    if (!local_http.run(local_error) && !local_error.empty()) std::cerr << "plugmesh-server local UI: " << local_error << '\n';
+  });
   plugmesh::ControlClient client(resolved_config, plugins);
-  if (!client.run(error)) {
+  const auto connected = client.run(error);
+  local_http.stop();
+  if (local_thread.joinable()) local_thread.join();
+  if (!connected) {
     std::cerr << "plugmesh-server: " << error << '\n';
     return 1;
   }
