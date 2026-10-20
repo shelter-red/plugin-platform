@@ -278,9 +278,13 @@ async function accessLogsApi(env: Env, user: AuthenticatedUser): Promise<Respons
 async function createInvite(request: Request, env: Env, user: AuthenticatedUser): Promise<Response> {
   if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
   const body = await request.json().catch(() => null) as { email?: string; githubLogin?: string; expiresInHours?: number } | null
-  const expiresInHours = Math.min(Math.max(body?.expiresInHours ?? 72, 1), 720)
+  const email = body?.email?.trim() || null
+  const githubLogin = body?.githubLogin?.trim() || null
+  const expiresInHours = Number(body?.expiresInHours ?? 72)
+  if ((!email && !githubLogin) || (email && !isEmail(email)) || (githubLogin && !/^[a-zA-Z0-9-]{1,39}$/.test(githubLogin)) || !Number.isFinite(expiresInHours)) return json({ error: '邮箱或 GitHub 用户名至少填写一个，且格式必须有效' }, 400)
+  const boundedExpiresInHours = Math.min(Math.max(expiresInHours, 1), 720)
   const rawToken = crypto.randomUUID() + crypto.randomUUID()
-  const invite = { id: crypto.randomUUID(), email: body?.email?.trim() || null, githubLogin: body?.githubLogin?.trim() || null, expiresAt: new Date(Date.now() + expiresInHours * 60 * 60 * 1000).toISOString() }
+  const invite = { id: crypto.randomUUID(), email, githubLogin, expiresAt: new Date(Date.now() + boundedExpiresInHours * 60 * 60 * 1000).toISOString() }
   await env.DB.prepare('INSERT INTO invites (id, token_hash, email, github_login, status, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(invite.id, await digest(rawToken), invite.email, invite.githubLogin, 'pending', invite.expiresAt, new Date().toISOString()).run()
   const inviteUrl = `${new URL('/', request.url).origin}/auth/github/start?invite=${encodeURIComponent(rawToken)}`
   let emailSent: boolean | null = null
