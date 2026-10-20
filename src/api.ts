@@ -58,6 +58,23 @@ export interface ApiAudit {
   created_at: string
 }
 
+export interface ApiAccessLog {
+  id: string
+  hostname: string
+  method: string
+  path: string
+  status: number
+  duration_ms: number
+  error: string | null
+  created_at: string
+}
+
+export interface ApiAccessLogs {
+  results: ApiAccessLog[]
+  errorCount: number
+  since: string
+}
+
 export interface ApiInvite {
   id: string
   email: string | null
@@ -168,6 +185,13 @@ export async function fetchAudit(): Promise<ApiAudit[]> {
   if (!response.ok) throw new Error(`audit request failed: ${response.status}`)
   const data = await response.json() as { results?: ApiAudit[] }
   return data.results ?? []
+}
+
+export async function fetchAccessLogs(): Promise<ApiAccessLogs> {
+  const apiBase = import.meta.env.VITE_API_BASE ?? ''
+  const response = await fetch(`${apiBase}/api/access-logs`, { credentials: 'include' })
+  if (!response.ok) throw await apiError(response, `access logs request failed: ${response.status}`)
+  return response.json() as Promise<ApiAccessLogs>
 }
 
 export async function fetchInvites(): Promise<ApiInvite[]> {

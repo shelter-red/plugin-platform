@@ -37,9 +37,9 @@ import {
   Zap,
 } from 'lucide-react'
 import './styles.css'
-import { assignDomain, commandPlugin, createInvite, createRegistrationCode, fetchAudit, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchInvites, fetchLocalUsage, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchServers, fetchSmtpSettings, revokeCloudflareSettings, revokeInvite, type ApiAudit, type ApiDomain, type ApiInvite, type ApiOverview, type ApiPlugin, type ApiServer, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type PlatformSettings, type SmtpSettings, sendSmtpTest, updatePlatformSettings, updateSmtpSettings } from './api'
+import { assignDomain, commandPlugin, createInvite, createRegistrationCode, fetchAccessLogs, fetchAudit, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchInvites, fetchLocalUsage, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchServers, fetchSmtpSettings, revokeCloudflareSettings, revokeInvite, type ApiAccessLog, type ApiAudit, type ApiDomain, type ApiInvite, type ApiOverview, type ApiPlugin, type ApiServer, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type PlatformSettings, type SmtpSettings, sendSmtpTest, updatePlatformSettings, updateSmtpSettings } from './api'
 
-type Page = 'overview' | 'servers' | 'plugins' | 'domains' | 'usage' | 'audit' | 'settings'
+type Page = 'overview' | 'servers' | 'plugins' | 'domains' | 'usage' | 'logs' | 'audit' | 'settings'
 type Theme = 'dark' | 'light' | 'system'
 type ModalInput = { prefix?: string; pluginInstanceId?: string }
 type ModalResult = { kind: 'registration'; code: string; expiresAt: string } | { kind: 'plugin'; state: string } | { kind: 'domain'; hostname: string }
@@ -50,6 +50,7 @@ const pageMeta: Record<Page, { title: string; description: string }> = {
   plugins: { title: '插件实例', description: '从已连接的服务器发现、加载并启用插件。' },
   domains: { title: '公开域名', description: '为已通过健康检查的插件分配公开访问入口。' },
   usage: { title: '用量与配额', description: '查看 Cloudflare 官方数据与平台本地计数。' },
+  logs: { title: '访问日志', description: '查看插件公开入口的请求状态、耗时和错误摘要。' },
   audit: { title: '审计日志', description: '追踪邀请、绑定、密钥和插件生命周期变更。' },
   settings: { title: '系统设置', description: '配置 Cloudflare 授权、邮件通知和全局维护状态。' },
 }
@@ -68,6 +69,7 @@ const navGroups: { label: string; items: { id: Page; label: string; icon: typeof
     label: '系统',
     items: [
       { id: 'usage', label: '用量与配额', icon: Gauge },
+      { id: 'logs', label: '访问日志', icon: Activity },
       { id: 'audit', label: '审计日志', icon: FileText },
       { id: 'settings', label: '系统设置', icon: Settings },
     ],
@@ -102,6 +104,7 @@ function App() {
   const [plugins, setPlugins] = useState<ApiPlugin[] | null>(null)
   const [domains, setDomains] = useState<ApiDomain[] | null>(null)
   const [audits, setAudits] = useState<ApiAudit[] | null>(null)
+  const [accessLogs, setAccessLogs] = useState<ApiAccessLog[] | null>(null)
   const [invites, setInvites] = useState<ApiInvite[] | null>(null)
   const [usage, setUsage] = useState<CloudflareUsage | null>(null)
   const [localUsage, setLocalUsage] = useState<LocalUsage | null>(null)
@@ -110,7 +113,9 @@ function App() {
   const [auditLoading, setAuditLoading] = useState(false)
   const [usageLoading, setUsageLoading] = useState(false)
   const [auditError, setAuditError] = useState<string | null>(null)
+  const [accessLogsError, setAccessLogsError] = useState<string | null>(null)
   const [usageError, setUsageError] = useState<string | null>(null)
+  const [accessLogsLoading, setAccessLogsLoading] = useState(false)
   const [platformSettings, setPlatformSettings] = useState<PlatformSettings | null>(null)
   const [cloudflareSettings, setCloudflareSettings] = useState<CloudflareSettings | null>(null)
   const [smtpSettings, setSmtpSettings] = useState<SmtpSettings | null>(null)
@@ -199,6 +204,14 @@ function App() {
       setAudits(data)
       setAuditError(null)
     }).catch(() => setAuditError('审计日志暂时无法读取')).finally(() => setAuditLoading(false))
+    setAccessLogsLoading(true)
+    fetchAccessLogs().then((data) => {
+      setAccessLogs(data.results)
+      setAccessLogsError(null)
+    }).catch(() => {
+      setAccessLogs(null)
+      setAccessLogsError('访问日志暂时无法读取')
+    }).finally(() => setAccessLogsLoading(false))
     setUsageLoading(true)
     fetchCloudflareUsage().then((data) => {
       setUsage(data)
@@ -317,6 +330,7 @@ function App() {
             {page === 'plugins' && <Plugins plugins={filteredPlugins} loading={dataLoading} onAction={showToast} onLoad={() => setModal('plugin')} />}
             {page === 'domains' && <Domains domains={domains ?? []} loading={dataLoading} onAction={showToast} onAssign={() => setModal('domain')} />}
             {page === 'usage' && <Usage settings={platformSettings} usage={usage} localUsage={localUsage} loading={usageLoading} error={usageError} onNavigate={selectPage} />}
+            {page === 'logs' && <AccessLogs logs={accessLogs ?? []} loading={accessLogsLoading} error={accessLogsError} />}
             {page === 'audit' && <Audit audits={audits ?? []} loading={auditLoading} error={auditError} />}
             {page === 'settings' && <SettingsPage settings={platformSettings} onSettingsChange={setPlatformSettings} cloudflareSettings={cloudflareSettings} onCloudflareChange={setCloudflareSettings} smtpSettings={smtpSettings} onSmtpChange={setSmtpSettings} invites={invites} onInvitesChange={setInvites} onAction={showToast} />}
           </div>
@@ -440,6 +454,11 @@ function formatBytes(value: number): string {
 }
 
 function ResourceCard({ title, current, limit, unit, percent = 0, icon: Icon }: { title: string; current: string; limit: string; unit: string; percent?: number; icon: typeof Cloud }) { return <div className="resource-card"><div className="resource-card-head"><div className="resource-card-icon"><Icon size={17} /></div><span>{title}</span></div><strong>{current}</strong><div className="resource-card-limit">上限 {limit} <span>{unit}</span></div><div className="progress"><span style={{ width: `${percent}%` }} /></div></div> }
+
+function AccessLogs({ logs, loading, error }: { logs: ApiAccessLog[]; loading: boolean; error: string | null }) {
+  const errors = logs.filter((log) => log.status >= 500).length
+  return <div className="stack">{error && <div className="notice-bar compact"><div className="notice-icon"><AlertCircle size={16} /></div><div><strong>访问日志读取失败</strong><span>{error}</span></div></div>}<div className="filter-row"><div className="filter-summary"><Activity size={15} />最近 30 天 <span className="divider" />错误 {errors} 条</div><button className="button secondary small" disabled><FileText size={14} />导出日志</button></div>{loading ? <div className="empty-panel"><div className="empty-illustration"><RefreshCw size={20} /></div><h3>正在读取访问日志</h3><p>Worker 正在返回最近 30 天的公开入口请求。</p></div> : logs.length === 0 ? <div className="empty-panel"><div className="empty-illustration"><Activity size={20} /></div><h3>暂无访问日志</h3><p>插件域名收到请求后，状态和耗时会显示在这里。</p></div> : <div className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>入口</th><th>请求</th><th>状态</th><th>耗时</th><th>时间</th></tr></thead><tbody>{logs.map((log) => <tr key={log.id}><td><div className="cell-title"><div className="table-icon"><Globe2 size={15} /></div><div><strong>{log.hostname}</strong><small>{log.path}</small></div></div></td><td>{log.method}</td><td><StatusBadge tone={log.status >= 500 ? 'danger' : log.status >= 400 ? 'warning' : 'success'}>{log.status}{log.error ? ` · ${log.error}` : ''}</StatusBadge></td><td>{log.duration_ms} ms</td><td className="muted">{new Date(log.created_at).toLocaleString('zh-CN')}</td></tr>)}</tbody></table></div></div>}</div>
+}
 
 function Audit({ audits, loading, error }: { audits: ApiAudit[]; loading: boolean; error: string | null }) { return <div className="stack">{error && <div className="notice-bar compact"><div className="notice-icon"><AlertCircle size={16} /></div><div><strong>审计日志读取失败</strong><span>{error}</span></div></div>}<div className="filter-row"><div className="filter-summary"><ListFilter size={15} />全部事件 <span className="divider" />最近 180 天</div><button className="button secondary small" disabled><FileText size={14} />导出日志</button></div>{loading ? <div className="empty-panel"><div className="empty-illustration"><RefreshCw size={20} /></div><h3>正在读取审计记录</h3><p>Worker 正在返回最近 180 天的事件。</p></div> : audits.length === 0 ? <div className="empty-panel"><div className="empty-illustration"><Activity size={20} /></div><h3>暂无审计记录</h3><p>平台产生审计事件后会显示在这里，导出功能尚未接入。</p></div> : <div className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>事件</th><th>详情</th><th>操作者</th><th>时间</th></tr></thead><tbody>{audits.map((item) => <tr key={item.id}><td><div className="cell-title"><div className="audit-icon"><Activity size={14} /></div><strong>{auditActionLabel(item.action)}</strong></div></td><td>{auditDetail(item)}</td><td><span className="operator"><div className="mini-avatar">—</div>当前用户</span></td><td className="muted">{new Date(item.created_at).toLocaleString('zh-CN')}</td></tr>)}</tbody></table></div></div>}</div> }
 
