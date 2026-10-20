@@ -46,4 +46,4 @@ native-server/build/plugmesh-server --register https://console.example.com '工�
 
 注册成功后，服务器启动时设置 `PLUGMESH_CREDENTIAL_FILE`、`PLUGMESH_CREDENTIAL_PASSWORD` 和 `PLUGMESH_PLUGIN_DIRECTORY`，即可从加密凭据文件恢复长期连接参数。注册码和口令也可以在交互提示中输入，不必放在环境变量中。
 
-网络传输层复用 `worker/src/protocol.ts` 的协议字段约定；当前已接入控制 WebSocket、HTTP 回调和公开 WebSocket 的 base64 二进制桥接。SSE、文件流和插件级日志回传仍未完成。
+网络传输层复用 `worker/src/protocol.ts` 的协议字段约定；当前已接入控制 WebSocket、HTTP 回调、SSE 流和公开 WebSocket 的 base64 二进制桥接。文件流和插件级日志回传仍未完成。

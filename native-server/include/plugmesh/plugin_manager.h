@@ -62,6 +62,7 @@ class PluginManager {
   bool reload(const std::string& plugin_id, std::string& error);
   bool health(const std::string& plugin_id, plugmesh_http_response& response, std::string& error) const;
   bool http(const std::string& plugin_id, const plugmesh_http_request& request, plugmesh_http_response& response, std::string& error) const;
+  bool sse(const std::string& plugin_id, const std::string& stream_id, const plugmesh_http_request& request, std::string& error) const;
   bool websocket(const std::string& plugin_id, const std::string& connection_id, const uint8_t* data, uint64_t size, bool is_text, std::string& error) const;
 
  private:

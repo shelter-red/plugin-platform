@@ -281,6 +281,21 @@ bool PluginManager::http(const std::string& plugin_id, const plugmesh_http_reque
   return true;
 }
 
+bool PluginManager::sse(const std::string& plugin_id, const std::string& stream_id, const plugmesh_http_request& request, std::string& error) const {
+  std::lock_guard lock(mutex_);
+  const auto* plugin = find(plugin_id);
+  const auto* runtime = loaded(plugin_id);
+  if (!plugin || !runtime || !runtime->loader || plugin->state != PluginState::Enabled || !runtime->loader->api()->handle_sse) {
+    error = "plugin SSE handler is unavailable: " + plugin_id;
+    return false;
+  }
+  if (runtime->loader->api()->handle_sse(stream_id.c_str(), &request) != 0) {
+    error = "plugin SSE handler failed: " + plugin_id;
+    return false;
+  }
+  return true;
+}
+
 bool PluginManager::websocket(const std::string& plugin_id, const std::string& connection_id, const uint8_t* data, uint64_t size, bool is_text, std::string& error) const {
   std::lock_guard lock(mutex_);
   const auto* plugin = find(plugin_id);

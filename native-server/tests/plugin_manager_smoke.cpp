@@ -2,6 +2,8 @@
 
 #include <filesystem>
 #include <iostream>
+#include <string>
+#include <vector>
 
 int main(int argc, char** argv) {
   if (argc != 2) {
@@ -9,6 +11,15 @@ int main(int argc, char** argv) {
     return 2;
   }
   plugmesh::PluginManager manager;
+  std::string stream_id;
+  std::vector<uint8_t> streamed;
+  bool finished = false;
+  manager.set_stream_writer([&](const char* id, const uint8_t* data, uint64_t size, int is_finished) {
+    stream_id = id ? id : "";
+    streamed.assign(data, data + size);
+    finished = is_finished != 0;
+    return 0;
+  });
   std::string error;
   if (!manager.discover(std::filesystem::path(argv[1]), error) || manager.snapshot().size() != 1 || manager.snapshot()[0].id != "sample.plugin" || manager.snapshot()[0].health_path != "/health") {
     std::cerr << "discovery failed: " << error << '\n';
@@ -25,6 +36,16 @@ int main(int argc, char** argv) {
   plugmesh_http_response response{};
   if (!manager.health("sample.plugin", response, error) || response.status != 200) {
     std::cerr << "health failed: " << error << '\n';
+    return 1;
+  }
+  const std::vector<uint8_t> binary{0x00, 0x01, 0x7f, 0x80, 0xff};
+  if (!manager.websocket("sample.plugin", "socket-1", binary.data(), binary.size(), false, error) || stream_id != "socket-1" || streamed != binary || finished) {
+    std::cerr << "WebSocket stream callback failed: " << error << '\n';
+    return 1;
+  }
+  plugmesh_http_request sse_request{"GET", "/events", "{}", nullptr, 0};
+  if (!manager.sse("sample.plugin", "stream-1", sse_request, error) || stream_id != "stream-1" || std::string(streamed.begin(), streamed.end()) != "data: sample-plugin\n\n" || !finished) {
+    std::cerr << "SSE stream callback failed: " << error << '\n';
     return 1;
   }
   if (!manager.disable("sample.plugin", error) || manager.snapshot()[0].state != plugmesh::PluginState::Disabled || !manager.unload("sample.plugin", error) || manager.snapshot()[0].state != plugmesh::PluginState::Unloaded) {

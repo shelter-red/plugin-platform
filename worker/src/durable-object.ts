@@ -68,11 +68,13 @@ export class PluginBridge {
       const url = new URL(request.url)
       return url.pathname + url.search
     })()
-    const frame = makeFrame('request.open', this.serverId, {
+    const sse = request.headers.get('accept')?.toLowerCase().includes('text/event-stream') === true
+    const frame = makeFrame(sse ? 'stream.open' : 'request.open', this.serverId, {
       method: request.method,
       path: requestPath,
       headers: Object.fromEntries(forwardedHeaders(request.headers)),
       body,
+      ...(sse ? { streamId: requestId } : {}),
     }, pluginId)
     frame.requestId = requestId
     const response = new Promise<Response>((resolve) => {
@@ -189,12 +191,16 @@ export class PluginBridge {
       const data = frame.payload?.data
       const encoding = frame.payload?.encoding
       if (socket && typeof data === 'string' && socket.readyState === WebSocket.OPEN) socket.send(encoding === 'base64' ? decodeBytes(data) : data)
+      else if (!socket) this.writeResponseChunk(connectionId, frame.payload ?? {})
       return
     }
     if (frame.type === 'stream.close') {
       const connectionId = typeof frame.payload?.connectionId === 'string' ? frame.payload.connectionId : frame.requestId
-      this.publicSockets.get(connectionId)?.close(1000, 'Plugin stream closed')
-      this.publicSockets.delete(connectionId)
+      const socket = this.publicSockets.get(connectionId)
+      if (socket) {
+        socket.close(1000, 'Plugin stream closed')
+        this.publicSockets.delete(connectionId)
+      } else this.closeResponse(connectionId, frame.payload ?? {})
     }
   }
 
@@ -208,9 +214,11 @@ export class PluginBridge {
   }
 
   private writeResponseChunk(requestId: string, payload: Record<string, unknown>) {
-    const pending = this.pending.get(requestId)
+    const targetId = typeof payload.connectionId === 'string' ? payload.connectionId : requestId
+    const pending = this.pending.get(targetId)
     const chunk = typeof payload.data === 'string' ? payload.data : typeof payload.chunk === 'string' ? payload.chunk : ''
     if (!pending || !chunk) return
+    if (!pending.writer) this.openResponse(targetId, { status: 200, headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' } })
     if (pending.writer) void pending.writer.write(new TextEncoder().encode(chunk))
     else pending.buffered.push(chunk)
   }

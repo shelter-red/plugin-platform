@@ -41,6 +41,7 @@ class ControlClient {
   void handle_frame(const ControlFrame& frame);
   void handle_plugin_command(const ControlFrame& frame);
   void handle_http_request(const ControlFrame& frame);
+  void handle_sse_request(const ControlFrame& frame);
   void handle_websocket_chunk(const ControlFrame& frame);
   int write_stream(const char* stream_id, const uint8_t* data, uint64_t size, int finished);
   void send_frame(ControlFrame frame);

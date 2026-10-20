@@ -2,7 +2,12 @@
 
 namespace {
 
-int start_plugin(const plugmesh_host_api*) { return 0; }
+const plugmesh_host_api* host = nullptr;
+
+int start_plugin(const plugmesh_host_api* next_host) {
+  host = next_host;
+  return 0;
+}
 int stop_plugin() { return 0; }
 
 int health_plugin(plugmesh_http_response* response) {
@@ -14,8 +19,14 @@ int health_plugin(plugmesh_http_response* response) {
 }
 
 int handle_http(const plugmesh_http_request*, plugmesh_http_response* response) { return health_plugin(response); }
-int handle_websocket(const char*, const uint8_t*, uint64_t, int) { return 0; }
-int handle_sse(const char*, const plugmesh_http_request*) { return 0; }
+int handle_websocket(const char* connection_id, const uint8_t* data, uint64_t size, int) {
+  return host && host->stream_write ? host->stream_write(connection_id, data, size, 0) : -1;
+}
+
+int handle_sse(const char* stream_id, const plugmesh_http_request*) {
+  static const uint8_t event[] = "data: sample-plugin\n\n";
+  return host && host->stream_write ? host->stream_write(stream_id, event, sizeof(event) - 1, 1) : -1;
+}
 
 const plugmesh_plugin_api_v1 API = {
     PLUGMESH_PLUGIN_ABI_VERSION,
