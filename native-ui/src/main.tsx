@@ -6,7 +6,6 @@ import {
   CircleHelp,
   CircleSlash,
   Cpu,
-  ExternalLink,
   FileCode2,
   HardDrive,
   LoaderCircle,
@@ -171,7 +170,7 @@ function App() {
           <a className="side-link" href="#plugins"><FileCode2 size={15} />插件目录<span>{plugins.length}</span></a>
           <a className="side-link" href="#setup"><Settings2 size={15} />连接设置</a>
         </nav>
-        <div className="rail-bottom"><div className="local-only"><HardDrive size={14} /><span>仅监听<br /><strong>127.0.0.1:{status?.port ?? '----'}</strong></span></div><a className="docs-link" href="https://github.com" target="_blank" rel="noreferrer"><Terminal size={14} />CLI 配置入口<ExternalLink size={12} /></a></div>
+        <div className="rail-bottom"><div className="local-only"><HardDrive size={14} /><span>仅监听<br /><strong>127.0.0.1:{status?.port ?? '----'}</strong></span></div><a className="docs-link" href="#setup"><Terminal size={14} />CLI 配置入口</a></div>
       </aside>
 
       <main className="workspace">
@@ -187,7 +186,7 @@ function App() {
 
           <section id="plugins" className="section-block"><div className="section-heading"><div><span className="section-index">02 / 插件目录</span><h2>已发现插件</h2></div><span className="section-meta">{plugins.length} 个条目</span></div>{loading && <LoadingState />}{!loading && !error && plugins.length === 0 && <EmptyState title="尚未发现插件" body="将包含 manifest.json 的插件目录配置到服务器后，插件会出现在这里。" />}{!loading && !error && plugins.length > 0 && <div className="plugin-list">{plugins.map((plugin) => <PluginRow key={plugin.id} plugin={plugin} busy={busyPlugin === plugin.id} onAction={(action) => void runAction(plugin, action)} />)}</div>}</section>
 
-          <section id="setup" className="section-block setup-section"><div className="section-heading"><div><span className="section-index">03 / 连接设置</span><h2>首次绑定</h2></div><span className="status-badge muted"><span className="status-dot" />CLI fallback</span></div><div className="setup-grid"><div className="setup-copy"><h3>通过注册码绑定服务器</h3><p>首次绑定和凭据密码输入目前使用 CLI 完成。成功保存加密凭据后，服务器重启会自动恢复连接。</p><div className="command-block"><span>$</span><code>plugmesh-server --register &lt;worker-url&gt; &lt;server-name&gt; &lt;credential-file&gt;</code></div><a className="text-link" href="/README.md">查看本地服务器配置说明 <ExternalLink size={13} /></a></div><div className="setup-state"><Terminal size={22} /><strong>本地配置 UI 尚未接入</strong><span>当前不会在浏览器中收集注册码或凭据口令。</span></div></div></section>
+          <section id="setup" className="section-block setup-section"><div className="section-heading"><div><span className="section-index">03 / 连接设置</span><h2>首次绑定</h2></div><span className="status-badge muted"><span className="status-dot" />CLI fallback</span></div><div className="setup-grid"><div className="setup-copy"><h3>通过注册码绑定服务器</h3><p>首次绑定和凭据密码输入目前使用 CLI 完成。成功保存加密凭据后，服务器重启会自动恢复连接。</p><div className="command-block"><span>$</span><code>plugmesh-server --register &lt;worker-url&gt; &lt;server-name&gt; &lt;credential-file&gt;</code></div><span className="text-link">配置说明见 native-server/README.md</span></div><div className="setup-state"><Terminal size={22} /><strong>本地配置 UI 尚未接入</strong><span>当前不会在浏览器中收集注册码或凭据口令。</span></div></div></section>
         </div>
         <footer className="footer"><span>Plugmesh Local Server</span><span>API: {status?.service ?? 'unavailable'} · localhost only</span></footer>
       </main>
