@@ -204,7 +204,7 @@ async function finishGithubAuth(request: Request, env: Env, url: URL): Promise<R
   const identity = await exchangeGithubCode(env, code)
   if (!identity) return redirectWithError(request, '无法读取 GitHub 身份')
   const allowlisted = isAllowlisted(env, { login: identity.login, emails: identity.emails })
-  const existing = await env.DB.prepare('SELECT id, role FROM users WHERE github_id = ?').bind(identity.githubId).first<{ id: string; role: AuthenticatedUser['role'] }>()
+  const existing = await env.DB.prepare('SELECT id FROM users WHERE github_id = ?').bind(identity.githubId).first<{ id: string }>()
   let invite: { id: string; email: string | null; github_login: string | null } | null = null
   if (oauthState.invite_token_hash) {
     invite = await env.DB.prepare('SELECT id, email, github_login FROM invites WHERE token_hash = ? AND status = ? AND expires_at > ?').bind(oauthState.invite_token_hash, 'pending', new Date().toISOString()).first()
@@ -213,7 +213,7 @@ async function finishGithubAuth(request: Request, env: Env, url: URL): Promise<R
     if ((claimedInvite.meta.changes ?? 0) !== 1) return redirectWithError(request, '邀请身份不匹配或已失效')
   }
   if (!allowlisted && !invite && !existing) return redirectWithError(request, '该 GitHub 身份未被邀请')
-  const role = allowlisted ? 'super_admin' : existing?.role ?? 'member'
+  const role = allowlisted ? 'super_admin' : 'member'
   const userId = existing?.id ?? crypto.randomUUID()
   if (existing) await env.DB.prepare('UPDATE users SET email = ?, display_name = ?, role = ? WHERE id = ?').bind(identity.emails[0], identity.displayName, role, userId).run()
   else await env.DB.prepare('INSERT INTO users (id, github_id, email, display_name, role, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(userId, identity.githubId, identity.emails[0], identity.displayName, role, new Date().toISOString()).run()
