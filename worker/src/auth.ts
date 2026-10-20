@@ -56,10 +56,12 @@ export async function exchangeGithubCode(env: Env, code: string): Promise<{ logi
   const headers = { accept: 'application/vnd.github+json', authorization: `Bearer ${tokenPayload.access_token}` }
   const [userResponse, emailResponse] = await Promise.all([fetch('https://api.github.com/user', { headers }), fetch('https://api.github.com/user/emails', { headers })])
   if (!userResponse.ok || !emailResponse.ok) return null
-  const githubUser = await userResponse.json() as { id?: number; login?: string; name?: string; email?: string }
+  const githubUser = await userResponse.json() as { id?: number; login?: string; name?: string }
   const githubEmails = await emailResponse.json() as Array<{ email?: string; primary?: boolean; verified?: boolean }>
-  const emails = githubEmails.filter((item) => item.verified && item.email).map((item) => item.email as string)
-  if (githubUser.email && !emails.includes(githubUser.email)) emails.push(githubUser.email)
+  const emails = githubEmails
+    .filter((item): item is { email: string; primary?: boolean; verified: true } => item.verified === true && typeof item.email === 'string' && item.email.length > 0)
+    .sort((left, right) => Number(Boolean(right.primary)) - Number(Boolean(left.primary)))
+    .map((item) => item.email)
   if (!githubUser.id || !githubUser.login || emails.length === 0) return null
   return { githubId: String(githubUser.id), login: githubUser.login, emails, displayName: githubUser.name || githubUser.login }
 }
