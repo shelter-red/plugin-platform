@@ -234,7 +234,8 @@ void ControlClient::handle_http_request(const ControlFrame& frame) {
   const auto method = text(frame.payload, "method");
   const auto path = text(frame.payload, "path");
   const auto headers = frame.payload.value("headers", Json::object()).dump();
-  const auto body = text(frame.payload, "body");
+  const auto encoded_body = text(frame.payload, "body");
+  const auto body = text(frame.payload, "bodyEncoding") == "base64" ? websocketpp::base64_decode(encoded_body) : encoded_body;
   plugmesh_http_request request{method.c_str(), path.c_str(), headers.c_str(), reinterpret_cast<const uint8_t*>(body.data()), body.size()};
   plugmesh_http_response response{};
   std::string error;
@@ -261,7 +262,8 @@ void ControlClient::handle_http_request(const ControlFrame& frame) {
   send_frame(std::move(opened));
   for (uint64_t offset = 0; response.body.data && offset < response.body.size; offset += kResponseChunkSize) {
     const auto length = std::min<uint64_t>(kResponseChunkSize, response.body.size - offset);
-    auto chunk = make_control_frame("request.chunk", config_.server_id, {{"data", std::string(reinterpret_cast<const char*>(response.body.data + offset), static_cast<size_t>(length))}}, id);
+    const auto encoded = websocketpp::base64_encode(response.body.data + offset, static_cast<size_t>(length));
+    auto chunk = make_control_frame("request.chunk", config_.server_id, {{"data", encoded}, {"encoding", "base64"}}, id);
     chunk.request_id = frame.request_id;
     send_frame(std::move(chunk));
   }
@@ -276,7 +278,8 @@ void ControlClient::handle_sse_request(const ControlFrame& frame) {
   const auto method = text(frame.payload, "method");
   const auto path = text(frame.payload, "path");
   const auto headers = frame.payload.value("headers", Json::object()).dump();
-  const auto body = text(frame.payload, "body");
+  const auto encoded_body = text(frame.payload, "body");
+  const auto body = text(frame.payload, "bodyEncoding") == "base64" ? websocketpp::base64_decode(encoded_body) : encoded_body;
   plugmesh_http_request request{method.c_str(), path.c_str(), headers.c_str(), reinterpret_cast<const uint8_t*>(body.data()), body.size()};
   std::string error;
   if (stream_id.empty() || !plugins_.sse(id, stream_id, request, error)) {
@@ -342,7 +345,7 @@ void ControlClient::send_request_error(const ControlFrame& request, const std::s
   auto opened = make_control_frame("request.open", config_.server_id, {{"status", 502}, {"headers", {{"content-type", "application/json; charset=utf-8"}}}}, plugin_id(request));
   opened.request_id = request.request_id;
   send_frame(std::move(opened));
-  auto chunk = make_control_frame("request.chunk", config_.server_id, {{"data", Json{{"error", message}}.dump()}}, plugin_id(request));
+  auto chunk = make_control_frame("request.chunk", config_.server_id, {{"data", Json{{"error", message}}.dump()}, {"encoding", "text"}}, plugin_id(request));
   chunk.request_id = request.request_id;
   send_frame(std::move(chunk));
   auto closed = make_control_frame("request.close", config_.server_id, {{"status", 502}}, plugin_id(request));

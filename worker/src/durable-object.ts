@@ -82,7 +82,8 @@ export class PluginBridge {
       method: request.method,
       path: requestPath,
       headers: Object.fromEntries(forwardedHeaders(request.headers)),
-      body,
+      body: encodeBytes(body),
+      bodyEncoding: 'base64',
       ...(sse ? { streamId: requestId } : {}),
     }, pluginId)
     frame.requestId = requestId
@@ -470,8 +471,8 @@ function responseHeaders(value: unknown): Headers {
   return headers
 }
 
-async function readRequestBody(request: Request, maxBytes: number): Promise<{ ok: true; body: string } | { ok: false }> {
-  if (!request.body) return { ok: true, body: '' }
+async function readRequestBody(request: Request, maxBytes: number): Promise<{ ok: true; body: Uint8Array } | { ok: false }> {
+  if (!request.body) return { ok: true, body: new Uint8Array() }
   const reader = request.body.getReader()
   const chunks: Uint8Array[] = []
   let size = 0
@@ -489,7 +490,7 @@ async function readRequestBody(request: Request, maxBytes: number): Promise<{ ok
   } catch {
     return { ok: false }
   }
-  return { ok: true, body: new TextDecoder().decode(combineBytes(chunks)) }
+  return { ok: true, body: combineBytes(chunks) }
 }
 
 function forwardedHeaders(headers: Headers): Headers {
