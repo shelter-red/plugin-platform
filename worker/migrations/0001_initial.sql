@@ -75,6 +75,13 @@ CREATE TABLE IF NOT EXISTS usage_cache (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS smtp_settings (
+  id TEXT PRIMARY KEY,
+  ciphertext TEXT NOT NULL,
+  iv TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS servers (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,

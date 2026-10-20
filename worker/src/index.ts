@@ -3,6 +3,7 @@ import { hashControlToken } from './security'
 import { createSession, digest, exchangeGithubCode, getCurrentUser, isAllowlisted, redirectWithError, sessionCookie, clearSessionCookie } from './auth'
 import type { AuthenticatedUser, Env } from './types'
 import { decryptSecret, encryptSecret } from './secrets'
+import { isEmail, parseSmtpSettings, publicSmtpSettings, sendSmtpTest, type SmtpSettings } from './email'
 
 export { PluginBridge }
 
@@ -41,6 +42,8 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   if (request.method === 'GET' && url.pathname === '/api/domains') return json(await env.DB.prepare('SELECT id, hostname, status, plugin_instance_id, created_at FROM domains WHERE user_id = ? ORDER BY created_at DESC').bind(user.id).all())
   if (url.pathname === '/api/settings/platform') return platformSettingsApi(request, env, user)
   if (url.pathname === '/api/settings/cloudflare') return cloudflareSettingsApi(request, env, user)
+  if (url.pathname === '/api/settings/smtp') return smtpSettingsApi(request, env, user)
+  if (url.pathname === '/api/settings/smtp/test') return smtpTestApi(request, env, user)
   if (url.pathname === '/api/usage/cloudflare') return cloudflareUsageApi(env, user)
   const pluginAction = url.pathname.match(/^\/api\/plugins\/([^/]+)\/(load|unload|enable|disable|reload)$/)
   if (request.method === 'POST' && pluginAction) return commandPlugin(request, env, user, decodeURIComponent(pluginAction[1]), pluginAction[2] as 'load' | 'unload' | 'enable' | 'disable' | 'reload')
@@ -266,6 +269,58 @@ async function cloudflareSettingsApi(request: Request, env: Env, user: Authentic
   await env.DB.prepare('INSERT INTO cloudflare_credentials (id, ciphertext, iv, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET ciphertext = excluded.ciphertext, iv = excluded.iv, updated_at = excluded.updated_at').bind('primary', sealed.ciphertext, sealed.iv, updatedAt).run()
   await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'cloudflare.credentials.updated', JSON.stringify({ accountId: body.accountId?.trim() || null }), updatedAt).run()
   return json({ configured: true, updatedAt })
+}
+
+async function smtpSettingsApi(request: Request, env: Env, user: AuthenticatedUser): Promise<Response> {
+  if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
+  const existing = await env.DB.prepare('SELECT ciphertext, iv, updated_at FROM smtp_settings WHERE id = ?').bind('primary').first<{ ciphertext: string; iv: string; updated_at: string }>()
+  if (request.method === 'GET') {
+    if (!existing || !env.SESSION_SECRET) return json({ configured: false, updatedAt: existing?.updated_at ?? null })
+    try {
+      const settings = parseSmtpSettings(JSON.parse(await decryptSecret(env.SESSION_SECRET, existing.ciphertext, existing.iv)))
+      return settings ? json(publicSmtpSettings(settings, existing.updated_at)) : json({ configured: false, updatedAt: existing.updated_at })
+    } catch {
+      return json({ configured: false, updatedAt: existing.updated_at })
+    }
+  }
+  if (request.method === 'DELETE') {
+    await env.DB.prepare('DELETE FROM smtp_settings WHERE id = ?').bind('primary').run()
+    await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'smtp.settings.revoked', '{}', new Date().toISOString()).run()
+    return json({ configured: false, updatedAt: null })
+  }
+  if (request.method !== 'PUT') return json({ error: 'Method not allowed' }, 405)
+  if (!env.SESSION_SECRET) return json({ error: 'SESSION_SECRET is not configured' }, 503)
+  const settings = parseSmtpSettings(await request.json().catch(() => null))
+  if (!settings) return json({ error: 'Invalid SMTP settings' }, 400)
+  const sealed = await encryptSecret(env.SESSION_SECRET, JSON.stringify(settings))
+  const updatedAt = new Date().toISOString()
+  await env.DB.prepare('INSERT INTO smtp_settings (id, ciphertext, iv, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET ciphertext = excluded.ciphertext, iv = excluded.iv, updated_at = excluded.updated_at').bind('primary', sealed.ciphertext, sealed.iv, updatedAt).run()
+  await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'smtp.settings.updated', JSON.stringify({ host: settings.host, port: settings.port, secure: settings.secure, username: settings.username, authType: settings.authType, from: settings.from }), updatedAt).run()
+  return json(publicSmtpSettings(settings, updatedAt))
+}
+
+async function smtpTestApi(request: Request, env: Env, user: AuthenticatedUser): Promise<Response> {
+  if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
+  if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+  if (!env.SESSION_SECRET) return json({ error: 'SESSION_SECRET is not configured' }, 503)
+  const body = await request.json().catch(() => null) as { to?: string } | null
+  if (!body?.to || !isEmail(body.to)) return json({ error: 'A valid test recipient is required' }, 400)
+  const stored = await env.DB.prepare('SELECT ciphertext, iv FROM smtp_settings WHERE id = ?').bind('primary').first<{ ciphertext: string; iv: string }>()
+  if (!stored) return json({ error: 'SMTP is not configured' }, 409)
+  let settings: SmtpSettings | null = null
+  try {
+    settings = parseSmtpSettings(JSON.parse(await decryptSecret(env.SESSION_SECRET, stored.ciphertext, stored.iv)))
+  } catch {
+    return json({ error: 'SMTP credential decryption failed' }, 500)
+  }
+  if (!settings) return json({ error: 'SMTP settings are invalid' }, 500)
+  try {
+    await sendSmtpTest(settings, body.to)
+  } catch {
+    return json({ error: 'SMTP test send failed' }, 502)
+  }
+  await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'smtp.test.sent', JSON.stringify({ to: body.to }), new Date().toISOString()).run()
+  return json({ sent: true })
 }
 
 async function cloudflareUsageApi(env: Env, user: AuthenticatedUser): Promise<Response> {
