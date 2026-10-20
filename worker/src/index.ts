@@ -9,7 +9,7 @@ export { PluginBridge }
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json; charset=utf-8' } })
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url)
     if (url.pathname === '/api/health') return json({ ok: true, service: 'plugmesh-worker', protocolVersion: 1 })
     if (url.pathname === '/auth/github/start') return startGithubAuth(request, env, url)
@@ -18,6 +18,7 @@ export default {
     if (url.pathname === '/control/register') return registerServer(request, env)
     if (url.pathname.startsWith('/api/')) return api(request, env, url)
     if (url.pathname === '/control/connect') return connectServer(request, env, url)
+    if (url.pathname.startsWith('/blobs/')) return consumeBlob(request, env, ctx, url)
     return proxyPublicHost(request, env, url)
   },
 }
@@ -46,7 +47,36 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   }
   if (request.method === 'POST' && url.pathname === '/api/invites') return createInvite(request, env, user)
   if (request.method === 'POST' && url.pathname === '/api/registration-codes') return createRegistrationCode(env, user)
+  if (request.method === 'POST' && url.pathname === '/api/blobs') return createBlob(request, env)
   return json({ error: 'Not found' }, 404)
+}
+
+async function createBlob(request: Request, env: Env): Promise<Response> {
+  const contentLength = Number(request.headers.get('content-length') ?? 0)
+  const maxBytes = 50 * 1024 * 1024
+  if (!request.body) return json({ error: 'Request body is required' }, 400)
+  if (contentLength > maxBytes) return json({ error: 'File is too large' }, 413)
+  const objectKey = `temp/${crypto.randomUUID()}`
+  const token = crypto.randomUUID() + crypto.randomUUID()
+  const contentType = request.headers.get('content-type') ?? 'application/octet-stream'
+  const sizeBytes = contentLength || 0
+  await env.BLOB_BUCKET.put(objectKey, request.body, { httpMetadata: { contentType } })
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString()
+  await env.DB.prepare('INSERT INTO temp_objects (id, object_key, token_hash, content_type, size_bytes, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), objectKey, await digest(token), contentType, sizeBytes, expiresAt, new Date().toISOString()).run()
+  return json({ url: `/blobs/${encodeURIComponent(token)}`, expiresAt }, 201)
+}
+
+async function consumeBlob(request: Request, env: Env, ctx: ExecutionContext, url: URL): Promise<Response> {
+  if (request.method !== 'GET') return new Response('Method not allowed', { status: 405 })
+  const token = decodeURIComponent(url.pathname.slice('/blobs/'.length))
+  if (!token) return new Response('Not found', { status: 404 })
+  const object = await env.DB.prepare('SELECT id, object_key, content_type, expires_at FROM temp_objects WHERE token_hash = ? AND consumed_at IS NULL AND expires_at > ?').bind(await digest(token), new Date().toISOString()).first<{ id: string; object_key: string; content_type: string; expires_at: string }>()
+  if (!object) return new Response('Resource expired or already consumed', { status: 410 })
+  const blob = await env.BLOB_BUCKET.get(object.object_key)
+  if (!blob) return new Response('Resource not found', { status: 404 })
+  await env.DB.prepare('UPDATE temp_objects SET consumed_at = ? WHERE id = ?').bind(new Date().toISOString(), object.id).run()
+  ctx.waitUntil(env.BLOB_BUCKET.delete(object.object_key))
+  return new Response(blob.body, { headers: { 'content-type': object.content_type, 'content-length': String(blob.size), 'cache-control': 'no-store' } })
 }
 
 async function startGithubAuth(request: Request, env: Env, url: URL): Promise<Response> {
