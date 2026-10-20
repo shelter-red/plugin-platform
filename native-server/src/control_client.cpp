@@ -323,7 +323,7 @@ int ControlClient::open_stream(const char* stream_id, uint16_t status, const cha
   if (!stream_id || !headers_json) return -1;
   Json headers = Json::parse(headers_json, nullptr, false);
   if (!headers.is_object()) headers = Json::object();
-  auto frame = make_control_frame("request.open", config_.server_id, {{"status", status}, {"headers", headers}});
+  auto frame = make_control_frame("request.open", config_.server_id, {{"status", status}, {"headers", headers}, {"fileStream", true}});
   frame.request_id = stream_id;
   client_.get_io_service().post([this, frame = std::move(frame)]() mutable { send_frame(std::move(frame)); });
   return 0;

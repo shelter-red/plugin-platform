@@ -8,7 +8,7 @@
 - 暗色、浅色、跟随系统三种主题，主题选择持久化到浏览器本地存储。
 - 服务器绑定、插件加载、域名分配等核心操作的表单和反馈状态。
 - Worker API 基础路由：健康检查、总览、服务器、插件和域名查询。
-- 控制 WebSocket 接入边界和 Durable Object 插件桥接对象，支持 HTTP/SSE/文件流响应及带 base64 二进制帧的公开 WebSocket 桥接；HTTP 控制帧的请求体和响应块也使用 base64 保护二进制数据。
+- 控制 WebSocket 接入边界和 Durable Object 插件桥接对象，支持 HTTP/SSE/文件流响应及带 base64 二进制帧的公开 WebSocket 桥接；HTTP 控制帧的请求体和响应块也使用 base64 保护二进制数据，大文件流由 Worker 临时中转到 R2。
 - D1 表结构：用户、服务器、插件实例、域名和审计日志。
 - 控制 token 使用 SHA-256 摘要后与 D1 字段比对。
 - SMTP 配置使用 `worker-mailer` 开源依赖，支持密文保存、脱敏读取和管理员测试发送。

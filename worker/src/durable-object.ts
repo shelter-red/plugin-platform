@@ -1,11 +1,12 @@
 import { isManifest, makeFrame, MAX_CONTROL_FRAME_BYTES, parseControlFrame } from './protocol'
 import type { ControlFrame, Env } from './types'
-import { activateMaintenance, getPlatformSettings, releaseActiveConnection, reserveActiveConnection } from './usage'
+import { activateMaintenance, getPlatformSettings, releaseActiveConnection, releaseR2Usage, reserveActiveConnection, reserveR2Usage } from './usage'
 import { hashControlToken } from './security'
 
 const MAX_PROXY_REQUEST_BODY_BYTES = 32 * 1024
 const MAX_PROXY_RESPONSE_BODY_BYTES = 16 * 1024 * 1024
 const MAX_WEBSOCKET_MESSAGE_BYTES = 32 * 1024
+const FILE_STREAM_R2_THRESHOLD_BYTES = 1024 * 1024
 
 type PendingResponse = {
   resolve: (value: Response | PromiseLike<Response>) => void
@@ -14,6 +15,15 @@ type PendingResponse = {
   buffered: Uint8Array[]
   activeConnection?: boolean
   bytes: number
+  fileStream?: boolean
+  responseStatus?: number
+  responseHeaders?: Headers
+  fileWriteChain: Promise<void>
+  r2Upload?: {
+    key: string
+    writer: WritableStreamDefaultWriter<Uint8Array>
+    upload: Promise<void>
+  }
 }
 
 type PendingCommand = {
@@ -99,7 +109,7 @@ export class PluginBridge {
       activeConnection = true
     }
     const response = new Promise<Response>((resolve) => {
-      const pending: PendingResponse = { resolve, timer: 0, buffered: [], activeConnection, bytes: 0 }
+      const pending: PendingResponse = { resolve, timer: 0, buffered: [], activeConnection, bytes: 0, fileWriteChain: Promise.resolve() }
       pending.timer = setTimeout(() => {
         this.pending.delete(requestId)
         pending.buffered = []
@@ -347,10 +357,18 @@ export class PluginBridge {
   private openResponse(requestId: string, payload: Record<string, unknown>) {
     const pending = this.pending.get(requestId)
     if (!pending || pending.writer) return
+    const status = typeof payload.status === 'number' ? payload.status : 200
+    const headers = responseHeaders(payload.headers)
+    if (payload.fileStream === true) {
+      pending.fileStream = true
+      pending.responseStatus = status
+      pending.responseHeaders = headers
+      return
+    }
     const stream = new TransformStream<Uint8Array, Uint8Array>()
     pending.writer = stream.writable.getWriter()
     void pending.writer.closed.catch(() => this.releasePendingConnection(pending))
-    pending.resolve(new Response(stream.readable, { status: typeof payload.status === 'number' ? payload.status : 200, headers: responseHeaders(payload.headers) }))
+    pending.resolve(new Response(stream.readable, { status, headers }))
     for (const chunk of pending.buffered.splice(0)) void pending.writer.write(chunk).catch(() => this.rejectPendingResponse(requestId, pending, 'Plugin response stream failed'))
   }
 
@@ -371,6 +389,10 @@ export class PluginBridge {
       return
     }
     pending.bytes += bytes.byteLength
+    if (pending.fileStream) {
+      this.writeFileChunk(pending, bytes)
+      return
+    }
     if (!pending.writer && streaming) this.openResponse(targetId, { status: 200, headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' } })
     if (pending.writer) void pending.writer.write(bytes).catch(() => this.rejectPendingResponse(targetId, pending, 'Plugin response stream failed'))
     else pending.buffered.push(bytes)
@@ -380,6 +402,10 @@ export class PluginBridge {
     const pending = this.pending.get(requestId)
     if (!pending) return
     clearTimeout(pending.timer)
+    if (pending.fileStream) {
+      void this.finishFileResponse(requestId, pending, payload)
+      return
+    }
     if (pending.writer) {
       this.pending.delete(requestId)
       this.releasePendingConnection(pending)
@@ -395,6 +421,99 @@ export class PluginBridge {
     this.pending.delete(requestId)
     this.releasePendingConnection(pending)
     pending.resolve(new Response(body, { status: typeof payload.status === 'number' ? payload.status : 200, headers: responseHeaders(payload.headers) }))
+  }
+
+  private writeFileChunk(pending: PendingResponse, bytes: Uint8Array) {
+    if (!pending.r2Upload && pending.bytes > FILE_STREAM_R2_THRESHOLD_BYTES) {
+      const transform = new TransformStream<Uint8Array, Uint8Array>()
+      const key = `stream/${crypto.randomUUID()}`
+      pending.r2Upload = { key, writer: transform.writable.getWriter(), upload: this.env.BLOB_BUCKET.put(key, transform.readable).then(() => undefined) }
+      const buffered = pending.buffered.splice(0)
+      pending.fileWriteChain = pending.fileWriteChain.then(async () => {
+        for (const chunk of buffered) await pending.r2Upload?.writer.write(chunk)
+        await pending.r2Upload?.writer.write(bytes)
+      })
+      return
+    }
+    if (pending.r2Upload) {
+      pending.fileWriteChain = pending.fileWriteChain.then(() => pending.r2Upload!.writer.write(bytes))
+      return
+    }
+    pending.buffered.push(bytes)
+  }
+
+  private async finishFileResponse(requestId: string, pending: PendingResponse, payload: Record<string, unknown>) {
+    let reserved = false
+    try {
+      await pending.fileWriteChain
+      if (!pending.r2Upload) {
+        const body = toArrayBuffer(combineBytes(pending.buffered))
+        this.pending.delete(requestId)
+        this.releasePendingConnection(pending)
+        pending.resolve(new Response(body, { status: pending.responseStatus ?? (typeof payload.status === 'number' ? payload.status : 200), headers: pending.responseHeaders }))
+        return
+      }
+      await pending.r2Upload.writer.close()
+      await pending.r2Upload.upload
+      const settings = await getPlatformSettings(this.env)
+      if (!await reserveR2Usage(this.env, settings.quotas, pending.bytes)) {
+        await pending.r2Upload.writer.abort('R2 storage quota reached').catch(() => undefined)
+        await this.env.BLOB_BUCKET.delete(pending.r2Upload.key)
+        await activateMaintenance(this.env, 'R2 storage quota reached')
+        this.pending.delete(requestId)
+        this.releasePendingConnection(pending)
+        pending.resolve(new Response('Platform quota reached', { status: 503 }))
+        return
+      }
+      reserved = true
+      const object = await this.env.BLOB_BUCKET.get(pending.r2Upload.key)
+      if (!object?.body) throw new Error('R2 file stream is unavailable')
+      this.pending.delete(requestId)
+      this.releasePendingConnection(pending)
+      const headers = new Headers(pending.responseHeaders)
+      if (!headers.has('content-length')) headers.set('content-length', String(pending.bytes))
+      pending.resolve(new Response(this.consumeR2Stream(object.body, pending.r2Upload.key, pending.bytes), { status: pending.responseStatus ?? (typeof payload.status === 'number' ? payload.status : 200), headers }))
+    } catch {
+      if (pending.r2Upload) await pending.r2Upload.writer.abort('Plugin file stream failed').catch(() => undefined)
+      if (pending.r2Upload) await this.env.BLOB_BUCKET.delete(pending.r2Upload.key)
+      if (reserved) await releaseR2Usage(this.env, pending.bytes)
+      this.pending.delete(requestId)
+      this.releasePendingConnection(pending)
+      pending.resolve(new Response('Plugin file stream failed', { status: 502 }))
+    }
+  }
+
+  private consumeR2Stream(body: ReadableStream<Uint8Array>, key: string, bytes: number): ReadableStream<Uint8Array> {
+    const reader = body.getReader()
+    let cleaned = false
+    let cleanupTimer = 0
+    const cleanup = async () => {
+      if (cleaned) return
+      cleaned = true
+      clearTimeout(cleanupTimer)
+      await Promise.all([this.env.BLOB_BUCKET.delete(key), releaseR2Usage(this.env, bytes)])
+    }
+    cleanupTimer = setTimeout(() => void cleanup(), 15 * 60 * 1000) as unknown as number
+    return new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        try {
+          const result = await reader.read()
+          if (result.done) {
+            await cleanup()
+            controller.close()
+          } else {
+            controller.enqueue(result.value)
+          }
+        } catch (error) {
+          await cleanup()
+          controller.error(error)
+        }
+      },
+      async cancel(reason) {
+        await reader.cancel(reason)
+        await cleanup()
+      },
+    })
   }
 
   private rejectPendingResponse(requestId: string, pending: PendingResponse, message: string) {
