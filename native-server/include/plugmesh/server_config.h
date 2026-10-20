@@ -9,6 +9,7 @@ struct ServerConfig {
   std::string worker_url;
   std::string server_id;
   std::string access_token;
+  std::string local_ui_password_verifier;
   std::filesystem::path plugin_directory;
   std::filesystem::path credential_file;
 };

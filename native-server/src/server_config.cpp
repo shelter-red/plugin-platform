@@ -20,6 +20,7 @@ ServerConfig load_config_from_environment() {
   config.worker_url = read_env("PLUGMESH_WORKER_URL");
   config.server_id = read_env("PLUGMESH_SERVER_ID");
   config.access_token = read_env("PLUGMESH_ACCESS_TOKEN");
+  config.local_ui_password_verifier = read_env("PLUGMESH_LOCAL_UI_PASSWORD_VERIFIER");
   config.plugin_directory = read_env("PLUGMESH_PLUGIN_DIRECTORY");
   config.credential_file = read_env("PLUGMESH_CREDENTIAL_FILE");
   return config;
@@ -28,7 +29,7 @@ ServerConfig load_config_from_environment() {
 bool load_persisted_config(ServerConfig& config, std::string& error) {
   if (!config.worker_url.empty() && !config.server_id.empty() && !config.access_token.empty()) return true;
   const auto password = read_env("PLUGMESH_CREDENTIAL_PASSWORD");
-  return load_credentials_into_config(config.credential_file, password, config.worker_url, config.server_id, config.access_token, error);
+  return load_credentials_into_config(config.credential_file, password, config.worker_url, config.server_id, config.access_token, config.local_ui_password_verifier, error);
 }
 
 bool validate_worker_url(const std::string& worker_url, std::string& error) {

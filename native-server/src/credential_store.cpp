@@ -5,6 +5,7 @@
 #include <vector>
 
 #include <nlohmann/json.hpp>
+#include <openssl/crypto.h>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 
@@ -29,12 +30,15 @@ constexpr int kIterations = 200000;
 constexpr std::size_t kSaltSize = 16;
 constexpr std::size_t kIvSize = 12;
 constexpr std::size_t kTagSize = 16;
+constexpr std::size_t kPasswordHashSize = 32;
 constexpr std::size_t kMaxCiphertextSize = 1024 * 1024;
 constexpr char kSystemService[] = "Plugmesh";
 constexpr char kSystemAccount[] = "default";
 
 std::string credentials_json(const StoredCredentials& credentials) {
-  return Json{{"workerUrl", credentials.worker_url}, {"serverId", credentials.server_id}, {"accessToken", credentials.access_token}}.dump();
+  Json value{{"workerUrl", credentials.worker_url}, {"serverId", credentials.server_id}, {"accessToken", credentials.access_token}};
+  if (!credentials.local_ui_password_verifier.empty()) value["localUiPasswordVerifier"] = credentials.local_ui_password_verifier;
+  return value.dump();
 }
 
 bool parse_credentials_json(const std::string& plaintext, StoredCredentials& credentials, std::string& error) {
@@ -43,6 +47,7 @@ bool parse_credentials_json(const std::string& plaintext, StoredCredentials& cre
     credentials.worker_url = value.at("workerUrl").get<std::string>();
     credentials.server_id = value.at("serverId").get<std::string>();
     credentials.access_token = value.at("accessToken").get<std::string>();
+    credentials.local_ui_password_verifier = value.value("localUiPasswordVerifier", std::string());
   } catch (...) {
     error = "credential payload is invalid";
     return false;
@@ -185,6 +190,47 @@ bool write_file(const std::filesystem::path& path, const std::string& content, s
 }
 
 }  // namespace
+
+bool make_local_ui_password_verifier(const std::string& password, std::string& verifier, std::string& error) {
+  if (password.empty()) {
+    error = "local UI password is required";
+    return false;
+  }
+  std::vector<unsigned char> salt(kSaltSize);
+  if (RAND_bytes(salt.data(), static_cast<int>(salt.size())) != 1) {
+    error = "unable to generate local UI password salt";
+    return false;
+  }
+  std::array<unsigned char, kPasswordHashSize> hash{};
+  if (!derive_key(password, salt, hash)) {
+    error = "unable to derive local UI password verifier";
+    return false;
+  }
+  verifier = Json{
+      {"version", 1},
+      {"kdf", "PBKDF2-HMAC-SHA256"},
+      {"iterations", kIterations},
+      {"salt", encode_base64(salt)},
+      {"hash", encode_base64(std::vector<unsigned char>(hash.begin(), hash.end()))},
+  }.dump();
+  return true;
+}
+
+bool verify_local_ui_password(const std::string& password, const std::string& verifier) {
+  if (password.empty() || verifier.empty()) return false;
+  try {
+    const auto value = Json::parse(verifier);
+    if (!value.is_object() || value.value("version", 0) != 1 || value.value("kdf", "") != "PBKDF2-HMAC-SHA256" || value.value("iterations", 0) != kIterations) return false;
+    std::vector<unsigned char> salt;
+    std::vector<unsigned char> expected;
+    if (!decode_base64(value.value("salt", ""), salt) || !decode_base64(value.value("hash", ""), expected) || salt.size() != kSaltSize || expected.size() != kPasswordHashSize) return false;
+    std::array<unsigned char, kPasswordHashSize> actual{};
+    if (!derive_key(password, salt, actual)) return false;
+    return CRYPTO_memcmp(actual.data(), expected.data(), expected.size()) == 0;
+  } catch (...) {
+    return false;
+  }
+}
 
 bool system_credentials_available() {
 #if defined(_WIN32) || defined(__APPLE__)
@@ -361,7 +407,7 @@ bool remove_credentials(const std::filesystem::path& path, std::string& error) {
   return removed || !std::filesystem::exists(path);
 }
 
-bool load_credentials_into_config(const std::filesystem::path& path, const std::string& password, std::string& worker_url, std::string& server_id, std::string& access_token, std::string& error) {
+bool load_credentials_into_config(const std::filesystem::path& path, const std::string& password, std::string& worker_url, std::string& server_id, std::string& access_token, std::string& local_ui_password_verifier, std::string& error) {
   StoredCredentials credentials;
   if (path.empty()) {
     if (!load_system_credentials(credentials, error)) return false;
@@ -369,6 +415,7 @@ bool load_credentials_into_config(const std::filesystem::path& path, const std::
   if (worker_url.empty()) worker_url = credentials.worker_url;
   if (server_id.empty()) server_id = credentials.server_id;
   if (access_token.empty()) access_token = credentials.access_token;
+  if (local_ui_password_verifier.empty()) local_ui_password_verifier = credentials.local_ui_password_verifier;
   return true;
 }
 
