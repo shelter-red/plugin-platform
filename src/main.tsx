@@ -140,6 +140,7 @@ function App() {
   const meta = pageMeta[page]
   const themeLabel = theme === 'dark' ? '深色' : theme === 'light' ? '浅色' : '系统'
   const effectiveTheme = theme === 'system' ? systemTheme : theme
+  const userInitials = (authUser?.display_name ?? authUser?.email ?? '—').trim().slice(0, 2).toUpperCase()
 
   useEffect(() => {
     if (!authEnabled) return
@@ -333,7 +334,7 @@ function App() {
           <div><div className="brand-name">Plugmesh</div><div className="brand-caption">插件平台</div></div>
           <IconButton label="关闭导航" onClick={() => setSidebarOpen(false)}><X size={17} /></IconButton>
         </div>
-        <div className="workspace-switcher"><div className="workspace-icon">P</div><div className="workspace-copy"><strong>平台工作区</strong><span>等待 Worker 数据</span></div><ChevronDown size={14} /></div>
+        <div className="workspace-switcher"><div className="workspace-icon">P</div><div className="workspace-copy"><strong>平台工作区</strong><span>{apiLive ? 'Worker 数据已连接' : '等待 Worker 数据'}</span></div><ChevronDown size={14} /></div>
         <nav className="nav-area">
           {navGroups.map((group) => <div className="nav-group" key={group.label}><div className="nav-label">{group.label}</div>{group.items.map(({ id, label, icon: NavIcon }) => <button className={`nav-item ${page === id ? 'active' : ''}`} key={id} onClick={() => selectPage(id)}><NavIcon size={16} /><span>{label}</span>{id === 'servers' && servers && servers.length > 0 && <span className="nav-count">{servers.length}</span>}</button>)}</div>)}
         </nav>
@@ -349,8 +350,8 @@ function App() {
           <div className="topbar-actions">
             <label className="search-box"><Search size={15} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索插件、域名..." /><span className="shortcut"><Command size={11} /> K</span></label>
             <div className="theme-menu"><IconButton label={`主题：${themeLabel}`}><Sun size={16} /><ChevronDown size={11} /></IconButton><select aria-label="选择主题" value={theme} onChange={(e) => setTheme(e.target.value as Theme)}><option value="dark">深色</option><option value="light">浅色</option><option value="system">系统</option></select></div>
-            <IconButton label="通知"><Activity size={16} /></IconButton>
-            <div className="top-avatar">AD</div>
+            <IconButton label="查看审计事件" onClick={() => selectPage('audit')}><Activity size={16} /></IconButton>
+            <div className="top-avatar" aria-label={authUser?.display_name ?? authUser?.email ?? '当前用户'}>{userInitials}</div>
           </div>
         </header>
         <div className="page-scroll">
