@@ -27,7 +27,7 @@ type PendingResponse = {
 }
 
 type PendingCommand = {
-  resolve: (value: { ok: boolean; state?: string; error?: string }) => void
+  resolve: (value: { ok: boolean; state?: string; status?: number; bodySize?: number; error?: string }) => void
   timer: number
 }
 
@@ -207,13 +207,13 @@ export class PluginBridge {
     const result = await this.sendPluginCommand(body.type, body.pluginId)
     const requestId = result.requestId
     if (!result.ok) return new Response(JSON.stringify({ accepted: false, requestId, error: result.error ?? 'Plugin command failed' }), { status: 502, headers: { 'content-type': 'application/json' } })
-    return new Response(JSON.stringify({ accepted: true, requestId, state: result.state ?? null }), { status: 202, headers: { 'content-type': 'application/json' } })
+    return new Response(JSON.stringify({ accepted: true, requestId, state: result.state ?? null, status: result.status ?? null, bodySize: result.bodySize ?? null }), { status: 202, headers: { 'content-type': 'application/json' } })
   }
 
-  private async sendPluginCommand(type: string, pluginId?: string): Promise<{ ok: boolean; state?: string; error?: string; requestId: string }> {
+  private async sendPluginCommand(type: string, pluginId?: string): Promise<{ ok: boolean; state?: string; status?: number; bodySize?: number; error?: string; requestId: string }> {
     const frame = makeFrame(type, this.serverId, {}, pluginId)
     if (!this.serverSocket || this.serverSocket.readyState !== WebSocket.OPEN) return { ok: false, error: 'Plugin server is offline', requestId: frame.requestId }
-    const result = await new Promise<{ ok: boolean; state?: string; error?: string }>((resolve) => {
+    const result = await new Promise<{ ok: boolean; state?: string; status?: number; bodySize?: number; error?: string }>((resolve) => {
       const pending: PendingCommand = { resolve, timer: 0 }
       pending.timer = setTimeout(() => {
         this.pendingCommands.delete(frame.requestId)
@@ -271,7 +271,13 @@ export class PluginBridge {
       clearTimeout(pending.timer)
       this.pendingCommands.delete(frame.requestId)
       const ok = frame.type === 'plugin.result' && frame.payload?.ok === true
-      pending.resolve({ ok, state: typeof frame.payload?.state === 'string' ? frame.payload.state : undefined, error: typeof frame.payload?.error === 'string' ? frame.payload.error : typeof frame.payload?.message === 'string' ? frame.payload.message : undefined })
+      pending.resolve({
+        ok,
+        state: typeof frame.payload?.state === 'string' ? frame.payload.state : undefined,
+        status: typeof frame.payload?.status === 'number' ? frame.payload.status : undefined,
+        bodySize: typeof frame.payload?.bodySize === 'number' ? frame.payload.bodySize : undefined,
+        error: typeof frame.payload?.error === 'string' ? frame.payload.error : typeof frame.payload?.message === 'string' ? frame.payload.message : undefined,
+      })
       return
     }
     if (frame.type === 'server.register') {
