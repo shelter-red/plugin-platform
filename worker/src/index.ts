@@ -2,7 +2,7 @@ import { PluginBridge } from './durable-object'
 import { hashControlToken } from './security'
 import { createSession, digest, exchangeGithubCode, getCurrentUser, isAllowlisted, redirectWithError, sessionCookie, clearSessionCookie } from './auth'
 import type { AuthenticatedUser, Env } from './types'
-import { encryptSecret } from './secrets'
+import { decryptSecret, encryptSecret } from './secrets'
 
 export { PluginBridge }
 
@@ -41,6 +41,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   if (request.method === 'GET' && url.pathname === '/api/domains') return json(await env.DB.prepare('SELECT id, hostname, status, plugin_instance_id, created_at FROM domains WHERE user_id = ? ORDER BY created_at DESC').bind(user.id).all())
   if (url.pathname === '/api/settings/platform') return platformSettingsApi(request, env, user)
   if (url.pathname === '/api/settings/cloudflare') return cloudflareSettingsApi(request, env, user)
+  if (url.pathname === '/api/usage/cloudflare') return cloudflareUsageApi(env, user)
   const pluginAction = url.pathname.match(/^\/api\/plugins\/([^/]+)\/(load|unload|enable|disable|reload)$/)
   if (request.method === 'POST' && pluginAction) return commandPlugin(request, env, user, decodeURIComponent(pluginAction[1]), pluginAction[2] as 'load' | 'unload' | 'enable' | 'disable' | 'reload')
   if (request.method === 'POST' && url.pathname === '/api/domains') return assignDomain(request, env, user)
@@ -265,6 +266,40 @@ async function cloudflareSettingsApi(request: Request, env: Env, user: Authentic
   await env.DB.prepare('INSERT INTO cloudflare_credentials (id, ciphertext, iv, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET ciphertext = excluded.ciphertext, iv = excluded.iv, updated_at = excluded.updated_at').bind('primary', sealed.ciphertext, sealed.iv, updatedAt).run()
   await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'cloudflare.credentials.updated', JSON.stringify({ accountId: body.accountId?.trim() || null }), updatedAt).run()
   return json({ configured: true, updatedAt })
+}
+
+async function cloudflareUsageApi(env: Env, user: AuthenticatedUser): Promise<Response> {
+  if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
+  const cached = await env.DB.prepare('SELECT value_json, expires_at, updated_at FROM usage_cache WHERE key = ? AND expires_at > ?').bind('cloudflare:workers', new Date().toISOString()).first<{ value_json: string; expires_at: string; updated_at: string }>()
+  if (cached) return json({ ...JSON.parse(cached.value_json), cached: true, updatedAt: cached.updated_at })
+  if (!env.SESSION_SECRET) return json({ error: 'SESSION_SECRET is not configured' }, 503)
+  const credentials = await env.DB.prepare('SELECT ciphertext, iv FROM cloudflare_credentials WHERE id = ?').bind('primary').first<{ ciphertext: string; iv: string }>()
+  if (!credentials) return json({ configured: false, cached: false })
+  let accountId: string | null = null
+  let accessToken = ''
+  try {
+    const value = JSON.parse(await decryptSecret(env.SESSION_SECRET, credentials.ciphertext, credentials.iv)) as { accessToken?: string; accountId?: string | null }
+    accessToken = value.accessToken ?? ''
+    accountId = value.accountId ?? null
+  } catch {
+    return json({ error: 'Cloudflare credential decryption failed' }, 500)
+  }
+  if (!accessToken || !accountId) return json({ configured: true, accountIdConfigured: Boolean(accountId), cached: false })
+  const end = new Date()
+  const start = new Date(end.getTime() - 24 * 60 * 60 * 1000)
+  const response = await fetch('https://api.cloudflare.com/client/v4/graphql', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ query: `query Usage($accountTag: String!, $start: Time!, $end: Time!) { viewer { accounts(filter: { accountTag: $accountTag }) { workersInvocationsAdaptive(limit: 1, filter: { datetime_geq: $start, datetime_leq: $end }) { sum { requests } } } } }`, variables: { accountTag: accountId, start: start.toISOString(), end: end.toISOString() } }),
+  })
+  if (!response.ok) return json({ error: 'Cloudflare Analytics request failed', status: response.status }, 502)
+  const payload = await response.json() as { errors?: unknown[]; data?: { viewer?: { accounts?: Array<{ workersInvocationsAdaptive?: Array<{ sum?: { requests?: number } }> }> } } }
+  if (payload.errors?.length) return json({ error: 'Cloudflare Analytics returned errors', details: payload.errors }, 502)
+  const requests = payload.data?.viewer?.accounts?.[0]?.workersInvocationsAdaptive?.[0]?.sum?.requests ?? 0
+  const result = { configured: true, accountIdConfigured: true, period: { start: start.toISOString(), end: end.toISOString() }, requests, source: 'cloudflare_graphql' }
+  const updatedAt = new Date().toISOString()
+  await env.DB.prepare('INSERT INTO usage_cache (key, value_json, expires_at, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, expires_at = excluded.expires_at, updated_at = excluded.updated_at').bind('cloudflare:workers', JSON.stringify(result), new Date(Date.now() + 5 * 60 * 1000).toISOString(), updatedAt).run()
+  return json({ ...result, cached: false, updatedAt })
 }
 
 async function getPlatformSettings(env: Env): Promise<typeof defaultPlatformSettings> {

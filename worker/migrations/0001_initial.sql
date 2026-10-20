@@ -68,6 +68,13 @@ CREATE TABLE IF NOT EXISTS cloudflare_credentials (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS usage_cache (
+  key TEXT PRIMARY KEY,
+  value_json TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS servers (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
