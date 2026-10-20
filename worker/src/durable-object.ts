@@ -8,11 +8,17 @@ type PendingResponse = {
   buffered: string[]
 }
 
+type PendingCommand = {
+  resolve: (value: { ok: boolean; state?: string; error?: string }) => void
+  timer: number
+}
+
 export class PluginBridge {
   private serverSocket: WebSocket | null = null
   private serverId = ''
   private env: Env
   private pending = new Map<string, PendingResponse>()
+  private pendingCommands = new Map<string, PendingCommand>()
   private publicSockets = new Map<string, WebSocket>()
 
   constructor(_state: DurableObjectState, env: Env) {
@@ -43,6 +49,11 @@ export class PluginBridge {
       void this.markServerOffline()
       for (const socket of this.publicSockets.values()) socket.close(1011, 'Plugin server disconnected')
       this.publicSockets.clear()
+      for (const [requestId, pending] of this.pendingCommands) {
+        clearTimeout(pending.timer)
+        pending.resolve({ ok: false, error: 'Plugin server disconnected' })
+        this.pendingCommands.delete(requestId)
+      }
     })
     server.send(JSON.stringify(makeFrame('hello', this.serverId, { message: 'server connection accepted' })))
     return new Response(null, { status: 101, webSocket: client })
@@ -112,14 +123,38 @@ export class PluginBridge {
     const body = await request.json().catch(() => null) as { type?: string; pluginId?: string } | null
     if (!body?.type || !body.type.startsWith('plugin.')) return new Response('Invalid command', { status: 400 })
     const frame = makeFrame(body.type, this.serverId, {}, body.pluginId)
-    this.serverSocket.send(JSON.stringify(frame))
-    return new Response(JSON.stringify({ accepted: true, requestId: frame.requestId }), { status: 202, headers: { 'content-type': 'application/json' } })
+    const result = await new Promise<{ ok: boolean; state?: string; error?: string }>((resolve) => {
+      const pending: PendingCommand = { resolve, timer: 0 }
+      pending.timer = setTimeout(() => {
+        this.pendingCommands.delete(frame.requestId)
+        resolve({ ok: false, error: 'Plugin command timed out' })
+      }, 15_000) as unknown as number
+      this.pendingCommands.set(frame.requestId, pending)
+      try {
+        this.serverSocket?.send(JSON.stringify(frame))
+      } catch {
+        clearTimeout(pending.timer)
+        this.pendingCommands.delete(frame.requestId)
+        resolve({ ok: false, error: 'Plugin command could not be sent' })
+      }
+    })
+    if (!result.ok) return new Response(JSON.stringify({ accepted: false, requestId: frame.requestId, error: result.error ?? 'Plugin command failed' }), { status: 502, headers: { 'content-type': 'application/json' } })
+    return new Response(JSON.stringify({ accepted: true, requestId: frame.requestId, state: result.state ?? null }), { status: 202, headers: { 'content-type': 'application/json' } })
   }
 
   private handleServerMessage(data: string | ArrayBuffer) {
     const raw = typeof data === 'string' ? data : new TextDecoder().decode(data)
     const frame = parseControlFrame(raw)
     if (!frame) return
+    if (frame.type === 'plugin.result' || frame.type === 'error') {
+      const pending = this.pendingCommands.get(frame.requestId)
+      if (!pending) return
+      clearTimeout(pending.timer)
+      this.pendingCommands.delete(frame.requestId)
+      const ok = frame.type === 'plugin.result' && frame.payload?.ok === true
+      pending.resolve({ ok, state: typeof frame.payload?.state === 'string' ? frame.payload.state : undefined, error: typeof frame.payload?.error === 'string' ? frame.payload.error : typeof frame.payload?.message === 'string' ? frame.payload.message : undefined })
+      return
+    }
     if (frame.type === 'server.register') {
       void this.registerServer(frame.payload ?? {})
       return
