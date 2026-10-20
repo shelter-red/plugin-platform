@@ -7,6 +7,8 @@ const MAX_PROXY_REQUEST_BODY_BYTES = 32 * 1024
 const MAX_PROXY_RESPONSE_BODY_BYTES = 16 * 1024 * 1024
 const MAX_WEBSOCKET_MESSAGE_BYTES = 32 * 1024
 const FILE_STREAM_R2_THRESHOLD_BYTES = 1024 * 1024
+const CONTROL_FRAME_TIME_WINDOW_MS = 5 * 60 * 1000
+const MAX_SEEN_CONTROL_NONCES = 2048
 
 type PendingResponse = {
   resolve: (value: Response | PromiseLike<Response>) => void
@@ -39,6 +41,7 @@ export class PluginBridge {
   private pendingCommands = new Map<string, PendingCommand>()
   private publicSockets = new Map<string, WebSocket>()
   private reservedPublicConnections = new Set<string>()
+  private seenControlNonces = new Map<string, number>()
 
   constructor(_state: DurableObjectState, env: Env) {
     this.env = env
@@ -265,6 +268,7 @@ export class PluginBridge {
     const frame = parseControlFrame(raw)
     if (!frame) return
     if (frame.serverId !== this.serverId) return
+    if (!this.acceptControlFrame(frame)) return
     if (frame.type === 'plugin.result' || frame.type === 'error') {
       const pending = this.pendingCommands.get(frame.requestId)
       if (!pending) return
@@ -327,6 +331,21 @@ export class PluginBridge {
         if (this.reservedPublicConnections.delete(connectionId)) void releaseActiveConnection(this.env)
       } else this.closeResponse(connectionId, frame.payload ?? {})
     }
+  }
+
+  private acceptControlFrame(frame: ControlFrame): boolean {
+    const now = Date.now()
+    const timestamp = Date.parse(frame.timestamp)
+    if (!Number.isFinite(timestamp) || Math.abs(now - timestamp) > CONTROL_FRAME_TIME_WINDOW_MS || !frame.nonce) return false
+    const cutoff = now - CONTROL_FRAME_TIME_WINDOW_MS
+    for (const [nonce, seenAt] of this.seenControlNonces) {
+      if (seenAt >= cutoff) break
+      this.seenControlNonces.delete(nonce)
+    }
+    if (this.seenControlNonces.has(frame.nonce)) return false
+    this.seenControlNonces.set(frame.nonce, now)
+    while (this.seenControlNonces.size > MAX_SEEN_CONTROL_NONCES) this.seenControlNonces.delete(this.seenControlNonces.keys().next().value as string)
+    return true
   }
 
   private async handleServerBindingAction(frame: ControlFrame) {
