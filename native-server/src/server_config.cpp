@@ -4,6 +4,8 @@
 
 #include <cstdlib>
 
+#include <websocketpp/uri.hpp>
+
 namespace plugmesh {
 
 namespace {
@@ -29,11 +31,32 @@ bool load_persisted_config(ServerConfig& config, std::string& error) {
   return load_credentials_into_config(config.credential_file, password, config.worker_url, config.server_id, config.access_token, error);
 }
 
+bool validate_worker_url(const std::string& worker_url, std::string& error) {
+  const auto scheme_end = worker_url.find("://");
+  if (scheme_end == std::string::npos || scheme_end + 3 >= worker_url.size()) {
+    error = "worker URL must use http:// or https://";
+    return false;
+  }
+  const websocketpp::uri uri(worker_url);
+  if (!uri.get_valid() || (uri.get_scheme() != "http" && uri.get_scheme() != "https")) {
+    error = "worker URL must use http:// or https://";
+    return false;
+  }
+  const auto& host = uri.get_host();
+  const auto loopback = host == "localhost" || host == "127.0.0.1" || host == "::1";
+  if (!uri.get_secure() && !loopback) {
+    error = "worker URL must use HTTPS unless it targets localhost";
+    return false;
+  }
+  return true;
+}
+
 bool validate_config(const ServerConfig& config, std::string& error) {
   if (config.worker_url.empty()) {
     error = "PLUGMESH_WORKER_URL is required";
     return false;
   }
+  if (!validate_worker_url(config.worker_url, error)) return false;
   if (config.server_id.empty()) {
     error = "PLUGMESH_SERVER_ID is required";
     return false;

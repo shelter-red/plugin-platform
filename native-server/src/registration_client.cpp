@@ -1,4 +1,5 @@
 #include "plugmesh/registration_client.h"
+#include "plugmesh/server_config.h"
 
 #include <websocketpp/client.hpp>
 #include <websocketpp/config/asio_client.hpp>
@@ -97,6 +98,7 @@ bool register_server(const std::string& worker_url, const std::string& code, con
     error = "worker URL, registration code and server name are required";
     return false;
   }
+  if (!validate_worker_url(worker_url, error)) return false;
   if (worker_url.rfind("https://", 0) == 0) return register_with_client<TlsClient>(worker_url, code, name, result, error);
   if (worker_url.rfind("http://", 0) == 0) return register_with_client<PlainClient>(worker_url, code, name, result, error);
   error = "worker URL must use http:// or https://";

@@ -12,6 +12,12 @@
 int main() {
   using Server = websocketpp::server<websocketpp::config::asio>;
   using Json = nlohmann::json;
+  plugmesh::RegistrationResult rejected_result;
+  std::string rejected_error;
+  if (plugmesh::register_server("http://example.com", "one-time-code", "test-server", rejected_result, rejected_error) || rejected_error.empty()) {
+    std::cerr << "insecure remote worker URL was accepted\n";
+    return 1;
+  }
   Server server;
   server.clear_access_channels(websocketpp::log::alevel::all);
   server.clear_error_channels(websocketpp::log::elevel::all);
