@@ -39,7 +39,7 @@ import {
   Zap,
 } from 'lucide-react'
 import './styles.css'
-import { fetchOverview, fetchPlatformSettings, fetchSmtpSettings, type ApiOverview, type PlatformSettings, type SmtpSettings, sendSmtpTest, updatePlatformSettings, updateSmtpSettings } from './api'
+import { fetchCloudflareSettings, fetchOverview, fetchPlatformSettings, fetchSmtpSettings, revokeCloudflareSettings, type ApiOverview, type CloudflareSettings, type PlatformSettings, type SmtpSettings, sendSmtpTest, updatePlatformSettings, updateSmtpSettings } from './api'
 
 type Page = 'overview' | 'servers' | 'plugins' | 'domains' | 'usage' | 'audit' | 'settings'
 type Theme = 'dark' | 'light' | 'system'
@@ -115,6 +115,7 @@ function App() {
   const [authUser, setAuthUser] = useState<{ display_name: string; email: string } | null>(null)
   const [overview, setOverview] = useState<ApiOverview | null>(null)
   const [platformSettings, setPlatformSettings] = useState<PlatformSettings | null>(null)
+  const [cloudflareSettings, setCloudflareSettings] = useState<CloudflareSettings | null>(null)
   const [smtpSettings, setSmtpSettings] = useState<SmtpSettings | null>(null)
   const [apiLive, setApiLive] = useState(false)
   const [page, setPage] = useState<Page>('overview')
@@ -149,6 +150,21 @@ function App() {
     if (!authEnabled && !import.meta.env.VITE_API_BASE) return
     fetchSmtpSettings().then(setSmtpSettings).catch(() => setSmtpSettings(null))
   }, [authEnabled])
+
+  useEffect(() => {
+    if (!authEnabled && !import.meta.env.VITE_API_BASE) return
+    fetchCloudflareSettings().then(setCloudflareSettings).catch(() => setCloudflareSettings(null))
+  }, [authEnabled])
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const result = params.get('cloudflare')
+    const error = params.get('cloudflare_error')
+    if (result === 'connected') setToast('Cloudflare 已授权并识别账号')
+    if (result === 'connected_without_account') setToast('Cloudflare 已授权，但未识别唯一账号')
+    if (error) setToast(error)
+    if (result || error) window.history.replaceState({}, '', `${window.location.pathname}${window.location.hash}`)
+  }, [])
 
   useEffect(() => {
     if (!authEnabled && !import.meta.env.VITE_API_BASE) return
@@ -232,7 +248,7 @@ function App() {
             {page === 'domains' && <Domains onAction={showToast} onAssign={() => setModal('domain')} />}
             {page === 'usage' && <Usage onAction={showToast} />}
             {page === 'audit' && <Audit />}
-            {page === 'settings' && <SettingsPage settings={platformSettings} onSettingsChange={setPlatformSettings} smtpSettings={smtpSettings} onSmtpChange={setSmtpSettings} onAction={showToast} />}
+            {page === 'settings' && <SettingsPage settings={platformSettings} onSettingsChange={setPlatformSettings} cloudflareSettings={cloudflareSettings} onCloudflareChange={setCloudflareSettings} smtpSettings={smtpSettings} onSmtpChange={setSmtpSettings} onAction={showToast} />}
           </div>
         </div>
       </main>
@@ -277,7 +293,7 @@ function ResourceCard({ title, current, limit, unit, icon: Icon }: { title: stri
 
 function Audit() { return <div className="stack"><div className="filter-row"><div className="filter-summary"><ListFilter size={15} />全部事件 <span className="divider" />最近 180 天</div><button className="button secondary small"><FileText size={14} />导出日志</button></div><div className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>事件</th><th>详情</th><th>操作者</th><th>时间</th></tr></thead><tbody>{auditItems.map((item) => <tr key={item.action}><td><div className="cell-title"><div className={`audit-icon ${item.tone}`}><Activity size={14} /></div><strong>{item.action}</strong></div></td><td>{item.detail}</td><td><span className="operator"><div className="mini-avatar">AD</div>管理员</span></td><td className="muted">{item.time}</td></tr>)}</tbody></table></div></div></div> }
 
-function SettingsPage({ settings, onSettingsChange, smtpSettings, onSmtpChange, onAction }: { settings: PlatformSettings | null; onSettingsChange: (settings: PlatformSettings) => void; smtpSettings: SmtpSettings | null; onSmtpChange: (settings: SmtpSettings) => void; onAction: (message: string) => void }) {
+function SettingsPage({ settings, onSettingsChange, cloudflareSettings, onCloudflareChange, smtpSettings, onSmtpChange, onAction }: { settings: PlatformSettings | null; onSettingsChange: (settings: PlatformSettings) => void; cloudflareSettings: CloudflareSettings | null; onCloudflareChange: (settings: CloudflareSettings) => void; smtpSettings: SmtpSettings | null; onSmtpChange: (settings: SmtpSettings) => void; onAction: (message: string) => void }) {
   const [saving, setSaving] = useState(false)
   const maintenance = settings?.maintenance ?? false
   const toggleMaintenance = async () => {
@@ -295,7 +311,17 @@ function SettingsPage({ settings, onSettingsChange, smtpSettings, onSmtpChange, 
       setSaving(false)
     }
   }
-  return <div className="settings-layout"><div className="settings-nav"><button className="selected"><Cloud size={15} />Cloudflare</button><button><Users size={15} />用户与邀请</button><button><FileText size={15} />邮件 SMTP</button><button><ShieldCheck size={15} />维护与配额</button></div><div className="settings-content"><div className="panel settings-panel"><div className="settings-heading"><div className="settings-icon"><Cloud size={18} /></div><div><h2>Cloudflare 授权</h2><p>平台账号统一管理 Worker、D1、R2 和 Durable Object 资源。</p></div><StatusBadge>未配置</StatusBadge></div><div className="form-grid"><label>账号标识<input placeholder="尚未连接" disabled /></label><label>授权状态<input placeholder="等待管理员授权" disabled /></label></div><div className="settings-actions"><button className="button primary" onClick={() => onAction('Cloudflare OAuth 配置即将开放')}>开始授权 <ArrowUpRight size={14} /></button><span className="form-hint"><LockKeyhole size={13} />凭据仅由后台服务使用，并加密保存。</span></div></div><SmtpPanel settings={smtpSettings} onChange={onSmtpChange} onAction={onAction} /><div className="panel settings-panel"><div className="settings-heading"><div className="settings-icon"><ShieldCheck size={18} /></div><div><h2>全局维护状态</h2><p>{settings ? '读取自 Worker 平台配置。' : '演示模式不会修改真实平台状态。'}</p></div><StatusBadge tone={maintenance ? 'warning' : 'success'}>{maintenance ? '维护中' : settings ? '运行中' : '演示'}</StatusBadge></div><div className="maintenance-row"><div><strong>{maintenance ? '暂停新连接' : '允许新连接'}</strong><span>{maintenance ? '公开入口和新增配置请求会被暂时拒绝。' : '插件服务器和公开域名当前可以正常连接。'}</span></div><button className={`toggle ${maintenance ? '' : 'on'}`} disabled={saving} onClick={toggleMaintenance}><span /></button></div></div></div></div>
+  const startCloudflareAuth = () => { window.location.assign(`${import.meta.env.VITE_API_BASE ?? ''}/auth/cloudflare/start`) }
+  const revokeCloudflare = async () => {
+    if (!cloudflareSettings?.configured || !window.confirm('撤销 Cloudflare 授权并删除平台凭据？')) return
+    try {
+      onCloudflareChange(await revokeCloudflareSettings())
+      onAction('Cloudflare 授权已撤销')
+    } catch {
+      onAction('Cloudflare 授权撤销失败')
+    }
+  }
+  return <div className="settings-layout"><div className="settings-nav"><button className="selected"><Cloud size={15} />Cloudflare</button><button><Users size={15} />用户与邀请</button><button><FileText size={15} />邮件 SMTP</button><button><ShieldCheck size={15} />维护与配额</button></div><div className="settings-content"><div className="panel settings-panel"><div className="settings-heading"><div className="settings-icon"><Cloud size={18} /></div><div><h2>Cloudflare 授权</h2><p>平台账号统一管理 Worker、D1、R2 和 Durable Object 资源。</p></div><StatusBadge tone={cloudflareSettings?.configured ? 'success' : 'neutral'}>{cloudflareSettings?.configured ? '已授权' : cloudflareSettings ? '未配置' : '读取中'}</StatusBadge></div><div className="form-grid"><label>账号标识<input value={cloudflareSettings?.accountId ?? ''} placeholder={cloudflareSettings?.configured ? '等待识别账号' : '尚未连接'} disabled /></label><label>授权状态<input value={cloudflareSettings?.configured ? (cloudflareSettings.accountIdConfigured ? 'OAuth 已完成' : 'OAuth 已完成，缺少唯一账号') : ''} placeholder={cloudflareSettings ? '等待管理员授权' : '读取中'} disabled /></label></div><div className="settings-actions"><button className="button primary" onClick={startCloudflareAuth} disabled={!cloudflareSettings}>{cloudflareSettings?.configured ? '重新授权' : '开始授权'} <ArrowUpRight size={14} /></button>{cloudflareSettings?.configured && <button className="button secondary" onClick={revokeCloudflare}>撤销授权</button>}<span className="form-hint"><LockKeyhole size={13} />令牌仅由后台服务使用，并加密保存。</span></div></div><SmtpPanel settings={smtpSettings} onChange={onSmtpChange} onAction={onAction} /><div className="panel settings-panel"><div className="settings-heading"><div className="settings-icon"><ShieldCheck size={18} /></div><div><h2>全局维护状态</h2><p>{settings ? '读取自 Worker 平台配置。' : '演示模式不会修改真实平台状态。'}</p></div><StatusBadge tone={maintenance ? 'warning' : 'success'}>{maintenance ? '维护中' : settings ? '运行中' : '演示'}</StatusBadge></div><div className="maintenance-row"><div><strong>{maintenance ? '暂停新连接' : '允许新连接'}</strong><span>{maintenance ? '公开入口和新增配置请求会被暂时拒绝。' : '插件服务器和公开域名当前可以正常连接。'}</span></div><button className={`toggle ${maintenance ? '' : 'on'}`} disabled={saving} onClick={toggleMaintenance}><span /></button></div></div></div></div>
 }
 
 function SmtpPanel({ settings, onChange, onAction }: { settings: SmtpSettings | null; onChange: (settings: SmtpSettings) => void; onAction: (message: string) => void }) {

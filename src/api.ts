@@ -27,6 +27,13 @@ export interface SmtpSettings {
   updatedAt?: string | null
 }
 
+export interface CloudflareSettings {
+  configured: boolean
+  accountIdConfigured: boolean
+  accountId: string | null
+  updatedAt: string | null
+}
+
 export async function fetchOverview(): Promise<ApiOverview> {
   const apiBase = import.meta.env.VITE_API_BASE ?? ''
   const response = await fetch(`${apiBase}/api/overview`, { credentials: 'include' })
@@ -46,6 +53,20 @@ export async function updatePlatformSettings(settings: PlatformSettings): Promis
   const response = await fetch(`${apiBase}/api/settings/platform`, { method: 'PUT', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(settings) })
   if (!response.ok) throw new Error(`platform settings update failed: ${response.status}`)
   return response.json() as Promise<PlatformSettings>
+}
+
+export async function fetchCloudflareSettings(): Promise<CloudflareSettings> {
+  const apiBase = import.meta.env.VITE_API_BASE ?? ''
+  const response = await fetch(`${apiBase}/api/settings/cloudflare`, { credentials: 'include' })
+  if (!response.ok) throw new Error(`cloudflare settings request failed: ${response.status}`)
+  return response.json() as Promise<CloudflareSettings>
+}
+
+export async function revokeCloudflareSettings(): Promise<CloudflareSettings> {
+  const apiBase = import.meta.env.VITE_API_BASE ?? ''
+  const response = await fetch(`${apiBase}/api/settings/cloudflare`, { method: 'DELETE', credentials: 'include' })
+  if (!response.ok) throw new Error(`cloudflare settings revoke failed: ${response.status}`)
+  return response.json() as Promise<CloudflareSettings>
 }
 
 export async function fetchSmtpSettings(): Promise<SmtpSettings> {
