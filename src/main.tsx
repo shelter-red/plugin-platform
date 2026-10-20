@@ -38,6 +38,7 @@ import {
   Zap,
 } from 'lucide-react'
 import './styles.css'
+import { fetchOverview, type ApiOverview } from './api'
 
 type Page = 'overview' | 'servers' | 'plugins' | 'domains' | 'usage' | 'audit' | 'settings'
 type Theme = 'dark' | 'light' | 'system'
@@ -111,6 +112,8 @@ function App() {
   const authEnabled = import.meta.env.VITE_AUTH_ENABLED === 'true'
   const [authState, setAuthState] = useState<'loading' | 'authenticated' | 'anonymous'>(authEnabled ? 'loading' : 'authenticated')
   const [authUser, setAuthUser] = useState<{ display_name: string; email: string } | null>(null)
+  const [overview, setOverview] = useState<ApiOverview | null>(null)
+  const [apiLive, setApiLive] = useState(false)
   const [page, setPage] = useState<Page>('overview')
   const [theme, setTheme] = useState<Theme>(() => {
     const savedTheme = window.localStorage.getItem('plugmesh-theme')
@@ -137,6 +140,14 @@ function App() {
         setAuthState('authenticated')
       })
       .catch(() => setAuthState('anonymous'))
+  }, [authEnabled])
+
+  useEffect(() => {
+    if (!authEnabled && !import.meta.env.VITE_API_BASE) return
+    fetchOverview().then((data) => {
+      setOverview(data)
+      setApiLive(true)
+    }).catch(() => setApiLive(false))
   }, [authEnabled])
 
   useEffect(() => {
@@ -201,8 +212,8 @@ function App() {
         </header>
         <div className="page-scroll">
           <div className="page-content">
-            <div className="page-header"><div><div className="eyebrow"><span className="live-pulse" />平台运行中</div><h1>{meta.title}</h1><p>{meta.description}</p></div><div className="header-actions">{page === 'overview' && <button className="button secondary" onClick={() => showToast('已刷新平台状态')}><RefreshCw size={15} />刷新状态</button>}{page === 'servers' && <button className="button primary" onClick={() => setModal('server')}><Plus size={16} />绑定服务器</button>}{page === 'domains' && <button className="button primary" onClick={() => setModal('domain')}><Plus size={16} />分配域名</button>}{page === 'plugins' && <button className="button primary" onClick={() => setModal('plugin')}><Plus size={16} />加载插件</button>}</div></div>
-            {page === 'overview' && <Overview range={range} setRange={setRange} onAction={showToast} onNavigate={selectPage} />}
+            <div className="page-header"><div><div className="eyebrow"><span className="live-pulse" />{apiLive ? '实时数据' : '演示工作区'}</div><h1>{meta.title}</h1><p>{meta.description}</p></div><div className="header-actions">{page === 'overview' && <button className="button secondary" onClick={() => showToast(apiLive ? '已刷新平台状态' : '演示数据无需刷新')}><RefreshCw size={15} />刷新状态</button>}{page === 'servers' && <button className="button primary" onClick={() => setModal('server')}><Plus size={16} />绑定服务器</button>}{page === 'domains' && <button className="button primary" onClick={() => setModal('domain')}><Plus size={16} />分配域名</button>}{page === 'plugins' && <button className="button primary" onClick={() => setModal('plugin')}><Plus size={16} />加载插件</button>}</div></div>
+            {page === 'overview' && <Overview overview={overview} range={range} setRange={setRange} onAction={showToast} onNavigate={selectPage} />}
             {page === 'servers' && <Servers onAction={showToast} onBind={() => setModal('server')} />}
             {page === 'plugins' && <Plugins plugins={filteredPlugins} onAction={showToast} onLoad={() => setModal('plugin')} />}
             {page === 'domains' && <Domains onAction={showToast} onAssign={() => setModal('domain')} />}
@@ -218,13 +229,16 @@ function App() {
   )
 }
 
-function Overview({ range, setRange, onAction, onNavigate }: { range: '24h' | '7d' | '30d'; setRange: (value: '24h' | '7d' | '30d') => void; onAction: (message: string) => void; onNavigate: (page: Page) => void }) {
+function Overview({ overview, range, setRange, onAction, onNavigate }: { overview: ApiOverview | null; range: '24h' | '7d' | '30d'; setRange: (value: '24h' | '7d' | '30d') => void; onAction: (message: string) => void; onNavigate: (page: Page) => void }) {
+  const onlineServers = overview?.onlineServers ?? 1
+  const enabledPlugins = overview?.enabledPlugins ?? 1
+  const domains = overview?.domains ?? 1
   return <>
     <div className="notice-bar"><div className="notice-icon"><ShieldCheck size={16} /></div><div><strong>演示工作区已就绪</strong><span>连接 GitHub OAuth 和第一台插件服务器后，平台会开始写入实时数据。</span></div><button onClick={() => onNavigate('settings')}>配置平台 <ArrowUpRight size={14} /></button></div>
     <section className="metric-grid">
-      <Metric label="在线服务器" value="1" suffix="/ 1" note="连接正常" icon={Server} tone="green" onClick={() => onNavigate('servers')} />
-      <Metric label="已启用插件" value="1" suffix="" note="通过健康检查" icon={Box} tone="blue" onClick={() => onNavigate('plugins')} />
-      <Metric label="公开域名" value="1" suffix="" note="1 个演示入口" icon={Globe2} tone="purple" onClick={() => onNavigate('domains')} />
+      <Metric label="在线服务器" value={String(onlineServers)} suffix={overview ? '' : '/ 1'} note={overview ? '来自 Worker API' : '演示数据'} icon={Server} tone="green" onClick={() => onNavigate('servers')} />
+      <Metric label="已启用插件" value={String(enabledPlugins)} suffix="" note={overview ? '来自 Worker API' : '演示数据'} icon={Box} tone="blue" onClick={() => onNavigate('plugins')} />
+      <Metric label="公开域名" value={String(domains)} suffix="" note={overview ? '来自 Worker API' : '演示数据'} icon={Globe2} tone="purple" onClick={() => onNavigate('domains')} />
       <Metric label="当前连接" value="0" suffix="" note="暂无 SSE / WebSocket" icon={Zap} tone="amber" onClick={() => onNavigate('usage')} />
     </section>
     <section className="content-grid two-thirds">
