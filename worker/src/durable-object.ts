@@ -1,6 +1,7 @@
 import { isManifest, makeFrame, MAX_CONTROL_FRAME_BYTES, parseControlFrame } from './protocol'
-import type { Env } from './types'
+import type { ControlFrame, Env } from './types'
 import { activateMaintenance, getPlatformSettings, releaseActiveConnection, reserveActiveConnection } from './usage'
+import { hashControlToken } from './security'
 
 const MAX_PROXY_REQUEST_BODY_BYTES = 32 * 1024
 const MAX_PROXY_RESPONSE_BODY_BYTES = 16 * 1024 * 1024
@@ -250,6 +251,7 @@ export class PluginBridge {
     const raw = typeof data === 'string' ? data : new TextDecoder().decode(data)
     const frame = parseControlFrame(raw)
     if (!frame) return
+    if (frame.serverId !== this.serverId) return
     if (frame.type === 'plugin.result' || frame.type === 'error') {
       const pending = this.pendingCommands.get(frame.requestId)
       if (!pending) return
@@ -265,6 +267,10 @@ export class PluginBridge {
     }
     if (frame.type === 'server.heartbeat') {
       void this.markServerOnline()
+      return
+    }
+    if (frame.type === 'server.rotate' || frame.type === 'server.revoke') {
+      void this.handleServerBindingAction(frame)
       return
     }
     if (frame.type === 'request.open') {
@@ -297,6 +303,43 @@ export class PluginBridge {
         if (this.reservedPublicConnections.delete(connectionId)) void releaseActiveConnection(this.env)
       } else this.closeResponse(connectionId, frame.payload ?? {})
     }
+  }
+
+  private async handleServerBindingAction(frame: ControlFrame) {
+    try {
+      if (frame.type === 'server.rotate') {
+        const accessToken = crypto.randomUUID() + crypto.randomUUID()
+        const updated = await this.env.DB.prepare('UPDATE servers SET token_hash = ?, status = ?, last_seen_at = ? WHERE id = ? AND status != ?').bind(await hashControlToken(accessToken), 'online', new Date().toISOString(), this.serverId, 'revoked').run()
+        if ((updated.meta.changes ?? 0) !== 1) {
+          this.sendServerActionError(frame.requestId, 'Server binding is revoked or unavailable')
+          return
+        }
+        const result = makeFrame('server.result', this.serverId, { ok: true, action: 'rotate', accessToken })
+        result.requestId = frame.requestId
+        this.serverSocket?.send(JSON.stringify(result))
+        return
+      }
+      const updated = await this.env.DB.batch([
+        this.env.DB.prepare('UPDATE servers SET status = ?, last_seen_at = ? WHERE id = ? AND status != ?').bind('revoked', new Date().toISOString(), this.serverId, 'revoked'),
+        this.env.DB.prepare('UPDATE plugin_instances SET state = ?, updated_at = ? WHERE server_id = ? AND state != ?').bind('server_offline', new Date().toISOString(), this.serverId, 'server_offline'),
+      ])
+      if ((updated[0]?.meta.changes ?? 0) !== 1) {
+        this.sendServerActionError(frame.requestId, 'Server binding is already revoked or unavailable')
+        return
+      }
+      const result = makeFrame('server.result', this.serverId, { ok: true, action: 'revoke' })
+      result.requestId = frame.requestId
+      this.serverSocket?.send(JSON.stringify(result))
+      setTimeout(() => this.serverSocket?.close(1000, 'Server binding revoked'), 50)
+    } catch {
+      this.sendServerActionError(frame.requestId, 'Server binding action failed')
+    }
+  }
+
+  private sendServerActionError(requestId: string, message: string) {
+    const frame = makeFrame('error', this.serverId, { message })
+    frame.requestId = requestId
+    this.serverSocket?.send(JSON.stringify(frame))
   }
 
   private openResponse(requestId: string, payload: Record<string, unknown>) {

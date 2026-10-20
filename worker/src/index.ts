@@ -374,7 +374,7 @@ async function connectServer(request: Request, env: Env, url: URL): Promise<Resp
   const token = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '')
   if (!token) return json({ error: 'Missing control token' }, 401)
   const tokenHash = await hashControlToken(token)
-  const server = await env.DB.prepare('SELECT id FROM servers WHERE id = ? AND token_hash = ?').bind(serverId, tokenHash).first<{ id: string }>()
+  const server = await env.DB.prepare('SELECT id FROM servers WHERE id = ? AND token_hash = ? AND status != ?').bind(serverId, tokenHash, 'revoked').first<{ id: string }>()
   if (!server) return json({ error: 'Invalid control token' }, 401)
   const id = env.PLUGIN_BRIDGE.idFromName(serverId)
   const bridge = env.PLUGIN_BRIDGE.get(id)
