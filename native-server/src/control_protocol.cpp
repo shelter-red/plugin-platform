@@ -36,6 +36,10 @@ std::string timestamp() {
 }  // namespace
 
 bool parse_control_frame(const std::string& raw, ControlFrame& frame, std::string& error) {
+  if (raw.size() > kMaxControlFrameBytes) {
+    error = "control frame is too large";
+    return false;
+  }
   try {
     const auto value = Json::parse(raw);
     if (!value.is_object() || value.value("protocolVersion", 0u) != kProtocolVersion || !value.contains("type") || !value.contains("requestId") || !value.contains("serverId") || !value.contains("timestamp") || !value.contains("nonce")) {

@@ -18,6 +18,10 @@ int main() {
     std::cerr << "invalid control frame was accepted\n";
     return 1;
   }
+  if (plugmesh::parse_control_frame(std::string(plugmesh::kMaxControlFrameBytes + 1, 'x'), decoded, error) || error != "control frame is too large") {
+    std::cerr << "oversized control frame was accepted\n";
+    return 1;
+  }
   const std::string binary("\x00\x01\x7f\x80\xff", 5);
   if (websocketpp::base64_decode(websocketpp::base64_encode(reinterpret_cast<const unsigned char*>(binary.data()), binary.size())) != binary) {
     std::cerr << "binary frame encoding round-trip failed\n";

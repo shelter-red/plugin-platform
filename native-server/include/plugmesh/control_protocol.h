@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 
@@ -10,6 +11,7 @@ namespace plugmesh {
 using Json = nlohmann::json;
 
 constexpr uint32_t kProtocolVersion = 1;
+constexpr std::size_t kMaxControlFrameBytes = 64 * 1024;
 
 struct ControlFrame {
   uint32_t protocol_version = kProtocolVersion;
