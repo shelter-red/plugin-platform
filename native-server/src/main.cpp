@@ -235,9 +235,15 @@ int main(int argc, char** argv) {
     std::cout << "plugmesh-server discovered " << plugins.snapshot().size() << " plugin(s) for " << resolved_config.server_id << '\n';
     plugmesh::ControlClient client(resolved_config, plugins);
     std::atomic<bool> rebind_requested{false};
+    std::atomic<bool> credential_action_active{false};
     plugmesh::LocalHttpServer local_http(local_port(), &plugins, [&client, &resolved_config] {
       return nlohmann::json{{"configured", true}, {"serverId", resolved_config.server_id}, {"workerUrl", resolved_config.worker_url}, {"credentialFile", resolved_config.credential_file.string()}, {"systemCredentialsAvailable", plugmesh::system_credentials_available()}, {"connected", client.connected()}};
-    }, local_ui_directory(), {}, [&logs] { return logs.snapshot(); }, [&client, &resolved_config, &rebind_requested](const std::string& action, const nlohmann::json& payload, std::string& action_error) {
+    }, local_ui_directory(), {}, [&logs] { return logs.snapshot(); }, [&client, &resolved_config, &rebind_requested, &credential_action_active](const std::string& action, const nlohmann::json& payload, std::string& action_error) {
+      credential_action_active = true;
+      struct ActionGuard {
+        std::atomic<bool>& active;
+        ~ActionGuard() { active = false; }
+      } guard{credential_action_active};
       const auto password = payload.value("credentialPassword", std::string());
       if (!resolved_config.credential_file.empty() && password.empty()) {
         action_error = "凭据文件模式必须提供凭据口令";
@@ -265,6 +271,7 @@ int main(int argc, char** argv) {
       if (!local_http.run(local_error) && !local_error.empty()) std::cerr << "plugmesh-server local UI: " << local_error << '\n';
     });
     const auto connected = client.run(error);
+    while (credential_action_active) std::this_thread::sleep_for(std::chrono::milliseconds(10));
     local_http.stop();
     if (local_thread.joinable()) local_thread.join();
     if (rebind_requested) {
