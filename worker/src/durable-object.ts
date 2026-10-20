@@ -500,11 +500,14 @@ export class PluginBridge {
       reserved = true
       const object = await this.env.BLOB_BUCKET.get(pending.r2Upload.key)
       if (!object?.body) throw new Error('R2 file stream is unavailable')
+      const tempObjectId = crypto.randomUUID()
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString()
+      await this.env.DB.prepare('INSERT INTO temp_objects (id, object_key, token_hash, content_type, size_bytes, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(tempObjectId, pending.r2Upload.key, await hashControlToken(crypto.randomUUID()), pending.responseHeaders?.get('content-type') ?? 'application/octet-stream', pending.bytes, expiresAt, new Date().toISOString()).run()
       this.pending.delete(requestId)
       this.releasePendingConnection(pending)
       const headers = new Headers(pending.responseHeaders)
       if (!headers.has('content-length')) headers.set('content-length', String(pending.bytes))
-      pending.resolve(new Response(this.consumeR2Stream(object.body, pending.r2Upload.key, pending.bytes), { status: pending.responseStatus ?? (typeof payload.status === 'number' ? payload.status : 200), headers }))
+      pending.resolve(new Response(this.consumeR2Stream(object.body, pending.r2Upload.key, pending.bytes, tempObjectId), { status: pending.responseStatus ?? (typeof payload.status === 'number' ? payload.status : 200), headers }))
     } catch {
       if (pending.r2Upload) await pending.r2Upload.writer.abort('Plugin file stream failed').catch(() => undefined)
       if (pending.r2Upload) await this.env.BLOB_BUCKET.delete(pending.r2Upload.key)
@@ -515,7 +518,7 @@ export class PluginBridge {
     }
   }
 
-  private consumeR2Stream(body: ReadableStream<Uint8Array>, key: string, bytes: number): ReadableStream<Uint8Array> {
+  private consumeR2Stream(body: ReadableStream<Uint8Array>, key: string, bytes: number, tempObjectId: string): ReadableStream<Uint8Array> {
     const reader = body.getReader()
     let cleaned = false
     let cleanupTimer = 0
@@ -523,7 +526,14 @@ export class PluginBridge {
       if (cleaned) return
       cleaned = true
       clearTimeout(cleanupTimer)
-      await Promise.all([this.env.BLOB_BUCKET.delete(key), releaseR2Usage(this.env, bytes)])
+      const consumedAt = new Date().toISOString()
+      const consumed = await this.env.DB.prepare('UPDATE temp_objects SET consumed_at = ? WHERE id = ? AND consumed_at IS NULL').bind(consumedAt, tempObjectId).run()
+      if ((consumed.meta.changes ?? 0) !== 1) return
+      if (await deleteR2ObjectWithRetry(this.env, key)) {
+        await releaseR2Usage(this.env, bytes)
+        return
+      }
+      await this.env.DB.prepare('UPDATE temp_objects SET consumed_at = NULL, expires_at = ? WHERE id = ? AND consumed_at = ?').bind(new Date().toISOString(), tempObjectId, consumedAt).run()
     }
     cleanupTimer = setTimeout(() => void cleanup(), 15 * 60 * 1000) as unknown as number
     return new ReadableStream<Uint8Array>({
@@ -633,6 +643,18 @@ export class PluginBridge {
     }
     await this.env.DB.prepare("UPDATE domains SET status = CASE WHEN (SELECT state FROM plugin_instances WHERE plugin_instances.id = domains.plugin_instance_id) = 'enabled' THEN 'online' ELSE 'offline' END WHERE plugin_instance_id IN (SELECT id FROM plugin_instances WHERE server_id = ?)").bind(this.serverId).run()
   }
+}
+
+async function deleteR2ObjectWithRetry(env: Env, objectKey: string): Promise<boolean> {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      await env.BLOB_BUCKET.delete(objectKey)
+      return true
+    } catch {
+      if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 100 * 2 ** (attempt - 1)))
+    }
+  }
+  return false
 }
 
 function responseHeaders(value: unknown): Headers {

@@ -155,7 +155,7 @@ async function consumeBlob(request: Request, env: Env, ctx: ExecutionContext, ur
     ctx.waitUntil(releaseR2Usage(env, object.size_bytes))
     return new Response('Resource not found', { status: 404 })
   }
-  ctx.waitUntil(env.BLOB_BUCKET.delete(object.object_key).then(() => releaseR2Usage(env, object.size_bytes)))
+  ctx.waitUntil(finalizeConsumedBlob(env, object.id, object.object_key, object.size_bytes, consumedAt))
   return new Response(blob.body, { headers: { 'content-type': object.content_type, 'content-length': String(blob.size), 'cache-control': 'no-store' } })
 }
 
@@ -165,14 +165,32 @@ async function cleanupExpiredBlobs(env: Env): Promise<void> {
   for (const object of expired.results) {
     const consumed = await env.DB.prepare('UPDATE temp_objects SET consumed_at = ? WHERE id = ? AND consumed_at IS NULL').bind(now, object.id).run()
     if ((consumed.meta.changes ?? 0) !== 1) continue
-    try {
-      await env.BLOB_BUCKET.delete(object.object_key)
-    } catch {
+    if (!await deleteR2ObjectWithRetry(env, object.object_key)) {
       await env.DB.prepare('UPDATE temp_objects SET consumed_at = NULL WHERE id = ? AND consumed_at = ?').bind(object.id, now).run()
       continue
     }
     await releaseR2Usage(env, object.size_bytes)
   }
+}
+
+async function finalizeConsumedBlob(env: Env, id: string, objectKey: string, sizeBytes: number, consumedAt: string): Promise<void> {
+  if (await deleteR2ObjectWithRetry(env, objectKey)) {
+    await releaseR2Usage(env, sizeBytes)
+    return
+  }
+  await env.DB.prepare('UPDATE temp_objects SET consumed_at = NULL, expires_at = ? WHERE id = ? AND consumed_at = ?').bind(new Date().toISOString(), id, consumedAt).run()
+}
+
+async function deleteR2ObjectWithRetry(env: Env, objectKey: string): Promise<boolean> {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      await env.BLOB_BUCKET.delete(objectKey)
+      return true
+    } catch {
+      if (attempt < 3) await wait(100 * 2 ** (attempt - 1))
+    }
+  }
+  return false
 }
 
 async function runScheduledMaintenance(env: Env): Promise<void> {
