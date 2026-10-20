@@ -64,8 +64,8 @@ bool contains_parent_segment(const std::string& resource) {
 
 }  // namespace
 
-LocalHttpServer::LocalHttpServer(uint16_t port, PluginManager* plugins, StatusProvider status_provider, std::filesystem::path ui_directory, RegistrationHandler registration_handler, LogProvider log_provider)
-    : port_(port), plugins_(plugins), status_provider_(std::move(status_provider)), ui_directory_(std::move(ui_directory)), registration_handler_(std::move(registration_handler)), log_provider_(std::move(log_provider)) {}
+LocalHttpServer::LocalHttpServer(uint16_t port, PluginManager* plugins, StatusProvider status_provider, std::filesystem::path ui_directory, RegistrationHandler registration_handler, LogProvider log_provider, CredentialActionHandler credential_action_handler)
+    : port_(port), plugins_(plugins), status_provider_(std::move(status_provider)), ui_directory_(std::move(ui_directory)), registration_handler_(std::move(registration_handler)), log_provider_(std::move(log_provider)), credential_action_handler_(std::move(credential_action_handler)) {}
 
 bool LocalHttpServer::run(std::string& error) {
   stopping_ = false;
@@ -182,6 +182,37 @@ void LocalHttpServer::handle_http(void* handle) {
       }
     } catch (const nlohmann::json::exception&) {
       set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", "registration payload must be valid JSON"}});
+    }
+    return;
+  }
+
+  if (method == "POST" && (resource == "/api/credentials/rotate" || resource == "/api/credentials/revoke")) {
+    if (!credential_action_handler_) {
+      set_json_response(connection, websocketpp::http::status_code::not_found, {{"ok", false}, {"error", "credential actions are unavailable"}});
+      return;
+    }
+    const auto body = connection->get_request_body();
+    if (body.size() > 16 * 1024) {
+      set_json_response(connection, websocketpp::http::status_code::request_entity_too_large, {{"ok", false}, {"error", "credential action request is too large"}});
+      return;
+    }
+    try {
+      const auto payload = nlohmann::json::parse(body.empty() ? "{}" : body);
+      if (!payload.is_object()) {
+        set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", "credential action payload must be an object"}});
+        return;
+      }
+      const auto action = resource.ends_with("/rotate") ? "rotate" : "revoke";
+      std::string error;
+      auto result = credential_action_handler_(action, payload, error);
+      if (!error.empty()) {
+        set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", error}});
+      } else {
+        result["ok"] = true;
+        set_json_response(connection, websocketpp::http::status_code::ok, result);
+      }
+    } catch (const nlohmann::json::exception&) {
+      set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", "credential action payload must be valid JSON"}});
     }
     return;
   }

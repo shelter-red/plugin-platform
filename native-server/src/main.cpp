@@ -211,41 +211,72 @@ int register_server(int argc, char** argv) {
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--register") return register_server(argc, argv);
   const auto config = plugmesh::load_config_from_environment();
-  std::string error;
   auto resolved_config = config;
-  if (!plugmesh::load_persisted_config(resolved_config, error) || !plugmesh::validate_config(resolved_config, error)) {
-    std::cerr << "plugmesh-server: entering local setup (" << error << ")\n";
-    if (!run_registration_setup(resolved_config, local_port(), local_ui_directory(), error)) {
+  while (true) {
+    std::string error;
+    if (!plugmesh::load_persisted_config(resolved_config, error) || !plugmesh::validate_config(resolved_config, error)) {
+      std::cerr << "plugmesh-server: entering local setup (" << error << ")\n";
+      if (!run_registration_setup(resolved_config, local_port(), local_ui_directory(), error)) {
+        std::cerr << "plugmesh-server: " << error << '\n';
+        return 2;
+      }
+    }
+    if (!plugmesh::validate_config(resolved_config, error)) {
       std::cerr << "plugmesh-server: " << error << '\n';
       return 2;
     }
+    LocalLogBuffer logs;
+    plugmesh::PluginManager plugins;
+    plugins.set_log_writer([&logs](int level, const char* message) { logs.append(level, message); });
+    if (!plugins.discover(resolved_config.plugin_directory, error)) {
+      std::cerr << "plugmesh-server: " << error << '\n';
+      return 2;
+    }
+    std::cout << "plugmesh-server discovered " << plugins.snapshot().size() << " plugin(s) for " << resolved_config.server_id << '\n';
+    plugmesh::ControlClient client(resolved_config, plugins);
+    std::atomic<bool> rebind_requested{false};
+    plugmesh::LocalHttpServer local_http(local_port(), &plugins, [&client, &resolved_config] {
+      return nlohmann::json{{"configured", true}, {"serverId", resolved_config.server_id}, {"workerUrl", resolved_config.worker_url}, {"credentialFile", resolved_config.credential_file.string()}, {"systemCredentialsAvailable", plugmesh::system_credentials_available()}, {"connected", client.connected()}};
+    }, local_ui_directory(), {}, [&logs] { return logs.snapshot(); }, [&client, &resolved_config, &rebind_requested](const std::string& action, const nlohmann::json& payload, std::string& action_error) {
+      const auto password = payload.value("credentialPassword", std::string());
+      if (!resolved_config.credential_file.empty() && password.empty()) {
+        action_error = "凭据文件模式必须提供凭据口令";
+        return nlohmann::json::object();
+      }
+      if (action == "rotate") {
+        std::string access_token;
+        if (!client.rotate_access_token(access_token, action_error)) return nlohmann::json::object();
+        const plugmesh::StoredCredentials credentials{resolved_config.worker_url, resolved_config.server_id, access_token};
+        if (!plugmesh::save_credentials(resolved_config.credential_file, credentials, password, action_error)) return nlohmann::json::object();
+        return nlohmann::json{{"storage", resolved_config.credential_file.empty() ? "system" : "file"}};
+      }
+      if (action == "revoke") {
+        if (!client.revoke_binding(action_error)) return nlohmann::json::object();
+        if (!plugmesh::remove_credentials(resolved_config.credential_file, action_error)) return nlohmann::json::object();
+        rebind_requested = true;
+        client.stop();
+        return nlohmann::json{{"rebindRequired", true}};
+      }
+      action_error = "unknown credential action";
+      return nlohmann::json::object();
+    });
+    std::string local_error;
+    std::thread local_thread([&local_http, &local_error] {
+      if (!local_http.run(local_error) && !local_error.empty()) std::cerr << "plugmesh-server local UI: " << local_error << '\n';
+    });
+    const auto connected = client.run(error);
+    local_http.stop();
+    if (local_thread.joinable()) local_thread.join();
+    if (rebind_requested) {
+      resolved_config.worker_url.clear();
+      resolved_config.server_id.clear();
+      resolved_config.access_token.clear();
+      continue;
+    }
+    if (!connected) {
+      std::cerr << "plugmesh-server: " << error << '\n';
+      return 1;
+    }
+    return 0;
   }
-  if (!plugmesh::validate_config(resolved_config, error)) {
-    std::cerr << "plugmesh-server: " << error << '\n';
-    return 2;
-  }
-  LocalLogBuffer logs;
-  plugmesh::PluginManager plugins;
-  plugins.set_log_writer([&logs](int level, const char* message) { logs.append(level, message); });
-  if (!plugins.discover(resolved_config.plugin_directory, error)) {
-    std::cerr << "plugmesh-server: " << error << '\n';
-    return 2;
-  }
-  std::cout << "plugmesh-server discovered " << plugins.snapshot().size() << " plugin(s) for " << resolved_config.server_id << '\n';
-  plugmesh::ControlClient client(resolved_config, plugins);
-  plugmesh::LocalHttpServer local_http(local_port(), &plugins, [&client, &resolved_config] {
-    return nlohmann::json{{"configured", true}, {"serverId", resolved_config.server_id}, {"workerUrl", resolved_config.worker_url}, {"credentialFile", resolved_config.credential_file.string()}, {"systemCredentialsAvailable", plugmesh::system_credentials_available()}, {"connected", client.connected()}};
-  }, local_ui_directory(), {}, [&logs] { return logs.snapshot(); });
-  std::string local_error;
-  std::thread local_thread([&local_http, &local_error] {
-    if (!local_http.run(local_error) && !local_error.empty()) std::cerr << "plugmesh-server local UI: " << local_error << '\n';
-  });
-  const auto connected = client.run(error);
-  local_http.stop();
-  if (local_thread.joinable()) local_thread.join();
-  if (!connected) {
-    std::cerr << "plugmesh-server: " << error << '\n';
-    return 1;
-  }
-  return 0;
 }
