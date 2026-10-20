@@ -154,8 +154,9 @@ async function cleanupExpiredBlobs(env: Env): Promise<void> {
   const now = new Date().toISOString()
   const expired = await env.DB.prepare('SELECT id, object_key, size_bytes FROM temp_objects WHERE consumed_at IS NULL AND expires_at <= ? LIMIT 100').bind(now).all<{ id: string; object_key: string; size_bytes: number }>()
   for (const object of expired.results) {
+    const consumed = await env.DB.prepare('UPDATE temp_objects SET consumed_at = ? WHERE id = ? AND consumed_at IS NULL').bind(now, object.id).run()
+    if ((consumed.meta.changes ?? 0) !== 1) continue
     await env.BLOB_BUCKET.delete(object.object_key)
-    await env.DB.prepare('UPDATE temp_objects SET consumed_at = ? WHERE id = ? AND consumed_at IS NULL').bind(now, object.id).run()
     await releaseR2Usage(env, object.size_bytes)
   }
 }
