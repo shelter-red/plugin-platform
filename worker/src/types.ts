@@ -8,6 +8,19 @@ export interface Env {
   CONSOLE_HOST?: string
   PLUGIN_DOMAIN_SUFFIX?: string
   CONTROL_TOKEN_SECRET?: string
+  GITHUB_CLIENT_ID?: string
+  GITHUB_CLIENT_SECRET?: string
+  GITHUB_REDIRECT_URI?: string
+  GITHUB_ALLOWLIST?: string
+  SESSION_SECRET?: string
+}
+
+export interface AuthenticatedUser {
+  id: string
+  github_id: string
+  email: string
+  display_name: string
+  role: 'super_admin' | 'member'
 }
 
 export interface ControlFrame {
