@@ -15,6 +15,8 @@ add_library(plugmesh_core STATIC
   src/control_protocol.cpp
   src/credential_store.cpp
   src/local_http_server.cpp
+  src/plugin_host_client.cpp
+  src/plugin_host_protocol.cpp
   src/plugin_loader.cpp
   src/plugin_manager.cpp
   src/registration_client.cpp
@@ -33,6 +35,9 @@ target_include_directories(plugmesh-sample PRIVATE include)
 add_library(plugmesh-lifecycle-sample SHARED examples/lifecycle_plugin.cpp)
 target_include_directories(plugmesh-lifecycle-sample PRIVATE include)
 
+add_library(plugmesh-crashing-sample SHARED examples/crashing_plugin.cpp)
+target_include_directories(plugmesh-crashing-sample PRIVATE include)
+
 file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/plugins/sample.plugin/manifest.json" CONTENT "{\n  \"id\": \"sample.plugin\",\n  \"name\": \"Sample Plugin\",\n  \"version\": \"0.1.0\",\n  \"abiVersion\": \"2\",\n  \"library\": \"$<TARGET_FILE_NAME:plugmesh-sample>\",\n  \"capabilities\": {\"http\": true, \"websocket\": true, \"sse\": true, \"fileStream\": true},\n  \"permissions\": [],\n  \"healthPath\": \"/health\"\n}\n")
 add_custom_command(TARGET plugmesh-sample POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/plugins/sample.plugin"
@@ -45,8 +50,14 @@ add_custom_command(TARGET plugmesh-lifecycle-sample POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:plugmesh-lifecycle-sample>" "${CMAKE_CURRENT_BINARY_DIR}/plugins/lifecycle.plugin/$<TARGET_FILE_NAME:plugmesh-lifecycle-sample>"
 )
 
+add_executable(plugmesh-plugin-host src/plugin_host_main.cpp)
+target_link_libraries(plugmesh-plugin-host PRIVATE plugmesh_core)
+
 add_executable(plugmesh-plugin-loader-smoke tests/plugin_loader_smoke.cpp)
 target_link_libraries(plugmesh-plugin-loader-smoke PRIVATE plugmesh_core)
+
+add_executable(plugmesh-plugin-host-smoke tests/plugin_host_smoke.cpp)
+target_link_libraries(plugmesh-plugin-host-smoke PRIVATE plugmesh_core)
 
 add_executable(plugmesh-plugin-manager-smoke tests/plugin_manager_smoke.cpp)
 target_link_libraries(plugmesh-plugin-manager-smoke PRIVATE plugmesh_core)
@@ -77,6 +88,7 @@ add_test(NAME plugmesh-control-client-smoke COMMAND plugmesh-control-client-smok
 add_test(NAME plugmesh-credential-store-smoke COMMAND plugmesh-credential-store-smoke)
 add_test(NAME plugmesh-registration-client-smoke COMMAND plugmesh-registration-client-smoke)
 add_test(NAME plugmesh-plugin-loader-smoke COMMAND plugmesh-plugin-loader-smoke $<TARGET_FILE:plugmesh-sample>)
+add_test(NAME plugmesh-plugin-host-smoke COMMAND plugmesh-plugin-host-smoke $<TARGET_FILE:plugmesh-plugin-host> $<TARGET_FILE:plugmesh-sample> $<TARGET_FILE:plugmesh-crashing-sample>)
 add_test(NAME plugmesh-plugin-manager-smoke COMMAND plugmesh-plugin-manager-smoke "${CMAKE_CURRENT_BINARY_DIR}/plugins")
 add_test(NAME plugmesh-plugin-websocket-lifecycle-smoke COMMAND plugmesh-plugin-websocket-lifecycle-smoke "${CMAKE_CURRENT_BINARY_DIR}/plugins")
 add_test(NAME plugmesh-local-http-server-smoke COMMAND plugmesh-local-http-server-smoke)
