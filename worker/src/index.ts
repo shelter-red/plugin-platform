@@ -835,7 +835,7 @@ type UsageSnapshot = {
   r2_objects: number
 }
 
-async function recordUsageSnapshot(env: Env): Promise<void> {
+export async function recordUsageSnapshot(env: Env): Promise<void> {
   const usage = await env.DB.prepare('SELECT request_count, active_connections, r2_bytes, r2_objects FROM platform_usage WHERE key = ?').bind('global').first<{ request_count: number; active_connections: number; r2_bytes: number; r2_objects: number }>()
   if (!usage) return
   const capturedAt = new Date().toISOString()

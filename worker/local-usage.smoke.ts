@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert'
-import { localUsageApi } from './src/index.ts'
+import { localUsageApi, recordUsageSnapshot } from './src/index.ts'
 import type { AuthenticatedUser, Env } from './src/types.ts'
 
 const snapshots = [
@@ -35,5 +35,30 @@ assert.deepEqual(await response.json(), {
 
 const forbidden = await localUsageApi(env, member)
 assert.equal(forbidden.status, 403)
+
+const snapshotWrites: unknown[][] = []
+const snapshotDatabase = {
+  prepare(sql: string) {
+    let values: unknown[] = []
+    const query = {
+      bind: (...nextValues: unknown[]) => {
+        values = nextValues
+        return query
+      },
+      first: async <T>() => sql.includes('SELECT request_count, active_connections, r2_bytes, r2_objects') ? { request_count: 21, active_connections: 4, r2_bytes: 16384, r2_objects: 3 } as T : null,
+      run: async () => {
+        if (sql.includes('INSERT INTO usage_snapshots')) snapshotWrites.push(values)
+        return { meta: { changes: 1 } }
+      },
+    }
+    return query
+  },
+}
+await recordUsageSnapshot({ DB: snapshotDatabase } as unknown as Env)
+assert.equal(snapshotWrites.length, 1)
+assert.equal(snapshotWrites[0][1], 21)
+assert.equal(snapshotWrites[0][2], 4)
+assert.equal(snapshotWrites[0][3], 16384)
+assert.equal(snapshotWrites[0][4], 3)
 
 console.log('local usage smoke test passed')
