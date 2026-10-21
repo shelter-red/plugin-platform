@@ -57,3 +57,27 @@ test('路由缓存命中期间沿用旧状态，插件停用后立即失效', { 
   expect(audit?.action).toBe('plugin.disable')
   socket.close(1000, 'test complete')
 })
+
+test('插件状态与域名状态在同一事务内更新，域名写入失败时整体回滚', { timeout: 20_000 }, async () => {
+  const hostname = await seedServer()
+  await seedSession()
+  await testEnv.DB.prepare("CREATE TRIGGER fail_domain_update BEFORE UPDATE ON domains BEGIN SELECT RAISE(ABORT, 'forced domain update failure'); END").run()
+  const { socket, channel } = await openControl()
+
+  const disablePending = channel.next()
+  const disable = api('/api/plugins/plugin-runtime/disable', { method: 'POST' })
+  const disableFrame = await disablePending
+  expect(disableFrame.type).toBe('plugin.disable')
+  sendFrame(socket, 'plugin.result', { ok: true, state: 'disabled' }, disableFrame.requestId)
+  const response = await disable.catch(() => null)
+  expect(response?.status ?? 500).toBe(500)
+
+  const plugin = await testEnv.DB.prepare('SELECT state, desired_state FROM plugin_instances WHERE id = ?').bind('plugin-runtime').first<{ state: string; desired_state: string }>()
+  const domain = await testEnv.DB.prepare('SELECT status FROM domains WHERE hostname = ?').bind(hostname).first<{ status: string }>()
+  const audit = await testEnv.DB.prepare("SELECT COUNT(*) AS count FROM audit_log WHERE action = 'plugin.disable'").first<{ count: number }>()
+  expect(plugin).toEqual({ state: 'enabled', desired_state: 'enabled' })
+  expect(domain?.status).toBe('online')
+  expect(audit?.count).toBe(0)
+  await testEnv.DB.prepare('DROP TRIGGER fail_domain_update').run()
+  socket.close(1000, 'test complete')
+})
