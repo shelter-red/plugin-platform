@@ -9,7 +9,8 @@ test('local UI session flow is responsive', async ({ page }) => {
   await expect(page.getByRole('heading', { name: '登录本地控制台' })).toBeVisible()
   await page.getByLabel('本地 UI 口令').fill('wrong-password')
   await page.getByRole('button', { name: '登录' }).click()
-  await expect(page.getByRole('alert')).toContainText('invalid local UI password')
+  await expect(page.getByRole('alert')).toContainText('本地 UI 口令不正确')
+  await expect(page.getByRole('alert')).not.toContainText('invalid local UI password')
 
   await page.getByLabel('本地 UI 口令').fill('smoke-password')
   await page.getByRole('button', { name: '登录' }).click()
@@ -106,6 +107,15 @@ test('local UI switches between Chinese and English and persists the choice', as
   expect(await page.evaluate(() => localStorage.getItem('plugmesh-local-language'))).toBe('en')
 
   await page.reload()
+  await expect(page.getByRole('heading', { name: 'Plugin server' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Sign out' }).click()
+  await expect(page.getByRole('heading', { name: 'Sign in to local console' })).toBeVisible()
+  await page.getByLabel('Local UI password', { exact: true }).fill('wrong-password')
+  await page.getByRole('button', { name: 'Sign in' }).click()
+  await expect(page.getByRole('alert')).toContainText('The local UI password is incorrect')
+  await page.getByLabel('Local UI password', { exact: true }).fill('smoke-password')
+  await page.getByRole('button', { name: 'Sign in' }).click()
   await expect(page.getByRole('heading', { name: 'Plugin server' })).toBeVisible()
 
   await page.getByRole('button', { name: 'Switch language' }).click()

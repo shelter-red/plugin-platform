@@ -111,6 +111,13 @@ bool expect_status(const HttpResponse& response, int expected, const char* opera
   return false;
 }
 
+bool expect_code(const HttpResponse& response, const char* expected, const char* operation) {
+  const auto code = Json::parse(response.body).value("code", std::string());
+  if (code == expected) return true;
+  std::cerr << operation << " returned code " << code << ", expected " << expected << '\n';
+  return false;
+}
+
 std::string session_cookie(const HttpResponse& response) {
   const auto iterator = response.headers.find("set-cookie");
   if (iterator == response.headers.end()) return {};
@@ -155,11 +162,11 @@ bool run_authenticated_server(uint16_t port) {
     return false;
   }
 
-  if (!http_request(port, "GET", "/api/status", "", "", response, error) || !expect_status(response, 401, "unauthenticated status")) {
+  if (!http_request(port, "GET", "/api/status", "", "", response, error) || !expect_status(response, 401, "unauthenticated status") || !expect_code(response, "authentication_required", "unauthenticated status")) {
     stop_server();
     return false;
   }
-  if (!http_request(port, "POST", "/api/session", R"({"password":"wrong-password"})", "", response, error) || !expect_status(response, 401, "invalid login")) {
+  if (!http_request(port, "POST", "/api/session", R"({"password":"wrong-password"})", "", response, error) || !expect_status(response, 401, "invalid login") || !expect_code(response, "invalid_password", "invalid login")) {
     stop_server();
     return false;
   }
@@ -185,7 +192,7 @@ bool run_authenticated_server(uint16_t port) {
     stop_server();
     return false;
   }
-  if (!http_request(port, "GET", "/api/status", "", "", response, error) || !expect_status(response, 401, "logged out status")) {
+  if (!http_request(port, "GET", "/api/status", "", "", response, error) || !expect_status(response, 401, "logged out status") || !expect_code(response, "authentication_required", "logged out status")) {
     stop_server();
     return false;
   }
@@ -218,6 +225,10 @@ bool run_password_setup_server(uint16_t port) {
   if (!Json::parse(response.body).value("passwordSetupRequired", false)) {
     stop_server();
     std::cerr << "password setup status was not reported\n";
+    return false;
+  }
+  if (!http_request(port, "POST", "/api/session", R"({"password":"new-password"})", "", response, error) || !expect_status(response, 409, "login before password setup") || !expect_code(response, "password_setup_required", "login before password setup")) {
+    stop_server();
     return false;
   }
   if (!http_request(port, "POST", "/api/session/password", R"({"password":"new-password","passwordConfirmation":"new-password"})", "", response, error) || !expect_status(response, 200, "password setup")) {

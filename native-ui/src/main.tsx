@@ -76,7 +76,6 @@ interface ActionResult {
   pluginId: string
   action: string
   state: PluginState
-  error?: string
 }
 
 interface LocalLog {
@@ -86,16 +85,48 @@ interface LocalLog {
 }
 
 class RequestError extends Error {
-  constructor(message: string, readonly status: number) {
+  constructor(message: string, readonly status: number, readonly code?: string) {
     super(message)
   }
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init)
-  const data = await response.json().catch(() => null) as { error?: string } | null
-  if (!response.ok) throw new RequestError(data?.error || i18n.t('errors.requestFailed', { status: response.status }), response.status)
+  const data = await response.json().catch(() => null) as { error?: string; code?: string } | null
+  if (!response.ok) throw new RequestError(data?.error ?? '', response.status, data?.code)
   return data as T
+}
+
+// 本地服务返回的 error 文本面向开发；UI 只按错误码或状态码给出本地化文案，避免英文外泄。
+const errorCodeKeys: Record<string, string> = {
+  password_too_short: 'errors.passwordTooShort',
+  password_mismatch: 'errors.passwordMismatch',
+  password_setup_failed: 'errors.passwordSetupFailed',
+  registration_failed: 'errors.bindFailed',
+  plugin_action_failed: 'errors.pluginActionFailed',
+  health_check_failed: 'errors.healthCheckFailed',
+  credential_action_failed: 'errors.credentialActionFailed',
+}
+
+const httpErrorKey = (status: number) => {
+  if (status === 401) return 'errors.http.unauthorized'
+  if (status === 403) return 'errors.http.forbidden'
+  if (status === 404) return 'errors.http.notFound'
+  if (status === 409) return 'errors.http.conflict'
+  if (status === 429) return 'errors.http.rateLimited'
+  if (status >= 500) return 'errors.http.serverError'
+  return 'errors.http.failed'
+}
+
+function errorMessage(error: unknown, fallbackKey: string): string {
+  if (error instanceof RequestError) {
+    const key = error.code ? errorCodeKeys[error.code] ?? `errors.code.${error.code}` : undefined
+    if (key && i18n.exists(key)) return i18n.t(key)
+    if (/[\u4e00-\u9fa5]/.test(error.message)) return error.message
+    return i18n.t(httpErrorKey(error.status), { status: error.status })
+  }
+  if (error instanceof Error && i18n.exists(error.message)) return i18n.t(error.message)
+  return i18n.t(fallbackKey)
 }
 
 function formatTime(date: Date) {
@@ -157,7 +188,7 @@ function App() {
       setSessionError(null)
       return nextSession
     } catch (cause) {
-      setSessionError(cause instanceof Error ? cause.message : t('errors.localServerUnavailable'))
+      setSessionError(errorMessage(cause, 'errors.localServerUnavailable'))
       return null
     } finally {
       setSessionLoading(false)
@@ -181,7 +212,7 @@ function App() {
       setLastUpdated(new Date())
     } catch (cause) {
       if (cause instanceof RequestError && cause.status === 401) void loadSession()
-      else setError(cause instanceof Error ? cause.message : t('errors.localServerUnavailable'))
+      else setError(errorMessage(cause, 'errors.localServerUnavailable'))
     } finally {
       setLoading(false)
       setRefreshing(false)
@@ -211,7 +242,7 @@ function App() {
         setSetupForm((current) => ({ ...current, credentialFile: current.credentialFile || nextStatus.credentialFile || '' }))
         setSessionError(null)
       })
-      .catch((cause) => setSessionError(cause instanceof Error ? cause.message : t('errors.setupStatusFailed')))
+      .catch((cause) => setSessionError(errorMessage(cause, 'errors.setupStatusFailed')))
   }, [session])
   useEffect(() => {
     if (!session?.authenticated) return
@@ -244,7 +275,7 @@ function App() {
       setLoginPassword('')
       await loadSession()
     } catch (cause) {
-      setSessionError(cause instanceof Error ? cause.message : t('errors.loginFailed'))
+      setSessionError(errorMessage(cause, 'errors.loginFailed'))
     } finally {
       setAccessBusy(false)
     }
@@ -266,7 +297,7 @@ function App() {
       setMigrationForm({ password: '', passwordConfirmation: '', credentialPassword: '' })
       await loadSession()
     } catch (cause) {
-      setSessionError(cause instanceof Error ? cause.message : t('errors.passwordSetupFailed'))
+      setSessionError(errorMessage(cause, 'errors.passwordSetupFailed'))
     } finally {
       setAccessBusy(false)
     }
@@ -289,7 +320,7 @@ function App() {
       setMessage({ kind: 'success', text: t('setup.success') })
       await waitForRestart()
     } catch (cause) {
-      setSessionError(cause instanceof Error ? cause.message : t('errors.bindFailed'))
+      setSessionError(errorMessage(cause, 'errors.bindFailed'))
     } finally {
       setAccessBusy(false)
     }
@@ -312,7 +343,7 @@ function App() {
       setMessage({ kind: 'success', text: t('plugins.stateChanged', { name: plugin.name, state: t(`state.${result.state}`, { defaultValue: result.state }) }) })
       await refresh()
     } catch (cause) {
-      setMessage({ kind: 'error', text: cause instanceof Error ? cause.message : t('errors.pluginActionFailed') })
+      setMessage({ kind: 'error', text: errorMessage(cause, 'errors.pluginActionFailed') })
     } finally {
       setBusyPlugin(null)
     }
@@ -321,11 +352,10 @@ function App() {
   const runHealth = async (plugin: LocalPlugin) => {
     setBusyPlugin(plugin.id)
     try {
-      const result = await request<{ ok: boolean; status: number; bodySize: number; error?: string }>(`/api/plugins/${encodeURIComponent(plugin.id)}/health`)
-      if (!result.ok) throw new Error(result.error || t('errors.healthCheckFailed'))
+      const result = await request<{ ok: boolean; status: number; bodySize: number }>(`/api/plugins/${encodeURIComponent(plugin.id)}/health`)
       setMessage({ kind: 'success', text: t('plugins.healthPassed', { name: plugin.name, status: result.status }) })
     } catch (cause) {
-      setMessage({ kind: 'error', text: cause instanceof Error ? cause.message : t('errors.healthCheckFailed') })
+      setMessage({ kind: 'error', text: errorMessage(cause, 'errors.healthCheckFailed') })
     } finally {
       setBusyPlugin(null)
     }
@@ -345,7 +375,7 @@ function App() {
       if (action === 'revoke') await waitForRestart()
       else await refresh(true)
     } catch (cause) {
-      setMessage({ kind: 'error', text: cause instanceof Error ? cause.message : t('errors.credentialActionFailed') })
+      setMessage({ kind: 'error', text: errorMessage(cause, 'errors.credentialActionFailed') })
     } finally {
       setCredentialBusy(null)
     }

@@ -225,52 +225,52 @@ void LocalHttpServer::handle_http(void* handle) {
   if (resource == "/api/session/password") {
     connection->append_header("Cache-Control", "no-store");
     if (method != "POST") {
-      set_json_response(connection, websocketpp::http::status_code::method_not_allowed, {{"ok", false}, {"error", "method not allowed"}});
+      set_json_response(connection, websocketpp::http::status_code::method_not_allowed, {{"ok", false}, {"error", "method not allowed"}, {"code", "method_not_allowed"}});
       return;
     }
     if (!configured || !local_ui_password_verifier_.empty() || !password_setup_handler_) {
-      set_json_response(connection, websocketpp::http::status_code::conflict, {{"ok", false}, {"error", "local UI password setup is unavailable"}});
+      set_json_response(connection, websocketpp::http::status_code::conflict, {{"ok", false}, {"error", "local UI password setup is unavailable"}, {"code", "password_setup_unavailable"}});
       return;
     }
     if (login_rate_limited()) {
       connection->append_header("Retry-After", "60");
-      set_json_response(connection, websocketpp::http::status_code::too_many_requests, {{"ok", false}, {"error", "too many password setup attempts"}});
+      set_json_response(connection, websocketpp::http::status_code::too_many_requests, {{"ok", false}, {"error", "too many password setup attempts"}, {"code", "too_many_password_attempts"}});
       return;
     }
     const auto body = connection->get_request_body();
     if (body.size() > 16 * 1024) {
-      set_json_response(connection, websocketpp::http::status_code::request_entity_too_large, {{"ok", false}, {"error", "password setup request is too large"}});
+      set_json_response(connection, websocketpp::http::status_code::request_entity_too_large, {{"ok", false}, {"error", "password setup request is too large"}, {"code", "payload_too_large"}});
       return;
     }
     try {
       const auto payload = nlohmann::json::parse(body.empty() ? "{}" : body);
       if (!payload.is_object()) {
-        set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", "password setup payload must be an object"}});
+        set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", "password setup payload must be an object"}, {"code", "invalid_payload"}});
         return;
       }
       const auto password = payload.value("password", std::string());
       const auto confirmation = payload.value("passwordConfirmation", std::string());
       if (password.size() < 8 || password != confirmation) {
-        set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", password.size() < 8 ? "local UI password must contain at least 8 characters" : "local UI password confirmation does not match"}});
+        set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", password.size() < 8 ? "local UI password must contain at least 8 characters" : "local UI password confirmation does not match"}, {"code", password.size() < 8 ? "password_too_short" : "password_mismatch"}});
         return;
       }
       std::string verifier;
       std::string error;
       if (!make_local_ui_password_verifier(password, verifier, error) || !password_setup_handler_(verifier, payload, error)) {
         record_failed_login();
-        set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", error.empty() ? "unable to save local UI password" : error}});
+        set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", error.empty() ? "unable to save local UI password" : error}, {"code", "password_setup_failed"}});
         return;
       }
       local_ui_password_verifier_ = verifier;
       std::string token;
       if (!create_session(token, error)) {
-        set_json_response(connection, websocketpp::http::status_code::internal_server_error, {{"ok", false}, {"error", error}});
+        set_json_response(connection, websocketpp::http::status_code::internal_server_error, {{"ok", false}, {"error", error}, {"code", "session_creation_failed"}});
         return;
       }
       connection->append_header("Set-Cookie", std::string(kSessionCookieName) + "=" + token + "; Path=/; HttpOnly; SameSite=Strict");
       set_json_response(connection, websocketpp::http::status_code::ok, {{"ok", true}, {"authenticated", true}, {"passwordConfigured", true}});
     } catch (const nlohmann::json::exception&) {
-      set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", "password setup payload must be valid JSON"}});
+      set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", "password setup payload must be valid JSON"}, {"code", "invalid_payload"}});
     }
     return;
   }
@@ -294,12 +294,12 @@ void LocalHttpServer::handle_http(void* handle) {
       }
       if (login_rate_limited()) {
         connection->append_header("Retry-After", "60");
-        set_json_response(connection, websocketpp::http::status_code::too_many_requests, {{"ok", false}, {"error", "too many login attempts"}});
+        set_json_response(connection, websocketpp::http::status_code::too_many_requests, {{"ok", false}, {"error", "too many login attempts"}, {"code", "too_many_login_attempts"}});
         return;
       }
       const auto body = connection->get_request_body();
       if (body.size() > 4 * 1024) {
-        set_json_response(connection, websocketpp::http::status_code::request_entity_too_large, {{"ok", false}, {"error", "session request is too large"}});
+        set_json_response(connection, websocketpp::http::status_code::request_entity_too_large, {{"ok", false}, {"error", "session request is too large"}, {"code", "payload_too_large"}});
         return;
       }
       try {
@@ -307,19 +307,19 @@ void LocalHttpServer::handle_http(void* handle) {
         const auto password = payload.is_object() ? payload.value("password", std::string()) : std::string();
         if (!verify_local_ui_password(password, local_ui_password_verifier_)) {
           record_failed_login();
-          set_json_response(connection, websocketpp::http::status_code::unauthorized, {{"ok", false}, {"error", "invalid local UI password"}});
+          set_json_response(connection, websocketpp::http::status_code::unauthorized, {{"ok", false}, {"error", "invalid local UI password"}, {"code", "invalid_password"}});
           return;
         }
         std::string token;
         std::string error;
         if (!create_session(token, error)) {
-          set_json_response(connection, websocketpp::http::status_code::internal_server_error, {{"ok", false}, {"error", error}});
+          set_json_response(connection, websocketpp::http::status_code::internal_server_error, {{"ok", false}, {"error", error}, {"code", "session_creation_failed"}});
           return;
         }
         connection->append_header("Set-Cookie", std::string(kSessionCookieName) + "=" + token + "; Path=/; HttpOnly; SameSite=Strict");
         set_json_response(connection, websocketpp::http::status_code::ok, {{"ok", true}, {"authenticated", true}});
       } catch (const nlohmann::json::exception&) {
-        set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", "session payload must be valid JSON"}});
+        set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", "session payload must be valid JSON"}, {"code", "invalid_payload"}});
       }
       return;
     }
@@ -329,7 +329,7 @@ void LocalHttpServer::handle_http(void* handle) {
       set_json_response(connection, websocketpp::http::status_code::ok, {{"ok", true}, {"authenticated", false}});
       return;
     }
-    set_json_response(connection, websocketpp::http::status_code::method_not_allowed, {{"ok", false}, {"error", "method not allowed"}});
+    set_json_response(connection, websocketpp::http::status_code::method_not_allowed, {{"ok", false}, {"error", "method not allowed"}, {"code", "method_not_allowed"}});
     return;
   }
 
@@ -337,7 +337,7 @@ void LocalHttpServer::handle_http(void* handle) {
     bool forbidden = false;
     if (serve_static(handle, resource, forbidden)) return;
     if (forbidden) {
-      set_json_response(connection, websocketpp::http::status_code::forbidden, {{"ok", false}, {"error", "forbidden path"}});
+      set_json_response(connection, websocketpp::http::status_code::forbidden, {{"ok", false}, {"error", "forbidden path"}, {"code", "forbidden_path"}});
       return;
     }
   }
@@ -363,60 +363,60 @@ void LocalHttpServer::handle_http(void* handle) {
 
   if (method == "POST" && resource == "/api/register") {
     if (!registration_handler_) {
-      set_json_response(connection, websocketpp::http::status_code::not_found, {{"ok", false}, {"error", "registration is unavailable"}});
+      set_json_response(connection, websocketpp::http::status_code::not_found, {{"ok", false}, {"error", "registration is unavailable"}, {"code", "registration_unavailable"}});
       return;
     }
     const auto body = connection->get_request_body();
     if (body.size() > 16 * 1024) {
-      set_json_response(connection, websocketpp::http::status_code::request_entity_too_large, {{"ok", false}, {"error", "registration request is too large"}});
+      set_json_response(connection, websocketpp::http::status_code::request_entity_too_large, {{"ok", false}, {"error", "registration request is too large"}, {"code", "payload_too_large"}});
       return;
     }
     try {
       const auto payload = nlohmann::json::parse(body.empty() ? "{}" : body);
       if (!payload.is_object()) {
-        set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", "registration payload must be an object"}});
+        set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", "registration payload must be an object"}, {"code", "invalid_payload"}});
         return;
       }
       std::string error;
       auto result = registration_handler_(payload, error);
-      if (!error.empty()) set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", error}});
+      if (!error.empty()) set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", error}, {"code", "registration_failed"}});
       else {
         result["ok"] = true;
         set_json_response(connection, websocketpp::http::status_code::created, result);
       }
     } catch (const nlohmann::json::exception&) {
-      set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", "registration payload must be valid JSON"}});
+      set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", "registration payload must be valid JSON"}, {"code", "invalid_payload"}});
     }
     return;
   }
 
   if (method == "POST" && (resource == "/api/credentials/rotate" || resource == "/api/credentials/revoke")) {
     if (!credential_action_handler_) {
-      set_json_response(connection, websocketpp::http::status_code::not_found, {{"ok", false}, {"error", "credential actions are unavailable"}});
+      set_json_response(connection, websocketpp::http::status_code::not_found, {{"ok", false}, {"error", "credential actions are unavailable"}, {"code", "credential_actions_unavailable"}});
       return;
     }
     const auto body = connection->get_request_body();
     if (body.size() > 16 * 1024) {
-      set_json_response(connection, websocketpp::http::status_code::request_entity_too_large, {{"ok", false}, {"error", "credential action request is too large"}});
+      set_json_response(connection, websocketpp::http::status_code::request_entity_too_large, {{"ok", false}, {"error", "credential action request is too large"}, {"code", "payload_too_large"}});
       return;
     }
     try {
       const auto payload = nlohmann::json::parse(body.empty() ? "{}" : body);
       if (!payload.is_object()) {
-        set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", "credential action payload must be an object"}});
+        set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", "credential action payload must be an object"}, {"code", "invalid_payload"}});
         return;
       }
       const auto action = resource.ends_with("/rotate") ? "rotate" : "revoke";
       std::string error;
       auto result = credential_action_handler_(action, payload, error);
       if (!error.empty()) {
-        set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", error}});
+        set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", error}, {"code", "credential_action_failed"}});
       } else {
         result["ok"] = true;
         set_json_response(connection, websocketpp::http::status_code::ok, result);
       }
     } catch (const nlohmann::json::exception&) {
-      set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", "credential action payload must be valid JSON"}});
+      set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", "credential action payload must be valid JSON"}, {"code", "invalid_payload"}});
     }
     return;
   }
@@ -464,7 +464,10 @@ void LocalHttpServer::handle_http(void* handle) {
       std::string error;
       const auto ok = plugins_->health(plugin_id, response, error);
       auto result = nlohmann::json{{"ok", ok}, {"pluginId", plugin_id}, {"status", response.status}, {"bodySize", response.body.size}};
-      if (!ok) result["error"] = error;
+      if (!ok) {
+        result["error"] = error;
+        result["code"] = "health_check_failed";
+      }
       set_json_response(connection, ok ? websocketpp::http::status_code::ok : websocketpp::http::status_code::bad_request, result);
       return;
     }
@@ -484,22 +487,26 @@ void LocalHttpServer::handle_http(void* handle) {
       else if (action == "disable") ok = plugins_->disable(plugin_id, error);
       else if (action == "reload") ok = plugins_->reload(plugin_id, error);
       else {
-        set_json_response(connection, websocketpp::http::status_code::not_found, {{"ok", false}, {"error", "unknown plugin action"}});
+        set_json_response(connection, websocketpp::http::status_code::not_found, {{"ok", false}, {"error", "unknown plugin action"}, {"code", "unknown_plugin_action"}});
         return;
       }
       const auto info = plugins_->info_snapshot(plugin_id);
-      const auto response = nlohmann::json{{"ok", ok}, {"pluginId", plugin_id}, {"action", action}, {"state", info ? plugin_state_name(info->state) : "unknown"}, {"error", ok ? "" : error}};
+      auto response = nlohmann::json{{"ok", ok}, {"pluginId", plugin_id}, {"action", action}, {"state", info ? plugin_state_name(info->state) : "unknown"}};
+      if (!ok) {
+        response["error"] = error;
+        response["code"] = "plugin_action_failed";
+      }
       set_json_response(connection, ok ? websocketpp::http::status_code::ok : websocketpp::http::status_code::bad_request, response);
       return;
     }
   }
 
   if (method != "GET" && method != "POST" && method != "DELETE") {
-    set_json_response(connection, websocketpp::http::status_code::method_not_allowed, {{"ok", false}, {"error", "method not allowed"}});
+    set_json_response(connection, websocketpp::http::status_code::method_not_allowed, {{"ok", false}, {"error", "method not allowed"}, {"code", "method_not_allowed"}});
     return;
   }
 
-  set_json_response(connection, websocketpp::http::status_code::not_found, {{"ok", false}, {"error", "not found"}});
+  set_json_response(connection, websocketpp::http::status_code::not_found, {{"ok", false}, {"error", "not found"}, {"code", "not_found"}});
 }
 
 }  // namespace plugmesh
