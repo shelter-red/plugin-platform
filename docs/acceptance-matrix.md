@@ -94,7 +94,8 @@ cmake -S native-server -B /tmp/build-win -DCMAKE_TOOLCHAIN_FILE=native-server/cm
   -DOPENSSL_ROOT_DIR=/opt/mingw-openssl -DCMAKE_BUILD_TYPE=Release
                                          13 个 PE32+ 可执行文件与三个示例 .dll 交叉编译通过
 wine64 ./plugmesh-*-smoke.exe            10/10 passed（Wine 5.0，Windows 构建产物；非真实 Windows）
-ctest --output-on-failure                 10/10 passed
+cd native-server/build && ctest --output-on-failure
+                                         10/10 passed（本机 ctest 3.16 不支持 --test-dir，须先进入构建目录，否则会以 0 个测试「通过」）
 PLUGMESH_REAL_STACK_URL=http://127.0.0.1:18888 npm run stack:streams
                                          1 passed（SSE 首帧 data: sample-plugin、WebSocket 回显 hello-ws、18 字节小文件直返、8 MiB 大文件经 R2 中转且用量归零）
 PLUGMESH_REAL_STACK_URL=http://127.0.0.1:18888 npm run stack:load
