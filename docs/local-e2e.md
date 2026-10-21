@@ -248,7 +248,46 @@ npm run stack:restart
 
 用例断言：重启前公开入口返回 200；`docker restart` 后 `/api/health` 恢复 200；公开入口重新返回 200 且正文含 `ok`（此时新 isolate 缓存必然为空，只能由 D1 回源）；服务器记录回到 `online`（真实 `plugmesh-server` 自动重连）。2026-10-21 实测 `1 passed`。
 
-边界：单容器单 isolate，只验证本 isolate 的冷回源；多 isolate 之间的缓存传播仍未验证。
+边界：单容器单 isolate，只验证本 isolate 的冷回源；跨 isolate 的缓存独立性见下一节。
+
+## 多 isolate 路由缓存验证
+
+路由缓存是每个 isolate 自己的内存 Map，按设计不跨 isolate 共享，靠 5 秒 TTL 回源 D1 收敛。用两个 `wrangler dev` 进程共享同一 D1 持久目录即可模拟两个 isolate（宿主机持久目录以首个实例的 `--persist-to` 为准，下例为 `/tmp/plugmesh-load-data2`）：
+
+```bash
+docker run -d --name plugmesh-e2e-b \
+  --user "$(id -u):$(id -g)" -e HOME=/tmp \
+  -p 127.0.0.1:18889:18889 \
+  -v "$PWD":/app \
+  -v /tmp/plugmesh-load-data2:/data \
+  -v /etc/ssl/certs:/etc/ssl/certs:ro \
+  -w /app node:22-bookworm-slim \
+  sh -c "npx wrangler dev --config worker/wrangler.toml --ip 0.0.0.0 --port 18889 --persist-to /data"
+```
+
+两个进程各自持有独立 workerd isolate，但读写同一份 D1 SQLite 文件。本地 D1 文件路径：
+
+```bash
+find /tmp/plugmesh-load-data2/v3/d1 -name '*.sqlite' ! -name 'metadata.sqlite'
+```
+
+运行用例：
+
+```bash
+PLUGMESH_MULTI_ISOLATE_A_URL=http://127.0.0.1:18888 \
+PLUGMESH_MULTI_ISOLATE_B_URL=http://127.0.0.1:18889 \
+PLUGMESH_D1_SQLITE=/tmp/plugmesh-load-data2/v3/d1/miniflare-D1DatabaseObject/<hash>.sqlite \
+npm run stack:multi-isolate
+```
+
+用例用 Node 标准库 `node:sqlite` 直接写 D1，绕开任一 isolate 的失效逻辑：
+
+- A 先请求未知域名得到 404，建立 5 秒负缓存；
+- 写入 `domains` 行后，A 立即再次请求仍是 404，说明缓存没有跨 isolate 失效；
+- B 首次请求该域名，只能回源 D1，立即得到 503（种子服务器离线）；
+- 6 秒后 A 的 TTL 到期，回源 D1 收敛为与 B 相同的 503。
+
+2026-10-21 实测 `1 passed`。边界：两个实例在同一台机器，只模拟 isolate 之间不共享缓存；真实 Cloudflare 多地域传播与 D1 跨地域读一致性仍未验证。
 
 ## 清理
 

@@ -43,7 +43,8 @@
     "native-ui:smoke:wine": "bash native-ui/run-wine-smoke.sh",
     "stack:load": "playwright test --config playwright.load.config.ts",
     "stack:maintenance": "playwright test --config playwright.maintenance.config.ts",
-    "stack:restart": "playwright test --config playwright.restart.config.ts"
+    "stack:restart": "playwright test --config playwright.restart.config.ts",
+    "stack:multi-isolate": "playwright test --config playwright.multi-isolate.config.ts"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
