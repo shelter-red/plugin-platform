@@ -30,6 +30,42 @@ test('真实 Durable Object 以 SSE 流式返回插件数据并在结束后释�
   socket.close(1000, 'test complete')
 })
 
+test('客户端主动断开 SSE 后立即释放连接并通知插件关闭流', { timeout: 10_000 }, async () => {
+  const hostname = await seedServer()
+  const { socket, channel } = await openControl()
+  const responsePromise = publicRequest(hostname, '/events', { headers: { accept: 'text/event-stream' } })
+  const open = await channel.next()
+  expect(open.type).toBe('stream.open')
+  sendFrame(socket, 'stream.chunk', { data: 'data: first\n\n' }, open.requestId)
+
+  const response = await responsePromise
+  await response.body?.cancel('client disconnected')
+
+  const closed = await channel.next()
+  expect(closed.type).toBe('stream.close')
+  expect(closed.requestId).toBe(open.requestId)
+  expect(closed.pluginId).toBe('sample.runtime')
+  expect(closed.payload?.streamId).toBe(open.requestId)
+  expect(closed.payload?.connectionId).toBeUndefined()
+  expect(closed.payload?.reason).toBe('Client disconnected')
+
+  await expect.poll(async () => {
+    const row = await testEnv.DB.prepare('SELECT active_connections FROM platform_usage WHERE key = ?').bind('global').first<{ active_connections: number }>()
+    return row?.active_connections ?? 0
+  }, { timeout: 2_000 }).toBe(0)
+
+  sendFrame(socket, 'stream.chunk', { data: 'data: ignored\n\n' }, open.requestId)
+  const after = publicRequest(hostname, '/after-disconnect')
+  const afterFrame = await channel.next()
+  expect(afterFrame.type).toBe('request.open')
+  expect(afterFrame.payload?.path).toBe('/after-disconnect')
+  sendFrame(socket, 'request.open', { status: 200, headers: { 'content-type': 'text/plain' } }, afterFrame.requestId)
+  sendFrame(socket, 'request.chunk', { data: btoa('still alive'), encoding: 'base64' }, afterFrame.requestId)
+  sendFrame(socket, 'request.close', {}, afterFrame.requestId)
+  expect(await (await after).text()).toBe('still alive')
+  socket.close(1000, 'test complete')
+})
+
 async function largeFileRoundTrip(declaredLength: boolean): Promise<void> {
   const hostname = await seedServer()
   const { socket, channel } = await openControl()

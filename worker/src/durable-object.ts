@@ -18,6 +18,8 @@ type PendingResponse = {
   writer?: WritableStreamDefaultWriter<Uint8Array>
   buffered: Uint8Array[]
   activeConnection?: boolean
+  pluginId?: string
+  sse?: boolean
   bytes: number
   fileStream?: boolean
   responseStatus?: number
@@ -116,7 +118,7 @@ export class PluginBridge {
       activeConnection = true
     }
     const response = new Promise<Response>((resolve) => {
-      const pending: PendingResponse = { resolve, timer: 0, buffered: [], activeConnection, bytes: 0, fileWriteChain: Promise.resolve() }
+      const pending: PendingResponse = { resolve, timer: 0, buffered: [], activeConnection, pluginId, sse, bytes: 0, fileWriteChain: Promise.resolve() }
       pending.timer = setTimeout(() => {
         this.pending.delete(requestId)
         pending.buffered = []
@@ -426,7 +428,7 @@ export class PluginBridge {
     }
     const stream = new TransformStream<Uint8Array, Uint8Array>()
     pending.writer = stream.writable.getWriter()
-    void pending.writer.closed.catch(() => this.releasePendingConnection(pending))
+    void pending.writer.closed.catch(() => this.cancelPendingResponse(requestId, pending, 'Client disconnected'))
     pending.resolve(new Response(stream.readable, { status, headers }))
     for (const chunk of pending.buffered.splice(0)) void pending.writer.write(chunk).catch(() => this.rejectPendingResponse(requestId, pending, 'Plugin response stream failed'))
   }
@@ -627,6 +629,25 @@ export class PluginBridge {
     void this.discardR2Upload(pending)
     if (pending.writer) void pending.writer.abort(message).catch(() => undefined)
     else pending.resolve(new Response(message, { status: 502, headers: { 'content-type': 'text/plain; charset=utf-8' } }))
+  }
+
+  private cancelPendingResponse(requestId: string, pending: PendingResponse, reason: string) {
+    if (this.pending.get(requestId) !== pending) return
+    clearTimeout(pending.timer)
+    this.pending.delete(requestId)
+    pending.buffered = []
+    this.releasePendingConnection(pending)
+    void this.discardR2Upload(pending)
+    if (pending.writer) void pending.writer.abort(reason).catch(() => undefined)
+    else pending.resolve(new Response(reason, { status: 499 }))
+    if (!pending.sse || !pending.pluginId || this.serverSocket?.readyState !== WebSocket.OPEN) return
+    try {
+      const frame = makeFrame('stream.close', this.serverId, { streamId: requestId, reason }, pending.pluginId)
+      frame.requestId = requestId
+      this.serverSocket.send(JSON.stringify(frame))
+    } catch {
+      // The plugin server may disconnect while the public client is being cleaned up.
+    }
   }
 
   private releasePendingConnection(pending: PendingResponse) {
