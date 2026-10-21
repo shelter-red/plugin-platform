@@ -119,6 +119,17 @@ export default {
       durableObjects: 'Durable Object requests',
       allQuotas: 'View all quotas',
     },
+    errors: {
+      title: 'Recent errors and connection issues',
+      subtitle: 'Public requests that returned 5xx in the last 30 days',
+      viewAll: 'View access logs',
+      loadFailed: 'Could not read error summary',
+      loadingTitle: 'Reading error summary',
+      loadingBody: 'The Worker is checking recent public request errors.',
+      emptyTitle: 'No error summary',
+      emptyBody: 'No 5xx access errors in the last 30 days.',
+      unknownError: 'Unclassified error',
+    },
     activity: {
       title: 'Recent activity',
       subtitle: 'Latest platform events and configuration changes',

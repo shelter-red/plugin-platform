@@ -6,6 +6,8 @@ test('管理端桌面空态和主题切换可用', async ({ page }) => {
 
   await expect(page.getByRole('heading', { name: '总览', level: 1 })).toBeVisible()
   await expect(page.getByText('等待 Worker 数据').first()).toBeVisible()
+  await expect(page.getByRole('heading', { name: '最近错误和连接异常' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '暂无错误摘要' })).toBeVisible()
   await expect(page.locator('.app-shell')).toHaveClass(/theme-dark/)
   await expect(page).toHaveScreenshot('console-desktop-dark.png', { fullPage: true, animations: 'disabled' })
 

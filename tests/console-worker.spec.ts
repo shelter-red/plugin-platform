@@ -134,6 +134,31 @@ test('管理端显示 Worker 实时数据并在刷新后提示', async ({ page }
   await expect(page.locator('.toast')).toHaveText('平台数据已刷新')
 })
 
+test('管理端总览展示最近错误并可跳转访问日志', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  const worker = await mockWorker(page)
+  worker.accessLogs = [
+    { id: 'log-1', hostname: 'demo.plugins.example.com', method: 'GET', path: '/boom', status: 502, duration_ms: 31, error: 'upstream_failed', created_at: '2026-10-21T01:02:03.000Z' },
+    { id: 'log-2', hostname: 'demo.plugins.example.com', method: 'POST', path: '/crash', status: 500, duration_ms: 12, error: null, created_at: '2026-10-21T01:01:02.000Z' },
+    { id: 'log-3', hostname: 'api.plugins.example.com', method: 'GET', path: '/timeout', status: 504, duration_ms: 900, error: 'timeout', created_at: '2026-10-21T01:00:01.000Z' },
+    { id: 'log-4', hostname: 'api.plugins.example.com', method: 'GET', path: '/missing', status: 404, duration_ms: 8, error: null, created_at: '2026-10-21T00:59:00.000Z' },
+  ]
+  await page.goto('/')
+
+  await expect(page.getByText('正在读取错误摘要')).toBeVisible()
+  worker.releaseLogs()
+
+  await expect(page.getByText('demo.plugins.example.com/boom')).toBeVisible()
+  await expect(page.getByText('GET · upstream_failed')).toBeVisible()
+  await expect(page.getByText('未记录错误类型')).toBeVisible()
+  await expect(page.locator('.activity-item')).toHaveCount(3)
+  await expect(page.getByText('/missing')).toHaveCount(0)
+
+  await page.getByRole('button', { name: '查看访问日志' }).click()
+  await expect(page.getByRole('heading', { name: '访问日志', level: 1 })).toBeVisible()
+  await expect(page.getByText('/missing')).toBeVisible()
+})
+
 test('管理端访问日志先显示加载态再回到空态', async ({ page }) => {
   const worker = await mockWorker(page)
   await page.goto('/')

@@ -119,6 +119,17 @@ export default {
       durableObjects: 'Durable Object 请求',
       allQuotas: '查看全部配额',
     },
+    errors: {
+      title: '最近错误和连接异常',
+      subtitle: '最近 30 天状态码 5xx 的公开访问',
+      viewAll: '查看访问日志',
+      loadFailed: '错误摘要读取失败',
+      loadingTitle: '正在读取错误摘要',
+      loadingBody: 'Worker 正在检查最近的公开访问错误。',
+      emptyTitle: '暂无错误摘要',
+      emptyBody: '最近 30 天没有 5xx 访问错误。',
+      unknownError: '未记录错误类型',
+    },
     activity: {
       title: '最近活动',
       subtitle: '最新平台事件与配置变化',
