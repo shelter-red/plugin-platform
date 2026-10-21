@@ -26,6 +26,7 @@ type Query = {
   sql: string
   values: unknown[]
   bind: (...values: unknown[]) => Query
+  first: () => Promise<null>
   run: () => Promise<{ meta: { changes: number } }>
 }
 
@@ -38,6 +39,7 @@ const database = {
         query.values = values
         return query
       },
+      first: async () => null,
       run: async () => {
         executed.push({ sql, values: query.values })
         if (sql.includes('UPDATE servers SET token_hash')) {

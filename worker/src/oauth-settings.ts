@@ -161,6 +161,16 @@ async function publicSettings(env: Env) {
   }
 }
 
+export async function saveGithubOAuthSettings(env: Env, github: GithubOAuthConfig): Promise<string> {
+  if (!env.SESSION_SECRET) throw new Error('SESSION_SECRET is not configured')
+  const stored = await readStoredOauthSettings(env)
+  if (stored.unreadable) throw new Error('Stored OAuth settings cannot be decrypted')
+  return saveStoredOauthSettings(env, {
+    github,
+    cloudflare: stored.settings?.cloudflare ?? null,
+  })
+}
+
 export async function oauthSettingsApi(request: Request, env: Env, user: AuthenticatedUser): Promise<Response> {
   if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
   if (request.method === 'GET') return json(await publicSettings(env))

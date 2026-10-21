@@ -15,6 +15,7 @@ export default defineConfig(async () => ({
         bindings: {
           PLUGIN_DOMAIN_SUFFIX: 'plugins.example.com',
           SESSION_SECRET: 'runtime-test-session-secret',
+          SETUP_TOKEN: 'runtime-setup-token',
           GITHUB_CLIENT_ID: 'runtime-github-client',
           GITHUB_CLIENT_SECRET: 'runtime-github-secret',
           GITHUB_REDIRECT_URI: 'https://console.example.com/auth/github/callback',

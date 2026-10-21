@@ -10,6 +10,7 @@ import { findPluginRoute, invalidatePluginRoute } from './route-cache'
 import { selectPublicRequestMode } from './request-mode'
 import { resolvePublicRoute } from './public-route'
 import { oauthSettingsApi, resolveOauthSettings } from './oauth-settings'
+import { setupApi } from './setup'
 
 export { PluginBridge }
 
@@ -20,6 +21,7 @@ export default {
     const url = new URL(request.url)
     if (isPluginHostname(url.hostname, env)) return proxyPublicHost(request, env, url, ctx)
     if (url.pathname === '/api/health') return json({ ok: true, service: 'plugmesh-worker', protocolVersion: 1 })
+    if (url.pathname === '/setup') return setupApi(request, env, url)
     if (url.pathname === '/auth/github/start') return startGithubAuth(env, url)
     if (url.pathname === '/auth/github/callback') return finishGithubAuth(request, env, url)
     if (url.pathname === '/auth/cloudflare/start') return startCloudflareAuth(request, env)
