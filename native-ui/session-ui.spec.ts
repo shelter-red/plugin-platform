@@ -44,3 +44,24 @@ test('local UI theme switches between dark, light and system', async ({ page }) 
   await page.emulateMedia({ colorScheme: 'light' })
   await expect(shell).toHaveClass(/theme-light/)
 })
+
+test('local UI switches between Chinese and English and persists the choice', async ({ page }) => {
+  await page.goto('/')
+  await page.getByLabel('本地 UI 口令').fill('smoke-password')
+  await page.getByRole('button', { name: '登录' }).click()
+  await expect(page.getByRole('heading', { name: '插件服务器' })).toBeVisible()
+  await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN')
+
+  await page.getByRole('button', { name: '切换语言' }).click()
+  await expect(page.getByRole('heading', { name: 'Plugin server' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Discovered plugins' })).toBeVisible()
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en')
+  expect(await page.evaluate(() => localStorage.getItem('plugmesh-local-language'))).toBe('en')
+
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Plugin server' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Switch language' }).click()
+  await expect(page.getByRole('heading', { name: '插件服务器' })).toBeVisible()
+  expect(await page.evaluate(() => localStorage.getItem('plugmesh-local-language'))).toBe('zh-CN')
+})

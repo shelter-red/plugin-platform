@@ -10,6 +10,7 @@ import {
   FileCode2,
   HardDrive,
   KeyRound,
+  Languages,
   LoaderCircle,
   LogIn,
   LogOut,
@@ -24,6 +25,8 @@ import {
   WifiOff,
   X,
 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import i18n, { storeLanguage } from './i18n'
 import './styles.css'
 
 type Theme = 'dark' | 'light' | 'system'
@@ -91,16 +94,12 @@ class RequestError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init)
   const data = await response.json().catch(() => null) as { error?: string } | null
-  if (!response.ok) throw new RequestError(data?.error || `请求失败（${response.status}）`, response.status)
+  if (!response.ok) throw new RequestError(data?.error || i18n.t('errors.requestFailed', { status: response.status }), response.status)
   return data as T
 }
 
 function formatTime(date: Date) {
-  return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-}
-
-function stateLabel(state: PluginState) {
-  return ({ discovered: '已发现', loaded: '已加载', enabled: '已启用', disabled: '已停用', unloaded: '已卸载', failed: '失败' } as Record<string, string>)[state] ?? state
+  return date.toLocaleTimeString(i18n.resolvedLanguage === 'en' ? 'en-US' : 'zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
 function stateTone(state: PluginState) {
@@ -121,6 +120,7 @@ const emptySetupForm = {
 }
 
 function App() {
+  const { t } = useTranslation()
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem('plugmesh-local-theme')
     return saved === 'light' || saved === 'system' ? saved : 'dark'
@@ -157,7 +157,7 @@ function App() {
       setSessionError(null)
       return nextSession
     } catch (cause) {
-      setSessionError(cause instanceof Error ? cause.message : '本地服务器暂时无法访问')
+      setSessionError(cause instanceof Error ? cause.message : t('errors.localServerUnavailable'))
       return null
     } finally {
       setSessionLoading(false)
@@ -181,7 +181,7 @@ function App() {
       setLastUpdated(new Date())
     } catch (cause) {
       if (cause instanceof RequestError && cause.status === 401) void loadSession()
-      else setError(cause instanceof Error ? cause.message : '本地服务器暂时无法访问')
+      else setError(cause instanceof Error ? cause.message : t('errors.localServerUnavailable'))
     } finally {
       setLoading(false)
       setRefreshing(false)
@@ -198,7 +198,7 @@ function App() {
         return true
       } catch {}
     }
-    setSessionError('本地服务器重启超时，请稍后刷新页面')
+    setSessionError(t('errors.restartTimeout'))
     return false
   }, [])
 
@@ -211,7 +211,7 @@ function App() {
         setSetupForm((current) => ({ ...current, credentialFile: current.credentialFile || nextStatus.credentialFile || '' }))
         setSessionError(null)
       })
-      .catch((cause) => setSessionError(cause instanceof Error ? cause.message : '无法读取首次绑定状态'))
+      .catch((cause) => setSessionError(cause instanceof Error ? cause.message : t('errors.setupStatusFailed')))
   }, [session])
   useEffect(() => {
     if (!session?.authenticated) return
@@ -244,7 +244,7 @@ function App() {
       setLoginPassword('')
       await loadSession()
     } catch (cause) {
-      setSessionError(cause instanceof Error ? cause.message : '登录失败')
+      setSessionError(cause instanceof Error ? cause.message : t('errors.loginFailed'))
     } finally {
       setAccessBusy(false)
     }
@@ -253,7 +253,7 @@ function App() {
   const submitMigration = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (migrationForm.password.length < 8 || migrationForm.password !== migrationForm.passwordConfirmation) {
-      setSessionError(migrationForm.password.length < 8 ? '本地 UI 口令至少需要 8 个字符' : '两次输入的本地 UI 口令不一致')
+      setSessionError(t(migrationForm.password.length < 8 ? 'errors.passwordTooShort' : 'errors.passwordMismatch'))
       return
     }
     setAccessBusy(true)
@@ -266,7 +266,7 @@ function App() {
       setMigrationForm({ password: '', passwordConfirmation: '', credentialPassword: '' })
       await loadSession()
     } catch (cause) {
-      setSessionError(cause instanceof Error ? cause.message : '本地 UI 口令设置失败')
+      setSessionError(cause instanceof Error ? cause.message : t('errors.passwordSetupFailed'))
     } finally {
       setAccessBusy(false)
     }
@@ -275,7 +275,7 @@ function App() {
   const submitSetup = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (setupForm.localUiPassword.length < 8 || setupForm.localUiPassword !== setupForm.localUiPasswordConfirmation) {
-      setSessionError(setupForm.localUiPassword.length < 8 ? '本地 UI 口令至少需要 8 个字符' : '两次输入的本地 UI 口令不一致')
+      setSessionError(t(setupForm.localUiPassword.length < 8 ? 'errors.passwordTooShort' : 'errors.passwordMismatch'))
       return
     }
     setAccessBusy(true)
@@ -286,10 +286,10 @@ function App() {
         body: JSON.stringify(setupForm),
       })
       setSetupForm((current) => ({ ...current, registrationCode: '', localUiPassword: '', localUiPasswordConfirmation: '', credentialPassword: '' }))
-      setMessage({ kind: 'success', text: '绑定成功，请使用本地 UI 口令登录' })
+      setMessage({ kind: 'success', text: t('setup.success') })
       await waitForRestart()
     } catch (cause) {
-      setSessionError(cause instanceof Error ? cause.message : '服务器绑定失败')
+      setSessionError(cause instanceof Error ? cause.message : t('errors.bindFailed'))
     } finally {
       setAccessBusy(false)
     }
@@ -309,10 +309,10 @@ function App() {
     setBusyPlugin(plugin.id)
     try {
       const result = await request<ActionResult>(`/api/plugins/${encodeURIComponent(plugin.id)}/${action}`, { method: 'POST' })
-      setMessage({ kind: 'success', text: `${plugin.name}：${stateLabel(result.state)}` })
+      setMessage({ kind: 'success', text: t('plugins.stateChanged', { name: plugin.name, state: t(`state.${result.state}`, { defaultValue: result.state }) }) })
       await refresh()
     } catch (cause) {
-      setMessage({ kind: 'error', text: cause instanceof Error ? cause.message : '插件操作失败' })
+      setMessage({ kind: 'error', text: cause instanceof Error ? cause.message : t('errors.pluginActionFailed') })
     } finally {
       setBusyPlugin(null)
     }
@@ -322,17 +322,17 @@ function App() {
     setBusyPlugin(plugin.id)
     try {
       const result = await request<{ ok: boolean; status: number; bodySize: number; error?: string }>(`/api/plugins/${encodeURIComponent(plugin.id)}/health`)
-      if (!result.ok) throw new Error(result.error || '健康检查失败')
-      setMessage({ kind: 'success', text: `${plugin.name}：健康检查通过（${result.status}）` })
+      if (!result.ok) throw new Error(result.error || t('errors.healthCheckFailed'))
+      setMessage({ kind: 'success', text: t('plugins.healthPassed', { name: plugin.name, status: result.status }) })
     } catch (cause) {
-      setMessage({ kind: 'error', text: cause instanceof Error ? cause.message : '健康检查失败' })
+      setMessage({ kind: 'error', text: cause instanceof Error ? cause.message : t('errors.healthCheckFailed') })
     } finally {
       setBusyPlugin(null)
     }
   }
 
   const runCredentialAction = async (action: 'rotate' | 'revoke') => {
-    if (action === 'revoke' && !window.confirm('撤销后当前服务器会断开连接，并需要重新绑定。继续吗？')) return
+    if (action === 'revoke' && !window.confirm(t('binding.revokeConfirm'))) return
     setCredentialBusy(action)
     try {
       await request(`/api/credentials/${action}`, {
@@ -341,11 +341,11 @@ function App() {
         body: JSON.stringify({ credentialPassword }),
       })
       setCredentialPassword('')
-      setMessage({ kind: 'success', text: action === 'rotate' ? '访问密钥已轮换' : '绑定已撤销，请重新绑定服务器' })
+      setMessage({ kind: 'success', text: t(action === 'rotate' ? 'binding.rotateDone' : 'binding.revokeDone') })
       if (action === 'revoke') await waitForRestart()
       else await refresh(true)
     } catch (cause) {
-      setMessage({ kind: 'error', text: cause instanceof Error ? cause.message : '凭据操作失败' })
+      setMessage({ kind: 'error', text: cause instanceof Error ? cause.message : t('errors.credentialActionFailed') })
     } finally {
       setCredentialBusy(null)
     }
@@ -353,24 +353,24 @@ function App() {
 
   if (sessionLoading || !session) {
     return <AccessShell theme={effectiveTheme} themeIcon={themeIcon} onTheme={cycleTheme} error={sessionError}>
-      <div className="access-loading"><LoaderCircle size={22} className="spin" /><strong>正在连接本地服务器</strong></div>
+      <div className="access-loading"><LoaderCircle size={22} className="spin" /><strong>{t('access.loading')}</strong></div>
     </AccessShell>
   }
 
   if (!session.configured) {
     return <AccessShell theme={effectiveTheme} themeIcon={themeIcon} onTheme={cycleTheme} error={sessionError}>
       <form className="access-form access-form-wide" onSubmit={(event) => void submitSetup(event)}>
-        <AccessHeading icon={<Network size={20} />} title="绑定插件服务器" />
+        <AccessHeading icon={<Network size={20} />} title={t('setup.title')} />
         <div className="access-fields two-columns">
-          <Field label="Worker 地址"><input value={setupForm.workerUrl} onChange={(event) => setSetupForm((current) => ({ ...current, workerUrl: event.target.value }))} placeholder="https://console.example.com" required /></Field>
-          <Field label="服务器名称"><input value={setupForm.serverName} onChange={(event) => setSetupForm((current) => ({ ...current, serverName: event.target.value }))} required /></Field>
-          <Field label="一次性注册码"><input value={setupForm.registrationCode} onChange={(event) => setSetupForm((current) => ({ ...current, registrationCode: event.target.value }))} required /></Field>
-          <Field label="凭据文件路径"><input value={setupForm.credentialFile} onChange={(event) => setSetupForm((current) => ({ ...current, credentialFile: event.target.value }))} required={!status?.systemCredentialsAvailable} placeholder={status?.systemCredentialsAvailable ? '留空则使用系统凭据存储' : undefined} /></Field>
-          <Field label="本地 UI 口令"><input type="password" autoComplete="new-password" minLength={8} value={setupForm.localUiPassword} onChange={(event) => setSetupForm((current) => ({ ...current, localUiPassword: event.target.value }))} required /></Field>
-          <Field label="确认本地 UI 口令"><input type="password" autoComplete="new-password" minLength={8} value={setupForm.localUiPasswordConfirmation} onChange={(event) => setSetupForm((current) => ({ ...current, localUiPasswordConfirmation: event.target.value }))} required /></Field>
-          <Field label="凭据文件加密口令" wide><input type="password" autoComplete="new-password" value={setupForm.credentialPassword} onChange={(event) => setSetupForm((current) => ({ ...current, credentialPassword: event.target.value }))} required={!status?.systemCredentialsAvailable || Boolean(setupForm.credentialFile)} placeholder={status?.systemCredentialsAvailable && !setupForm.credentialFile ? '使用系统凭据存储时可留空' : undefined} /></Field>
+          <Field label={t('setup.workerUrl')}><input value={setupForm.workerUrl} onChange={(event) => setSetupForm((current) => ({ ...current, workerUrl: event.target.value }))} placeholder="https://console.example.com" required /></Field>
+          <Field label={t('setup.serverName')}><input value={setupForm.serverName} onChange={(event) => setSetupForm((current) => ({ ...current, serverName: event.target.value }))} required /></Field>
+          <Field label={t('setup.registrationCode')}><input value={setupForm.registrationCode} onChange={(event) => setSetupForm((current) => ({ ...current, registrationCode: event.target.value }))} required /></Field>
+          <Field label={t('setup.credentialFile')}><input value={setupForm.credentialFile} onChange={(event) => setSetupForm((current) => ({ ...current, credentialFile: event.target.value }))} required={!status?.systemCredentialsAvailable} placeholder={status?.systemCredentialsAvailable ? t('setup.credentialFilePlaceholder') : undefined} /></Field>
+          <Field label={t('setup.localUiPassword')}><input type="password" autoComplete="new-password" minLength={8} value={setupForm.localUiPassword} onChange={(event) => setSetupForm((current) => ({ ...current, localUiPassword: event.target.value }))} required /></Field>
+          <Field label={t('setup.confirmPassword')}><input type="password" autoComplete="new-password" minLength={8} value={setupForm.localUiPasswordConfirmation} onChange={(event) => setSetupForm((current) => ({ ...current, localUiPasswordConfirmation: event.target.value }))} required /></Field>
+          <Field label={t('setup.credentialPassword')} wide><input type="password" autoComplete="new-password" value={setupForm.credentialPassword} onChange={(event) => setSetupForm((current) => ({ ...current, credentialPassword: event.target.value }))} required={!status?.systemCredentialsAvailable || Boolean(setupForm.credentialFile)} placeholder={status?.systemCredentialsAvailable && !setupForm.credentialFile ? t('setup.credentialPasswordSystemPlaceholder') : undefined} /></Field>
         </div>
-        <button className="button primary with-icon" type="submit" disabled={accessBusy || !status}>{accessBusy ? <LoaderCircle size={15} className="spin" /> : <ShieldCheck size={15} />}绑定服务器</button>
+        <button className="button primary with-icon" type="submit" disabled={accessBusy || !status}>{accessBusy ? <LoaderCircle size={15} className="spin" /> : <ShieldCheck size={15} />}{t('setup.submit')}</button>
       </form>
     </AccessShell>
   }
@@ -378,14 +378,14 @@ function App() {
   if (session.passwordSetupRequired) {
     return <AccessShell theme={effectiveTheme} themeIcon={themeIcon} onTheme={cycleTheme} error={sessionError}>
       <form className="access-form" onSubmit={(event) => void submitMigration(event)}>
-        <AccessHeading icon={<ShieldCheck size={20} />} title="设置本地 UI 口令" />
-        <p className="access-note">现有绑定需要补充本地 UI 会话口令后才能继续。</p>
+        <AccessHeading icon={<ShieldCheck size={20} />} title={t('migration.title')} />
+        <p className="access-note">{t('migration.note')}</p>
         <div className="access-fields">
-          <Field label="本地 UI 口令"><input type="password" autoComplete="new-password" minLength={8} value={migrationForm.password} onChange={(event) => setMigrationForm((current) => ({ ...current, password: event.target.value }))} required /></Field>
-          <Field label="确认本地 UI 口令"><input type="password" autoComplete="new-password" minLength={8} value={migrationForm.passwordConfirmation} onChange={(event) => setMigrationForm((current) => ({ ...current, passwordConfirmation: event.target.value }))} required /></Field>
-          <Field label="凭据文件加密口令"><input type="password" autoComplete="current-password" value={migrationForm.credentialPassword} onChange={(event) => setMigrationForm((current) => ({ ...current, credentialPassword: event.target.value }))} placeholder="使用系统凭据存储时可留空" /></Field>
+          <Field label={t('setup.localUiPassword')}><input type="password" autoComplete="new-password" minLength={8} value={migrationForm.password} onChange={(event) => setMigrationForm((current) => ({ ...current, password: event.target.value }))} required /></Field>
+          <Field label={t('setup.confirmPassword')}><input type="password" autoComplete="new-password" minLength={8} value={migrationForm.passwordConfirmation} onChange={(event) => setMigrationForm((current) => ({ ...current, passwordConfirmation: event.target.value }))} required /></Field>
+          <Field label={t('setup.credentialPassword')}><input type="password" autoComplete="current-password" value={migrationForm.credentialPassword} onChange={(event) => setMigrationForm((current) => ({ ...current, credentialPassword: event.target.value }))} placeholder={t('setup.credentialPasswordSystemPlaceholder')} /></Field>
         </div>
-        <button className="button primary with-icon" type="submit" disabled={accessBusy}>{accessBusy ? <LoaderCircle size={15} className="spin" /> : <KeyRound size={15} />}保存并登录</button>
+        <button className="button primary with-icon" type="submit" disabled={accessBusy}>{accessBusy ? <LoaderCircle size={15} className="spin" /> : <KeyRound size={15} />}{t('migration.submit')}</button>
       </form>
     </AccessShell>
   }
@@ -393,11 +393,11 @@ function App() {
   if (!session.authenticated) {
     return <AccessShell theme={effectiveTheme} themeIcon={themeIcon} onTheme={cycleTheme} error={sessionError}>
       <form className="access-form" onSubmit={(event) => void submitLogin(event)}>
-        <AccessHeading icon={<KeyRound size={20} />} title="登录本地控制台" />
+        <AccessHeading icon={<KeyRound size={20} />} title={t('login.title')} />
         <div className="access-fields">
-          <Field label="本地 UI 口令"><input type="password" autoComplete="current-password" value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} autoFocus required /></Field>
+          <Field label={t('setup.localUiPassword')}><input type="password" autoComplete="current-password" value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} autoFocus required /></Field>
         </div>
-        <button className="button primary with-icon" type="submit" disabled={accessBusy}>{accessBusy ? <LoaderCircle size={15} className="spin" /> : <LogIn size={15} />}登录</button>
+        <button className="button primary with-icon" type="submit" disabled={accessBusy}>{accessBusy ? <LoaderCircle size={15} className="spin" /> : <LogIn size={15} />}{t('login.submit')}</button>
       </form>
     </AccessShell>
   }
@@ -411,56 +411,58 @@ function App() {
         <div className={`connection-rail ${status?.connected ? 'online' : 'offline'}`}>
           <div className="connection-line" />
           <div className="connection-node"><span /></div>
-          <div className="connection-copy"><span>控制连接</span><strong>{status?.connected ? '在线' : '离线'}</strong></div>
-          <div className="connection-detail">{status?.serverId ?? '尚未读取服务器标识'}</div>
+          <div className="connection-copy"><span>{t('connector.label')}</span><strong>{status?.connected ? t('connector.online') : t('connector.offline')}</strong></div>
+          <div className="connection-detail">{status?.serverId ?? t('common.serverIdMissing')}</div>
         </div>
-        <nav className="side-nav" aria-label="本地服务器导航">
-          <a className="side-link active" href="#overview"><Activity size={15} />运行概览</a>
-          <a className="side-link" href="#plugins"><FileCode2 size={15} />插件目录<span>{plugins.length}</span></a>
-          <a className="side-link" href="#setup"><Settings2 size={15} />连接设置</a>
-          <a className="side-link" href="#logs"><Terminal size={15} />运行日志<span>{logs.length}</span></a>
+        <nav className="side-nav" aria-label={t('nav.aria')}>
+          <a className="side-link active" href="#overview"><Activity size={15} />{t('nav.overview')}</a>
+          <a className="side-link" href="#plugins"><FileCode2 size={15} />{t('nav.plugins')}<span>{plugins.length}</span></a>
+          <a className="side-link" href="#setup"><Settings2 size={15} />{t('nav.settings')}</a>
+          <a className="side-link" href="#logs"><Terminal size={15} />{t('nav.logs')}<span>{logs.length}</span></a>
         </nav>
-        <div className="rail-bottom"><div className="local-only"><HardDrive size={14} /><span>仅监听<br /><strong>127.0.0.1:{status?.port ?? '----'}</strong></span></div><a className="docs-link" href="#setup"><Terminal size={14} />CLI 配置入口</a></div>
+        <div className="rail-bottom"><div className="local-only"><HardDrive size={14} /><span>{t('nav.localOnly')}<br /><strong>127.0.0.1:{status?.port ?? '----'}</strong></span></div><a className="docs-link" href="#setup"><Terminal size={14} />{t('nav.cli')}</a></div>
       </aside>
 
       <main className="workspace">
         <header className="topbar">
-          <div><span className="overline">本地控制台 / 状态视图</span><h1>插件服务器</h1></div>
+          <div><span className="overline">{t('shell.overline')}</span><h1>{t('shell.title')}</h1></div>
           <div className="top-actions">
-            <button className="icon-button" title="刷新数据" aria-label="刷新数据" onClick={() => void refresh(true)} disabled={refreshing}><RefreshCw size={16} className={refreshing ? 'spin' : ''} /></button>
-            <button className="icon-button" title="切换主题" aria-label="切换主题" onClick={cycleTheme}>{themeIcon}</button>
-            <button className="icon-button" title="退出登录" aria-label="退出登录" onClick={() => void logout()}><LogOut size={16} /></button>
+            <button className="icon-button" title={t('shell.refresh')} aria-label={t('shell.refresh')} onClick={() => void refresh(true)} disabled={refreshing}><RefreshCw size={16} className={refreshing ? 'spin' : ''} /></button>
+            <button className="icon-button" title={t('shell.theme')} aria-label={t('shell.theme')} onClick={cycleTheme}>{themeIcon}</button>
+            <LanguageButton />
+            <button className="icon-button" title={t('shell.logout')} aria-label={t('shell.logout')} onClick={() => void logout()}><LogOut size={16} /></button>
           </div>
         </header>
 
-        {message && <div className={`toast ${message.kind}`} role="status">{message.kind === 'success' ? <Check size={15} /> : <AlertCircle size={15} />}{message.text}<button onClick={() => setMessage(null)} aria-label="关闭提示"><X size={14} /></button></div>}
-        {error && <section className="error-strip"><AlertCircle size={17} /><div><strong>无法读取本地服务器</strong><span>{error}</span></div><button className="button secondary" onClick={() => void refresh(true)}>重试</button></section>}
+        {message && <div className={`toast ${message.kind}`} role="status">{message.kind === 'success' ? <Check size={15} /> : <AlertCircle size={15} />}{message.text}<button onClick={() => setMessage(null)} aria-label={t('common.closeToast')}><X size={14} /></button></div>}
+        {error && <section className="error-strip"><AlertCircle size={17} /><div><strong>{t('shell.readError')}</strong><span>{error}</span></div><button className="button secondary" onClick={() => void refresh(true)}>{t('common.retry')}</button></section>}
 
         <div className="content">
-          <section id="overview" className="hero-grid"><div><span className="section-index">01 / 运行概览</span><h2>{status?.connected ? '控制连接正常' : '等待控制连接'}</h2><p>{status?.connected ? '服务器已连接到 Worker，插件命令可以从管理端下发。' : '本地服务正在运行，但尚未建立 Worker 控制 WebSocket。'}</p></div><div className={`status-seal ${status?.connected ? 'online' : 'offline'}`}><span>{status?.connected ? 'ONLINE' : 'OFFLINE'}</span><div>{status?.connected ? <Wifi size={34} /> : <WifiOff size={34} />}</div><small>{lastUpdated ? `更新于 ${formatTime(lastUpdated)}` : '正在获取状态'}</small></div></section>
+          <section id="overview" className="hero-grid"><div><span className="section-index">{`01 / ${t('nav.overview')}`}</span><h2>{status?.connected ? t('overview.connectedTitle') : t('overview.offlineTitle')}</h2><p>{status?.connected ? t('overview.connectedBody') : t('overview.offlineBody')}</p></div><div className={`status-seal ${status?.connected ? 'online' : 'offline'}`}><span>{status?.connected ? t('overview.online') : t('overview.offline')}</span><div>{status?.connected ? <Wifi size={34} /> : <WifiOff size={34} />}</div><small>{lastUpdated ? t('common.updatedAt', { time: formatTime(lastUpdated) }) : t('common.statusLoading')}</small></div></section>
 
-          <section className="metric-grid" aria-label="运行指标"><Metric label="已发现插件" value={diagnostics?.pluginCount ?? (loading ? '—' : plugins.length)} icon={<FileCode2 size={16} />} /><Metric label="已启用" value={enabledCount} icon={<Cpu size={16} />} accent /><Metric label="失败状态" value={diagnostics?.failedPluginCount ?? 0} icon={<CircleSlash size={16} />} danger={Boolean(diagnostics?.failedPluginCount)} /><Metric label="本地端口" value={status?.port ?? '—'} icon={<Network size={16} />} /></section>
+          <section className="metric-grid" aria-label={t('metrics.aria')}><Metric label={t('metrics.plugins')} value={diagnostics?.pluginCount ?? (loading ? t('common.unavailable') : plugins.length)} icon={<FileCode2 size={16} />} /><Metric label={t('metrics.enabled')} value={enabledCount} icon={<Cpu size={16} />} accent /><Metric label={t('metrics.failed')} value={diagnostics?.failedPluginCount ?? 0} icon={<CircleSlash size={16} />} danger={Boolean(diagnostics?.failedPluginCount)} /><Metric label={t('metrics.port')} value={status?.port ?? t('common.unavailable')} icon={<Network size={16} />} /></section>
 
-          <section id="plugins" className="section-block"><div className="section-heading"><div><span className="section-index">02 / 插件目录</span><h2>已发现插件</h2></div><span className="section-meta">{plugins.length} 个条目</span></div>{loading && <LoadingState />}{!loading && !error && plugins.length === 0 && <EmptyState title="尚未发现插件" body="将包含 manifest.json 的插件目录配置到服务器后，插件会出现在这里。" />}{!loading && !error && plugins.length > 0 && <div className="plugin-list">{plugins.map((plugin) => <PluginRow key={plugin.id} plugin={plugin} busy={busyPlugin === plugin.id} onAction={(action) => void runAction(plugin, action)} onHealth={() => void runHealth(plugin)} />)}</div>}</section>
+          <section id="plugins" className="section-block"><div className="section-heading"><div><span className="section-index">{t('plugins.index')}</span><h2>{t('plugins.title')}</h2></div><span className="section-meta">{t('plugins.count', { count: plugins.length })}</span></div>{loading && <LoadingState />}{!loading && !error && plugins.length === 0 && <EmptyState title={t('plugins.emptyTitle')} body={t('plugins.emptyBody')} />}{!loading && !error && plugins.length > 0 && <div className="plugin-list">{plugins.map((plugin) => <PluginRow key={plugin.id} plugin={plugin} busy={busyPlugin === plugin.id} onAction={(action) => void runAction(plugin, action)} onHealth={() => void runHealth(plugin)} />)}</div>}</section>
 
           <section id="setup" className="section-block setup-section">
-            <div className="section-heading"><div><span className="section-index">03 / 连接设置</span><h2>绑定管理</h2></div><span className="status-badge positive"><span className="status-dot" />已配置</span></div>
+            <div className="section-heading"><div><span className="section-index">{t('binding.index')}</span><h2>{t('binding.title')}</h2></div><span className="status-badge positive"><span className="status-dot" />{t('binding.configured')}</span></div>
             <div className="setup-grid">
-              <div className="setup-copy"><h3>服务器已完成绑定</h3><p>{status?.systemCredentialsAvailable && !status.credentialFile ? '长期凭据已保存到系统凭据存储。服务器重启后会自动恢复控制连接。' : '长期凭据已保存到本地加密文件。服务器重启后会自动恢复控制连接。'}</p><div className="command-block"><span>id</span><code>{status?.serverId ?? '尚未读取服务器标识'}</code></div><span className="text-link">{status?.systemCredentialsAvailable && !status.credentialFile ? '凭据存储：系统凭据存储' : `凭据文件：${status?.credentialFile ?? '未提供路径'}`}</span></div>
-              <div className="setup-state credential-state"><Terminal size={22} /><strong>管理访问密钥</strong><span>{status?.systemCredentialsAvailable && !status.credentialFile ? '当前使用系统凭据存储；操作时无需填写口令。' : '当前使用口令加密文件；轮换和撤销时需要验证文件口令。'}</span><label className="credential-password">凭据文件加密口令<input type="password" value={credentialPassword} onChange={(event) => setCredentialPassword(event.target.value)} placeholder={status?.systemCredentialsAvailable && !status.credentialFile ? '系统凭据存储可留空' : '请输入凭据文件口令'} /></label><div className="credential-actions"><button className="button secondary with-icon" onClick={() => void runCredentialAction('rotate')} disabled={credentialBusy !== null}>{credentialBusy === 'rotate' && <LoaderCircle size={14} className="spin" />}轮换密钥</button><button className="button danger-button with-icon" onClick={() => void runCredentialAction('revoke')} disabled={credentialBusy !== null}>{credentialBusy === 'revoke' && <LoaderCircle size={14} className="spin" />}撤销绑定</button></div></div>
+              <div className="setup-copy"><h3>{t('binding.doneTitle')}</h3><p>{status?.systemCredentialsAvailable && !status.credentialFile ? t('binding.systemStoreBody') : t('binding.fileStoreBody')}</p><div className="command-block"><span>id</span><code>{status?.serverId ?? t('common.serverIdMissing')}</code></div><span className="text-link">{status?.systemCredentialsAvailable && !status.credentialFile ? t('binding.storeSystem') : t('binding.storeFile', { path: status?.credentialFile ?? t('binding.noPath') })}</span></div>
+              <div className="setup-state credential-state"><Terminal size={22} /><strong>{t('binding.manage')}</strong><span>{status?.systemCredentialsAvailable && !status.credentialFile ? t('binding.systemStoreHint') : t('binding.fileStoreHint')}</span><label className="credential-password">{t('binding.credentialPassword')}<input type="password" value={credentialPassword} onChange={(event) => setCredentialPassword(event.target.value)} placeholder={status?.systemCredentialsAvailable && !status.credentialFile ? t('binding.systemStorePlaceholder') : t('binding.passwordPlaceholder')} /></label><div className="credential-actions"><button className="button secondary with-icon" onClick={() => void runCredentialAction('rotate')} disabled={credentialBusy !== null}>{credentialBusy === 'rotate' && <LoaderCircle size={14} className="spin" />}{t('binding.rotate')}</button><button className="button danger-button with-icon" onClick={() => void runCredentialAction('revoke')} disabled={credentialBusy !== null}>{credentialBusy === 'revoke' && <LoaderCircle size={14} className="spin" />}{t('binding.revoke')}</button></div></div>
             </div>
           </section>
 
-          <section id="logs" className="section-block"><div className="section-heading"><div><span className="section-index">04 / 运行日志</span><h2>最近日志</h2></div><span className="section-meta">保留最近 {logs.length} 条</span></div>{logs.length === 0 ? <EmptyState title="暂无日志" body="插件或服务器产生日志后，会在这里显示最近的运行记录。" /> : <div className="log-list">{logs.slice().reverse().map((log, index) => <div className="log-row" key={`${log.timestamp}-${index}`}><span className={`log-level level-${log.level}`}>{log.level >= 3 ? 'ERR' : log.level === 2 ? 'WARN' : 'INFO'}</span><time>{log.timestamp}</time><span>{log.message}</span></div>)}</div>}</section>
+          <section id="logs" className="section-block"><div className="section-heading"><div><span className="section-index">{t('logs.index')}</span><h2>{t('logs.title')}</h2></div><span className="section-meta">{t('logs.count', { count: logs.length })}</span></div>{logs.length === 0 ? <EmptyState title={t('logs.emptyTitle')} body={t('logs.emptyBody')} /> : <div className="log-list">{logs.slice().reverse().map((log, index) => <div className="log-row" key={`${log.timestamp}-${index}`}><span className={`log-level level-${log.level}`}>{log.level >= 3 ? 'ERR' : log.level === 2 ? 'WARN' : 'INFO'}</span><time>{log.timestamp}</time><span>{log.message}</span></div>)}</div>}</section>
         </div>
-        <footer className="footer"><span>Plugmesh Local Server</span><span>API: {status?.service ?? 'unavailable'} · localhost only</span></footer>
+        <footer className="footer"><span>Plugmesh Local Server</span><span>{t('common.footerService', { service: status?.service ?? 'unavailable' })}</span></footer>
       </main>
     </div>
   )
 }
 
 function AccessShell({ theme, themeIcon, onTheme, error, children }: { theme: 'dark' | 'light'; themeIcon: React.ReactNode; onTheme: () => void; error: string | null; children: React.ReactNode }) {
-  return <div className={`local-app access-shell theme-${theme}`}><header className="access-header"><div className="brand access-brand"><span className="brand-mark"><Network size={17} /></span><div><strong>PLUGMESH</strong><span>LOCAL SERVER</span></div></div><button className="icon-button" title="切换主题" aria-label="切换主题" onClick={onTheme}>{themeIcon}</button></header><main className="access-main"><div className="access-context"><span className="section-index">LOCALHOST / 127.0.0.1</span><h1>本地插件服务器</h1><div className="access-rule"><span /></div><p>会话仅保存在当前服务器进程中。</p></div><div className="access-panel">{error && <div className="access-error" role="alert"><AlertCircle size={15} /><span>{error}</span></div>}{children}</div></main></div>
+  const { t } = useTranslation()
+  return <div className={`local-app access-shell theme-${theme}`}><header className="access-header"><div className="brand access-brand"><span className="brand-mark"><Network size={17} /></span><div><strong>PLUGMESH</strong><span>LOCAL SERVER</span></div></div><LanguageButton /><button className="icon-button" title={t('shell.theme')} aria-label={t('shell.theme')} onClick={onTheme}>{themeIcon}</button></header><main className="access-main"><div className="access-context"><span className="section-index">LOCALHOST / 127.0.0.1</span><h1>{t('access.title')}</h1><div className="access-rule"><span /></div><p>{t('access.note')}</p></div><div className="access-panel">{error && <div className="access-error" role="alert"><AlertCircle size={15} /><span>{error}</span></div>}{children}</div></main></div>
 }
 
 function AccessHeading({ icon, title }: { icon: React.ReactNode; title: string }) {
@@ -476,17 +478,31 @@ function Metric({ label, value, icon, accent = false, danger = false }: { label:
 }
 
 function PluginRow({ plugin, busy, onAction, onHealth }: { plugin: LocalPlugin; busy: boolean; onAction: (action: 'load' | 'unload' | 'enable' | 'disable' | 'reload') => void; onHealth: () => void }) {
+  const { t } = useTranslation()
   const canEnable = plugin.state === 'loaded' || plugin.state === 'disabled'
   const canDisable = plugin.state === 'enabled'
   const canUnload = plugin.state !== 'discovered' && plugin.state !== 'unloaded'
-  return <article className="plugin-row"><div className="plugin-main"><div className="plugin-icon"><FileCode2 size={18} /></div><div className="plugin-copy"><div className="plugin-title"><h3>{plugin.name}</h3><span className={`status-badge ${stateTone(plugin.state)}`}><span className="status-dot" />{stateLabel(plugin.state)}</span></div><span className="plugin-id">{plugin.id} · v{plugin.version} · ABI {plugin.abiVersion}</span><div className="capability-list">{plugin.capabilities.http && <span>HTTP</span>}{plugin.capabilities.websocket && <span>WebSocket</span>}{plugin.capabilities.sse && <span>SSE</span>}{plugin.capabilities.fileStream && <span>文件流</span>}</div></div></div><div className="plugin-actions">{busy ? <span className="action-loading"><LoaderCircle size={16} className="spin" />处理中</span> : <>{plugin.state === 'enabled' && <ActionButton label="检查" onClick={onHealth} />}{plugin.state === 'discovered' || plugin.state === 'unloaded' ? <ActionButton label="加载" onClick={() => onAction('load')} /> : <ActionButton label="重载" onClick={() => onAction('reload')} />}{canEnable && <ActionButton label="启用" onClick={() => onAction('enable')} primary />}{canDisable && <ActionButton label="停用" onClick={() => onAction('disable')} />}{canUnload && <ActionButton label="卸载" onClick={() => onAction('unload')} />}</>}</div></article>
+  return <article className="plugin-row"><div className="plugin-main"><div className="plugin-icon"><FileCode2 size={18} /></div><div className="plugin-copy"><div className="plugin-title"><h3>{plugin.name}</h3><span className={`status-badge ${stateTone(plugin.state)}`}><span className="status-dot" />{t(`state.${plugin.state}`, { defaultValue: plugin.state })}</span></div><span className="plugin-id">{plugin.id} · v{plugin.version} · ABI {plugin.abiVersion}</span><div className="capability-list">{plugin.capabilities.http && <span>HTTP</span>}{plugin.capabilities.websocket && <span>WebSocket</span>}{plugin.capabilities.sse && <span>SSE</span>}{plugin.capabilities.fileStream && <span>{t('plugins.fileStream')}</span>}</div></div></div><div className="plugin-actions">{busy ? <span className="action-loading"><LoaderCircle size={16} className="spin" />{t('common.processing')}</span> : <>{plugin.state === 'enabled' && <ActionButton label={t('plugins.health')} onClick={onHealth} />}{plugin.state === 'discovered' || plugin.state === 'unloaded' ? <ActionButton label={t('plugins.load')} onClick={() => onAction('load')} /> : <ActionButton label={t('plugins.reload')} onClick={() => onAction('reload')} />}{canEnable && <ActionButton label={t('plugins.enable')} onClick={() => onAction('enable')} primary />}{canDisable && <ActionButton label={t('plugins.disable')} onClick={() => onAction('disable')} />}{canUnload && <ActionButton label={t('plugins.unload')} onClick={() => onAction('unload')} />}</>}</div></article>
 }
 
 function ActionButton({ label, onClick, primary = false }: { label: string; onClick: () => void; primary?: boolean }) {
   return <button className={`button compact ${primary ? 'primary' : 'secondary'}`} onClick={onClick}>{label}</button>
 }
 
-function LoadingState() { return <div className="loading-state"><LoaderCircle size={18} className="spin" /><span>正在读取插件目录</span></div> }
+function LoadingState() {
+  const { t } = useTranslation()
+  return <div className="loading-state"><LoaderCircle size={18} className="spin" /><span>{t('plugins.loading')}</span></div>
+}
+
+function LanguageButton() {
+  const { t, i18n: translate } = useTranslation()
+  const next = translate.resolvedLanguage === 'en' ? 'zh-CN' : 'en'
+  const change = () => {
+    storeLanguage(next)
+    void translate.changeLanguage(next)
+  }
+  return <button className="icon-button" title={t('language.switch')} aria-label={t('language.switch')} onClick={change}><Languages size={16} /></button>
+}
 function EmptyState({ title, body }: { title: string; body: string }) { return <div className="empty-state"><FileCode2 size={22} /><strong>{title}</strong><span>{body}</span></div> }
 
 createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>)
