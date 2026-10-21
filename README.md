@@ -55,8 +55,10 @@ npm run worker:smoke
 npm run worker:runtime-test
 cmake -S native-server -B native-server/build
 cmake --build native-server/build --parallel 2
-cmake --build native-server/build --target test
+cd native-server/build && ctest --output-on-failure
 ```
+
+`.github/workflows/platform-ci.yml` 会在 GitHub 的 Ubuntu、Windows 和 macOS 原生 runner 上执行同一套 CTest；Windows 和 macOS 会强制验证系统凭据存储的保存、读取、更新和删除往返。
 
 完整的实现状态、验证证据和生产发布阻塞项见 [`docs/acceptance-matrix.md`](docs/acceptance-matrix.md)。
 
