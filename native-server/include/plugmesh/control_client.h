@@ -54,7 +54,7 @@ class ControlClient {
   void send_frame(ControlFrame frame);
   void send_error(const ControlFrame& request, const std::string& message);
   void send_request_error(const ControlFrame& request, const std::string& message);
-  void send_registration();
+  void send_registration(const std::string& sync_request_id = {});
   bool request_binding_action(const std::string& type, std::string& access_token, std::string& error);
   void update_access_token(std::string access_token);
   std::string endpoint() const;

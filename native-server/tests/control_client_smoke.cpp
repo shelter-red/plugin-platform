@@ -33,6 +33,9 @@ int main(int argc, char** argv) {
   bool requests_valid = true;
   int validated_connections = 0;
   int registration_count = 0;
+  int sync_context_count = 0;
+  int sync_result_count = 0;
+  bool sync_result_checked = false;
   int health_response_count = 0;
   int stale_response_count = 0;
   bool http_payload_valid = false;
@@ -82,7 +85,26 @@ int main(int argc, char** argv) {
         server.send(handle, serialized_health, websocketpp::frame::opcode::text, send_error);
         server.send(handle, serialized_health, websocketpp::frame::opcode::text, send_error);
         server.send(handle, plugmesh::serialize_control_frame(request), websocketpp::frame::opcode::text, send_error);
+        auto sync = plugmesh::make_control_frame("server.sync", "server-1");
+        sync.request_id = "sync-1";
+        server.send(handle, plugmesh::serialize_control_frame(sync), websocketpp::frame::opcode::text, send_error);
+      } else if (current_registration_count == 3) {
+        {
+          std::lock_guard lock(mutex);
+          if (frame.payload.value("syncRequestId", "") == "sync-1") ++sync_context_count;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        {
+          std::lock_guard lock(mutex);
+          sync_result_checked = sync_result_count == 0;
+        }
       }
+      return;
+    }
+    if (frame.type == "server.result" && frame.request_id == "sync-1") {
+      std::lock_guard lock(mutex);
+      ++sync_result_count;
+      condition.notify_all();
       return;
     }
     if (frame.type == "plugin.result") {
@@ -172,15 +194,28 @@ int main(int argc, char** argv) {
   bool completed = false;
   {
     std::unique_lock lock(mutex);
-    completed = condition.wait_for(lock, std::chrono::seconds(8), [&] { return registration_count >= 2 && file_frames.size() >= 3 && file_frames.back() == "stream.close"; });
+    completed = condition.wait_for(lock, std::chrono::seconds(8), [&] { return registration_count >= 3 && sync_result_checked && sync_context_count == 1 && sync_result_count == 0 && file_frames.size() >= 3 && file_frames.back() == "stream.close"; });
   }
   client.stop();
   if (client_thread.joinable()) client_thread.join();
   server.get_io_service().post([&] { server.stop(); });
   if (server_thread.joinable()) server_thread.join();
 
-  if (!completed || !requests_valid || validated_connections < 2 || registration_count < 2 || health_response_count != 1 || stale_response_count != 0 || !http_payload_valid || http_frames != std::vector<std::string>{"request.open", "request.chunk", "request.close"} || !stream_payload_valid || stream_frames != std::vector<std::string>{"request.open", "stream.chunk", "stream.close"} || !file_payload_valid || file_frames != std::vector<std::string>{"request.open", "stream.chunk", "stream.close"} || !client_result) {
-    std::cerr << "plain control client reconnect smoke failed: " << client_error << '\n';
+  if (!completed || !requests_valid || validated_connections < 2 || registration_count < 3 || sync_context_count != 1 || !sync_result_checked || sync_result_count != 0 || health_response_count != 1 || stale_response_count != 0 || !http_payload_valid || http_frames != std::vector<std::string>{"request.open", "request.chunk", "request.close"} || !stream_payload_valid || stream_frames != std::vector<std::string>{"request.open", "stream.chunk", "stream.close"} || !file_payload_valid || file_frames != std::vector<std::string>{"request.open", "stream.chunk", "stream.close"} || !client_result) {
+    std::cerr << "plain control client reconnect smoke failed: " << client_error
+              << " completed=" << completed
+              << " requests_valid=" << requests_valid
+              << " connections=" << validated_connections
+              << " registrations=" << registration_count
+              << " sync_context=" << sync_context_count
+              << " sync_checked=" << sync_result_checked
+              << " sync_results=" << sync_result_count
+              << " health=" << health_response_count
+              << " stale=" << stale_response_count
+              << " http=" << http_payload_valid << '/' << http_frames.size()
+              << " stream=" << stream_payload_valid << '/' << stream_frames.size()
+              << " file=" << file_payload_valid << '/' << file_frames.size()
+              << " client=" << client_result << '\n';
     return 1;
   }
   std::cout << "plain control client reconnect smoke test passed\n";

@@ -192,10 +192,7 @@ void ControlClient::handle_frame(const ControlFrame& frame) {
     return;
   }
   if (frame.type == "server.sync") {
-    send_registration();
-    auto response = make_control_frame("server.result", config_.server_id, {{"action", "sync"}, {"ok", true}});
-    response.request_id = frame.request_id;
-    send_frame(std::move(response));
+    send_registration(frame.request_id);
     return;
   }
   if (frame.type == "server.result" || frame.type == "error") {
@@ -436,10 +433,12 @@ void ControlClient::send_request_error(const ControlFrame& request, const std::s
   send_frame(std::move(closed));
 }
 
-void ControlClient::send_registration() {
+void ControlClient::send_registration(const std::string& sync_request_id) {
   Json manifests = Json::array();
   for (const auto& plugin : plugins_.snapshot()) manifests.push_back(manifest(plugin));
-  send_frame(make_control_frame("server.register", config_.server_id, {{"manifests", std::move(manifests)}}));
+  Json payload = {{"manifests", std::move(manifests)}};
+  if (!sync_request_id.empty()) payload["syncRequestId"] = sync_request_id;
+  send_frame(make_control_frame("server.register", config_.server_id, std::move(payload)));
 }
 
 bool ControlClient::request_binding_action(const std::string& type, std::string& access_token, std::string& error) {

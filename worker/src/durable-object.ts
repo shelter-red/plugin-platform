@@ -293,7 +293,10 @@ export class PluginBridge {
       return
     }
     if (frame.type === 'server.register') {
-      void this.registerServer(frame.payload ?? {})
+      const payload = frame.payload ?? {}
+      const syncRequestId = typeof payload.syncRequestId === 'string' ? payload.syncRequestId : ''
+      if (syncRequestId) void this.completeServerSync(payload, syncRequestId)
+      else void this.registerServer(payload)
       return
     }
     if (frame.type === 'server.heartbeat') {
@@ -667,18 +670,32 @@ export class PluginBridge {
     ])
   }
 
-  private async registerServer(payload: Record<string, unknown>) {
-    if (!await this.markServerOnline()) return
+  private async completeServerSync(payload: Record<string, unknown>, requestId: string) {
+    let result: { ok: boolean; error?: string }
+    try {
+      result = await this.registerServer(payload)
+    } catch {
+      result = { ok: false, error: 'Server synchronization failed' }
+    }
+    const pending = this.pendingCommands.get(requestId)
+    if (!pending) return
+    clearTimeout(pending.timer)
+    this.pendingCommands.delete(requestId)
+    pending.resolve(result)
+  }
+
+  private async registerServer(payload: Record<string, unknown>): Promise<{ ok: boolean; error?: string }> {
+    if (!await this.markServerOnline()) return { ok: false, error: 'Server binding is revoked or unavailable' }
     const server = await this.env.DB.prepare('SELECT user_id FROM servers WHERE id = ? AND status != ?').bind(this.serverId, 'revoked').first<{ user_id: string }>()
-    if (!server) return
+    if (!server) return { ok: false, error: 'Plugin server is not registered' }
     if (!Array.isArray(payload.manifests)) {
       await this.rejectServerRegistration('server manifest list is invalid')
-      return
+      return { ok: false, error: 'Server manifest list is invalid' }
     }
     const manifests = payload.manifests.filter(isManifest)
     if (manifests.length !== payload.manifests.length || new Set(manifests.map((manifest) => manifest.id)).size !== manifests.length) {
       await this.rejectServerRegistration('server manifest is invalid or duplicated')
-      return
+      return { ok: false, error: 'Server manifest is invalid or duplicated' }
     }
     const now = new Date().toISOString()
     for (const manifest of manifests) {
@@ -700,6 +717,7 @@ export class PluginBridge {
       await this.env.DB.prepare('UPDATE plugin_instances SET state = ?, updated_at = ? WHERE id = ?').bind(state, new Date().toISOString(), plugin.id).run()
     }
     await this.env.DB.prepare("UPDATE domains SET status = CASE WHEN (SELECT state FROM plugin_instances WHERE plugin_instances.id = domains.plugin_instance_id) = 'enabled' THEN 'online' ELSE 'offline' END WHERE plugin_instance_id IN (SELECT id FROM plugin_instances WHERE server_id = ?)").bind(this.serverId).run()
+    return { ok: true }
   }
 
   private async rejectServerRegistration(message: string): Promise<void> {
