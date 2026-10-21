@@ -130,6 +130,23 @@ export interface CloudflareUsage {
   source?: string
   cached?: boolean
   updatedAt?: string
+  d1?: {
+    readQueries: number
+    writeQueries: number
+    rowsRead: number
+    rowsWritten: number
+  }
+  kv?: {
+    read: number
+    write: number
+    delete: number
+    list: number
+  }
+  durableObjects?: {
+    requests: number
+    cpuTime: number
+    storedBytes: number
+  }
 }
 
 export interface LocalUsage {

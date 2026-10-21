@@ -423,7 +423,7 @@ function App() {
           <div className="page-content">
             <div className="page-header"><div><div className="eyebrow"><span className="live-pulse" />{apiLive ? '实时数据' : '等待真实数据'}</div><h1>{meta.title}</h1><p>{meta.description}</p></div><div className="header-actions">{page === 'overview' && <button className="button secondary" onClick={() => void refreshData()} disabled={dataLoading}><RefreshCw size={15} />刷新状态</button>}{page === 'servers' && <button className="button primary" onClick={() => setModal('server')}><Plus size={16} />绑定服务器</button>}{page === 'domains' && <button className="button primary" onClick={() => setModal('domain')}><Plus size={16} />分配域名</button>}{page === 'plugins' && <button className="button primary" onClick={() => setModal('plugin')}><Plus size={16} />加载插件</button>}</div></div>
             {dataError && <div className="notice-bar compact"><div className="notice-icon"><AlertCircle size={16} /></div><div><strong>数据读取失败</strong><span>{dataError}</span></div><button onClick={() => void refreshData()}>重试 <RefreshCw size={14} /></button></div>}
-            {page === 'overview' && <Overview overview={overview} localUsage={localUsage} settings={platformSettings} audits={audits ?? []} range={range} setRange={setRange} onNavigate={selectPage} />}
+            {page === 'overview' && <Overview overview={overview} usage={usage} localUsage={localUsage} settings={platformSettings} audits={audits ?? []} range={range} setRange={setRange} onNavigate={selectPage} />}
             {page === 'servers' && <Servers servers={servers ?? []} loading={dataLoading} onAction={showToast} onRefresh={() => void refreshData()} onBind={() => setModal('server')} onDetail={(id) => void openDetail('server', id)} />}
             {page === 'plugins' && <Plugins plugins={filteredPlugins} loading={dataLoading} onAction={() => void syncManifests()} onLoad={() => setModal('plugin')} onDetail={(id) => void openDetail('plugin', id)} onHealth={(plugin) => void runHealthCheck(plugin)} />}
             {page === 'domains' && <Domains domains={domains ?? []} loading={dataLoading} onAction={showToast} onRefresh={() => void refreshData()} onAssign={() => setModal('domain')} />}
@@ -441,7 +441,7 @@ function App() {
   )
 }
 
-function Overview({ overview, localUsage, settings, audits, range, setRange, onNavigate }: { overview: ApiOverview | null; localUsage: LocalUsage | null; settings: PlatformSettings | null; audits: ApiAudit[]; range: '24h' | '7d' | '30d'; setRange: (value: '24h' | '7d' | '30d') => void; onNavigate: (page: Page) => void }) {
+function Overview({ overview, usage, localUsage, settings, audits, range, setRange, onNavigate }: { overview: ApiOverview | null; usage: CloudflareUsage | null; localUsage: LocalUsage | null; settings: PlatformSettings | null; audits: ApiAudit[]; range: '24h' | '7d' | '30d'; setRange: (value: '24h' | '7d' | '30d') => void; onNavigate: (page: Page) => void }) {
   const onlineServers = overview ? String(overview.onlineServers) : '—'
   const enabledPlugins = overview ? String(overview.enabledPlugins) : '—'
   const domains = overview ? String(overview.domains) : '—'
@@ -451,6 +451,8 @@ function Overview({ overview, localUsage, settings, audits, range, setRange, onN
   const r2Value = localUsage ? formatBytes(localUsage.r2Bytes) : '—'
   const r2Limit = settings ? formatBytes(settings.quotas.r2Bytes) : '未读取'
   const connectionLimit = settings ? settings.quotas.activeConnections.toLocaleString('zh-CN') : '未读取'
+  const d1Queries = usage?.d1 ? usage.d1.readQueries + usage.d1.writeQueries : null
+  const durableObjectRequests = usage?.durableObjects?.requests ?? null
   return <>
     <div className="notice-bar"><div className="notice-icon"><ShieldCheck size={16} /></div><div><strong>{overview ? '平台数据已连接' : '等待 Worker 数据'}</strong><span>{overview ? '以下统计来自当前用户的 Worker API。' : '登录并连接 Worker API 后，这里会显示真实的平台状态。'}</span></div><button onClick={() => onNavigate('settings')}>配置平台 <ArrowUpRight size={14} /></button></div>
     <section className="metric-grid">
@@ -461,7 +463,7 @@ function Overview({ overview, localUsage, settings, audits, range, setRange, onN
     </section>
     <section className="content-grid two-thirds">
       <div className="panel chart-panel"><div className="panel-header"><div><h2>请求趋势</h2><p>平台本地请求计数快照</p></div><div className="segmented">{(['24h', '7d', '30d'] as const).map((item) => <button className={range === item ? 'selected' : ''} key={item} onClick={() => setRange(item)}>{item}</button>)}</div></div><RequestTrend range={range} snapshots={localUsage?.snapshots ?? []} /></div>
-      <div className="panel"><div className="panel-header"><div><h2>资源使用</h2><p>平台本地计数，官方 Analytics 详见用量页</p></div><IconButton label="查看用量详情" onClick={() => onNavigate('usage')}><ArrowUpRight size={15} /></IconButton></div><div className="resource-list"><Resource label="平台请求" value={requestCount} limit={requestLimit} icon={Cloud} /><Resource label="R2 中转容量" value={r2Value} limit={r2Limit} icon={HardDrive} /><Resource label="D1 数据库" value="—" limit="未接入" icon={Database} /><Resource label="Durable Object" value={activeConnections} limit={connectionLimit} icon={Activity} /></div><button className="text-link" onClick={() => onNavigate('usage')}>查看全部配额 <ArrowUpRight size={14} /></button></div>
+      <div className="panel"><div className="panel-header"><div><h2>资源使用</h2><p>平台本地计数与 Cloudflare 官方 Analytics</p></div><IconButton label="查看用量详情" onClick={() => onNavigate('usage')}><ArrowUpRight size={15} /></IconButton></div><div className="resource-list"><Resource label="平台请求" value={requestCount} limit={requestLimit} icon={Cloud} /><Resource label="R2 中转容量" value={r2Value} limit={r2Limit} icon={HardDrive} /><Resource label="D1 查询" value={d1Queries === null ? '—' : d1Queries.toLocaleString('zh-CN')} limit={usage?.d1 ? '官方周期' : '未接入'} icon={Database} /><Resource label="Durable Object 请求" value={durableObjectRequests === null ? '—' : durableObjectRequests.toLocaleString('zh-CN')} limit={usage?.durableObjects ? '官方周期' : '未接入'} icon={Activity} /></div><button className="text-link" onClick={() => onNavigate('usage')}>查看全部配额 <ArrowUpRight size={14} /></button></div>
     </section>
     <section className="content-grid two-thirds bottom-grid"><div className="panel"><div className="panel-header"><div><h2>最近活动</h2><p>最新平台事件与配置变化</p></div><button className="text-link" onClick={() => onNavigate('audit')}>查看审计日志 <ArrowUpRight size={14} /></button></div>{audits.length > 0 ? <div className="activity-list">{audits.slice(0, 3).map((item) => <div className="activity-item" key={item.id}><div className="activity-mark success"><Check size={13} /></div><div className="activity-copy"><strong>{auditActionLabel(item.action)}</strong><span>{auditDetail(item)}</span></div><time>{new Date(item.created_at).toLocaleString('zh-CN')}</time></div>)}</div> : <div className="empty-panel"><div className="empty-illustration"><Activity size={20} /></div><h3>暂无活动记录</h3><p>Worker 返回审计事件后会显示在这里。</p></div>}</div><div className="panel quick-panel"><div className="panel-header"><div><h2>快速开始</h2><p>完成平台接入需要三步</p></div></div><QuickStep number="01" title="绑定插件服务器" detail="安装本地服务器并输入注册码" onClick={() => onNavigate('servers')} /><QuickStep number="02" title="加载第一个插件" detail="同步 manifest 并完成健康检查" onClick={() => onNavigate('plugins')} /><QuickStep number="03" title="分配公开域名" detail="为插件选择唯一的子域名前缀" onClick={() => onNavigate('domains')} /></div></section>
   </>
@@ -567,13 +569,43 @@ function Domains({ domains, loading, onAction, onRefresh, onAssign }: { domains:
 }
 
 function Usage({ settings, usage, localUsage, loading, error, onNavigate }: { settings: PlatformSettings | null; usage: CloudflareUsage | null; localUsage: LocalUsage | null; loading: boolean; error: string | null; onNavigate: (page: Page) => void }) {
-  const requestValue = typeof usage?.requests === 'number' ? usage.requests.toLocaleString('zh-CN') : '—'
-  const localRequestValue = localUsage ? localUsage.requestCount.toLocaleString('zh-CN') : '—'
-  const requestLimit = settings ? settings.quotas.requests.toLocaleString('zh-CN') : '未读取'
-  const connectionLimit = settings ? settings.quotas.activeConnections.toLocaleString('zh-CN') : '未读取'
-  const r2Limit = settings ? formatBytes(settings.quotas.r2Bytes) : '未读取'
-  const connected = usage?.configured === true && typeof usage.requests === 'number'
-  return <div className="stack">{error && <div className="notice-bar compact"><div className="notice-icon"><AlertCircle size={16} /></div><div><strong>用量读取失败</strong><span>{error}</span></div><button onClick={() => onNavigate('settings')}>检查配置 <ArrowUpRight size={14} /></button></div>}{!error && <div className="notice-bar compact"><div className="notice-icon"><Cloud size={16} /></div><div><strong>{loading ? '正在读取官方数据' : connected ? 'Cloudflare Analytics 已连接' : '官方数据尚未连接'}</strong><span>{connected && usage.period ? `Worker 请求统计周期：${new Date(usage.period.start).toLocaleString('zh-CN')} 至 ${new Date(usage.period.end).toLocaleString('zh-CN')}` : '配置 Cloudflare OAuth 后，Analytics 数据会按 5 分钟至 1 小时缓存。'}</span></div><button onClick={() => onNavigate('settings')}>去配置 <ArrowUpRight size={14} /></button></div>}<div className="usage-grid"><ResourceCard title="Worker 请求" current={requestValue} limit={requestLimit} unit={connected ? '官方周期' : ''} percent={connected && settings ? Math.min(100, (usage.requests! / settings.quotas.requests) * 100) : 0} icon={Cloud} /><ResourceCard title="平台请求计数" current={localRequestValue} limit={requestLimit} unit={localUsage ? '24 小时窗口' : '未接入'} percent={localUsage && settings ? Math.min(100, (localUsage.requestCount / settings.quotas.requests) * 100) : 0} icon={Activity} /><ResourceCard title="R2 存储" current={localUsage ? formatBytes(localUsage.r2Bytes) : '—'} limit={r2Limit} unit={localUsage ? `${localUsage.r2Objects} 个对象` : settings ? '平台阈值' : ''} percent={localUsage && settings ? Math.min(100, (localUsage.r2Bytes / settings.quotas.r2Bytes) * 100) : 0} icon={HardDrive} /><ResourceCard title="活跃连接" current={localUsage ? localUsage.activeConnections.toLocaleString('zh-CN') : '—'} limit={connectionLimit} unit={localUsage ? 'WebSocket / SSE' : '未接入'} percent={localUsage && settings ? Math.min(100, (localUsage.activeConnections / settings.quotas.activeConnections) * 100) : 0} icon={Activity} /></div><div className="panel"><div className="panel-header"><div><h2>数据源状态</h2><p>平台本地计数与 Cloudflare 官方数据的更新时间。</p></div></div><div className="source-row"><span className="source-name"><span className={`source-dot ${connected ? 'green' : 'pending'}`} />Cloudflare Analytics API</span><span className="muted">{connected ? `${usage.cached ? '缓存' : '最新'} · ${usage.updatedAt ? new Date(usage.updatedAt).toLocaleString('zh-CN') : '时间未知'}` : '未配置'}</span><button className="text-link" onClick={() => onNavigate('settings')}>配置 <ArrowUpRight size={14} /></button></div><div className="source-row"><span className="source-name"><span className={`source-dot ${localUsage ? 'green' : 'pending'}`} />平台本地计数</span><span className="muted">{localUsage?.updatedAt ? `更新于 ${new Date(localUsage.updatedAt).toLocaleString('zh-CN')}` : '未接入'}</span><span className="muted">{localUsage?.requestWindowStartedAt ? `窗口始于 ${new Date(localUsage.requestWindowStartedAt).toLocaleString('zh-CN')}` : '暂无数据'}</span></div></div></div>
+  const period = usage?.period
+  const requests = usage?.requests
+  const d1 = usage?.d1
+  const kv = usage?.kv
+  const durableObjects = usage?.durableObjects
+  const quotas = settings?.quotas
+  const hasLocalUsage = localUsage !== null
+  const requestValue = typeof requests === 'number' ? requests.toLocaleString('zh-CN') : '—'
+  const localRequestValue = hasLocalUsage ? localUsage.requestCount.toLocaleString('zh-CN') : '—'
+  const requestLimit = quotas ? quotas.requests.toLocaleString('zh-CN') : '未读取'
+  const connectionLimit = quotas ? quotas.activeConnections.toLocaleString('zh-CN') : '未读取'
+  const r2Limit = quotas ? formatBytes(quotas.r2Bytes) : '未读取'
+  const connected = usage?.configured === true && typeof requests === 'number'
+  const d1Queries = d1 ? d1.readQueries + d1.writeQueries : null
+  const kvOperations = kv ? kv.read + kv.write + kv.delete + kv.list : null
+  const workerPercent = connected && quotas && typeof requests === 'number' ? Math.min(100, (requests / quotas.requests) * 100) : 0
+  const localRequestPercent = hasLocalUsage && quotas ? Math.min(100, (localUsage.requestCount / quotas.requests) * 100) : 0
+  const r2Percent = hasLocalUsage && quotas ? Math.min(100, (localUsage.r2Bytes / quotas.r2Bytes) * 100) : 0
+  const connectionPercent = hasLocalUsage && quotas ? Math.min(100, (localUsage.activeConnections / quotas.activeConnections) * 100) : 0
+  const usageUpdatedAt = usage?.updatedAt
+  const localUpdatedAt = localUsage?.updatedAt
+  const requestWindowStartedAt = localUsage?.requestWindowStartedAt
+
+  return <div className="stack">
+    {error && <div className="notice-bar compact"><div className="notice-icon"><AlertCircle size={16} /></div><div><strong>用量读取失败</strong><span>{error}</span></div><button onClick={() => onNavigate('settings')}>检查配置 <ArrowUpRight size={14} /></button></div>}
+    {!error && <div className="notice-bar compact"><div className="notice-icon"><Cloud size={16} /></div><div><strong>{loading ? '正在读取官方数据' : connected ? 'Cloudflare Analytics 已连接' : '官方数据尚未连接'}</strong><span>{connected && period ? `Worker 请求统计周期：${new Date(period.start).toLocaleString('zh-CN')} 至 ${new Date(period.end).toLocaleString('zh-CN')}` : '配置 Cloudflare OAuth 后，Analytics 数据会按 5 分钟至 1 小时缓存。'}</span></div><button onClick={() => onNavigate('settings')}>去配置 <ArrowUpRight size={14} /></button></div>}
+    <div className="usage-grid">
+      <ResourceCard title="Worker 请求" current={requestValue} limit={requestLimit} unit={connected ? '官方周期' : ''} percent={workerPercent} icon={Cloud} />
+      <ResourceCard title="平台请求计数" current={localRequestValue} limit={requestLimit} unit={hasLocalUsage ? '24 小时窗口' : '未接入'} percent={localRequestPercent} icon={Activity} />
+      <ResourceCard title="R2 存储" current={hasLocalUsage ? formatBytes(localUsage.r2Bytes) : '—'} limit={r2Limit} unit={hasLocalUsage ? `${localUsage.r2Objects} 个对象` : quotas ? '平台阈值' : ''} percent={r2Percent} icon={HardDrive} />
+      <ResourceCard title="活跃连接" current={hasLocalUsage ? localUsage.activeConnections.toLocaleString('zh-CN') : '—'} limit={connectionLimit} unit={hasLocalUsage ? 'WebSocket / SSE' : '未接入'} percent={connectionPercent} icon={Activity} />
+      <ResourceCard title="D1 查询" current={d1Queries === null ? '—' : d1Queries.toLocaleString('zh-CN')} limit={d1 ? '官方周期' : '未接入'} unit={d1 ? `${d1.rowsRead.toLocaleString('zh-CN')} 行读取` : ''} icon={Database} />
+      <ResourceCard title="KV 操作" current={kvOperations === null ? '—' : kvOperations.toLocaleString('zh-CN')} limit={kv ? '官方周期' : '未接入'} unit={kv ? `${kv.read.toLocaleString('zh-CN')} 次读取` : ''} icon={HardDrive} />
+      <ResourceCard title="Durable Object 请求" current={durableObjects ? durableObjects.requests.toLocaleString('zh-CN') : '—'} limit={durableObjects ? '官方周期' : '未接入'} unit={durableObjects ? `${formatBytes(durableObjects.storedBytes)} 存储` : ''} icon={Activity} />
+    </div>
+    <div className="panel"><div className="panel-header"><div><h2>数据源状态</h2><p>平台本地计数与 Cloudflare 官方数据的更新时间。</p></div></div><div className="source-row"><span className="source-name"><span className={`source-dot ${connected ? 'green' : 'pending'}`} />Cloudflare Analytics API</span><span className="muted">{connected ? `${usage?.cached ? '缓存' : '最新'} · ${usageUpdatedAt ? new Date(usageUpdatedAt).toLocaleString('zh-CN') : '时间未知'}` : '未配置'}</span><button className="text-link" onClick={() => onNavigate('settings')}>配置 <ArrowUpRight size={14} /></button></div><div className="source-row"><span className="source-name"><span className={`source-dot ${hasLocalUsage ? 'green' : 'pending'}`} />平台本地计数</span><span className="muted">{localUpdatedAt ? `更新于 ${new Date(localUpdatedAt).toLocaleString('zh-CN')}` : '未接入'}</span><span className="muted">{requestWindowStartedAt ? `窗口始于 ${new Date(requestWindowStartedAt).toLocaleString('zh-CN')}` : '暂无数据'}</span></div></div>
+  </div>
 }
 
 function formatBytes(value: number): string {
