@@ -89,19 +89,22 @@ cmake --build native-server/build --target test
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/<OWNER>/<REPO>)
 ```
 
-点击按钮后：
+点击按钮后只需授权 Cloudflare 账号：
 
-1. Cloudflare 克隆仓库并启动 Workers Builds；
-2. 平台自动创建并绑定 D1 `plugmesh`、R2 `plugmesh-blobs`；
-3. 执行 `npm run deploy`，应用全部 migrations、生成基础设施 Secret 并发布 Worker；
-4. 首次部署的 `SETUP_TOKEN` 显示在该次构建日志的「初始化令牌」一行。
+1. Cloudflare 在你的 GitHub 账号下创建仓库并启动 Workers Builds；
+2. Workers Builds 自动识别 `package.json` 中的 `build` 和 `deploy` 命令；
+3. 平台自动创建并绑定 D1 `plugmesh`、R2 `plugmesh-blobs` 和 Durable Object；
+4. `npm run deploy` 应用全部 migrations、生成基础设施 Secret 并发布 Worker；
+5. 首次部署的 `SETUP_TOKEN` 显示在该次构建日志的「初始化令牌」一行。
 
-部署页中请核对命令：
+不需要在部署页手工填写 D1 ID、R2 名称、OAuth、SMTP 或任何应用 Secret。若部署页展示命令，只需确认是：
 
 - Build command：`npm run build`
 - Deploy command：`npm run deploy`
 
 不要改成 `npx wrangler deploy`，否则会跳过 migrations 和基础设施 Secret 初始化。首次缺少 D1 `database_id` 时，部署脚本会自动使用 `wrangler deploy --x-provision`，不需要手工创建数据库或回填 ID。
+
+> Cloudflare 一键部署创建的新仓库受 GitHub 安全限制，可能不会包含本仓库的 GitHub Actions workflow。部署按钮和 GitHub Actions 是两条可选链路，不要同时配置；使用一键部署时不需要再添加 Actions Secret。
 
 当前仓库尚未配置公开 Git remote，因此 README 保留按钮占位；公开仓库地址确定后只需替换 `<OWNER>/<REPO>`，不要另外维护一套部署脚本。
 
@@ -125,7 +128,7 @@ npm run deploy
 6. 仅在远端缺失时生成 `SESSION_SECRET`，已有值绝不轮换；
 7. 仅在远端缺失时生成一次性 `SETUP_TOKEN`，并保存到 `.wrangler/plugmesh-setup-token`（权限 `0600`）。
 
-GitHub Actions 使用同一个脚本，只需配置 Secret `CLOUDFLARE_API_TOKEN`；`CLOUDFLARE_ACCOUNT_ID` 是多账号环境下的可选 Variable。首次初始化令牌会写入 Actions 的 Job Summary。
+GitHub Actions 是可选的自维护仓库部署方式，使用同一个脚本，只需配置 Secret `CLOUDFLARE_API_TOKEN`；`CLOUDFLARE_ACCOUNT_ID` 是多账号环境下的可选 Variable。首次初始化令牌会写入 Actions 的 Job Summary。已经使用 Cloudflare 一键部署时，无需再配置这条链路。
 
 ### 部署后初始化
 
