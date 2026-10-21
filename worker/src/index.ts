@@ -562,7 +562,7 @@ function registerServerSocket(request: Request, env: Env): Response {
   return new Response(null, { status: 101, webSocket: client })
 }
 
-async function createServerRegistration(env: Env, code: string | undefined, name: string | undefined): Promise<{ value: { serverId: string; accessToken: string; protocolVersion: number } } | { error: string; status: number }> {
+export async function createServerRegistration(env: Env, code: string | undefined, name: string | undefined): Promise<{ value: { serverId: string; accessToken: string; protocolVersion: number } } | { error: string; status: number }> {
   if (!code || !name?.trim()) return { error: 'code and name are required', status: 400 }
   const codeHash = await hashControlToken(code)
   const registration = await env.DB.prepare('SELECT id, user_id FROM registration_codes WHERE code_hash = ? AND used_at IS NULL AND expires_at > ?').bind(codeHash, new Date().toISOString()).first<{ id: string; user_id: string }>()
