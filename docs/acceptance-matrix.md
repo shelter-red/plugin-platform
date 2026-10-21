@@ -91,7 +91,7 @@ npm run worker:runtime-test              68 passed（19 个测试文件；worker
     -w /work -e CI=1 node:22-bookworm-slim \
     npx vitest run --config vitest.workers.config.ts
 npm run deploy -- --dry-run              通过（构建 SPA，并在无 D1 ID、无云端凭据时校验 bundle 与绑定）
-npm run deploy:worker:test               8 条离线部署路径通过
+npm run deploy:worker:test               9 条离线部署路径通过
 cmake --build native-server/build --parallel 2
 cmake -S native-server -B /tmp/build-win -DCMAKE_TOOLCHAIN_FILE=native-server/cmake/mingw-w64-toolchain.cmake \
   -DOPENSSL_ROOT_DIR=/tmp/mingw-openssl -DCMAKE_BUILD_TYPE=Release && cmake --build /tmp/build-win -j8
