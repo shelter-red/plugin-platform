@@ -1,5 +1,6 @@
 #include "plugmesh/credential_store.h"
 #include "plugmesh/local_http_server.h"
+#include "plugmesh/local_log_buffer.h"
 #include "plugmesh/plugin_manager.h"
 
 #include <atomic>
@@ -31,6 +32,8 @@ int run_authenticated_server(uint16_t port, const std::filesystem::path& ui_dire
     return ui_directory.parent_path().parent_path() / "native-server" / "build" / "plugins";
   }();
   if (!plugins.discover(plugin_directory, plugin_error)) std::cerr << "local UI smoke plugin discovery failed: " << plugin_error << '\n';
+  plugmesh::LocalLogBuffer logs;
+  plugins.set_log_writer([&logs](int level, const char* message) { logs.append(level, message); });
   plugmesh::LocalHttpServer server(port, &plugins, [worker_url, credential_file] {
     return nlohmann::json{
         {"configured", true},
@@ -40,7 +43,7 @@ int run_authenticated_server(uint16_t port, const std::filesystem::path& ui_dire
         {"credentialFile", credential_file},
         {"systemCredentialsAvailable", plugmesh::system_credentials_available()},
     };
-  }, ui_directory, {}, [] { return nlohmann::json::array(); }, {}, verifier);
+  }, ui_directory, {}, [&logs] { return logs.snapshot(); }, {}, verifier);
   std::string error;
   if (!server.run(error)) {
     if (!error.empty()) std::cerr << "local UI smoke server failed: " << error << '\n';

@@ -1,6 +1,7 @@
 #include "plugmesh/control_client.h"
 #include "plugmesh/credential_store.h"
 #include "plugmesh/local_http_server.h"
+#include "plugmesh/local_log_buffer.h"
 #include "plugmesh/plugin_manager.h"
 #include "plugmesh/registration_client.h"
 #include "plugmesh/server_config.h"
@@ -9,12 +10,7 @@
 #include <cstdint>
 #include <atomic>
 #include <chrono>
-#include <ctime>
-#include <deque>
-#include <iomanip>
 #include <iostream>
-#include <mutex>
-#include <sstream>
 #include <string>
 #include <thread>
 
@@ -90,40 +86,6 @@ uint16_t local_port() {
   const auto parsed = std::strtoul(value, &end, 10);
   return end != value && *end == '\0' && parsed > 0 && parsed <= 65535 ? static_cast<uint16_t>(parsed) : 8787;
 }
-
-class LocalLogBuffer {
- public:
-  void append(int level, const char* message) {
-    if (!message || !*message) return;
-    std::lock_guard lock(mutex_);
-    entries_.push_back({{"timestamp", timestamp()}, {"level", level}, {"message", message}});
-    while (entries_.size() > 200) entries_.pop_front();
-  }
-
-  nlohmann::json snapshot() const {
-    std::lock_guard lock(mutex_);
-    nlohmann::json result = nlohmann::json::array();
-    for (const auto& entry : entries_) result.push_back(entry);
-    return result;
-  }
-
- private:
-  static std::string timestamp() {
-    const auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-    std::tm utc{};
-#ifdef _WIN32
-    gmtime_s(&utc, &now);
-#else
-    gmtime_r(&now, &utc);
-#endif
-    std::ostringstream output;
-    output << std::put_time(&utc, "%Y-%m-%dT%H:%M:%SZ");
-    return output.str();
-  }
-
-  mutable std::mutex mutex_;
-  std::deque<nlohmann::json> entries_;
-};
 
 std::filesystem::path local_ui_directory() {
   if (const char* value = std::getenv("PLUGMESH_LOCAL_UI_DIRECTORY"); value && *value) return value;
@@ -274,7 +236,7 @@ int main(int argc, char** argv) {
       std::cerr << "plugmesh-server: " << error << '\n';
       return 2;
     }
-    LocalLogBuffer logs;
+    plugmesh::LocalLogBuffer logs;
     plugmesh::PluginManager plugins;
     plugins.set_log_writer([&logs](int level, const char* message) { logs.append(level, message); });
     if (!plugins.discover(resolved_config.plugin_directory, error)) {

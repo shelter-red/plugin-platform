@@ -32,6 +32,33 @@ test('local UI session flow is responsive', async ({ page }) => {
   await page.screenshot({ path: join(tmpdir(), 'plugmesh-local-mobile.png'), fullPage: true })
 })
 
+test('local UI diagnostics and logs follow plugin lifecycle actions', async ({ page }) => {
+  await page.goto('/')
+  await page.getByLabel('本地 UI 口令').fill('smoke-password')
+  await page.getByRole('button', { name: '登录' }).click()
+  await expect(page.getByRole('heading', { name: '插件服务器' })).toBeVisible()
+
+  const metric = (label: string) => page.locator('.metric', { hasText: label })
+  await expect(metric('已发现插件').locator('strong')).toHaveText('3')
+  await expect(metric('已启用').locator('strong')).toHaveText('0')
+  await expect(metric('失败状态').locator('strong')).toHaveText('0')
+  await expect(metric('本地端口').locator('strong')).toHaveText(/^\d+$/)
+
+  const samplePlugin = page.locator('.plugin-row', { hasText: 'Sample Plugin' })
+  await expect(samplePlugin).toContainText('已发现')
+  await samplePlugin.getByRole('button', { name: '加载' }).click()
+  await expect(samplePlugin).toContainText('已加载')
+  await samplePlugin.getByRole('button', { name: '启用' }).click()
+  await expect(samplePlugin).toContainText('已启用')
+  await expect(metric('已启用').locator('strong')).toHaveText('1')
+
+  const logSection = page.locator('#logs')
+  await expect(logSection).toContainText('plugin loaded: sample.plugin')
+  await expect(logSection).toContainText('plugin enabled: sample.plugin')
+  await expect(logSection.locator('.log-row').first()).toContainText('INFO')
+  await expect(page.locator('a.side-link[href="#logs"] span')).toHaveText(/^[1-9]\d*$/)
+})
+
 test('local UI theme switches between dark, light and system', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark' })
   await page.goto('/')

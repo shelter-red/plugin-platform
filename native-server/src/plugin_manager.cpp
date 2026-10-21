@@ -216,7 +216,11 @@ std::filesystem::path PluginManager::resolve_host_executable(std::string& error)
     error = "cannot locate plugmesh-plugin-host; set PLUGMESH_PLUGIN_HOST";
     return {};
   }
+#ifdef _WIN32
+  const auto candidate = self.parent_path() / "plugmesh-plugin-host.exe";
+#else
   const auto candidate = self.parent_path() / "plugmesh-plugin-host";
+#endif
   if (!std::filesystem::is_regular_file(candidate)) {
     error = "plugin host executable not found: " + candidate.string();
     return {};
