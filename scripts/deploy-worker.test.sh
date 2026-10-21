@@ -90,6 +90,7 @@ reset_output=$(run_deploy env SETUP_TOKEN="$reset_token")
 printf 'ok：显式 SETUP_TOKEN 可安全重置并更新本地文件\n'
 
 mkdir -p "$TMP/state-cloud"
+cp "$ROOT/wrangler.toml" "$TMP/wrangler.toml"
 printf '[]\n' > "$TMP/state-cloud/secrets.json"
 cloud_output=$(cd "$TMP" && \
   env -u CLOUDFLARE_API_TOKEN \
@@ -97,10 +98,15 @@ cloud_output=$(cd "$TMP" && \
   WRANGLER_BIN="$TMP/fake-wrangler" \
   FAKE_STATE="$TMP/state-cloud" \
   ./scripts/deploy-worker.sh)
-grep -Fxq 'd1 migrations apply DB --remote --config wrangler.toml' "$TMP/state-cloud/commands.log"
 grep -Fxq 'deploy --config wrangler.toml' "$TMP/state-cloud/commands.log"
+grep -Fxq 'd1 migrations apply DB --remote --config wrangler.toml' "$TMP/state-cloud/commands.log"
+deploy_line=$(grep -nFx 'deploy --config wrangler.toml' "$TMP/state-cloud/commands.log" | cut -d: -f1)
+migration_line=$(grep -nFx 'd1 migrations apply DB --remote --config wrangler.toml' "$TMP/state-cloud/commands.log" | cut -d: -f1)
+[[ $deploy_line -lt $migration_line ]]
+[[ $(grep -cFx 'deploy --config wrangler.toml' "$TMP/state-cloud/commands.log") -eq 1 ]]
 ! grep -Eq '^(whoami|d1 create|r2 bucket)' "$TMP/state-cloud/commands.log"
 grep -Fxq 'SESSION_SECRET' "$TMP/state-cloud/puts.log"
 grep -Fxq 'SETUP_TOKEN' "$TMP/state-cloud/puts.log"
+[[ "$cloud_output" == *'首次发布 Worker plugmesh-worker（触发 D1 / R2 自动创建并绑定）'* ]]
 [[ "$cloud_output" == *'Cloudflare Workers Builds 初始化令牌：'* ]]
-printf 'ok：Workers Builds 无需 API Token，跳过资源创建并在构建日志提供初始化令牌\n'
+printf 'ok：Workers Builds 先部署触发资源绑定，再迁移并生成基础设施密钥\n'

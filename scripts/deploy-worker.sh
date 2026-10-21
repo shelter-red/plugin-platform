@@ -129,8 +129,13 @@ fi
 WORKER_NAME=$(read_worker_name)
 [[ -n "$WORKER_NAME" ]] || fail "无法从 $CONFIG 读取 Worker 名称"
 
+PROVISION_ON_DEPLOY=0
 if [[ $CLOUDFLARE_BUILD -eq 1 ]]; then
   echo "==> Cloudflare Workers Builds：使用平台自动创建并绑定的 D1 / R2 资源"
+  database_id=$(read_database_id)
+  if [[ -z "$database_id" || "$database_id" == replace-with-* ]]; then
+    PROVISION_ON_DEPLOY=1
+  fi
 else
   [[ -n "${CLOUDFLARE_API_TOKEN:-}" ]] || fail "缺少 CLOUDFLARE_API_TOKEN。真实部署只需这一项基础凭据，请先按 README 创建 API Token。"
 
@@ -160,11 +165,18 @@ else
   fi
 fi
 
+if [[ $PROVISION_ON_DEPLOY -eq 1 ]]; then
+  echo "==> 首次发布 Worker $WORKER_NAME（触发 D1 / R2 自动创建并绑定）"
+  wrangler deploy --config "$CONFIG"
+fi
+
 echo "==> 应用远端 D1 migrations"
 wrangler d1 migrations apply DB --remote --config "$CONFIG"
 
-echo "==> 发布 Worker $WORKER_NAME"
-wrangler deploy --config "$CONFIG"
+if [[ $PROVISION_ON_DEPLOY -eq 0 ]]; then
+  echo "==> 发布 Worker $WORKER_NAME"
+  wrangler deploy --config "$CONFIG"
+fi
 
 echo "==> 检查基础设施 Secret"
 load_secret_names
