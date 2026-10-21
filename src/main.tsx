@@ -26,7 +26,6 @@ import {
   LockKeyhole,
   Menu,
   MoreHorizontal,
-  Moon,
   Network,
   Plus,
   RefreshCw,
@@ -434,7 +433,7 @@ function App() {
             <div className="page-header"><div><div className="eyebrow"><span className="live-pulse" />{apiLive ? t('shell.live') : t('shell.waitingData')}</div><h1>{meta.title}</h1><p>{meta.description}</p></div><div className="header-actions">{page === 'overview' && <button className="button secondary" onClick={() => void refreshData()} disabled={dataLoading}><RefreshCw size={15} />{t('shell.refresh')}</button>}{page === 'servers' && <button className="button primary" onClick={() => setModal('server')}><Plus size={16} />{t('shell.bindServer')}</button>}{page === 'domains' && <button className="button primary" onClick={() => setModal('domain')}><Plus size={16} />{t('shell.assignDomain')}</button>}{page === 'plugins' && <button className="button primary" onClick={() => setModal('plugin')}><Plus size={16} />{t('shell.loadPlugin')}</button>}</div></div>
             {dataError && <div className="notice-bar compact"><div className="notice-icon"><AlertCircle size={16} /></div><div><strong>{t('shell.loadFailed')}</strong><span>{translateError(dataError ?? '')}</span></div><button onClick={() => void refreshData()}>{t('shell.retry')} <RefreshCw size={14} /></button></div>}
             {page === 'overview' && <Overview overview={overview} usage={usage} localUsage={localUsage} settings={platformSettings} audits={audits ?? []} accessLogs={accessLogs} accessLogsLoading={accessLogsLoading} accessLogsError={accessLogsError} servers={servers ?? []} range={range} setRange={setRange} onNavigate={selectPage} />}
-            {page === 'servers' && <Servers servers={servers ?? []} loading={dataLoading} onAction={showToast} onRefresh={() => void refreshData()} onBind={() => setModal('server')} onDetail={(id) => void openDetail('server', id)} />}
+            {page === 'servers' && <Servers servers={servers ?? []} loading={dataLoading} onRefresh={() => void refreshData()} onBind={() => setModal('server')} onDetail={(id) => void openDetail('server', id)} />}
             {page === 'plugins' && <Plugins plugins={filteredPlugins} loading={dataLoading} onAction={() => void syncManifests()} onLoad={() => setModal('plugin')} onDetail={(id) => void openDetail('plugin', id)} onHealth={(plugin) => void runHealthCheck(plugin)} />}
             {page === 'domains' && <Domains domains={domains ?? []} loading={dataLoading} onAction={showToast} onRefresh={() => void refreshData()} onAssign={() => setModal('domain')} />}
             {page === 'usage' && <Usage settings={platformSettings} usage={usage} localUsage={localUsage} loading={usageLoading} error={usageError} onNavigate={selectPage} />}
@@ -462,7 +461,6 @@ function Overview({ overview, usage, localUsage, settings, audits, accessLogs, a
   const requestLimit = settings ? formatNumber(settings.quotas.requests) : notRead
   const r2Value = localUsage ? formatBytes(localUsage.r2Bytes) ?? notRead : '—'
   const r2Limit = settings ? formatBytes(settings.quotas.r2Bytes) ?? notRead : notRead
-  const connectionLimit = settings ? formatNumber(settings.quotas.activeConnections) : notRead
   const d1Queries = usage?.d1 ? usage.d1.readQueries + usage.d1.writeQueries : null
   const kvOperations = usage?.kv ? usage.kv.read + usage.kv.write + usage.kv.delete + usage.kv.list : null
   const durableObjectRequests = usage?.durableObjects?.requests ?? null
@@ -548,7 +546,7 @@ function auditDetail(item: ApiAudit): string {
   }
 }
 
-function Servers({ servers, loading, onAction, onRefresh, onBind, onDetail }: { servers: ApiServer[]; loading: boolean; onAction: (message: string) => void; onRefresh: () => void; onBind: () => void; onDetail: (id: string) => void }) {
+function Servers({ servers, loading, onRefresh, onBind, onDetail }: { servers: ApiServer[]; loading: boolean; onRefresh: () => void; onBind: () => void; onDetail: (id: string) => void }) {
   const { t } = useTranslation()
   return <div className="stack"><div className="panel table-panel"><div className="panel-header"><div><h2>{t('servers.title')}</h2><p>{t('servers.subtitle')}</p></div><button className="button secondary small" onClick={onRefresh} disabled={loading}><RefreshCw size={14} />{t('servers.refresh')}</button></div>{servers.length === 0 ? <div className="empty-panel"><div className="empty-illustration"><Server size={22} /></div><h3>{t('servers.emptyTitle')}</h3><p>{t('servers.emptyBody')}</p></div> : <div className="server-list">{servers.map((server) => <div className="server-row" key={server.id}><div className="server-symbol"><Server size={18} /></div><div className="server-main"><strong>{server.name}</strong><span>{server.id} · {t('common.protocolVersion')}</span></div><StatusBadge tone={server.status === 'online' ? 'success' : server.status === 'revoked' ? 'danger' : 'warning'}>{t(`status.${server.status}`, { defaultValue: server.status })}</StatusBadge><div className="server-meta"><span>{server.last_seen_at ? t('servers.lastSeen', { time: formatDateTime(server.last_seen_at) }) : t('servers.neverConnected')}</span><button className="row-action" onClick={() => onDetail(server.id)} aria-label={t('servers.view', { name: server.name })} title={t('servers.viewTitle')}><MoreHorizontal size={17} /></button></div></div>)}</div>}</div><div className="empty-panel"><div className="empty-illustration"><LockKeyhole size={22} /></div><h3>{t('servers.bindTitle')}</h3><p>{t('servers.bindBody')}</p><button className="button primary" onClick={onBind}><Plus size={15} />{t('servers.bind')}</button></div></div>
 }

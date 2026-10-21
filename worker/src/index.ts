@@ -19,12 +19,12 @@ export default {
     const url = new URL(request.url)
     if (isPluginHostname(url.hostname, env)) return proxyPublicHost(request, env, url, ctx)
     if (url.pathname === '/api/health') return json({ ok: true, service: 'plugmesh-worker', protocolVersion: 1 })
-    if (url.pathname === '/auth/github/start') return startGithubAuth(request, env, url)
+    if (url.pathname === '/auth/github/start') return startGithubAuth(env, url)
     if (url.pathname === '/auth/github/callback') return finishGithubAuth(request, env, url)
-    if (url.pathname === '/auth/cloudflare/start') return startCloudflareAuth(request, env, url)
+    if (url.pathname === '/auth/cloudflare/start') return startCloudflareAuth(request, env)
     if (url.pathname === '/auth/cloudflare/callback') return finishCloudflareAuth(request, env, url)
     if (url.pathname === '/auth/logout') return new Response(null, { status: 302, headers: { location: '/', 'set-cookie': clearSessionCookie(url.protocol === 'https:') } })
-    if (url.pathname === '/control/register') return request.headers.get('Upgrade')?.toLowerCase() === 'websocket' ? registerServerSocket(request, env) : registerServer(request, env)
+    if (url.pathname === '/control/register') return request.headers.get('Upgrade')?.toLowerCase() === 'websocket' ? registerServerSocket(env) : registerServer(request, env)
     if (url.pathname.startsWith('/api/')) return api(request, env, url)
     if (url.pathname === '/control/connect') return connectServer(request, env, url)
     if (url.pathname.startsWith('/blobs/')) return consumeBlob(request, env, ctx, url)
@@ -309,7 +309,7 @@ async function refreshCloudflareUsageOnSchedule(env: Env): Promise<void> {
   await cloudflareUsageApi(env, administrator)
 }
 
-async function startGithubAuth(request: Request, env: Env, url: URL): Promise<Response> {
+async function startGithubAuth(env: Env, url: URL): Promise<Response> {
   if (!env.GITHUB_CLIENT_ID || !env.GITHUB_REDIRECT_URI) return new Response('GitHub OAuth is not configured', { status: 503 })
   const state = crypto.randomUUID()
   const inviteToken = url.searchParams.get('invite')
@@ -348,7 +348,7 @@ async function finishGithubAuth(request: Request, env: Env, url: URL): Promise<R
   return new Response(null, { status: 302, headers: { location: '/', 'set-cookie': sessionCookie(token, url.protocol === 'https:') } })
 }
 
-async function startCloudflareAuth(request: Request, env: Env, url: URL): Promise<Response> {
+async function startCloudflareAuth(request: Request, env: Env): Promise<Response> {
   const user = await getCurrentUser(request, env)
   if (!user) return json({ error: 'Authentication required' }, 401)
   if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
@@ -583,7 +583,7 @@ async function registerServer(request: Request, env: Env): Promise<Response> {
   return json(result.value, 201)
 }
 
-function registerServerSocket(request: Request, env: Env): Response {
+function registerServerSocket(env: Env): Response {
   const pair = new WebSocketPair()
   const client = pair[0]
   const server = pair[1]
