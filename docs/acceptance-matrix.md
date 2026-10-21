@@ -24,7 +24,7 @@
 | HTTP 方法、状态、响应头、Cookie 和二进制请求/响应 | 本地已验证 | `public-proxy`、`response-validation`、C++ `control-client` smoke。 |
 | SSE、公开 WebSocket 和文件流桥接 | 本地已验证 | Worker 流式 smoke 与 C++ WebSocket 生命周期测试覆盖协议路径；真实公网长连接未验证。 |
 | 请求超时、帧大小、响应大小和活跃连接上限 | 模块已验证 | Durable Object 中有硬限制和超时；配额 smoke 覆盖计数边界，尚未做持续压力测试。 |
-| R2 上传、一次性读取、过期和删除 | 部分实现 | `blob-stream` 与 `durable-object-stream` smoke 覆盖流式消费、一次性读取和删除；过期清理只有实现代码，真实 R2 一致性、失败重试和费用未验证。 |
+| R2 上传、一次性读取、过期和删除 | 部分实现 | `blob-stream` 与 `durable-object-stream` smoke 覆盖流式消费、一次性读取和删除；`blob-expiry` smoke 覆盖过期对象清理、24 小时陈旧对象清理、重试三次、删除失败后回滚占用和用量释放。真实 R2 一致性与费用仍未验证。 |
 | D1/KV 路由缓存读穿和配置写穿 | 部分实现 | Host 路由内存缓存和更新失效逻辑已接入；真实多 isolate 缓存传播未验证，当前实现没有独立 KV 业务缓存。 |
 | 总配额触发全局维护模式 | 模块已验证 | 本地计数和官方 Analytics 阈值逻辑已实现；未在真实账号用量上触发。 |
 | SMTP 测试发送、维护通知、失败重试和审计 | 模块已验证 | `maintenance-email` smoke 注入发送器验证第三次成功、最终失败、审计和敏感字段不落日志；`worker-mailer` 真实传输和外部 SMTP 仍未联调。 |
@@ -74,7 +74,7 @@ npm run build
 npm run ui:smoke                         10 passed（preview 6 + worker-mock 4）
 npm run native-ui:smoke                  3 passed
 npm run worker:typecheck
-npm run worker:smoke                     21 smoke checks passed
+npm run worker:smoke                     22 smoke checks passed
 npx wrangler deploy --dry-run --config worker/wrangler.toml
 cmake --build native-server/build --parallel 2
 ctest --output-on-failure                 8/8 passed
