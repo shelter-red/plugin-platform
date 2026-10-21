@@ -79,6 +79,7 @@ export default {
     unloaded: 'Unloaded',
     failed: 'Failed',
     server_offline: 'Server offline',
+    expired: 'Expired',
     pending: 'Pending',
     used: 'Used',
   },

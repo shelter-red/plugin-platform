@@ -79,6 +79,7 @@ export default {
     unloaded: '已卸载',
     failed: '失败',
     server_offline: '服务器离线',
+    expired: '已过期',
     pending: '待接受',
     used: '已使用',
   },
