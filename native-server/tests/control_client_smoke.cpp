@@ -38,6 +38,8 @@ int main(int argc, char** argv) {
   bool sync_result_checked = false;
   int health_response_count = 0;
   int stale_response_count = 0;
+  int list_response_count = 0;
+  bool list_payload_valid = false;
   bool http_payload_valid = false;
   bool stream_payload_valid = false;
   bool file_payload_valid = false;
@@ -77,6 +79,8 @@ int main(int argc, char** argv) {
         stale.timestamp = "2000-01-01T00:00:00.000Z";
         auto health = plugmesh::make_control_frame("plugin.health", "server-1", plugmesh::Json::object(), "sample.plugin");
         health.request_id = "health-1";
+        auto list = plugmesh::make_control_frame("plugin.list", "server-1");
+        list.request_id = "list-1";
         auto request = plugmesh::make_control_frame("request.open", "server-1", {{"method", "GET"}, {"path", "/cookie"}, {"headers", plugmesh::Json::object()}, {"body", ""}, {"bodyEncoding", "base64"}, {"mode", "http"}}, "sample.plugin");
         request.request_id = "http-1";
         websocketpp::lib::error_code send_error;
@@ -84,6 +88,7 @@ int main(int argc, char** argv) {
         const auto serialized_health = plugmesh::serialize_control_frame(health);
         server.send(handle, serialized_health, websocketpp::frame::opcode::text, send_error);
         server.send(handle, serialized_health, websocketpp::frame::opcode::text, send_error);
+        server.send(handle, plugmesh::serialize_control_frame(list), websocketpp::frame::opcode::text, send_error);
         server.send(handle, plugmesh::serialize_control_frame(request), websocketpp::frame::opcode::text, send_error);
         auto sync = plugmesh::make_control_frame("server.sync", "server-1");
         sync.request_id = "sync-1";
@@ -111,6 +116,19 @@ int main(int argc, char** argv) {
       std::lock_guard lock(mutex);
       if (frame.request_id == "health-1") ++health_response_count;
       if (frame.request_id == "stale-health") ++stale_response_count;
+      if (frame.request_id == "list-1") {
+        ++list_response_count;
+        const auto manifests = frame.payload.value("manifests", plugmesh::Json::array());
+        bool sample_found = false;
+        if (manifests.is_array()) {
+          for (const auto& manifest : manifests) {
+            if (manifest.value("id", "") == "sample.plugin") {
+              sample_found = manifest.value("state", "") == "enabled" && manifest.value("healthPath", "") == "/health";
+            }
+          }
+        }
+        list_payload_valid = frame.payload.value("action", "") == "list" && frame.payload.value("ok", false) && manifests.is_array() && manifests.size() == 3 && sample_found;
+      }
       condition.notify_all();
       return;
     }
@@ -201,7 +219,7 @@ int main(int argc, char** argv) {
   server.get_io_service().post([&] { server.stop(); });
   if (server_thread.joinable()) server_thread.join();
 
-  if (!completed || !requests_valid || validated_connections < 2 || registration_count < 3 || sync_context_count != 1 || !sync_result_checked || sync_result_count != 0 || health_response_count != 1 || stale_response_count != 0 || !http_payload_valid || http_frames != std::vector<std::string>{"request.open", "request.chunk", "request.close"} || !stream_payload_valid || stream_frames != std::vector<std::string>{"request.open", "stream.chunk", "stream.close"} || !file_payload_valid || file_frames != std::vector<std::string>{"request.open", "stream.chunk", "stream.close"} || !client_result) {
+  if (!completed || !requests_valid || validated_connections < 2 || registration_count < 3 || sync_context_count != 1 || !sync_result_checked || sync_result_count != 0 || health_response_count != 1 || stale_response_count != 0 || list_response_count != 1 || !list_payload_valid || !http_payload_valid || http_frames != std::vector<std::string>{"request.open", "request.chunk", "request.close"} || !stream_payload_valid || stream_frames != std::vector<std::string>{"request.open", "stream.chunk", "stream.close"} || !file_payload_valid || file_frames != std::vector<std::string>{"request.open", "stream.chunk", "stream.close"} || !client_result) {
     std::cerr << "plain control client reconnect smoke failed: " << client_error
               << " completed=" << completed
               << " requests_valid=" << requests_valid
@@ -212,6 +230,7 @@ int main(int argc, char** argv) {
               << " sync_results=" << sync_result_count
               << " health=" << health_response_count
               << " stale=" << stale_response_count
+              << " list=" << list_payload_valid << '/' << list_response_count
               << " http=" << http_payload_valid << '/' << http_frames.size()
               << " stream=" << stream_payload_valid << '/' << stream_frames.size()
               << " file=" << file_payload_valid << '/' << file_frames.size()

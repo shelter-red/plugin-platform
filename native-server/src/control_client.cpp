@@ -35,6 +35,12 @@ Json manifest(const PluginInfo& plugin) {
   };
 }
 
+Json manifest_list(const PluginManager& plugins) {
+  Json manifests = Json::array();
+  for (const auto& plugin : plugins.snapshot()) manifests.push_back(manifest(plugin));
+  return manifests;
+}
+
 }  // namespace
 
 ControlClient::ControlClient(ServerConfig config, PluginManager& plugins) : config_(std::move(config)), plugins_(plugins), secure_(config_.worker_url.rfind("https://", 0) == 0) {
@@ -241,6 +247,13 @@ void ControlClient::handle_plugin_command(const ControlFrame& frame) {
   const auto action = frame.type.substr(std::string("plugin.").size());
   std::string error;
   bool ok = false;
+  if (action == "list") {
+    Json payload = {{"action", action}, {"ok", true}, {"manifests", manifest_list(plugins_)}};
+    auto response = make_control_frame("plugin.result", config_.server_id, std::move(payload));
+    response.request_id = frame.request_id;
+    send_frame(std::move(response));
+    return;
+  }
   if (action == "load") ok = plugins_.load(id, error);
   else if (action == "unload") ok = plugins_.unload(id, error);
   else if (action == "enable") ok = plugins_.enable(id, error);
@@ -434,9 +447,7 @@ void ControlClient::send_request_error(const ControlFrame& request, const std::s
 }
 
 void ControlClient::send_registration(const std::string& sync_request_id) {
-  Json manifests = Json::array();
-  for (const auto& plugin : plugins_.snapshot()) manifests.push_back(manifest(plugin));
-  Json payload = {{"manifests", std::move(manifests)}};
+  Json payload = {{"manifests", manifest_list(plugins_)}};
   if (!sync_request_id.empty()) payload["syncRequestId"] = sync_request_id;
   send_frame(make_control_frame("server.register", config_.server_id, std::move(payload)));
 }
