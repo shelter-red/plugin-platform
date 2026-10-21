@@ -29,7 +29,7 @@
 | 总配额触发全局维护模式 | 本地已验证 | `worker:runtime-test` 在真实 D1 上把请求配额设为 1：首个公开请求经 Durable Object 正常返回 200，第二个请求因配额耗尽返回 503 维护页并把 `platform_settings` 的 `maintenance` 置为 true，写入 `maintenance.email.skipped` 审计（原因 `request quota reached`），后续请求直接走维护页；官方 Analytics 阈值触发仍未在真实账号上验证。 |
 | SMTP 测试发送、维护通知、失败重试和审计 | 模块已验证 | `maintenance-email` smoke 注入发送器验证第三次成功、最终失败、审计和敏感字段不落日志；`worker-mailer` 真实传输和外部 SMTP 仍未联调。 |
 | Cloudflare Analytics/GraphQL 缓存、权限错误和过期 | 模块已验证 | `cloudflare-usage` smoke；未使用真实账号 token 查询。 |
-| 30 天用量/访问日志和 180 天审计清理 | 模块已验证 | `scheduled-maintenance` smoke 验证保留时间边界及邀请、会话、OAuth state、注册码清理；真实 Cron 调度未验证。 |
+| 30 天用量/访问日志和 180 天审计清理 | 本地已验证 | `scheduled-maintenance` smoke 覆盖保留时间边界；`worker:runtime-test` 在 workerd 中直接调用 scheduled 维护函数，用真实 D1 与本地 R2 验证：31 天前的访问日志、181 天前的审计删除而保留期内数据保留，过期邀请转 `expired`、过期会话 / OAuth state / Cloudflare OAuth state / 注册码删除，过期与 24 小时前已消费的临时对象连同 R2 对象删除并归还 `r2_bytes`/`r2_objects`，30 天前的用量快照清理并写入新快照。真实 Cron 触发时刻未验证。 |
 | Wrangler bundle 和资源绑定 | 本地已验证 | `wrangler deploy --dry-run` 通过；`wrangler-config` smoke 断言 `[assets]` 的 `directory`、`binding`、`not_found_handling` 和 `run_worker_first = true`，防止插件域名根路径被静态资源层截获。D1 ID 仍为占位符，没有生产部署。 |
 
 ## C++ 本地服务器
@@ -44,7 +44,7 @@
 | 加密凭据文件回退 | 本地已验证 | AES-256-GCM、PBKDF2 和文件权限由 `credential-store` CTest 覆盖。 |
 | 重新绑定、撤销和密钥轮换 | 本地已验证 | 本地 `wrangler dev` + 真实 `plugmesh-server` 控制台流程：轮换后凭据文件与 D1 token 哈希同时更新、连接保持、重启后自动重连；撤销后凭据文件删除、服务器转 `revoked`、插件转 `server_offline`、域名转 `offline` 且公开入口 503；在同一进程内通过本地 UI 重新绑定后取得新 serverId 并恢复 `online`（步骤见 `docs/local-e2e.md`）。联调中发现并修复了重新绑定成功后进程误判启动失败而退出的缺陷。边界：本地 miniflare，未在已部署 Worker 上验证。 |
 | 仅监听 localhost、本地会话口令和登录限速 | 本地已验证 | `local-http-server` CTest 与 Native UI Playwright smoke。 |
-| 无浏览器 CLI 注册入口 | 模块已验证 | `--register` 路径可构建，注册 client 有本地 WebSocket smoke；完整 CLI 进程流程未连接已部署 Worker。 |
+| 无浏览器 CLI 注册入口 | 本地已验证 | `--register` 路径可构建，注册 client 有本地 WebSocket smoke；`npm run ui:real-stack` 第三条用例通过 `plugmesh-server --register <worker> <name> <credentialFile>` 连接本地 `wrangler dev` 兑换一次性注册码并取得 serverId，随后同一凭据文件启动服务器并完成插件加载与域名访问。未连接已部署 Worker。 |
 | manifest 校验和目录越界防护 | 本地已验证 | `plugin-manager`、`plugin-loader` CTest。 |
 | `.so` 动态加载和 C ABI v2/v3 | 本地已验证 | Linux 示例插件和 ABI/lifecycle CTest。 |
 | `.dll` 动态加载 | 未验证 | Windows 分支存在，当前环境未构建或加载 DLL。 |
@@ -77,7 +77,7 @@ PLUGMESH_REAL_STACK_URL=http://127.0.0.1:18888 npm run ui:real-stack
                                          3 passed（需先启动本地 wrangler dev 并写入验收数据；第三条用例自动注册并启动真实 C++ 服务器）
 npm run worker:typecheck
 npm run worker:smoke                     25 smoke checks passed
-npm run worker:runtime-test              23 passed（workerd + 真实 D1/Durable Object/R2 模拟）
+npm run worker:runtime-test              24 passed（workerd + 真实 D1/Durable Object/R2 模拟）
   # 本机 glibc 2.31，经 node:22-bookworm-slim 容器执行；glibc ≥ 2.35 可直接运行
 npx wrangler deploy --dry-run --config worker/wrangler.toml
 cmake --build native-server/build --parallel 2
