@@ -205,15 +205,14 @@ cat <<'NEXT_STEPS'
 部署完成。基础 Cloudflare 资源和 Worker Secret 已就绪。
 
 下一步：
-  1. 配置 Worker 路由和 DNS：
-     - console.example.com/*
-     - *.plugins.example.com/*
-  2. 打开 https://console.example.com/setup
-  3. 初始化令牌来源：
+  1. 打开 Cloudflare 提供的默认地址 https://<worker-name>.<workers-subdomain>.workers.dev/setup
+     自定义控制台域名和插件通配域名可以稍后再配置。
+  2. 初始化令牌来源：
      - 本地 / GitHub Actions：.wrangler/plugmesh-setup-token（Actions 还会写入 Job Summary）
      - Cloudflare Workers Builds：本轮构建日志中的“初始化令牌”一行
-  4. 在初始化页填写 GitHub OAuth App 的 Client ID、Client Secret、回调地址和管理员白名单。
-  5. 完成 GitHub 登录后，在管理后台配置 Cloudflare OAuth、SMTP、配额等业务设置。
+  3. 在初始化页填写 GitHub OAuth App 的 Client ID、Client Secret、回调地址和管理员白名单。
+  4. 完成 GitHub 登录后，在管理后台配置 Cloudflare OAuth、SMTP、配额和插件域名后缀。
+  5. 如需自定义插件域名，再在 Cloudflare 配置一次 DNS / Worker Route，并在后台保存域名后缀。
 
-不会通过部署环境变量写入 GitHub / Cloudflare OAuth 或 SMTP 凭据；这些均在后台配置并加密保存。
+部署阶段不会写入 GitHub / Cloudflare OAuth、SMTP 或插件域名后缀；这些均在后台配置并加密保存。
 NEXT_STEPS

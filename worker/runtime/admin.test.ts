@@ -1,7 +1,7 @@
 import { SELF } from 'cloudflare:test'
 import { beforeEach, expect, test } from 'vitest'
 import { defaultPlatformSettings, setPlatformSettingsCache } from '../src/usage'
-import { hashToken, openControl, resetDatabase, seedServer, sendFrame, testEnv } from './helpers'
+import { hashToken, openControl, publicRequest, reply, resetDatabase, seedServer, sendFrame, testEnv } from './helpers'
 
 const ADMIN_TOKEN = 'admin-session-token'
 const MEMBER_TOKEN = 'member-session-token'
@@ -137,6 +137,15 @@ test('域名分配校验前缀、插件状态、服务器在线与健康检查',
   const assigned = await healthy
   expect(assigned.status).toBe(201)
   expect(await assigned.json()).toMatchObject({ hostname: 'ok-prefix.plugins.example.net', status: 'online' })
+
+  const publicResponsePromise = publicRequest('ok-prefix.plugins.example.net', '/dynamic-suffix')
+  const publicFrame = await channel.next()
+  expect(publicFrame.type).toBe('request.open')
+  expect(publicFrame.payload?.path).toBe('/dynamic-suffix')
+  reply(socket, publicFrame, 200, 'dynamic suffix ok')
+  const publicResponse = await publicResponsePromise
+  expect(publicResponse.status).toBe(200)
+  expect(await publicResponse.text()).toBe('dynamic suffix ok')
 
   const duplicate = assign('ok-prefix')
   const duplicateFrame = await channel.next()
