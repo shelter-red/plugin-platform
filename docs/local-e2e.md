@@ -204,6 +204,26 @@ WebSocket：40 条连接同时驻留并逐条回显，关闭后 activeConnection
 
 `sample.plugin` 的 SSE 处理器写完一帧就结束，无法让连接驻留，因此 SSE 只验证并发建立与首帧到达；连接驻留上限由 WebSocket 场景覆盖。这仍是单机 miniflare，不代表已部署 Cloudflare 的多 isolate、跨地域调度或真实网络抖动。
 
+## 配额耗尽与维护模式验证
+
+`npm run stack:maintenance` 用 `tests/maintenance-stack.spec.ts` 在同一真实栈上验证「总配额耗尽 → 全局维护模式」：
+
+```bash
+PLUGMESH_REAL_STACK_URL=http://127.0.0.1:18888 \
+PLUGMESH_REAL_STACK_TOKEN=e2e-session-token \
+npm run stack:maintenance
+```
+
+用例先用一次性注册码拉起真实 `plugmesh-server`、加载并启用 `sample.plugin`、分配域名并确认公开入口返回 200，再建立一条常驻 WebSocket；随后通过 `PUT /api/settings/platform` 把 `quotas.requests` 压到 1（当前窗口计数已远超 1），并断言：
+
+- 下一次公开请求返回 503 维护页，`content-type: text/html`、`retry-after: 300`，正文含「平台维护中」；
+- 新的公开 WebSocket 升级被拒绝为 503，已建立的长连接仍能回显（维护模式只拦新流量）；
+- 维护中 `POST /api/registration-codes`、插件命令、`POST /api/domains` 均返回 503；
+- `audit_log` 留下 `maintenance.email.skipped`，`reason` 为 `request quota reached`（本机未配置 `SESSION_SECRET`，因此标注为未发送而非静默跳过）；
+- 解除维护（`maintenance: false` + 恢复原配额）后公开入口恢复 200、可重新建连，关闭连接后 `activeConnections` 归零。
+
+2026-10-21 实测：`1 passed`。边界：单机 miniflare 单 isolate，未验证多 isolate 下的维护状态传播和已部署环境的配额阈值。
+
 ## 清理
 
 ```bash
@@ -217,5 +237,5 @@ pkill -f 'build/plugmesh[-]server'
 
 - 当前为本地 miniflare/workerd 与本地 D1/R2 模拟，不是已部署 Cloudflare；未验证真实 DNS、证书、Worker routes 和公网长连接。
 - 未连接真实 GitHub OAuth、Cloudflare OAuth 和 SMTP。
-- 本地服务器的轮换与撤销仍以 CTest、`worker:runtime-test` 和 Native UI smoke 覆盖，尚未在真实栈上用本地控制台执行完整轮换流程。
+- 本地服务器的轮换、撤销和同进程重新绑定已在本地真实栈上用本地控制台联调通过；`worker:runtime-test` 与 Native UI smoke 仍覆盖对应逻辑边界。
 - Windows 的构建、DLL 和 Credential Manager 只在 Wine 下验证过，真实 Windows 主机仍未验证。
