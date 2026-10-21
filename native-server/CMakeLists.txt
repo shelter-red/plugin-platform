@@ -105,7 +105,9 @@ add_test(NAME plugmesh-local-http-server-smoke COMMAND plugmesh-local-http-serve
 
 if (WIN32)
   target_compile_definitions(plugmesh_core PRIVATE PLUGMESH_PLATFORM_WINDOWS=1)
-  target_link_libraries(plugmesh_core PRIVATE Advapi32)
+  # websocketpp 在 MinGW 下默认回退 boost::thread，这里强制使用 C++11 <thread>。
+  target_compile_definitions(plugmesh_core PUBLIC _WEBSOCKETPP_CPP11_THREAD_)
+  target_link_libraries(plugmesh_core PRIVATE advapi32 ws2_32 mswsock crypt32)
 elseif(APPLE)
   target_compile_definitions(plugmesh_core PRIVATE PLUGMESH_PLATFORM_MACOS=1)
   target_link_libraries(plugmesh_core PRIVATE "-framework Security" "-framework CoreFoundation")

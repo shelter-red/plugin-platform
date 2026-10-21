@@ -37,7 +37,7 @@
 | 验收项 | 状态 | 证据与边界 |
 | --- | --- | --- |
 | Linux 构建、启动和 localhost UI | 本地已验证 | CMake 构建、CTest `10/10`、`native-ui:smoke` 通过。 |
-| Windows 构建与启动 | 未验证 | 代码包含 DLL、Credential Manager 和 Winsock 路径；当前环境没有执行 Windows 构建。 |
+| Windows 构建与启动 | 部分实现 | 用 MinGW-w64 交叉编译出 `plugmesh-server.exe`、`plugmesh-plugin-host.exe`、本地 UI smoke 服务器、10 个 smoke 可执行文件和三个示例 `.dll`（PE32+），据此补齐 Windows 分支的链接库（`advapi32`/`ws2_32`/`mswsock`/`crypt32`），并对 MinGW 显式启用 websocketpp 的 C++11 线程宏（否则回退 `boost::thread`）。构建步骤见 `native-server/README.md`「Windows 构建」与 `native-server/cmake/mingw-w64-toolchain.cmake`。未在真实 Windows 上启动，Credential Manager 与实际运行仍未验证。 |
 | 首次 UI 设置本地口令和一次性注册码绑定 | 本地已验证 | Native UI Playwright smoke 覆盖绑定表单、localhost 服务重启和新口令登录；注册码交换仍由本地 mock handler 承载，未连接已部署 Worker。 |
 | 长期密钥持久化和重启恢复 | 本地已验证 | Linux 加密文件保存/读取有 CTest；本地真实栈中加密凭据文件重启 `plugmesh-server` 后自动重连 Worker，插件状态和域名恢复，公开入口返回 200（`docs/local-e2e.md`）。Windows 凭据存储未验证。 |
 | Windows Credential Manager、macOS Keychain | 未验证 | 平台实现存在，当前 Linux 环境未执行。 |
@@ -47,7 +47,7 @@
 | 无浏览器 CLI 注册入口 | 本地已验证 | `--register` 路径可构建，注册 client 有本地 WebSocket smoke；`npm run ui:real-stack` 第三条用例通过 `plugmesh-server --register <worker> <name> <credentialFile>` 连接本地 `wrangler dev` 兑换一次性注册码并取得 serverId，随后同一凭据文件启动服务器并完成插件加载与域名访问。未连接已部署 Worker。 |
 | manifest 校验和目录越界防护 | 本地已验证 | `plugin-manager`、`plugin-loader` CTest。 |
 | `.so` 动态加载和 C ABI v2/v3 | 本地已验证 | Linux 示例插件和 ABI/lifecycle CTest。 |
-| `.dll` 动态加载 | 未验证 | Windows 分支存在，当前环境未构建或加载 DLL。 |
+| `.dll` 动态加载 | 未验证 | Windows 分支存在，示例插件已由 MinGW-w64 交叉编译为 `libplugmesh-*.dll` 并通过链接；`LoadLibraryW` 实际加载未在 Windows 上执行。 |
 | 插件加载、卸载、启停、重载和健康检查 | 本地已验证 | `plugin-manager` CTest 和本地 UI 操作接口。 |
 | HTTP、SSE、文件流和 WebSocket 回调 | 本地已验证 | C++ manager/control client/WebSocket lifecycle 测试。 |
 | 协议错误和网络断线恢复 | 本地已验证 | 控制帧校验、nonce/时间窗以及 reconnect smoke。 |
@@ -83,6 +83,9 @@ npm run worker:runtime-test              51 passed（workerd + 真实 D1/Durable
   # 本机 glibc 2.31，经 node:22-bookworm-slim 容器执行；glibc ≥ 2.35 可直接运行
 npx wrangler deploy --dry-run --config worker/wrangler.toml
 cmake --build native-server/build --parallel 2
+cmake -S native-server -B /tmp/build-win -DCMAKE_TOOLCHAIN_FILE=native-server/cmake/mingw-w64-toolchain.cmake \
+  -DOPENSSL_ROOT_DIR=/opt/mingw-openssl -DCMAKE_BUILD_TYPE=Release
+                                         13 个 PE32+ 可执行文件与三个示例 .dll 交叉编译通过（仅编译链接）
 ctest --output-on-failure                 10/10 passed
 ```
 

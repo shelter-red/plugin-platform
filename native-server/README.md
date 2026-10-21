@@ -56,4 +56,43 @@ native-server/build/plugmesh-server --register https://console.example.com '工�
 
 注册成功后，服务器启动时设置 `PLUGMESH_CREDENTIAL_FILE`、`PLUGMESH_CREDENTIAL_PASSWORD` 和 `PLUGMESH_PLUGIN_DIRECTORY`，即可从加密凭据文件恢复长期连接参数。注册码和口令也可以在交互提示中输入，不必放在环境变量中。
 
+## Windows 构建
+
+### MSVC
+
+需要 Visual Studio 2019 或更高版本、CMake 3.16 以上，以及 64 位 OpenSSL 3（推荐 `vcpkg install openssl:x64-windows`）：
+
+```bash
+cmake -S native-server -B build-win -G "Visual Studio 17 2022" -A x64 \
+  -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%/scripts/buildsystems/vcpkg.cmake
+cmake --build build-win --config Release
+```
+
+### MinGW-w64 交叉编译
+
+没有 Windows 主机时，可用 MinGW-w64 在 Linux 上交叉编译，检查 Windows 分支能否编译和链接：
+
+```bash
+# 1. 安装 posix 线程模型工具链（websocketpp 在该模型下使用 std::thread）
+sudo apt-get install g++-mingw-w64-x86-64-posix
+
+# 2. 交叉编译静态 OpenSSL（示例版本 3.0.20）
+curl -LO https://deb.debian.org/debian/pool/main/o/openssl/openssl_3.0.20.orig.tar.gz
+tar xzf openssl_3.0.20.orig.tar.gz && cd openssl-3.0.20
+./Configure mingw64 no-shared no-tests --cross-compile-prefix=x86_64-w64-mingw32- --prefix=/opt/mingw-openssl
+make -j"$(nproc)" && sudo make install_sw
+cd ..
+
+# 3. 交叉编译服务器
+cmake -S native-server -B build-win \
+  -DCMAKE_TOOLCHAIN_FILE="$PWD/native-server/cmake/mingw-w64-toolchain.cmake" \
+  -DOPENSSL_ROOT_DIR=/opt/mingw-openssl \
+  -DCMAKE_BUILD_TYPE=Release
+cmake --build build-win -j"$(nproc)"
+```
+
+产物为 `plugmesh-server.exe`、`plugmesh-plugin-host.exe`、本地 UI smoke 服务器、各 smoke 测试和示例插件 `libplugmesh-*.dll`。`CMAKE_BUILD_TYPE` 必须是 `Release`：未优化时 websocketpp/Asio 模板实例化会超过 MinGW COFF 单节大小上限。
+
+交叉编译只证明 Windows 分支能通过编译与链接；启动、Credential Manager 凭据读写和 `.dll` 实际加载仍需在 Windows 主机上执行。
+
 网络传输层复用 `worker/src/protocol.ts` 的协议字段约定；当前已接入控制 WebSocket、HTTP 回调、SSE/文件流和公开 WebSocket 的 base64 二进制桥接。HTTP 请求体和响应块使用 `bodyEncoding`/`encoding: "base64"` 传输二进制数据；未编码的错误块保留为 UTF-8 文本。文件流响应通过 `fileStream: true` 标记，大于 1 MiB 时由 Worker 临时写入 R2 并在响应消费或 15 分钟超时后回收。服务器重连后会按管理端保存的期望状态恢复插件；启用态插件必须重新通过健康检查，公开域名才会恢复在线。域名首次分配前同样会执行健康检查。本地服务器日志环与 `/api/logs` 已接入；插件主动日志回传尚未定义独立控制帧。
