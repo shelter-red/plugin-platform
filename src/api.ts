@@ -278,6 +278,13 @@ export async function commandPlugin(pluginInstanceId: string, action: PluginActi
   return response.json() as Promise<PluginCommandResult>
 }
 
+export async function syncServer(serverId: string): Promise<PluginCommandResult> {
+  const apiBase = import.meta.env.VITE_API_BASE ?? ''
+  const response = await fetch(`${apiBase}/api/servers/${encodeURIComponent(serverId)}/sync`, { method: 'POST', credentials: 'include' })
+  if (!response.ok) throw await apiError(response, `server sync failed: ${response.status}`)
+  return response.json() as Promise<PluginCommandResult>
+}
+
 export async function checkPluginHealth(pluginInstanceId: string): Promise<PluginHealthResult> {
   const apiBase = import.meta.env.VITE_API_BASE ?? ''
   const response = await fetch(`${apiBase}/api/plugins/${encodeURIComponent(pluginInstanceId)}/health`, { method: 'POST', credentials: 'include' })

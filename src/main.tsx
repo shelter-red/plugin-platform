@@ -38,7 +38,7 @@ import {
   Zap,
 } from 'lucide-react'
 import './styles.css'
-import { assignDomain, checkPluginHealth, commandPlugin, createInvite, createRegistrationCode, fetchAccessLogs, fetchAudit, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchInvites, fetchLocalUsage, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchPluginDetails, fetchServerDetails, fetchServers, fetchSmtpSettings, revokeCloudflareSettings, revokeInvite, type ApiAccessLog, type ApiAudit, type ApiDomain, type ApiInvite, type ApiOverview, type ApiPlugin, type ApiPluginDetail, type ApiServer, type ApiServerDetail, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type PlatformSettings, type PluginAction, type PluginHealthResult, type SmtpSettings, sendSmtpTest, updatePlatformSettings, updateSmtpSettings } from './api'
+import { assignDomain, checkPluginHealth, commandPlugin, createInvite, createRegistrationCode, fetchAccessLogs, fetchAudit, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchInvites, fetchLocalUsage, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchPluginDetails, fetchServerDetails, fetchServers, fetchSmtpSettings, revokeCloudflareSettings, revokeInvite, syncServer, type ApiAccessLog, type ApiAudit, type ApiDomain, type ApiInvite, type ApiOverview, type ApiPlugin, type ApiPluginDetail, type ApiServer, type ApiServerDetail, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type PlatformSettings, type PluginAction, type PluginHealthResult, type SmtpSettings, sendSmtpTest, updatePlatformSettings, updateSmtpSettings } from './api'
 
 type Page = 'overview' | 'servers' | 'plugins' | 'domains' | 'usage' | 'logs' | 'audit' | 'settings'
 type Theme = 'dark' | 'light' | 'system'
@@ -342,6 +342,21 @@ function App() {
     }
   }
 
+  const syncManifests = async () => {
+    const onlineServerIds = [...new Set((servers ?? []).filter((server) => server.status === 'online').map((server) => server.id))]
+    if (onlineServerIds.length === 0) {
+      showToast('没有在线的插件服务器')
+      return
+    }
+    try {
+      await Promise.all(onlineServerIds.map((serverId) => syncServer(serverId)))
+      showToast(`已请求 ${onlineServerIds.length} 台服务器同步 manifest`)
+      window.setTimeout(() => void refreshData(false), 500)
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'manifest 同步请求失败')
+    }
+  }
+
   const filteredPlugins = useMemo(() => {
     const current = plugins ?? []
     if (!search.trim()) return current
@@ -405,7 +420,7 @@ function App() {
             {dataError && <div className="notice-bar compact"><div className="notice-icon"><AlertCircle size={16} /></div><div><strong>数据读取失败</strong><span>{dataError}</span></div><button onClick={() => void refreshData()}>重试 <RefreshCw size={14} /></button></div>}
             {page === 'overview' && <Overview overview={overview} localUsage={localUsage} settings={platformSettings} audits={audits ?? []} range={range} setRange={setRange} onNavigate={selectPage} />}
             {page === 'servers' && <Servers servers={servers ?? []} loading={dataLoading} onAction={showToast} onBind={() => setModal('server')} onDetail={(id) => void openDetail('server', id)} />}
-            {page === 'plugins' && <Plugins plugins={filteredPlugins} loading={dataLoading} onAction={showToast} onLoad={() => setModal('plugin')} onDetail={(id) => void openDetail('plugin', id)} onHealth={(plugin) => void runHealthCheck(plugin)} />}
+            {page === 'plugins' && <Plugins plugins={filteredPlugins} loading={dataLoading} onAction={() => void syncManifests()} onLoad={() => setModal('plugin')} onDetail={(id) => void openDetail('plugin', id)} onHealth={(plugin) => void runHealthCheck(plugin)} />}
             {page === 'domains' && <Domains domains={domains ?? []} loading={dataLoading} onAction={showToast} onAssign={() => setModal('domain')} />}
             {page === 'usage' && <Usage settings={platformSettings} usage={usage} localUsage={localUsage} loading={usageLoading} error={usageError} onNavigate={selectPage} />}
             {page === 'logs' && <AccessLogs logs={accessLogs ?? []} loading={accessLogsLoading} error={accessLogsError} onExport={exportAccessLogs} />}
