@@ -240,6 +240,14 @@ export default {
     updatedAt: 'Updated {{time}}',
     windowStartedAt: 'Window started {{time}}',
     noData: 'No data',
+    breakdown: {
+      title: 'Local request breakdown',
+      subtitle: 'Public requests in the selected range, grouped by user, plugin and domain.',
+      users: 'Users',
+      plugins: 'Plugins',
+      domains: 'Domains',
+      empty: 'No requests in this range',
+    },
   },
   logs: {
     loadFailed: 'Could not read access logs',

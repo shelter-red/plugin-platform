@@ -946,11 +946,16 @@ async function enforceCloudflareUsageQuotas(env: Env, usage: CloudflareUsageResu
 
 export async function localUsageApi(env: Env, user: AuthenticatedUser, url = new URL('https://worker.invalid/api/usage/local')): Promise<Response> {
   if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
-  const usage = await env.DB.prepare('SELECT request_count, request_window_started_at, active_connections, r2_bytes, r2_objects, updated_at FROM platform_usage WHERE key = ?').bind('global').first<{ request_count: number; request_window_started_at: string; active_connections: number; r2_bytes: number; r2_objects: number; updated_at: string }>()
   const range = url.searchParams.get('range')
   const durationMs = range === '24h' ? 24 * 60 * 60 * 1000 : range === '30d' ? 30 * 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000
   const since = new Date(Date.now() - durationMs).toISOString()
-  const snapshots = await env.DB.prepare('SELECT captured_at, request_count, active_connections, r2_bytes, r2_objects FROM usage_snapshots WHERE captured_at >= ? ORDER BY captured_at ASC').bind(since).all<UsageSnapshot>()
+  const [usage, snapshots, users, plugins, domains] = await Promise.all([
+    env.DB.prepare('SELECT request_count, request_window_started_at, active_connections, r2_bytes, r2_objects, updated_at FROM platform_usage WHERE key = ?').bind('global').first<{ request_count: number; request_window_started_at: string; active_connections: number; r2_bytes: number; r2_objects: number; updated_at: string }>(),
+    env.DB.prepare('SELECT captured_at, request_count, active_connections, r2_bytes, r2_objects FROM usage_snapshots WHERE captured_at >= ? ORDER BY captured_at ASC').bind(since).all<UsageSnapshot>(),
+    env.DB.prepare('SELECT request_logs.user_id AS id, COALESCE(users.display_name, users.email, request_logs.user_id) AS label, COUNT(*) AS requests FROM request_logs LEFT JOIN users ON users.id = request_logs.user_id WHERE request_logs.created_at >= ? GROUP BY request_logs.user_id ORDER BY requests DESC, label ASC LIMIT 5').bind(since).all<UsageBreakdownEntry>(),
+    env.DB.prepare('SELECT request_logs.plugin_instance_id AS id, COALESCE(plugin_instances.name, request_logs.plugin_instance_id) AS label, COUNT(*) AS requests FROM request_logs LEFT JOIN plugin_instances ON plugin_instances.id = request_logs.plugin_instance_id WHERE request_logs.created_at >= ? GROUP BY request_logs.plugin_instance_id ORDER BY requests DESC, label ASC LIMIT 5').bind(since).all<UsageBreakdownEntry>(),
+    env.DB.prepare('SELECT hostname AS id, hostname AS label, COUNT(*) AS requests FROM request_logs WHERE created_at >= ? GROUP BY hostname ORDER BY requests DESC, label ASC LIMIT 5').bind(since).all<UsageBreakdownEntry>(),
+  ])
   return json({
     requestCount: usage?.request_count ?? 0,
     requestWindowStartedAt: usage?.request_window_started_at ?? null,
@@ -959,7 +964,15 @@ export async function localUsageApi(env: Env, user: AuthenticatedUser, url = new
     r2Objects: usage?.r2_objects ?? 0,
     updatedAt: usage?.updated_at ?? null,
     snapshots: snapshots.results,
+    // 本地计数按用户、插件和域名拆分，范围与快照一致，均来自公开请求日志。
+    breakdown: { users: users.results, plugins: plugins.results, domains: domains.results },
   })
+}
+
+type UsageBreakdownEntry = {
+  id: string
+  label: string
+  requests: number
 }
 
 type UsageSnapshot = {

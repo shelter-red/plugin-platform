@@ -156,6 +156,12 @@ export interface CloudflareUsage {
   }
 }
 
+export interface UsageBreakdownEntry {
+  id: string
+  label: string
+  requests: number
+}
+
 export interface LocalUsage {
   requestCount: number
   requestWindowStartedAt: string | null
@@ -164,6 +170,11 @@ export interface LocalUsage {
   r2Objects: number
   updatedAt: string | null
   snapshots: UsageSnapshot[]
+  breakdown: {
+    users: UsageBreakdownEntry[]
+    plugins: UsageBreakdownEntry[]
+    domains: UsageBreakdownEntry[]
+  }
 }
 
 export interface UsageSnapshot {

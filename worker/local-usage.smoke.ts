@@ -6,12 +6,17 @@ const snapshots = [
   { captured_at: '2026-10-21T00:00:00.000Z', request_count: 12, active_connections: 2, r2_bytes: 4096, r2_objects: 1 },
   { captured_at: '2026-10-21T00:15:00.000Z', request_count: 18, active_connections: 3, r2_bytes: 8192, r2_objects: 2 },
 ]
+const breakdown = {
+  users: [{ id: 'user-1', label: 'Runtime Owner', requests: 12 }],
+  plugins: [{ id: 'plugin-1', label: 'Sample Plugin', requests: 12 }],
+  domains: [{ id: 'demo.plugins.example.com', label: 'demo.plugins.example.com', requests: 12 }],
+}
 const database = {
   prepare(sql: string) {
     const query = {
       bind: (..._values: unknown[]) => query,
       first: async <T>() => sql.includes('platform_usage') ? { request_count: 18, request_window_started_at: '2026-10-21T00:00:00.000Z', active_connections: 3, r2_bytes: 8192, r2_objects: 2, updated_at: '2026-10-21T00:15:00.000Z' } as T : null,
-      all: async <T>() => ({ results: snapshots as T[] }),
+      all: async <T>() => ({ results: (sql.includes('usage_snapshots') ? snapshots : sql.includes('LEFT JOIN users') ? breakdown.users : sql.includes('LEFT JOIN plugin_instances') ? breakdown.plugins : breakdown.domains) as T[] }),
       run: async () => ({ meta: { changes: 0 } }),
     }
     return query
@@ -31,6 +36,7 @@ assert.deepEqual(await response.json(), {
   r2Objects: 2,
   updatedAt: '2026-10-21T00:15:00.000Z',
   snapshots,
+  breakdown,
 })
 
 const forbidden = await localUsageApi(env, member)

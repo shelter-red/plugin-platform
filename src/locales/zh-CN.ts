@@ -240,6 +240,14 @@ export default {
     updatedAt: '更新于 {{time}}',
     windowStartedAt: '窗口始于 {{time}}',
     noData: '暂无数据',
+    breakdown: {
+      title: '本地请求分布',
+      subtitle: '所选时间范围内按用户、插件和域名聚合的公开请求。',
+      users: '用户',
+      plugins: '插件',
+      domains: '域名',
+      empty: '该范围内暂无请求',
+    },
   },
   logs: {
     loadFailed: '访问日志读取失败',

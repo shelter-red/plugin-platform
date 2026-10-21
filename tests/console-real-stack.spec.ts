@@ -332,12 +332,18 @@ test('管理端维护开关与配额保存落到真实平台状态并写入审�
   }
 })
 
-test('管理端用量与配额页展示真实本地计数与官方未连接状态', async ({ page }) => {
-  const { call } = createStackApi(page.request, sessionToken)
+test('管理端用量与配额页展示真实本地计数、分布与官方未连接状态', async ({ page }) => {
+  test.setTimeout(180_000)
+  type BreakdownEntry = { id: string; label: string; requests: number }
+  type LocalUsage = { requestCount: number; r2Bytes: number; r2Objects: number; breakdown: { users: BreakdownEntry[]; plugins: BreakdownEntry[]; domains: BreakdownEntry[] } }
+  const { call, api } = createStackApi(page.request, sessionToken)
   const official = (await (await call('/api/usage/cloudflare')).json()) as { configured: boolean }
   expect(official.configured, '真实栈应处于 Cloudflare 官方数据未连接状态').toBe(false)
+  const readUsage = async (): Promise<LocalUsage> => (await (await call('/api/usage/local')).json()) as LocalUsage
 
-  const before = (await (await call('/api/usage/local')).json()) as { requestCount: number }
+  // 先拉起真实插件域名，后面用它验证本地计数按用户维度的增量来自真实请求日志。
+  const prepared = await preparePublicPlugin(baseURL!, api)
+  const before = await readUsage()
   // POST /api/blobs 会先占用一次请求配额并写入真实 R2 用量，用于验证页面计数不是伪造值。
   const upload = await page.request.post('/api/blobs', {
     headers: { 'content-type': 'application/octet-stream', 'content-length': '5' },
@@ -349,7 +355,7 @@ test('管理端用量与配额页展示真实本地计数与官方未连接状�
   let counted = before.requestCount
   try {
     await expect.poll(async () => {
-      const local = (await (await call('/api/usage/local')).json()) as { requestCount: number; r2Objects: number }
+      const local = await readUsage()
       counted = local.requestCount
       return local.requestCount === before.requestCount + 1 && local.r2Objects >= 1
     }, { timeout: 15_000 }).toBe(true)
@@ -380,16 +386,48 @@ test('管理端用量与配额页展示真实本地计数与官方未连接状�
     expect(consumed.status()).toBe(200)
     expect(await consumed.text()).toBe('hello')
     await expect.poll(async () => {
-      const local = (await (await call('/api/usage/local')).json()) as { r2Bytes: number; r2Objects: number }
+      const local = await readUsage()
       return local.r2Objects === 0 && local.r2Bytes === 0
     }, { timeout: 15_000 }).toBe(true)
 
     await page.reload()
     await page.getByRole('button', { name: '用量与配额', exact: true }).click()
     await expect(page.locator('.resource-card').filter({ hasText: 'R2 存储' })).toContainText('0 个对象')
+
+    // 本地分布按用户聚合：对刚就绪的公开域名再发 3 次请求，该用户请求数必须精确增加 3。
+    const adminBefore = before.breakdown.users.find((entry) => entry.label === 'E2E Admin')
+    expect(adminBefore, '真实栈管理员的公开请求应写入 request_logs').toBeTruthy()
+    for (let index = 0; index < 3; index += 1) expect((await getPublic(baseURL!, prepared.target.host)).status).toBe(200)
+    await expect.poll(async () => {
+      const users = (await readUsage()).breakdown.users
+      return users.find((entry) => entry.id === adminBefore!.id)?.requests
+    }, { timeout: 30_000 }).toBe(adminBefore!.requests + 3)
+
+    const breakdown = (await readUsage()).breakdown
+    const descending = (rows: BreakdownEntry[]) => rows.every((row, index) => index === 0 || rows[index - 1].requests >= row.requests)
+    expect(descending(breakdown.plugins), '插件分布应按请求数降序').toBe(true)
+    expect(descending(breakdown.domains), '域名分布应按请求数降序').toBe(true)
+    expect(breakdown.domains.some((entry) => entry.id.endsWith('.plugins.example.com')), '域名分布应来自真实公开域名').toBe(true)
+
+    await page.reload()
+    await page.getByRole('button', { name: '用量与配额', exact: true }).click()
+    const panel = page.locator('.breakdown-panel')
+    await expect(panel.getByRole('heading', { name: '本地请求分布' })).toBeVisible()
+    // 刚产生过真实公开请求，三个维度都应至少返回一行。
+    expect(breakdown.users.length).toBeGreaterThan(0)
+    expect(breakdown.plugins.length).toBeGreaterThan(0)
+    expect(breakdown.domains.length).toBeGreaterThan(0)
+    const users = breakdown.users[0]!
+    const plugins = breakdown.plugins[0]!
+    const domains = breakdown.domains[0]!
+    await expect(panel.locator('.breakdown-column').filter({ hasText: '用户' })).toContainText(users.label)
+    await expect(panel.locator('.breakdown-column').filter({ hasText: '用户' })).toContainText(users.requests.toLocaleString('zh-CN'))
+    await expect(panel.locator('.breakdown-column').filter({ hasText: '插件' })).toContainText(plugins.label)
+    await expect(panel.locator('.breakdown-column').filter({ hasText: '域名' })).toContainText(domains.label)
   } finally {
-    // 断言失败时也要消费临时对象，避免把 R2 用量留在共享真实栈里。
+    // 断言失败时也要消费临时对象并停掉临时服务器，避免把用量和进程留在共享真实栈里。
     await page.request.get(blobUrl).catch(() => undefined)
+    await prepared.server.stop()
   }
 })
 

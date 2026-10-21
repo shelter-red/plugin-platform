@@ -41,7 +41,7 @@ import {
 import './styles.css'
 import './i18n'
 import i18n, { storeLanguage, type Language } from './i18n'
-import { ApiError, assignDomain, checkPluginHealth, commandPlugin, createInvite, createRegistrationCode, fetchAccessLogs, fetchAudit, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchInvites, fetchLocalUsage, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchPluginDetails, fetchServerDetails, fetchServers, fetchSmtpSettings, revokeCloudflareSettings, revokeInvite, syncServer, type ApiAccessLog, type ApiAudit, type ApiDomain, type ApiInvite, type ApiOverview, type ApiPlugin, type ApiPluginDetail, type ApiServer, type ApiServerDetail, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type PlatformSettings, type PluginAction, type PluginHealthResult, type SmtpSettings, type UsageSnapshot, sendSmtpTest, updatePlatformSettings, updateSmtpSettings } from './api'
+import { ApiError, assignDomain, checkPluginHealth, commandPlugin, createInvite, createRegistrationCode, fetchAccessLogs, fetchAudit, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchInvites, fetchLocalUsage, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchPluginDetails, fetchServerDetails, fetchServers, fetchSmtpSettings, revokeCloudflareSettings, revokeInvite, syncServer, type ApiAccessLog, type ApiAudit, type ApiDomain, type ApiInvite, type ApiOverview, type ApiPlugin, type ApiPluginDetail, type ApiServer, type ApiServerDetail, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type PlatformSettings, type PluginAction, type PluginHealthResult, type SmtpSettings, type UsageBreakdownEntry, type UsageSnapshot, sendSmtpTest, updatePlatformSettings, updateSmtpSettings } from './api'
 
 type Page = 'overview' | 'servers' | 'plugins' | 'domains' | 'usage' | 'logs' | 'audit' | 'settings'
 type Theme = 'dark' | 'light' | 'system'
@@ -639,7 +639,13 @@ function Usage({ settings, usage, localUsage, loading, error, onNavigate }: { se
       <ResourceCard title={t('usage.card.durableObjects')} current={durableObjects ? formatNumber(durableObjects.requests) : '—'} limit={durableObjectLimit} unit={durableObjects ? t('usage.card.storage', { size: formatBytes(durableObjects.storedBytes) ?? '—' }) : ''} percent={durableObjectPercent} icon={Activity} />
     </div>
     <div className="panel"><div className="panel-header"><div><h2>{t('usage.sourcesTitle')}</h2><p>{t('usage.sourcesSubtitle')}</p></div></div><div className="source-row"><span className="source-name"><span className={`source-dot ${connected ? 'green' : 'pending'}`} />Cloudflare Analytics API</span><span className="muted">{connected ? `${usage?.cached ? t('usage.cached') : t('usage.latest')} · ${usageUpdatedAt ? formatDateTime(usageUpdatedAt) : t('usage.unknownTime')}` : t('usage.notConfigured')}</span><button className="text-link" onClick={() => onNavigate('settings')}>{t('usage.configureSource')} <ArrowUpRight size={14} /></button></div><div className="source-row"><span className="source-name"><span className={`source-dot ${hasLocalUsage ? 'green' : 'pending'}`} />{t('overview.note.localCount')}</span><span className="muted">{localUpdatedAt ? t('usage.updatedAt', { time: formatDateTime(localUpdatedAt) }) : t('usage.card.notConnected')}</span><span className="muted">{requestWindowStartedAt ? t('usage.windowStartedAt', { time: formatDateTime(requestWindowStartedAt) }) : t('usage.noData')}</span></div></div>
+    <div className="panel breakdown-panel"><div className="panel-header"><div><h2>{t('usage.breakdown.title')}</h2><p>{t('usage.breakdown.subtitle')}</p></div></div><div className="breakdown-grid"><BreakdownColumn title={t('usage.breakdown.users')} rows={localUsage?.breakdown.users ?? []} /><BreakdownColumn title={t('usage.breakdown.plugins')} rows={localUsage?.breakdown.plugins ?? []} /><BreakdownColumn title={t('usage.breakdown.domains')} rows={localUsage?.breakdown.domains ?? []} /></div></div>
   </div>
+}
+
+function BreakdownColumn({ title, rows }: { title: string; rows: UsageBreakdownEntry[] }) {
+  const { t } = useTranslation()
+  return <div className="breakdown-column"><h3>{title}</h3>{rows.length === 0 ? <p className="breakdown-empty">{t('usage.breakdown.empty')}</p> : rows.map((row) => <div className="breakdown-row" key={row.id}><span title={row.label}>{row.label}</span><strong>{formatNumber(row.requests)}</strong></div>)}</div>
 }
 
 function formatBytes(value: number): string | null {

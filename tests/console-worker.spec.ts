@@ -15,6 +15,7 @@ const localUsage = {
   r2Objects: 2,
   updatedAt: '2026-10-21T00:00:00.000Z',
   snapshots: [],
+  breakdown: { users: [], plugins: [], domains: [] },
 }
 
 type WorkerMock = {
