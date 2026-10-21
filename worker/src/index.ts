@@ -646,7 +646,7 @@ function parsePositiveQuota(value: unknown, fallback: number): number {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback
 }
 
-async function cloudflareSettingsApi(request: Request, env: Env, user: AuthenticatedUser): Promise<Response> {
+export async function cloudflareSettingsApi(request: Request, env: Env, user: AuthenticatedUser): Promise<Response> {
   if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
   const existing = await env.DB.prepare('SELECT ciphertext, iv, updated_at FROM cloudflare_credentials WHERE id = ?').bind('primary').first<{ ciphertext: string; iv: string; updated_at: string }>()
   if (request.method === 'GET') {
@@ -703,7 +703,7 @@ function maskAccountId(accountId: string | null | undefined): string | null {
   return accountId.length <= 8 ? '已配置' : `${accountId.slice(0, 4)}...${accountId.slice(-4)}`
 }
 
-async function smtpSettingsApi(request: Request, env: Env, user: AuthenticatedUser): Promise<Response> {
+export async function smtpSettingsApi(request: Request, env: Env, user: AuthenticatedUser): Promise<Response> {
   if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
   const existing = await env.DB.prepare('SELECT ciphertext, iv, updated_at FROM smtp_settings WHERE id = ?').bind('primary').first<{ ciphertext: string; iv: string; updated_at: string }>()
   if (request.method === 'GET') {
