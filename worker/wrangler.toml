@@ -16,7 +16,7 @@ crons = ["*/15 * * * *"]
 [[d1_databases]]
 binding = "DB"
 database_name = "plugmesh"
-database_id = "replace-with-d1-database-id"
+# Cloudflare Deploy Button 会自动创建并回填 database_id；npm run deploy 也会自动补齐。
 migrations_dir = "migrations"
 
 [[durable_objects.bindings]]

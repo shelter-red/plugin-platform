@@ -80,10 +80,10 @@ cmake --build native-server/build --target test
 npm ci
 export CLOUDFLARE_API_TOKEN=...
 # 可选：export CLOUDFLARE_ACCOUNT_ID=...
-npm run deploy:worker
+npm run deploy
 ```
 
-`npm run deploy:worker` 会自动完成：
+`npm run deploy` 会自动完成：
 
 1. 构建管理端 SPA；
 2. 创建或复用 D1 数据库 `plugmesh`，并把真实 `database_id` 回填到 `worker/wrangler.toml`；
@@ -95,7 +95,19 @@ npm run deploy:worker
 
 脚本不会写入 GitHub OAuth、Cloudflare OAuth 或 SMTP 凭据。`SESSION_SECRET` 用于加密后台保存的凭据，必须保留，不能删除或随意轮换，否则已有密文将无法解密。
 
-### 3. 配置入口并完成首次初始化
+### 3. Cloudflare 官方一键部署按钮（仓库公开后）
+
+仓库公开到 GitHub 或 GitLab 后，可以把下面的 `<OWNER>/<REPO>` 换成实际公开仓库地址，在 README 顶部启用 Cloudflare 官方按钮：
+
+```md
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/<OWNER>/<REPO>)
+```
+
+Cloudflare Workers Builds 会先执行 `npm run build`，再执行 `npm run deploy`。脚本通过 `WORKERS_CI=1` 自动识别该环境：D1、R2 和 Durable Object 由 Cloudflare 自动创建并绑定，脚本负责应用 D1 migrations、发布 Worker 和初始化基础设施 Secret。首次生成的 `SETUP_TOKEN` 会显示在该次 Workers Builds 日志的「初始化令牌」一行。
+
+当前本地仓库没有配置公开 Git remote，因此 README 暂时不固定一个会失效的按钮链接。
+
+### 4. 配置入口并完成首次初始化
 
 一键部署不会修改 DNS 或 Worker Routes，需要在 Cloudflare 控制台手动配置一次：
 
@@ -115,7 +127,7 @@ npm run deploy:worker
 
 首个用户创建后 `/setup` 会永久锁定。初始化令牌可通过 `wrangler secret delete SETUP_TOKEN` 删除，不影响后台的 OAuth 配置入口。
 
-### 4. GitHub Actions 自动部署
+### 5. GitHub Actions 自动部署
 
 仓库包含 [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)，推送 `master` 或手动运行 workflow 即可走同一套一键部署脚本。
 
@@ -127,27 +139,25 @@ npm run deploy:worker
 首次部署生成的 `SETUP_TOKEN` 会写入该次 Actions 运行的 Job Summary，不会打印到普通部署日志。之后如果远端已有令牌而本地文件不存在，脚本不会自动覆盖；确需重置时显式执行：
 
 ```bash
-SETUP_TOKEN='至少 24 个字符的新令牌' npm run deploy:worker
+SETUP_TOKEN='至少 24 个字符的新令牌' npm run deploy
 ```
 
-### 5. 校验与高级选项
+### 6. 校验与高级选项
 
 ```bash
-npm run deploy:worker -- --dry-run     # 只构建并校验 bundle，不访问云端、不写密钥、不发布
-npm run deploy:worker -- --skip-build  # 复用已有 dist，只做资源准备与发布
-npm run deploy:worker -- --help
+npm run deploy -- --dry-run     # 只构建并校验 bundle，不访问云端、不写密钥、不发布
+npm run deploy -- --skip-build  # 复用已有 dist，只做资源准备与发布
+npm run deploy -- --help
 ```
 
-`--dry-run` 使用仓库中的占位 D1 ID 校验 bundle，不会创建 D1/R2 或修改远端资源。真实部署时脚本会自动创建或复用资源并回填 ID。
+`--dry-run` 不需要 D1 ID 或云端凭据，不会创建 D1/R2、写密钥或修改远端资源。真实部署时脚本会自动创建或复用资源并回填 ID。
 
-### 6. 本地 Worker 调试
+### 7. 本地 Worker 调试
 
-本地调试仍使用独立的 D1/R2 资源。先创建资源并把 D1 ID 写入 `worker/wrangler.toml`，然后应用本地迁移并启动：
+本地调试使用 Miniflare 模拟的本地 D1/R2，不需要云端资源 ID：
 
 ```bash
-npx wrangler d1 create plugmesh
-npx wrangler r2 bucket create plugmesh-blobs
-npx wrangler d1 migrations apply plugmesh --local --config worker/wrangler.toml
+npx wrangler d1 migrations apply DB --local --config worker/wrangler.toml
 npm run worker:dev
 ```
 

@@ -11,12 +11,18 @@ BUCKET_NAME=plugmesh-blobs
 SETUP_TOKEN_FILE=.wrangler/plugmesh-setup-token
 DRY_RUN=0
 SKIP_BUILD=0
+CLOUDFLARE_BUILD=0
+if [[ "${WORKERS_CI:-}" == "1" ]]; then
+  CLOUDFLARE_BUILD=1
+fi
 
 usage() {
   cat <<'USAGE'
-用法：npm run deploy:worker [-- 选项]
+用法：npm run deploy [-- 选项]
   --dry-run     只构建并校验 bundle，不访问云端、不写密钥、不发布
   --skip-build  复用已有 dist，不重新构建管理端
+  --cloudflare-builds
+                按 Cloudflare Workers Builds 方式部署；WORKERS_CI=1 时自动启用
   -h, --help    显示本帮助
 
 基础配置（真实部署必填）：
@@ -41,6 +47,7 @@ for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=1 ;;
     --skip-build) SKIP_BUILD=1 ;;
+    --cloudflare-builds) CLOUDFLARE_BUILD=1 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "未知参数：$arg" >&2; usage >&2; exit 2 ;;
   esac
@@ -63,7 +70,7 @@ read_database_id() {
 }
 
 write_database_id() {
-  node -e 'const fs = require("node:fs"); const id = process.argv[2]; const path = process.argv[1]; fs.writeFileSync(path, fs.readFileSync(path, "utf8").replace(/^database_id = "[^"]*"$/m, `database_id = "${id}"`))' "$CONFIG" "$1"
+  node -e 'const fs = require("node:fs"); const id = process.argv[2]; const path = process.argv[1]; const line = `database_id = "${id}"`; let text = fs.readFileSync(path, "utf8"); if (/^database_id = "[^"]*"$/m.test(text)) text = text.replace(/^database_id = "[^"]*"$/m, line); else text = text.replace(/^(database_name = "plugmesh"\n)/m, `$1${line}\n`); fs.writeFileSync(path, text)' "$CONFIG" "$1"
 }
 
 find_database_id() {
@@ -104,7 +111,9 @@ require_secret_length() {
 }
 
 echo "==> 构建管理端静态资源"
-if [[ $SKIP_BUILD -eq 1 ]]; then
+if [[ $CLOUDFLARE_BUILD -eq 1 && $SKIP_BUILD -eq 0 ]]; then
+  echo "    Workers Builds 已执行项目 build，跳过重复构建"
+elif [[ $SKIP_BUILD -eq 1 ]]; then
   echo "    已跳过（--skip-build）"
 else
   npm run build
@@ -117,38 +126,42 @@ if [[ $DRY_RUN -eq 1 ]]; then
   exit 0
 fi
 
-[[ -n "${CLOUDFLARE_API_TOKEN:-}" ]] || fail "缺少 CLOUDFLARE_API_TOKEN。真实部署只需这一项基础凭据，请先按 README 创建 API Token。"
-
 WORKER_NAME=$(read_worker_name)
 [[ -n "$WORKER_NAME" ]] || fail "无法从 $CONFIG 读取 Worker 名称"
 
-echo "==> 验证 Cloudflare 凭据"
-wrangler whoami >/dev/null || fail "Cloudflare 凭据无效，或账号不唯一；请检查 CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID"
+if [[ $CLOUDFLARE_BUILD -eq 1 ]]; then
+  echo "==> Cloudflare Workers Builds：使用平台自动创建并绑定的 D1 / R2 资源"
+else
+  [[ -n "${CLOUDFLARE_API_TOKEN:-}" ]] || fail "缺少 CLOUDFLARE_API_TOKEN。真实部署只需这一项基础凭据，请先按 README 创建 API Token。"
 
-echo "==> 准备 D1 数据库 $DB_NAME"
-database_id=$(read_database_id)
-if [[ -z "$database_id" || "$database_id" == replace-with-* ]]; then
-  database_id=$(find_database_id)
-  if [[ -z "$database_id" ]]; then
-    wrangler d1 create "$DB_NAME" >/dev/null
+  echo "==> 验证 Cloudflare 凭据"
+  wrangler whoami >/dev/null || fail "Cloudflare 凭据无效，或账号不唯一；请检查 CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID"
+
+  echo "==> 准备 D1 数据库 $DB_NAME"
+  database_id=$(read_database_id)
+  if [[ -z "$database_id" || "$database_id" == replace-with-* ]]; then
     database_id=$(find_database_id)
+    if [[ -z "$database_id" ]]; then
+      wrangler d1 create "$DB_NAME" >/dev/null
+      database_id=$(find_database_id)
+    fi
+    [[ -n "$database_id" ]] || fail "无法创建或复用 D1 数据库 $DB_NAME"
+    write_database_id "$database_id"
+    echo "    已写入 ${CONFIG}：database_id = $database_id"
+  else
+    echo "    复用 ${CONFIG} 中已有 database_id = $database_id"
   fi
-  [[ -n "$database_id" ]] || fail "无法创建或复用 D1 数据库 $DB_NAME"
-  write_database_id "$database_id"
-  echo "    已写入 ${CONFIG}：database_id = $database_id"
-else
-  echo "    复用 ${CONFIG} 中已有 database_id = $database_id"
-fi
 
-echo "==> 准备 R2 存储桶 $BUCKET_NAME"
-if wrangler r2 bucket list | grep -Eq "(^|[[:space:]])${BUCKET_NAME}([[:space:]]|$)"; then
-  echo "    已存在，跳过创建"
-else
-  wrangler r2 bucket create "$BUCKET_NAME"
+  echo "==> 准备 R2 存储桶 $BUCKET_NAME"
+  if wrangler r2 bucket list | grep -Eq "(^|[[:space:]])${BUCKET_NAME}([[:space:]]|$)"; then
+    echo "    已存在，跳过创建"
+  else
+    wrangler r2 bucket create "$BUCKET_NAME"
+  fi
 fi
 
 echo "==> 应用远端 D1 migrations"
-wrangler d1 migrations apply "$DB_NAME" --remote --config "$CONFIG"
+wrangler d1 migrations apply DB --remote --config "$CONFIG"
 
 echo "==> 发布 Worker $WORKER_NAME"
 wrangler deploy --config "$CONFIG"
@@ -182,6 +195,9 @@ else
   put_secret SETUP_TOKEN "$setup_token"
   save_setup_token "$setup_token"
   echo "    已生成 SETUP_TOKEN，并保存到 $SETUP_TOKEN_FILE（权限 0600）"
+  if [[ $CLOUDFLARE_BUILD -eq 1 ]]; then
+    echo "    Cloudflare Workers Builds 初始化令牌：$setup_token"
+  fi
 fi
 
 cat <<'NEXT_STEPS'
@@ -193,8 +209,9 @@ cat <<'NEXT_STEPS'
      - console.example.com/*
      - *.plugins.example.com/*
   2. 打开 https://console.example.com/setup
-  3. 本地首次部署的初始化令牌位于：.wrangler/plugmesh-setup-token
-     GitHub Actions 首次部署会把它写入对应运行记录的 Job Summary。
+  3. 初始化令牌来源：
+     - 本地 / GitHub Actions：.wrangler/plugmesh-setup-token（Actions 还会写入 Job Summary）
+     - Cloudflare Workers Builds：本轮构建日志中的“初始化令牌”一行
   4. 在初始化页填写 GitHub OAuth App 的 Client ID、Client Secret、回调地址和管理员白名单。
   5. 完成 GitHub 登录后，在管理后台配置 Cloudflare OAuth、SMTP、配额等业务设置。
 

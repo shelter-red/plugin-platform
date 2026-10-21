@@ -13,6 +13,7 @@ cat > "$TMP/fake-wrangler" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
 state=$FAKE_STATE
+printf '%s\n' "$*" >> "$state/commands.log"
 case "$*" in
   whoami)
     ;;
@@ -63,6 +64,7 @@ setup_token=$(cat "$TMP/state/secret_SETUP_TOKEN")
 [[ "$first_output" != *"$session_secret"* ]]
 [[ "$first_output" != *"$setup_token"* ]]
 grep -q 'test-database-id' "$TMP/worker/wrangler.toml"
+[[ $(grep -c '^database_id = ' "$TMP/worker/wrangler.toml") -eq 1 ]]
 ! grep -Eq 'GITHUB|CLOUDFLARE_OAUTH|SMTP' "$TMP/state/puts.log"
 printf 'ok：首次部署生成基础设施密钥，且不输出明文\n'
 
@@ -86,3 +88,19 @@ reset_output=$(run_deploy env SETUP_TOKEN="$reset_token")
 [[ $(grep -c '^SETUP_TOKEN$' "$TMP/state/puts.log") -eq 1 ]]
 [[ "$reset_output" == *'已按显式 SETUP_TOKEN 重置初始化令牌'* ]]
 printf 'ok：显式 SETUP_TOKEN 可安全重置并更新本地文件\n'
+
+mkdir -p "$TMP/state-cloud"
+printf '[]\n' > "$TMP/state-cloud/secrets.json"
+cloud_output=$(cd "$TMP" && \
+  env -u CLOUDFLARE_API_TOKEN \
+  WORKERS_CI=1 \
+  WRANGLER_BIN="$TMP/fake-wrangler" \
+  FAKE_STATE="$TMP/state-cloud" \
+  ./scripts/deploy-worker.sh)
+grep -Fxq 'd1 migrations apply DB --remote --config worker/wrangler.toml' "$TMP/state-cloud/commands.log"
+grep -Fxq 'deploy --config worker/wrangler.toml' "$TMP/state-cloud/commands.log"
+! grep -Eq '^(whoami|d1 create|r2 bucket)' "$TMP/state-cloud/commands.log"
+grep -Fxq 'SESSION_SECRET' "$TMP/state-cloud/puts.log"
+grep -Fxq 'SETUP_TOKEN' "$TMP/state-cloud/puts.log"
+[[ "$cloud_output" == *'Cloudflare Workers Builds 初始化令牌：'* ]]
+printf 'ok：Workers Builds 无需 API Token，跳过资源创建并在构建日志提供初始化令牌\n'

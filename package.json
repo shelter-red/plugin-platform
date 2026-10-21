@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "deploy": "bash scripts/deploy-worker.sh",
     "native-ui:build": "tsc -p native-ui/tsconfig.json && vite build --config native-ui/vite.config.ts",
     "native-ui:smoke": "npm run native-ui:build && cmake -S native-server -B native-server/build && cmake --build native-server/build --target plugmesh-local-ui-smoke-server && playwright test --config native-ui/playwright.config.ts",
     "worker:response-validation-smoke": "node --experimental-strip-types worker/response-validation.smoke.ts",
