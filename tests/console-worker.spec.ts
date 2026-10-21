@@ -308,4 +308,7 @@ test('管理端窄窗口下表格、图表和详情弹窗可用', async ({ page 
   expect(box!.width).toBeLessThanOrEqual(390)
   await expect(dialog.getByText('暂无 500 以上访问错误。').first()).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
+
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
 })
