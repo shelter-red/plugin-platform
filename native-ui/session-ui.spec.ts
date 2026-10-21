@@ -27,3 +27,20 @@ test('local UI session flow is responsive', async ({ page }) => {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
   await page.screenshot({ path: join(tmpdir(), 'plugmesh-local-mobile.png'), fullPage: true })
 })
+
+test('local UI theme switches between dark, light and system', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await page.goto('/')
+  const shell = page.locator('.local-app')
+  const toggle = page.getByRole('button', { name: '切换主题' })
+
+  await expect(shell).toHaveClass(/theme-dark/)
+  await toggle.click()
+  await expect(shell).toHaveClass(/theme-light/)
+  await toggle.click()
+  await expect(shell).toHaveClass(/theme-dark/)
+  expect(await page.evaluate(() => localStorage.getItem('plugmesh-local-theme'))).toBe('system')
+
+  await page.emulateMedia({ colorScheme: 'light' })
+  await expect(shell).toHaveClass(/theme-light/)
+})

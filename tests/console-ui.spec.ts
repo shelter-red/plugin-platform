@@ -32,3 +32,58 @@ test('管理端移动侧栏和布局可用', async ({ page }) => {
   await page.waitForTimeout(300)
   await page.screenshot({ path: '/tmp/plugmesh-console-mobile-smoke.png', fullPage: true })
 })
+
+test('管理端系统主题跟随系统偏好并持久化', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' })
+  await page.goto('/')
+
+  await page.getByLabel('选择主题').selectOption('system')
+  await expect(page.locator('.app-shell')).toHaveClass(/theme-light/)
+  expect(await page.evaluate(() => localStorage.getItem('plugmesh-theme'))).toBe('system')
+
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await expect(page.locator('.app-shell')).toHaveClass(/theme-dark/)
+
+  await page.reload()
+  await expect(page.getByLabel('选择主题')).toHaveValue('system')
+  await expect(page.locator('.app-shell')).toHaveClass(/theme-dark/)
+})
+
+const emptyPages: { nav: string; title: string; empty: string; extra?: string }[] = [
+  { nav: '插件服务器', title: '插件服务器', empty: '暂无已绑定服务器' },
+  { nav: '插件实例', title: '插件实例', empty: '暂无插件 manifest' },
+  { nav: '公开域名', title: '公开域名', empty: '暂无公开域名' },
+  { nav: '访问日志', title: '访问日志', empty: '暂无访问日志' },
+  { nav: '审计日志', title: '审计日志', empty: '暂无审计记录' },
+  { nav: '用量与配额', title: '用量与配额', empty: '官方数据尚未连接' },
+  { nav: '系统设置', title: '系统设置', empty: '维护状态未读取', extra: '邀请数据未接入' },
+]
+
+test('管理端各页面展示真实空态', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: '总览', level: 1 })).toBeVisible()
+
+  for (const entry of emptyPages) {
+    await page.getByRole('button', { name: entry.nav, exact: true }).click()
+    await expect(page.getByRole('heading', { name: entry.title, level: 1 })).toBeVisible()
+    await expect(page.getByText(entry.empty).first()).toBeVisible()
+    if (entry.extra) await expect(page.getByText(entry.extra).first()).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
+  }
+  await page.screenshot({ path: '/tmp/plugmesh-console-empty-states.png', fullPage: true })
+})
+
+test('管理端窄窗口各页面空态可用', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/')
+
+  for (const entry of emptyPages) {
+    await page.getByRole('button', { name: '打开导航' }).click()
+    await page.getByRole('button', { name: entry.nav, exact: true }).click()
+    await expect(page.getByRole('heading', { name: entry.title, level: 1 })).toBeVisible()
+    await expect(page.getByText(entry.empty).first()).toBeVisible()
+    await expect(page.locator('.sidebar')).not.toHaveClass(/open/)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
+  }
+})

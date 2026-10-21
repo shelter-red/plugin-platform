@@ -57,9 +57,9 @@
 
 | 验收项 | 状态 | 证据与边界 |
 | --- | --- | --- |
-| 暗色、浅色、系统主题和持久化 | 部分实现 | 两套 UI 均实现三态主题；管理端 Playwright 只验证默认暗色、浅色切换和持久化，系统主题尚无浏览器断言。 |
+| 暗色、浅色、系统主题和持久化 | 本地已验证 | 管理端 Playwright 覆盖默认暗色、浅色切换、`prefers-color-scheme` 跟随和 localStorage 持久化；Native UI Playwright 覆盖深色→浅色→系统三态循环及系统偏好切换。 |
 | 桌面、移动和窄窗口响应式布局 | 本地已验证 | 管理端 1440px/390px smoke；Native UI 1440px/390px smoke。 |
-| 服务器、插件、域名、用量和维护空态 | 部分实现 | 页面使用真实 API 空数据，不注入伪造业务数据；Playwright 目前只断言总览与插件关键空态。 |
+| 服务器、插件、域名、用量和维护空态 | 本地已验证 | 页面使用真实 API 空数据，不注入伪造业务数据；管理端 Playwright 在桌面和 390px 窄窗口逐页断言服务器、插件实例、公开域名、访问日志、审计日志、用量与系统设置的空态，并校验设置页维护/授权状态在未连接时显示“未读取/未连接”。 |
 | 加载态、错误态、连接变化和 Toast | 部分实现 | 组件状态和反馈已实现；浏览器 smoke 只覆盖关键空态、登录错误和导航流程。 |
 | 表单校验、注册码、本地口令、轮换和撤销确认 | 部分实现 | UI 与本地 API 有覆盖；完整 Worker 联调未验证。 |
 | 表格、图表和弹窗移动布局 | 部分实现 | CSS 响应式规则和无横向溢出断言存在；尚无逐页面视觉回归基线。 |
@@ -71,8 +71,8 @@
 
 ```text
 npm run build
-npm run ui:smoke                         2 passed
-npm run native-ui:smoke                  2 passed
+npm run ui:smoke                         5 passed
+npm run native-ui:smoke                  3 passed
 npm run worker:typecheck
 npm run worker:smoke                     21 smoke checks passed
 npx wrangler deploy --dry-run --config worker/wrangler.toml
