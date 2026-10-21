@@ -29,7 +29,7 @@
 | 总配额触发全局维护模式 | 模块已验证 | 本地计数和官方 Analytics 阈值逻辑已实现；未在真实账号用量上触发。 |
 | SMTP 测试发送、维护通知、失败重试和审计 | 模块已验证 | `maintenance-email` smoke 注入发送器验证第三次成功、最终失败、审计和敏感字段不落日志；`worker-mailer` 真实传输和外部 SMTP 仍未联调。 |
 | Cloudflare Analytics/GraphQL 缓存、权限错误和过期 | 模块已验证 | `cloudflare-usage` smoke；未使用真实账号 token 查询。 |
-| 30 天用量/访问日志和 180 天审计清理 | 已实现未联调 | Cron 清理和快照代码存在；没有定时任务 smoke，真实 Cron 调度未验证。 |
+| 30 天用量/访问日志和 180 天审计清理 | 模块已验证 | `scheduled-maintenance` smoke 验证保留时间边界及邀请、会话、OAuth state、注册码清理；真实 Cron 调度未验证。 |
 | Wrangler bundle 和资源绑定 | 本地已验证 | `wrangler deploy --dry-run` 通过；D1 ID 仍为占位符，没有生产部署。 |
 
 ## C++ 本地服务器
@@ -74,7 +74,7 @@ npm run build
 npm run ui:smoke                         2 passed
 npm run native-ui:smoke                  1 passed
 npm run worker:typecheck
-npm run worker:smoke                     20 smoke checks passed
+npm run worker:smoke                     21 smoke checks passed
 npx wrangler deploy --dry-run --config worker/wrangler.toml
 cmake --build native-server/build --parallel 2
 ctest --output-on-failure                 8/8 passed

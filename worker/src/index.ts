@@ -275,7 +275,7 @@ async function trackUncollectedObject(env: Env, objectKey: string, tokenHash: st
   await env.DB.prepare('INSERT OR IGNORE INTO temp_objects (id, object_key, token_hash, content_type, size_bytes, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), objectKey, tokenHash, contentType, sizeBytes, now, now).run().catch(() => undefined)
 }
 
-async function runScheduledMaintenance(env: Env): Promise<void> {
+export async function runScheduledMaintenance(env: Env): Promise<void> {
   const now = new Date()
   const nowIso = now.toISOString()
   const accessSince = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString()
