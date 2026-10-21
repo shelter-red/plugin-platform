@@ -172,6 +172,13 @@ void ControlClient::handle_frame(const ControlFrame& frame) {
     schedule_heartbeat();
     return;
   }
+  if (frame.type == "server.sync") {
+    send_registration();
+    auto response = make_control_frame("server.result", config_.server_id, {{"action", "sync"}, {"ok", true}});
+    response.request_id = frame.request_id;
+    send_frame(std::move(response));
+    return;
+  }
   if (frame.type == "server.result" || frame.type == "error") {
     std::lock_guard lock(binding_action_mutex_);
     const auto iterator = binding_actions_.find(frame.request_id);

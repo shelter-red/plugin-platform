@@ -61,6 +61,8 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   if (url.pathname === '/api/usage/cloudflare') return cloudflareUsageApi(env, user)
   if (url.pathname === '/api/usage/local') return localUsageApi(env, user)
   const serverDetail = url.pathname.match(/^\/api\/servers\/([^/]+)$/)
+  const serverSync = url.pathname.match(/^\/api\/servers\/([^/]+)\/sync$/)
+  if (request.method === 'POST' && serverSync) return syncServer(request, env, user, decodeURIComponent(serverSync[1]))
   if (request.method === 'GET' && serverDetail) return serverDetailsApi(env, user, decodeURIComponent(serverDetail[1]))
   const pluginDetail = url.pathname.match(/^\/api\/plugins\/([^/]+)$/)
   if (request.method === 'GET' && pluginDetail) return pluginDetailsApi(env, user, decodeURIComponent(pluginDetail[1]))
@@ -88,6 +90,15 @@ async function serverDetailsApi(env: Env, user: AuthenticatedUser, serverId: str
     env.DB.prepare('SELECT request_logs.id, request_logs.hostname, request_logs.method, request_logs.path, request_logs.status, request_logs.duration_ms, request_logs.error, request_logs.created_at FROM request_logs JOIN plugin_instances ON plugin_instances.id = request_logs.plugin_instance_id WHERE request_logs.user_id = ? AND plugin_instances.server_id = ? AND request_logs.status >= 500 ORDER BY request_logs.created_at DESC LIMIT 20').bind(user.id, serverId).all(),
   ])
   return json({ server, plugins: plugins.results, recentErrors: errors.results })
+}
+
+async function syncServer(request: Request, env: Env, user: AuthenticatedUser, serverId: string): Promise<Response> {
+  if (await isMaintenanceMode(env)) return json({ error: 'Platform is in maintenance mode' }, 503)
+  const server = await env.DB.prepare('SELECT id, status FROM servers WHERE id = ? AND user_id = ?').bind(serverId, user.id).first<{ id: string; status: string }>()
+  if (!server) return json({ error: 'Plugin server not found' }, 404)
+  if (server.status !== 'online') return json({ error: 'Plugin server is offline' }, 409)
+  const bridge = env.PLUGIN_BRIDGE.get(env.PLUGIN_BRIDGE.idFromName(serverId))
+  return bridge.fetch(new Request(new URL('/command', request.url), { method: 'POST', headers: { 'content-type': 'application/json', 'x-plugmesh-server-id': serverId }, body: JSON.stringify({ type: 'server.sync' }) }))
 }
 
 async function pluginDetailsApi(env: Env, user: AuthenticatedUser, pluginInstanceId: string): Promise<Response> {

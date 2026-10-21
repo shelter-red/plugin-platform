@@ -213,7 +213,7 @@ export class PluginBridge {
   private async command(request: Request): Promise<Response> {
     if (!this.serverSocket || this.serverSocket.readyState !== WebSocket.OPEN) return new Response('Plugin server is offline', { status: 503 })
     const body = await request.json().catch(() => null) as { type?: string; pluginId?: string } | null
-    if (!body?.type || !body.type.startsWith('plugin.')) return new Response('Invalid command', { status: 400 })
+    if (!body?.type || (!body.type.startsWith('plugin.') && body.type !== 'server.sync')) return new Response('Invalid command', { status: 400 })
     const result = await this.sendPluginCommand(body.type, body.pluginId)
     const requestId = result.requestId
     if (!result.ok) return new Response(JSON.stringify({ accepted: false, requestId, error: result.error ?? 'Plugin command failed' }), { status: 502, headers: { 'content-type': 'application/json' } })
@@ -276,12 +276,12 @@ export class PluginBridge {
     if (!frame) return
     if (frame.serverId !== this.serverId) return
     if (!this.acceptControlFrame(frame)) return
-    if (frame.type === 'plugin.result' || frame.type === 'error') {
+    if (frame.type === 'plugin.result' || frame.type === 'server.result' || frame.type === 'error') {
       const pending = this.pendingCommands.get(frame.requestId)
       if (!pending) return
       clearTimeout(pending.timer)
       this.pendingCommands.delete(frame.requestId)
-      const ok = frame.type === 'plugin.result' && frame.payload?.ok === true
+      const ok = (frame.type === 'plugin.result' || frame.type === 'server.result') && frame.payload?.ok === true
       pending.resolve({
         ok,
         state: typeof frame.payload?.state === 'string' ? frame.payload.state : undefined,
