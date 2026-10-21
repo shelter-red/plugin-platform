@@ -14,7 +14,7 @@
 
 | 验收项 | 状态 | 证据与边界 |
 | --- | --- | --- |
-| GitHub OAuth 登录、邀请过期、身份匹配、并发领取和权限隔离 | 模块已验证 | `github-auth`、`github-oauth`、`invite-claim`、`api-permission` smoke；未连接真实 GitHub OAuth App。 |
+| GitHub OAuth 登录、邀请过期、身份匹配、并发领取和权限隔离 | 部分/模块已验证 | `github-auth`、`github-oauth`、`invite-claim`、`api-permission` smoke；`worker:runtime-test` 用真实 D1 直接验证 `exchangeGithubCode`（只保留已验证邮箱、主邮箱优先、令牌/用户/邮箱异常与未配置返回 null）、`claimInvite`（邮箱和 GitHub 登录名大小写不敏感匹配、过期/已撤销/未知令牌拒绝、领取后 `used` 且不可重复使用）与 `upsertGithubUser`（按 `github_id` 去重并更新资料和角色）。未连接真实 GitHub OAuth App。 |
 | Cloudflare OAuth 回调、管理员权限、state、凭据加密、刷新和撤销 | 部分/模块已验证 | `cloudflare-oauth` 与 `cloudflare-oauth-route` smoke 覆盖回调、state 校验和路由；`worker:runtime-test` 用真实 D1 验证 `/api/settings/cloudflare`：access token 与 account ID 加密落库且密文不含明文、读取只返回脱敏账号 `0123...cdef` 不回显 token、成员 403、缺少 token 400、删除后 `configured=false`，审计动作 `cloudflare.credentials.updated`/`revoked` 不含 token。未连接真实 Cloudflare OAuth client，也未用落库凭据发起真实 API 查询或刷新。 |
 | 通配 Host 路由、管理 API 优先级、未知域名和离线维护页 | 本地已验证 | `public-route`、`public-proxy` smoke，覆盖插件 Host、未知域名、API 路径和桥接离线响应。另以真实 `wrangler dev` + 本地 C++ 服务器 + 示例插件联调：`Host: e2e.plugins.example.com` 的 `GET /`、带 query 的 GET 和 POST 均转达插件并返回 200，未知插件 Host 返回 404 `Plugin domain not found`，控制台 Host 仍返回 SPA HTML。联调首次暴露静态资源层会截获插件域名根路径，现由 `[assets] run_worker_first = true` 保证请求先经 Worker 路由；仍是本地 miniflare/workerd，不是已部署 Cloudflare。 |
 | 一次性注册码原子消费 | 本地已验证 | `worker:runtime-test` 对真实 D1 并发三次提交同一注册码，仅一次 201、两次 401，并核对服务端只新增一条记录；`registration-race` smoke 覆盖并发消费逻辑。 |
@@ -77,7 +77,7 @@ PLUGMESH_REAL_STACK_URL=http://127.0.0.1:18888 npm run ui:real-stack
                                          3 passed（需先启动本地 wrangler dev 并写入验收数据；第三条用例自动注册并启动真实 C++ 服务器）
 npm run worker:typecheck
 npm run worker:smoke                     25 smoke checks passed
-npm run worker:runtime-test              36 passed（workerd + 真实 D1/Durable Object/R2 模拟）
+npm run worker:runtime-test              41 passed（workerd + 真实 D1/Durable Object/R2 模拟）
   # 本机 glibc 2.31，经 node:22-bookworm-slim 容器执行；glibc ≥ 2.35 可直接运行
 npx wrangler deploy --dry-run --config worker/wrangler.toml
 cmake --build native-server/build --parallel 2

@@ -62,9 +62,9 @@ export function redirectWithError(request: Request, message: string): Response {
   return Response.redirect(location.toString(), 302)
 }
 
-export async function exchangeGithubCode(env: Env, code: string): Promise<{ login: string; emails: string[]; displayName: string; githubId: string } | null> {
+export async function exchangeGithubCode(env: Env, code: string, fetchImpl: typeof fetch = fetch): Promise<{ login: string; emails: string[]; displayName: string; githubId: string } | null> {
   if (!env.GITHUB_CLIENT_ID || !env.GITHUB_CLIENT_SECRET) return null
-  const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
+  const tokenResponse = await fetchImpl('https://github.com/login/oauth/access_token', {
     method: 'POST',
     headers: { accept: 'application/json', 'content-type': 'application/json' },
     body: JSON.stringify({ client_id: env.GITHUB_CLIENT_ID, client_secret: env.GITHUB_CLIENT_SECRET, code }),
@@ -73,7 +73,7 @@ export async function exchangeGithubCode(env: Env, code: string): Promise<{ logi
   const tokenPayload = await tokenResponse.json() as { access_token?: string }
   if (!tokenPayload.access_token) return null
   const headers = { accept: 'application/vnd.github+json', authorization: `Bearer ${tokenPayload.access_token}` }
-  const [userResponse, emailResponse] = await Promise.all([fetch('https://api.github.com/user', { headers }), fetch('https://api.github.com/user/emails', { headers })])
+  const [userResponse, emailResponse] = await Promise.all([fetchImpl('https://api.github.com/user', { headers }), fetchImpl('https://api.github.com/user/emails', { headers })])
   if (!userResponse.ok || !emailResponse.ok) return null
   const githubUser = await userResponse.json() as { id?: number; login?: string; name?: string }
   const githubEmails = await emailResponse.json() as Array<{ email?: string; primary?: boolean; verified?: boolean }>
