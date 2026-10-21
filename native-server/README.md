@@ -93,19 +93,19 @@ cmake --build build-win --config Release
 # 1. 安装 posix 线程模型工具链（websocketpp 在该模型下使用 std::thread）
 sudo apt-get install g++-mingw-w64-x86-64-posix
 
-# 2. 交叉编译静态 OpenSSL（示例版本 3.0.20）
+# 2. 交叉编译静态 OpenSSL（示例版本 3.0.20）；前缀用任意可写目录即可，无需 root
 curl -LO https://deb.debian.org/debian/pool/main/o/openssl/openssl_3.0.20.orig.tar.gz
 tar xzf openssl_3.0.20.orig.tar.gz && cd openssl-3.0.20
-./Configure mingw64 no-shared no-tests --cross-compile-prefix=x86_64-w64-mingw32- --prefix=/opt/mingw-openssl
-make -j"$(nproc)" && sudo make install_sw
+./Configure mingw64 no-shared no-tests --cross-compile-prefix=x86_64-w64-mingw32- --prefix=/tmp/mingw-openssl
+make -j"$(nproc)" && make install_sw
 cd ..
 
 # 3. 交叉编译服务器
-cmake -S native-server -B build-win \
+cmake -S native-server -B /tmp/build-win \
   -DCMAKE_TOOLCHAIN_FILE="$PWD/native-server/cmake/mingw-w64-toolchain.cmake" \
-  -DOPENSSL_ROOT_DIR=/opt/mingw-openssl \
+  -DOPENSSL_ROOT_DIR=/tmp/mingw-openssl \
   -DCMAKE_BUILD_TYPE=Release
-cmake --build build-win -j"$(nproc)"
+cmake --build /tmp/build-win -j"$(nproc)"
 ```
 
 产物为 `plugmesh-server.exe`、`plugmesh-plugin-host.exe`、本地 UI smoke 服务器、各 smoke 测试和示例插件 `libplugmesh-*.dll`。`CMAKE_BUILD_TYPE` 必须是 `Release`：未优化时 websocketpp/Asio 模板实例化会超过 MinGW COFF 单节大小上限。
@@ -118,7 +118,7 @@ cmake --build build-win -j"$(nproc)"
 
 ```bash
 export WINEPREFIX="$HOME/.wine-plugmesh"
-cd build-win
+cd /tmp/build-win
 wine64 plugmesh-credential-store-smoke.exe
 wine64 plugmesh-control-protocol-smoke.exe
 wine64 plugmesh-local-http-server-smoke.exe
@@ -141,7 +141,7 @@ curl -s http://127.0.0.1:8899/api/health
 
 ```bash
 native-ui/run-wine-smoke.sh            # 默认使用 native-server/build-win
-native-ui/run-wine-smoke.sh /path/to/build-win
+native-ui/run-wine-smoke.sh /tmp/build-win
 ```
 
 脚本通过 `PLUGMESH_NATIVE_UI_SMOKE_URL`、`PLUGMESH_NATIVE_UI_SETUP_URL` 复用外部服务（此时 Playwright 不再自行拉起 Linux smoke 服务器），并用 `PLUGMESH_SMOKE_PLUGIN_DIRECTORY` 把插件目录换成 Windows 构建产物里的 `.dll`。

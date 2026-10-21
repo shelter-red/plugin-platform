@@ -77,7 +77,8 @@
 npm run build
 npm run ui:smoke                         20 passed（preview 7 + worker-mock 13）
 npm run native-ui:smoke                  5 passed
-npm run native-ui:smoke:wine             5 passed（Wine 5.0，先重编 build-win 的 smoke 服务器与插件宿主）
+npm run native-ui:smoke:wine -- /tmp/build-win
+                                         5 passed（Wine 5.0，指向 Windows 交叉编译产物；默认目录为 native-server/build-win）
 PLUGMESH_REAL_STACK_URL=http://127.0.0.1:18888 npm run ui:real-stack
                                          3 passed（需先启动本地 wrangler dev 并写入验收数据；会话令牌默认值即 docs/local-e2e.md 的 e2e-session-token；第三条用例自动注册并启动真实 C++ 服务器）
 npm run worker:typecheck
@@ -91,9 +92,11 @@ npm run worker:runtime-test              51 passed（workerd + 真实 D1/Durable
 npx wrangler deploy --dry-run --config worker/wrangler.toml
 cmake --build native-server/build --parallel 2
 cmake -S native-server -B /tmp/build-win -DCMAKE_TOOLCHAIN_FILE=native-server/cmake/mingw-w64-toolchain.cmake \
-  -DOPENSSL_ROOT_DIR=/opt/mingw-openssl -DCMAKE_BUILD_TYPE=Release
+  -DOPENSSL_ROOT_DIR=/tmp/mingw-openssl -DCMAKE_BUILD_TYPE=Release && cmake --build /tmp/build-win -j8
                                          13 个 PE32+ 可执行文件与三个示例 .dll 交叉编译通过
-wine64 ./plugmesh-*-smoke.exe            10/10 passed（Wine 5.0，Windows 构建产物；非真实 Windows）
+                                          （/tmp/mingw-openssl 为交叉编译静态 OpenSSL 前缀，步骤见 native-server/README.md）
+（Wine 冒烟）4 个无参数用例直接运行，另 6 个按 native-server/README.md 传 winepath 参数
+                                         10/10 passed（Wine 5.0，Windows 构建产物；非真实 Windows）
 cd native-server/build && ctest --output-on-failure
                                          10/10 passed（本机 ctest 3.16 不支持 --test-dir，须先进入构建目录，否则会以 0 个测试「通过」）
 PLUGMESH_REAL_STACK_URL=http://127.0.0.1:18888 npm run stack:streams
