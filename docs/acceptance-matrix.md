@@ -61,7 +61,7 @@
 | 暗色、浅色、系统主题和持久化 | 本地已验证 | 管理端 Playwright 覆盖默认暗色、浅色切换、`prefers-color-scheme` 跟随和 localStorage 持久化；Native UI Playwright 覆盖深色→浅色→系统三态循环及系统偏好切换。 |
 | 桌面、移动和窄窗口响应式布局 | 本地已验证 | 管理端 1440px/390px smoke；Native UI 1440px/390px smoke。 |
 | 服务器、插件、域名、用量和维护空态 | 本地已验证 | 页面使用真实 API 空数据，不注入伪造业务数据；管理端 Playwright 在桌面和 390px 窄窗口逐页断言服务器、插件实例、公开域名、访问日志、审计日志、用量与系统设置的空态，并校验设置页维护/授权状态在未连接时显示“未读取/未连接”。 |
-| 总览维护状态、数据更新时间与最近错误 | 本地已验证 | `console-worker` Playwright 项目用拦截的 Worker 响应验证总览：维护状态徽标随 `/api/settings/platform` 显示“平台运行中/平台维护中”，未连接时为“维护状态未读取”；资源面板展示 Cloudflare 官方 Analytics 与平台本地计数的更新时间，未连接时显示真实缺失态；错误面板先展示非在线服务器（离线/撤销，最近 3 台，含最近心跳或“尚未连接”），再展示最近 30 天访问日志中状态码 ≥ 500 的前 3 条（入口、路径、方法、错误类型、状态码、时间），4xx 不计入，加载态、空态和 5xx 数据态均有覆盖，“查看访问日志”可跳转到完整日志页。边界：数据来自 Worker 响应夹具，未在已部署 Worker 上验证；官方用量时间为响应中的 `updatedAt`，不代表 Cloudflare 侧采集时刻。 |
+| 总览维护状态、数据更新时间与最近错误 | 本地已验证 | `console-worker` Playwright 项目用拦截的 Worker 响应验证总览：维护状态徽标随 `/api/settings/platform` 显示“平台运行中/平台维护中”，未连接时为“维护状态未读取”；资源面板展示 Cloudflare 官方 Analytics 与平台本地计数的更新时间，未连接时显示真实缺失态；错误面板先展示非在线服务器（离线/撤销，最近 3 台，含最近心跳或“尚未连接”），再展示最近 30 天访问日志中状态码 ≥ 500 的前 3 条（入口、路径、方法、错误类型、状态码、时间），4xx 不计入，加载态、空态和 5xx 数据态均有覆盖，“查看访问日志”可跳转到完整日志页。`console-real-stack` 第四条用例在本地真实栈上用真实 D1 访问日志复核该面板：对只声明 `http`/`websocket` 能力的 `lifecycle.plugin` 域名发起文件流请求，Worker 返回 `501` 并写入 `request_logs`（`error=plugin capability unavailable`），总览展示该入口、方法、错误文案与 `501` 徽标；随后停掉真实 C++ 服务器并等到 `servers.status=offline`，刷新后总览出现该服务器行与“离线”徽标，覆盖连接异常分支。边界：`console-worker` 部分数据来自 Worker 响应夹具，官方用量时间为响应中的 `updatedAt`，不代表 Cloudflare 侧采集时刻；真实栈为本地 miniflare/workerd，未连接已部署 Worker。 |
 | 本地 UI 插件 manifest 字段 | 本地已验证 | `native-ui:smoke` 的会话用例在插件行断言 `Sample Plugin` 展示动态库 `libplugmesh-sample.so`、健康检查路径 `/health` 与“权限: 无”，并在列表标题旁显示已加载数量；UI 数据由 smoke 服务器用真实 `PluginManager::discover` 读取示例插件目录，不是前端注入。边界：Linux 断言 `.so`，Wine 下的同一用例断言 `.dll`（`libplugmesh-sample.dll`），插件均来自真实 `PluginManager::discover`；真实 Windows 主机未覆盖。 |
 | 本地 UI 日志和基础诊断 | 本地已验证 | 本地服务器 `GET /api/logs` 与 `GET /api/diagnostics` 由 `plugmesh::LocalLogBuffer`（与真实服务器同一实现，最近 200 条、UTC 时间戳）和 `PluginManager::set_log_writer` 提供；`native-ui:smoke` 新增用例断言指标卡片的插件总数 3、已启用 0→1、失败 0 和本地端口来自 `/api/diagnostics`，点击“加载”“启用”“停用”“重载”“卸载”后插件状态依次变为已加载/已启用/已停用/已停用/已卸载，日志区依次出现 `plugin loaded`、`plugin enabled`、`plugin disabled`、`plugin reloaded`、`plugin unloaded` 五行 `sample.plugin` 事件，级别徽标为 INFO，侧栏日志计数同步更新；`plugin reloaded` 为本轮新增的显式日志（重载此前只留下 unload+load 两行）。Linux（5 passed）与 Wine 5.0（5 passed）均通过。边界：日志只覆盖插件生命周期事件，插件主动日志回传尚未定义控制帧；未在真实 Windows 主机验证。 |
 | 加载态、错误态、连接变化和 Toast | 本地已验证 | `console-worker` Playwright 项目用拦截的 Worker 响应验证：访问日志加载态→空态、服务器/插件/域名 500 后的“数据读取失败”与重试恢复、刷新成功 Toast、未连接/已连接切换和维护状态展示。边界：响应为测试夹具，不是已部署 Worker。 |
@@ -80,7 +80,7 @@ npm run native-ui:smoke                  5 passed
 npm run native-ui:smoke:wine -- /tmp/build-win
                                          5 passed（Wine 5.0，指向 Windows 交叉编译产物；默认目录为 native-server/build-win）
 PLUGMESH_REAL_STACK_URL=http://127.0.0.1:18888 npm run ui:real-stack
-                                         3 passed（需先启动本地 wrangler dev 并写入验收数据；会话令牌默认值即 docs/local-e2e.md 的 e2e-session-token；第三条用例自动注册并启动真实 C++ 服务器）
+                                         4 passed（需先启动本地 wrangler dev 并写入验收数据；会话令牌默认值即 docs/local-e2e.md 的 e2e-session-token；第三、四条用例自动注册并启动真实 C++ 服务器）
 npm run worker:typecheck
 npm run worker:smoke                     25 个 smoke 脚本全部通过
 npm run worker:runtime-test              56 passed（workerd + 真实 D1/Durable Object/R2 模拟）

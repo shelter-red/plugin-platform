@@ -85,10 +85,11 @@ PLUGMESH_REAL_STACK_URL=http://127.0.0.1:18888 npm run ui:real-stack
 - 非法 GitHub 用户名提交后显示服务端校验错误；
 - 打开“绑定插件服务器”弹窗后从 `/api/registration-codes` 取得一次性注册码；
 - 第三条用例用一次性注册码启动真实 `plugmesh-server`，在管理端加载并启用 `sample.plugin`、分配以 `console-` 开头的唯一域名，再从该域名请求插件得到 `200` 和 `ok`。
+- 第四条用例在真实栈上复核仪表盘“最近错误和连接异常”：对只声明 `http`/`websocket` 能力的 `lifecycle.plugin` 域名发起文件流请求，得到 `501` 并确认 `/api/access-logs` 中写入 `plugin capability unavailable`，总览错误面板展示该入口与 `501` 徽标；停掉后服务器状态转为 `offline`，总览出现该服务器与“离线”徽标。
 
-第三条用例要求已构建 `native-server/build/plugmesh-server`、`native-server/build/plugins` 与 `native-ui/dist`。它自行完成注册、启动和退出清理：每次运行生成新的服务器名与域名前缀，结束后向子进程发送 `SIGTERM` 并删除临时凭据目录，因此可以在同一份 D1 上重复执行（历史服务器与域名记录会累积，不影响断言）。
+第三、四条用例要求已构建 `native-server/build/plugmesh-server`、`native-server/build/plugins` 与 `native-ui/dist`。它自行完成注册、启动和退出清理：每次运行生成新的服务器名与域名前缀，结束后向子进程发送 `SIGTERM` 并删除临时凭据目录，因此可以在同一份 D1 上重复执行（历史服务器与域名记录会累积，不影响断言）。
 
-期望结果：`3 passed`。它验证的是管理端到真实 Worker/D1 与真实 C++ 服务器的链路，不依赖已部署 Cloudflare。
+期望结果：`4 passed`。它验证的是管理端到真实 Worker/D1 与真实 C++ 服务器的链路，不依赖已部署 Cloudflare。
 
 ## 注册并启动本地服务器
 

@@ -1,6 +1,9 @@
 import { expect, test } from '@playwright/test'
 import http from 'node:http'
+import { getFileStream, makeTarget } from './public-client'
+import { preparePublicPlugin } from './real-stack-plugin'
 import { startRealServer } from './real-stack-server'
+import { createStackApi } from './stack-api'
 
 const baseURL = process.env.PLUGMESH_REAL_STACK_URL
 const sessionToken = process.env.PLUGMESH_REAL_STACK_TOKEN ?? 'e2e-session-token'
@@ -128,6 +131,52 @@ test('管理端在真实 C++ 服务器上加载、启用插件并分配域名', 
     expect(suspended.status).toBe(503)
   } finally {
     await server.stop()
+  }
+})
+
+test('管理端总览展示真实 5xx 访问日志与连接异常', async ({ page }) => {
+  test.setTimeout(180_000)
+  const { call, api } = createStackApi(page.request, sessionToken)
+  const prepared = await preparePublicPlugin(baseURL!, api)
+  try {
+    const servers = (await (await api('/api/servers')).json()) as { results: Array<{ id: string; name: string }> }
+    const serverId = servers.results.find((item) => item.name === prepared.server.name)!.id
+    const plugins = (await (await api('/api/plugins')).json()) as { results: Array<{ id: string; plugin_id: string; server_id: string }> }
+    const lifecycle = plugins.results.find((item) => item.server_id === serverId && item.plugin_id === 'lifecycle.plugin')
+    expect(lifecycle, 'lifecycle.plugin 应已注册到新服务器').toBeTruthy()
+
+    await api(`/api/plugins/${lifecycle!.id}/load`, { method: 'POST' })
+    await expect.poll(async () => ((await (await api(`/api/plugins/${lifecycle!.id}`)).json()) as { plugin: { state: string } }).plugin.state, { timeout: 60_000 }).toBe('loaded')
+    await api(`/api/plugins/${lifecycle!.id}/enable`, { method: 'POST' })
+    await expect.poll(async () => ((await (await api(`/api/plugins/${lifecycle!.id}`)).json()) as { plugin: { state: string } }).plugin.state, { timeout: 60_000 }).toBe('enabled')
+
+    const prefix = `overview-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 6)}`
+    const { hostname } = (await (await api('/api/domains', { method: 'POST', data: { pluginInstanceId: lifecycle!.id, prefix } })).json()) as { hostname: string }
+    expect(hostname).toBe(`${prefix}.plugins.example.com`)
+
+    // lifecycle.plugin 未声明 fileStream 能力，文件流请求应被 Worker 以 501 拒绝并写入访问日志。
+    expect((await getFileStream(makeTarget(baseURL!, hostname))).status).toBe(501)
+    await expect.poll(async () => {
+      const body = (await (await call('/api/access-logs')).json()) as { results: Array<{ hostname: string; status: number; error: string | null }> }
+      return body.results.some((log) => log.hostname === hostname && log.status === 501 && log.error === 'plugin capability unavailable')
+    }, { timeout: 30_000 }).toBe(true)
+
+    await page.goto('/')
+    const panel = page.locator('section.panel', { has: page.getByRole('heading', { name: '最近错误和连接异常' }) })
+    const errorRow = panel.locator('.activity-item').filter({ hasText: hostname })
+    await expect(errorRow).toContainText('501')
+    await expect(errorRow).toContainText('plugin capability unavailable')
+
+    await prepared.server.stop()
+    await expect.poll(async () => {
+      const body = (await (await api('/api/servers')).json()) as { results: Array<{ name: string; status: string }> }
+      return body.results.find((item) => item.name === prepared.server.name)?.status
+    }, { timeout: 60_000 }).toBe('offline')
+
+    await page.reload()
+    await expect(panel.locator('.activity-item').filter({ hasText: prepared.server.name })).toContainText('离线')
+  } finally {
+    await prepared.server.stop()
   }
 })
 
