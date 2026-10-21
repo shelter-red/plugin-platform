@@ -26,7 +26,7 @@
 | 请求超时、帧大小、响应大小和活跃连接上限 | 模块已验证 | Durable Object 中有硬限制和超时；配额 smoke 覆盖计数边界，`worker:runtime-test` 验证超过 32 KiB 的公开请求体返回 413 并写入访问日志、SSE 结束后活跃连接数归零；尚未做持续压力测试。 |
 | R2 上传、一次性读取、过期和删除 | 部分实现 | `blob-stream` 与 `durable-object-stream` smoke 覆盖流式消费、一次性读取和删除；`blob-expiry` smoke 覆盖过期对象清理、24 小时陈旧对象清理、重试三次、删除失败后回滚占用和用量释放；`worker:runtime-test` 用本地 R2 模拟验证大文件上传、读取后对象删除、`temp_objects` 清空与用量归零。真实 R2 一致性与费用仍未验证。 |
 | D1/KV 路由缓存读穿和配置写穿 | 部分实现 | Host 路由内存缓存和更新失效逻辑已接入；`route-cache` smoke 覆盖读穿、负缓存、主动失效、5 秒 TTL 和 256 条上限淘汰；`worker:runtime-test` 用真实 D1 验证 Host 路由解析与未启用插件的维护页。真实多 isolate 缓存传播未验证，当前实现没有独立 KV 业务缓存。 |
-| 总配额触发全局维护模式 | 模块已验证 | 本地计数和官方 Analytics 阈值逻辑已实现；未在真实账号用量上触发。 |
+| 总配额触发全局维护模式 | 本地已验证 | `worker:runtime-test` 在真实 D1 上把请求配额设为 1：首个公开请求经 Durable Object 正常返回 200，第二个请求因配额耗尽返回 503 维护页并把 `platform_settings` 的 `maintenance` 置为 true，写入 `maintenance.email.skipped` 审计（原因 `request quota reached`），后续请求直接走维护页；官方 Analytics 阈值触发仍未在真实账号上验证。 |
 | SMTP 测试发送、维护通知、失败重试和审计 | 模块已验证 | `maintenance-email` smoke 注入发送器验证第三次成功、最终失败、审计和敏感字段不落日志；`worker-mailer` 真实传输和外部 SMTP 仍未联调。 |
 | Cloudflare Analytics/GraphQL 缓存、权限错误和过期 | 模块已验证 | `cloudflare-usage` smoke；未使用真实账号 token 查询。 |
 | 30 天用量/访问日志和 180 天审计清理 | 模块已验证 | `scheduled-maintenance` smoke 验证保留时间边界及邀请、会话、OAuth state、注册码清理；真实 Cron 调度未验证。 |
@@ -75,7 +75,7 @@ npm run ui:smoke                         16 passed（preview 7 + worker-mock 9�
 npm run native-ui:smoke                  3 passed
 npm run worker:typecheck
 npm run worker:smoke                     25 smoke checks passed
-npm run worker:runtime-test              14 passed（workerd + 真实 D1/Durable Object/R2 模拟）
+npm run worker:runtime-test              15 passed（workerd + 真实 D1/Durable Object/R2 模拟）
   # 本机 glibc 2.31，经 node:22-bookworm-slim 容器执行；glibc ≥ 2.35 可直接运行
 npx wrangler deploy --dry-run --config worker/wrangler.toml
 cmake --build native-server/build --parallel 2
