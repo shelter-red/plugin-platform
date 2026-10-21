@@ -23,7 +23,7 @@
 | Durable Object 请求映射和并发隔离 | 本地已验证 | `worker:runtime-test` 在 workerd 中为同一服务器建立真实控制连接，并发 16 个公开 HTTP 请求并乱序回帧，验证响应按 `requestId` 一一对应；同时建立两条公开 WebSocket，验证 `connectionId` 隔离。未验证休眠恢复和多 isolate 场景。 |
 | HTTP 方法、状态、响应头、Cookie 和二进制请求/响应 | 本地已验证 | `public-proxy`、`response-validation`、C++ `control-client` smoke。 |
 | SSE、公开 WebSocket 和文件流桥接 | 本地已验证 | 真实 `wrangler dev` + C++ 服务器联调中，`accept: text/event-stream` 请求收到 `data: sample-plugin`；公开 WebSocket 经 Worker→Durable Object→C++→插件回显 `hello-ws`；`x-plugmesh-file-stream: true` 返回 18 字节 `sample-file-stream`，结束后 `r2Objects`/`r2Bytes` 归零（步骤见 `docs/local-e2e.md`）。 Worker 流式 smoke 与 C++ WebSocket 生命周期测试覆盖协议路径；`worker:runtime-test` 在 workerd 中验证 SSE 分块经真实 Durable Object 送达并在结束后释放活跃连接，1MB+ 文件在声明 `content-length` 时经真实 R2 定长流中转、缺少长度时回退一次性上传，且两种路径都会在读取后删除对象并归还用量。真实公网长连接未验证。 |
-| 请求超时、帧大小、响应大小和活跃连接上限 | 模块已验证 | Durable Object 中有硬限制和超时；配额 smoke 覆盖计数边界，`worker:runtime-test` 验证超过 32 KiB 的公开请求体返回 413 并写入访问日志、SSE 结束后活跃连接数归零；尚未做持续压力测试。 |
+| 请求超时、帧大小、响应大小和活跃连接上限 | 本地已验证 | Durable Object 中有硬限制和超时；配额 smoke 覆盖计数边界。`worker:runtime-test` 在 workerd 中验证：超过 32 KiB 的公开请求体返回 413 并写入访问日志；64 个并发公开请求乱序回帧后各自拿到正确响应且活跃连接归零；活跃连接上限设为 2 时第三个公开 WebSocket 返回 503 并进入维护模式，关闭一个连接后额度释放且恢复维护开关后可重新连接；超过 16 MiB 的插件响应返回 502 `Plugin response is too large` 并释放缓冲；R2 配额为 0 时大文件流转返回 503 且删除已上传对象、用量归零。尚未在已部署环境做数百并发的持续压力测试。 |
 | R2 上传、一次性读取、过期和删除 | 部分实现 | `blob-stream` 与 `durable-object-stream` smoke 覆盖流式消费、一次性读取和删除；`blob-expiry` smoke 覆盖过期对象清理、24 小时陈旧对象清理、重试三次、删除失败后回滚占用和用量释放；`worker:runtime-test` 用本地 R2 模拟验证大文件上传、读取后对象删除、`temp_objects` 清空与用量归零。真实 R2 一致性与费用仍未验证。 |
 | D1/KV 路由缓存读穿和配置写穿 | 部分实现 | Host 路由内存缓存和更新失效逻辑已接入；`route-cache` smoke 覆盖读穿、负缓存、主动失效、5 秒 TTL 和 256 条上限淘汰；`worker:runtime-test` 用真实 D1 验证 Host 路由解析与未启用插件的维护页。真实多 isolate 缓存传播未验证。按设计不引入 KV 业务缓存：KV 最小过期粒度为 60 秒且跨地域最终一致，域名撤销或转移后可能继续命中旧路由，当前用 5 秒 isolate 缓存加 D1 回源保证正确性。 |
 | 总配额触发全局维护模式 | 本地已验证 | `worker:runtime-test` 在真实 D1 上把请求配额设为 1：首个公开请求经 Durable Object 正常返回 200，第二个请求因配额耗尽返回 503 维护页并把 `platform_settings` 的 `maintenance` 置为 true，写入 `maintenance.email.skipped` 审计（原因 `request quota reached`），后续请求直接走维护页；官方 Analytics 阈值触发仍未在真实账号上验证。 |
@@ -77,7 +77,7 @@ PLUGMESH_REAL_STACK_URL=http://127.0.0.1:18888 npm run ui:real-stack
                                          3 passed（需先启动本地 wrangler dev 并写入验收数据；第三条用例自动注册并启动真实 C++ 服务器）
 npm run worker:typecheck
 npm run worker:smoke                     25 smoke checks passed
-npm run worker:runtime-test              19 passed（workerd + 真实 D1/Durable Object/R2 模拟）
+npm run worker:runtime-test              23 passed（workerd + 真实 D1/Durable Object/R2 模拟）
   # 本机 glibc 2.31，经 node:22-bookworm-slim 容器执行；glibc ≥ 2.35 可直接运行
 npx wrangler deploy --dry-run --config worker/wrangler.toml
 cmake --build native-server/build --parallel 2
@@ -94,5 +94,5 @@ ctest --output-on-failure                 10/10 passed
 4. 配置真实 SMTP，验证邀请、测试邮件、维护通知、重试和退信处理。
 5. 在 Windows 上构建并验证 DLL、Credential Manager、本地 UI 和重启恢复。
 6. 使用已部署 Worker、本地 C++ 服务器和示例插件完成 HTTP、SSE、WebSocket、文件流、轮换、撤销和离线维护端到端验收；本地 `wrangler dev` 联调已覆盖 HTTP、SSE、WebSocket、文件流、插件域名路由、健康检查、离线维护和重启恢复，本地控制台的轮换、撤销和同进程重新绑定已联调通过，管理端经真实 C++ 服务器完成插件加载、启用和域名分配也已联调，仍缺已部署环境。
-7. 对几百并发目标执行长连接、超时、R2 大文件和配额维护压力测试。
+7. 对几百并发目标执行长连接、超时、R2 大文件和配额维护的持续压力测试；本地单机 workerd 已覆盖 64 并发乱序隔离、连接/响应大小/R2 配额边界。
 8. 在 Windows 上验证插件宿主子进程、DLL 加载和管道协议；Linux 侧进程隔离已由 `plugin-manager-crash-smoke` 覆盖。
