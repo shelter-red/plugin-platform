@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { readFile } from 'node:fs/promises'
 import http from 'node:http'
 import { getFileStream, makeTarget } from './public-client'
 import { preparePublicPlugin } from './real-stack-plugin'
@@ -166,6 +167,17 @@ test('管理端总览展示真实 5xx 访问日志与连接异常', async ({ pag
     const errorRow = panel.locator('.activity-item').filter({ hasText: hostname })
     await expect(errorRow).toContainText('501')
     await expect(errorRow).toContainText('plugin capability unavailable')
+
+    await page.getByRole('button', { name: '访问日志', exact: true }).click()
+    await expect(page.getByRole('row').filter({ hasText: hostname })).toContainText('501')
+    await expect(page.getByText(/错误 \d+ 条/)).toBeVisible()
+    const downloadPromise = page.waitForEvent('download')
+    await page.getByRole('button', { name: '导出日志' }).click()
+    const csvFile = test.info().outputPath('access-logs.csv')
+    await (await downloadPromise).saveAs(csvFile)
+    const csv = await readFile(csvFile, 'utf8')
+    expect(csv).toContain(hostname)
+    expect(csv).toContain('plugin capability unavailable')
 
     await prepared.server.stop()
     await expect.poll(async () => {
