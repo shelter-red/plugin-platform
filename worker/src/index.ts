@@ -111,26 +111,27 @@ async function createBlob(request: Request, env: Env): Promise<Response> {
   if (contentLength > maxBytes) return json({ error: 'File is too large' }, 413)
   const objectKey = `temp/${crypto.randomUUID()}`
   const token = crypto.randomUUID() + crypto.randomUUID()
+  const tokenHash = await digest(token)
   const contentType = request.headers.get('content-type') ?? 'application/octet-stream'
   const counter = { bytes: 0 }
   try {
     await env.BLOB_BUCKET.put(objectKey, countStream(request.body, counter, maxBytes), { httpMetadata: { contentType } })
   } catch {
-    await env.BLOB_BUCKET.delete(objectKey)
+    if (!await deleteR2ObjectWithRetry(env, objectKey)) await trackUncollectedObject(env, objectKey, tokenHash, contentType, counter.bytes)
     return json({ error: counter.bytes > maxBytes ? 'File is too large' : 'File upload failed' }, counter.bytes > maxBytes ? 413 : 502)
   }
   const sizeBytes = counter.bytes
   if (!await reserveR2Usage(env, settings.quotas, sizeBytes)) {
-    await env.BLOB_BUCKET.delete(objectKey)
+    if (!await deleteR2ObjectWithRetry(env, objectKey)) await trackUncollectedObject(env, objectKey, tokenHash, contentType, sizeBytes)
     await activateMaintenance(env, 'R2 storage quota reached')
     return json({ error: 'Platform quota reached' }, 503)
   }
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString()
   try {
-    await env.DB.prepare('INSERT INTO temp_objects (id, object_key, token_hash, content_type, size_bytes, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), objectKey, await digest(token), contentType, sizeBytes, expiresAt, new Date().toISOString()).run()
+    await env.DB.prepare('INSERT INTO temp_objects (id, object_key, token_hash, content_type, size_bytes, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), objectKey, tokenHash, contentType, sizeBytes, expiresAt, new Date().toISOString()).run()
   } catch {
-    await env.BLOB_BUCKET.delete(objectKey)
-    await releaseR2Usage(env, sizeBytes)
+    if (await deleteR2ObjectWithRetry(env, objectKey)) await releaseR2Usage(env, sizeBytes)
+    else await trackUncollectedObject(env, objectKey, tokenHash, contentType, sizeBytes)
     return json({ error: 'File metadata could not be saved' }, 502)
   }
   return json({ url: `/blobs/${encodeURIComponent(token)}`, expiresAt }, 201)
@@ -192,6 +193,11 @@ async function deleteR2ObjectWithRetry(env: Env, objectKey: string): Promise<boo
     }
   }
   return false
+}
+
+async function trackUncollectedObject(env: Env, objectKey: string, tokenHash: string, contentType: string, sizeBytes: number): Promise<void> {
+  const now = new Date().toISOString()
+  await env.DB.prepare('INSERT OR IGNORE INTO temp_objects (id, object_key, token_hash, content_type, size_bytes, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), objectKey, tokenHash, contentType, sizeBytes, now, now).run().catch(() => undefined)
 }
 
 async function runScheduledMaintenance(env: Env): Promise<void> {
