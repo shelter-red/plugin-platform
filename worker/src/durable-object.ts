@@ -546,6 +546,7 @@ export class PluginBridge {
       const consumed = await this.env.DB.prepare('UPDATE temp_objects SET consumed_at = ? WHERE id = ? AND consumed_at IS NULL').bind(consumedAt, tempObjectId).run()
       if ((consumed.meta.changes ?? 0) !== 1) return
       if (await deleteR2ObjectWithRetry(this.env, key)) {
+        await this.env.DB.prepare('DELETE FROM temp_objects WHERE id = ? AND consumed_at = ?').bind(tempObjectId, consumedAt).run()
         await releaseR2Usage(this.env, bytes)
         return
       }
