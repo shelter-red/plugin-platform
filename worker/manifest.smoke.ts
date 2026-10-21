@@ -14,7 +14,8 @@ const manifest = (abiVersion: string) => ({
 
 assert.equal(isManifest(manifest('2')), true)
 assert.equal(isManifest(manifest('3')), true)
+assert.equal(isManifest(manifest('4')), true)
 assert.equal(isManifest(manifest('1')), false)
-assert.equal(isManifest(manifest('4')), false)
+assert.equal(isManifest(manifest('5')), false)
 
 console.log('manifest ABI smoke test passed')
