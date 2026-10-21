@@ -75,12 +75,13 @@
 
 ```text
 npm run build
-npm run ui:smoke                         19 passed（preview 7 + worker-mock 12）
-npm run native-ui:smoke                  4 passed
+npm run ui:smoke                         20 passed（preview 7 + worker-mock 13）
+npm run native-ui:smoke                  5 passed
+npm run native-ui:smoke:wine             5 passed（Wine 5.0，先重编 build-win 的 smoke 服务器与插件宿主）
 PLUGMESH_REAL_STACK_URL=http://127.0.0.1:18888 npm run ui:real-stack
-                                         3 passed（需先启动本地 wrangler dev 并写入验收数据；第三条用例自动注册并启动真实 C++ 服务器）
+                                         3 passed（需先启动本地 wrangler dev 并写入验收数据；会话令牌默认值即 docs/local-e2e.md 的 e2e-session-token；第三条用例自动注册并启动真实 C++ 服务器）
 npm run worker:typecheck
-npm run worker:smoke                     25 smoke checks passed
+npm run worker:smoke                     25 个 smoke 脚本全部通过
 npm run worker:runtime-test              51 passed（workerd + 真实 D1/Durable Object/R2 模拟）
   # 本机 glibc 2.31，经 node:22-bookworm-slim 容器执行；glibc ≥ 2.35 可直接运行
 npx wrangler deploy --dry-run --config worker/wrangler.toml

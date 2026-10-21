@@ -4,7 +4,7 @@ import { preparePublicPlugin } from './real-stack-plugin'
 import { createStackApi } from './stack-api'
 
 const baseURL = process.env.PLUGMESH_REAL_STACK_URL
-const sessionToken = process.env.PLUGMESH_REAL_STACK_TOKEN ?? 'real-stack-session-token'
+const sessionToken = process.env.PLUGMESH_REAL_STACK_TOKEN ?? 'e2e-session-token'
 
 test.skip(!baseURL, '需要先启动本地真实栈并设置 PLUGMESH_REAL_STACK_URL')
 

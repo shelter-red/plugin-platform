@@ -4,7 +4,7 @@ import { preparePublicPlugin } from './real-stack-plugin'
 import { createStackApi } from './stack-api'
 
 const baseURL = process.env.PLUGMESH_REAL_STACK_URL
-const sessionToken = process.env.PLUGMESH_REAL_STACK_TOKEN ?? 'real-stack-session-token'
+const sessionToken = process.env.PLUGMESH_REAL_STACK_TOKEN ?? 'e2e-session-token'
 const httpRequests = Number(process.env.PLUGMESH_LOAD_HTTP_REQUESTS ?? 300)
 const httpConcurrency = Number(process.env.PLUGMESH_LOAD_HTTP_CONCURRENCY ?? 100)
 const streamConnections = Number(process.env.PLUGMESH_LOAD_STREAMS ?? 40)
