@@ -8,6 +8,7 @@ import { discoverCloudflareAccountId, exchangeCloudflareCode, readCloudflareCred
 import { activateMaintenance, countStream, defaultPlatformSettings, getPlatformSettings, isMaintenanceMode, releaseR2Usage, reserveR2Usage, reserveRequest, setPlatformSettingsCache } from './usage'
 import { findPluginRoute, invalidatePluginRoute } from './route-cache'
 import { selectPublicRequestMode } from './request-mode'
+import { resolvePublicRoute } from './public-route'
 
 export { PluginBridge }
 
@@ -580,8 +581,10 @@ async function proxyPublicHost(request: Request, env: Env, url: URL, ctx: Execut
   const settings = await getPlatformSettings(env)
   if (settings.maintenance) return maintenanceResponse()
   const hostname = url.hostname
-  const domain = await findPluginRoute(env, hostname)
-  if (!domain || domain.status !== 'online' || domain.server_status !== 'online' || domain.plugin_state !== 'enabled') return maintenanceResponse('插件暂时不可用', '公开入口尚未就绪、插件当前未启用或插件服务器当前离线。')
+  const resolution = resolvePublicRoute(await findPluginRoute(env, hostname))
+  if (resolution.state === 'missing') return new Response('Plugin domain not found', { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' } })
+  if (resolution.state === 'unavailable') return maintenanceResponse('插件暂时不可用', '公开入口尚未就绪、插件当前未启用或插件服务器当前离线。')
+  const domain = resolution.route
   const startedAt = Date.now()
   if (!await reserveRequest(env, settings.quotas)) {
     await activateMaintenance(env, 'request quota reached')
