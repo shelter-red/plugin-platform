@@ -1,3 +1,10 @@
+export class ApiError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message)
+    this.name = 'ApiError'
+  }
+}
+
 export interface ApiOverview {
   onlineServers: number
   enabledPlugins: number
@@ -203,21 +210,21 @@ export interface CloudflareSettings {
 export async function fetchOverview(): Promise<ApiOverview> {
   const apiBase = import.meta.env.VITE_API_BASE ?? ''
   const response = await fetch(`${apiBase}/api/overview`, { credentials: 'include' })
-  if (!response.ok) throw new Error(`overview request failed: ${response.status}`)
+  if (!response.ok) throw new ApiError(response.status, 'overview request failed')
   return response.json() as Promise<ApiOverview>
 }
 
 export async function fetchPlatformSettings(): Promise<PlatformSettings> {
   const apiBase = import.meta.env.VITE_API_BASE ?? ''
   const response = await fetch(`${apiBase}/api/settings/platform`, { credentials: 'include' })
-  if (!response.ok) throw new Error(`platform settings request failed: ${response.status}`)
+  if (!response.ok) throw new ApiError(response.status, 'platform settings request failed')
   return response.json() as Promise<PlatformSettings>
 }
 
 export async function fetchServers(): Promise<ApiServer[]> {
   const apiBase = import.meta.env.VITE_API_BASE ?? ''
   const response = await fetch(`${apiBase}/api/servers`, { credentials: 'include' })
-  if (!response.ok) throw new Error(`servers request failed: ${response.status}`)
+  if (!response.ok) throw new ApiError(response.status, 'servers request failed')
   const data = await response.json() as { results?: ApiServer[] }
   return data.results ?? []
 }
@@ -225,14 +232,14 @@ export async function fetchServers(): Promise<ApiServer[]> {
 export async function fetchServerDetails(serverId: string): Promise<ApiServerDetail> {
   const apiBase = import.meta.env.VITE_API_BASE ?? ''
   const response = await fetch(`${apiBase}/api/servers/${encodeURIComponent(serverId)}`, { credentials: 'include' })
-  if (!response.ok) throw await apiError(response, `server detail request failed: ${response.status}`)
+  if (!response.ok) throw await apiError(response, 'server detail request failed')
   return response.json() as Promise<ApiServerDetail>
 }
 
 export async function fetchPlugins(): Promise<ApiPlugin[]> {
   const apiBase = import.meta.env.VITE_API_BASE ?? ''
   const response = await fetch(`${apiBase}/api/plugins`, { credentials: 'include' })
-  if (!response.ok) throw new Error(`plugins request failed: ${response.status}`)
+  if (!response.ok) throw new ApiError(response.status, 'plugins request failed')
   const data = await response.json() as { results?: ApiPlugin[] }
   return data.results ?? []
 }
@@ -240,14 +247,14 @@ export async function fetchPlugins(): Promise<ApiPlugin[]> {
 export async function fetchPluginDetails(pluginInstanceId: string): Promise<ApiPluginDetail> {
   const apiBase = import.meta.env.VITE_API_BASE ?? ''
   const response = await fetch(`${apiBase}/api/plugins/${encodeURIComponent(pluginInstanceId)}`, { credentials: 'include' })
-  if (!response.ok) throw await apiError(response, `plugin detail request failed: ${response.status}`)
+  if (!response.ok) throw await apiError(response, 'plugin detail request failed')
   return response.json() as Promise<ApiPluginDetail>
 }
 
 export async function fetchDomains(): Promise<ApiDomain[]> {
   const apiBase = import.meta.env.VITE_API_BASE ?? ''
   const response = await fetch(`${apiBase}/api/domains`, { credentials: 'include' })
-  if (!response.ok) throw new Error(`domains request failed: ${response.status}`)
+  if (!response.ok) throw new ApiError(response.status, 'domains request failed')
   const data = await response.json() as { results?: ApiDomain[] }
   return data.results ?? []
 }
@@ -255,7 +262,7 @@ export async function fetchDomains(): Promise<ApiDomain[]> {
 export async function fetchAudit(): Promise<ApiAudit[]> {
   const apiBase = import.meta.env.VITE_API_BASE ?? ''
   const response = await fetch(`${apiBase}/api/audit`, { credentials: 'include' })
-  if (!response.ok) throw new Error(`audit request failed: ${response.status}`)
+  if (!response.ok) throw new ApiError(response.status, 'audit request failed')
   const data = await response.json() as { results?: ApiAudit[] }
   return data.results ?? []
 }
@@ -263,27 +270,27 @@ export async function fetchAudit(): Promise<ApiAudit[]> {
 export async function fetchAccessLogs(): Promise<ApiAccessLogs> {
   const apiBase = import.meta.env.VITE_API_BASE ?? ''
   const response = await fetch(`${apiBase}/api/access-logs`, { credentials: 'include' })
-  if (!response.ok) throw await apiError(response, `access logs request failed: ${response.status}`)
+  if (!response.ok) throw await apiError(response, 'access logs request failed')
   return response.json() as Promise<ApiAccessLogs>
 }
 
 export async function fetchInvites(): Promise<ApiInvite[]> {
   const apiBase = import.meta.env.VITE_API_BASE ?? ''
   const response = await fetch(`${apiBase}/api/invites`, { credentials: 'include' })
-  if (!response.ok) throw await apiError(response, `invites request failed: ${response.status}`)
+  if (!response.ok) throw await apiError(response, 'invites request failed')
   const data = await response.json() as { results?: ApiInvite[] }
   return data.results ?? []
 }
 
-async function apiError(response: Response, fallback: string): Promise<Error> {
+async function apiError(response: Response, fallback: string): Promise<ApiError> {
   const data = await response.json().catch(() => null) as { error?: string } | null
-  return new Error(data?.error || fallback)
+  return new ApiError(response.status, data?.error || fallback)
 }
 
 export async function createRegistrationCode(): Promise<RegistrationCode> {
   const apiBase = import.meta.env.VITE_API_BASE ?? ''
   const response = await fetch(`${apiBase}/api/registration-codes`, { method: 'POST', credentials: 'include' })
-  if (!response.ok) throw await apiError(response, `registration code request failed: ${response.status}`)
+  if (!response.ok) throw await apiError(response, 'registration code request failed')
   return response.json() as Promise<RegistrationCode>
 }
 
@@ -331,54 +338,54 @@ export async function assignDomain(pluginInstanceId: string, prefix: string): Pr
 export async function fetchCloudflareUsage(): Promise<CloudflareUsage> {
   const apiBase = import.meta.env.VITE_API_BASE ?? ''
   const response = await fetch(`${apiBase}/api/usage/cloudflare`, { credentials: 'include' })
-  if (!response.ok) throw await apiError(response, `cloudflare usage request failed: ${response.status}`)
+  if (!response.ok) throw await apiError(response, 'cloudflare usage request failed')
   return response.json() as Promise<CloudflareUsage>
 }
 
 export async function fetchLocalUsage(range: '24h' | '7d' | '30d' = '7d'): Promise<LocalUsage> {
   const apiBase = import.meta.env.VITE_API_BASE ?? ''
   const response = await fetch(`${apiBase}/api/usage/local?range=${range}`, { credentials: 'include' })
-  if (!response.ok) throw await apiError(response, `local usage request failed: ${response.status}`)
+  if (!response.ok) throw await apiError(response, 'local usage request failed')
   return response.json() as Promise<LocalUsage>
 }
 
 export async function updatePlatformSettings(settings: PlatformSettings): Promise<PlatformSettings> {
   const apiBase = import.meta.env.VITE_API_BASE ?? ''
   const response = await fetch(`${apiBase}/api/settings/platform`, { method: 'PUT', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(settings) })
-  if (!response.ok) throw new Error(`platform settings update failed: ${response.status}`)
+  if (!response.ok) throw new ApiError(response.status, 'platform settings update request failed')
   return response.json() as Promise<PlatformSettings>
 }
 
 export async function fetchCloudflareSettings(): Promise<CloudflareSettings> {
   const apiBase = import.meta.env.VITE_API_BASE ?? ''
   const response = await fetch(`${apiBase}/api/settings/cloudflare`, { credentials: 'include' })
-  if (!response.ok) throw new Error(`cloudflare settings request failed: ${response.status}`)
+  if (!response.ok) throw new ApiError(response.status, 'cloudflare settings request failed')
   return response.json() as Promise<CloudflareSettings>
 }
 
 export async function revokeCloudflareSettings(): Promise<CloudflareSettings> {
   const apiBase = import.meta.env.VITE_API_BASE ?? ''
   const response = await fetch(`${apiBase}/api/settings/cloudflare`, { method: 'DELETE', credentials: 'include' })
-  if (!response.ok) throw new Error(`cloudflare settings revoke failed: ${response.status}`)
+  if (!response.ok) throw new ApiError(response.status, 'cloudflare settings revoke request failed')
   return response.json() as Promise<CloudflareSettings>
 }
 
 export async function fetchSmtpSettings(): Promise<SmtpSettings> {
   const apiBase = import.meta.env.VITE_API_BASE ?? ''
   const response = await fetch(`${apiBase}/api/settings/smtp`, { credentials: 'include' })
-  if (!response.ok) throw new Error(`smtp settings request failed: ${response.status}`)
+  if (!response.ok) throw new ApiError(response.status, 'smtp settings request failed')
   return response.json() as Promise<SmtpSettings>
 }
 
 export async function updateSmtpSettings(settings: { host: string; port: number; secure: boolean; username: string; password: string; authType: 'plain' | 'login' | 'cram-md5'; from: string; fromName?: string; replyTo?: string }): Promise<SmtpSettings> {
   const apiBase = import.meta.env.VITE_API_BASE ?? ''
   const response = await fetch(`${apiBase}/api/settings/smtp`, { method: 'PUT', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(settings) })
-  if (!response.ok) throw new Error(`smtp settings update failed: ${response.status}`)
+  if (!response.ok) throw new ApiError(response.status, 'smtp settings update request failed')
   return response.json() as Promise<SmtpSettings>
 }
 
 export async function sendSmtpTest(to: string): Promise<void> {
   const apiBase = import.meta.env.VITE_API_BASE ?? ''
   const response = await fetch(`${apiBase}/api/settings/smtp/test`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ to }) })
-  if (!response.ok) throw new Error(`smtp test failed: ${response.status}`)
+  if (!response.ok) throw new ApiError(response.status, 'smtp test request failed')
 }

@@ -297,6 +297,24 @@ test('管理端域名分配失败时在弹窗内显示服务端校验错误', as
   expect(worker.domainRequests).toEqual([{ pluginInstanceId: 'plugin-1', prefix: 'Bad Prefix' }])
 })
 
+test('管理端把英文服务端错误替换为本地化提示', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  const worker = await mockWorker(page)
+  worker.plugins = [enabledPlugin]
+  worker.domainError = 'Domain prefix is invalid'
+  await page.goto('/')
+  await page.getByRole('button', { name: '公开域名', exact: true }).click()
+  await page.getByRole('button', { name: '分配域名' }).click()
+
+  const dialog = page.getByRole('dialog', { name: '分配公开域名' })
+  await dialog.getByRole('combobox').selectOption('plugin-1')
+  await dialog.getByLabel('域名前缀').fill('Bad Prefix')
+  await dialog.getByRole('button', { name: '分配域名' }).click()
+
+  await expect(dialog.getByText('请求失败，请稍后重试', { exact: true })).toBeVisible()
+  await expect(dialog.getByText('Domain prefix is invalid')).toHaveCount(0)
+})
+
 test('管理端从发现态插件提交加载命令', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 })
   const worker = await mockWorker(page)

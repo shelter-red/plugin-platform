@@ -503,6 +503,15 @@ export default {
     auditExported: 'Exported {{count}} audit entries',
     cloudflareConnected: 'Cloudflare authorized and account identified',
     cloudflareConnectedWithoutAccount: 'Cloudflare authorized, but no single account was identified',
+    http: {
+      unauthorized: 'Your session has expired, please sign in again',
+      forbidden: 'This account is not allowed to perform that action',
+      notFound: 'The requested resource does not exist',
+      conflict: 'The current state does not allow that action',
+      rateLimited: 'Too many requests, please try again later',
+      serverError: 'The platform service is temporarily unavailable, please retry later',
+      failed: 'The request failed, please try again later',
+    },
   },
   csv: {
     accessLogs: {

@@ -503,6 +503,15 @@ export default {
     auditExported: '已导出 {{count}} 条审计记录',
     cloudflareConnected: 'Cloudflare 已授权并识别账号',
     cloudflareConnectedWithoutAccount: 'Cloudflare 已授权，但未识别唯一账号',
+    http: {
+      unauthorized: '登录状态已失效，请重新登录',
+      forbidden: '当前账号没有执行该操作的权限',
+      notFound: '请求的资源不存在',
+      conflict: '当前状态不允许该操作',
+      rateLimited: '请求过于频繁，请稍后重试',
+      serverError: '平台服务暂时不可用，请稍后重试',
+      failed: '请求失败，请稍后重试',
+    },
   },
   csv: {
     accessLogs: {

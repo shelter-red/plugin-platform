@@ -41,7 +41,7 @@ import {
 import './styles.css'
 import './i18n'
 import i18n, { storeLanguage, type Language } from './i18n'
-import { assignDomain, checkPluginHealth, commandPlugin, createInvite, createRegistrationCode, fetchAccessLogs, fetchAudit, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchInvites, fetchLocalUsage, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchPluginDetails, fetchServerDetails, fetchServers, fetchSmtpSettings, revokeCloudflareSettings, revokeInvite, syncServer, type ApiAccessLog, type ApiAudit, type ApiDomain, type ApiInvite, type ApiOverview, type ApiPlugin, type ApiPluginDetail, type ApiServer, type ApiServerDetail, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type PlatformSettings, type PluginAction, type PluginHealthResult, type SmtpSettings, type UsageSnapshot, sendSmtpTest, updatePlatformSettings, updateSmtpSettings } from './api'
+import { ApiError, assignDomain, checkPluginHealth, commandPlugin, createInvite, createRegistrationCode, fetchAccessLogs, fetchAudit, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchInvites, fetchLocalUsage, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchPluginDetails, fetchServerDetails, fetchServers, fetchSmtpSettings, revokeCloudflareSettings, revokeInvite, syncServer, type ApiAccessLog, type ApiAudit, type ApiDomain, type ApiInvite, type ApiOverview, type ApiPlugin, type ApiPluginDetail, type ApiServer, type ApiServerDetail, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type PlatformSettings, type PluginAction, type PluginHealthResult, type SmtpSettings, type UsageSnapshot, sendSmtpTest, updatePlatformSettings, updateSmtpSettings } from './api'
 
 type Page = 'overview' | 'servers' | 'plugins' | 'domains' | 'usage' | 'logs' | 'audit' | 'settings'
 type Theme = 'dark' | 'light' | 'system'
@@ -73,6 +73,26 @@ const currentLocale = () => i18n.resolvedLanguage ?? 'zh-CN'
 const formatDateTime = (value: string) => new Date(value).toLocaleString(currentLocale())
 const formatNumber = (value: number) => value.toLocaleString(currentLocale())
 const translateError = (value: string) => i18n.exists(value) ? i18n.t(value) : value
+
+const httpErrorKey = (status: number) => {
+  if (status === 401) return 'toast.http.unauthorized'
+  if (status === 403) return 'toast.http.forbidden'
+  if (status === 404) return 'toast.http.notFound'
+  if (status === 409) return 'toast.http.conflict'
+  if (status === 429) return 'toast.http.rateLimited'
+  if (status >= 500) return 'toast.http.serverError'
+  return 'toast.http.failed'
+}
+
+// Worker 的错误文本是面向开发的英文；除非服务端已给出中文提示，否则统一换成按状态码本地化的文案。
+function errorMessage(error: unknown, fallbackKey: string): string {
+  if (error instanceof ApiError) {
+    if (/[\u4e00-\u9fa5]/.test(error.message)) return error.message
+    return i18n.t(httpErrorKey(error.status))
+  }
+  if (error instanceof Error && i18n.exists(error.message)) return i18n.t(error.message)
+  return i18n.t(fallbackKey)
+}
 
 function IconButton({ label, children, onClick }: { label: string; children: React.ReactNode; onClick?: () => void }) {
   return <button className="icon-button" aria-label={label} title={label} onClick={onClick}>{children}</button>
@@ -248,7 +268,7 @@ function App() {
       setUsageError(null)
     }).catch((error) => {
       setUsage(null)
-      setUsageError(error instanceof Error ? error.message : 'toast.usageUnavailable')
+      setUsageError(errorMessage(error, 'toast.usageUnavailable'))
     }).finally(() => setUsageLoading(false))
   }, [authEnabled])
 
@@ -299,13 +319,13 @@ function App() {
       await refreshData(false)
       return { kind: 'registration', code: result.code, expiresAt: result.expiresAt }
     }
-    if (!input.pluginInstanceId) throw new Error(t('toast.selectPlugin'))
+    if (!input.pluginInstanceId) throw new Error('toast.selectPlugin')
     if (type === 'plugin') {
       const result = await commandPlugin(input.pluginInstanceId, 'load')
       await refreshData(false)
       return { kind: 'plugin', state: result.state }
     }
-    if (!input.prefix?.trim()) throw new Error(t('toast.prefixRequired'))
+    if (!input.prefix?.trim()) throw new Error('toast.prefixRequired')
     const result = await assignDomain(input.pluginInstanceId, input.prefix.trim())
     await refreshData(false)
     return { kind: 'domain', hostname: result.hostname }
@@ -320,7 +340,7 @@ function App() {
       if (kind === 'server') setDetailData({ kind, value: await fetchServerDetails(id) })
       else setDetailData({ kind, value: await fetchPluginDetails(id) })
     } catch (error) {
-      setDetailError(error instanceof Error ? error.message : t('toast.detailFailed'))
+      setDetailError(errorMessage(error, 'toast.detailFailed'))
     } finally {
       setDetailLoading(false)
     }
@@ -334,7 +354,7 @@ function App() {
       await refreshData(false)
       if (detail?.kind === 'plugin' && detail.id === plugin.id) void openDetail('plugin', plugin.id)
     } catch (error) {
-      showToast(error instanceof Error ? error.message : t('toast.healthFailed'))
+      showToast(errorMessage(error, 'toast.healthFailed'))
     } finally {
       setHealthPluginId(null)
     }
@@ -349,7 +369,7 @@ function App() {
       await refreshData(false)
       if (detail?.kind === 'plugin' && detail.id === plugin.id) void openDetail('plugin', plugin.id)
     } catch (error) {
-      showToast(error instanceof Error ? error.message : t('toast.actionFailed'))
+      showToast(errorMessage(error, 'toast.actionFailed'))
     } finally {
       setPluginActionLoading(null)
     }
@@ -366,7 +386,7 @@ function App() {
       showToast(t('toast.syncRequested', { count: onlineServerIds.length }))
       window.setTimeout(() => void refreshData(false), 500)
     } catch (error) {
-      showToast(error instanceof Error ? error.message : t('toast.syncFailed'))
+      showToast(errorMessage(error, 'toast.syncFailed'))
     }
   }
 
@@ -729,7 +749,7 @@ function InvitePanel({ invites, onChange, onAction }: { invites: ApiInvite[] | n
       await refresh()
       onAction(result.emailSent === false && email.trim() ? t('settings.invite.createdEmailFailed') : t('settings.invite.created'))
     } catch (error) {
-      onAction(error instanceof Error ? error.message : t('settings.invite.createFailed'))
+      onAction(errorMessage(error, 'settings.invite.createFailed'))
     } finally {
       setSaving(false)
     }
@@ -741,7 +761,7 @@ function InvitePanel({ invites, onChange, onAction }: { invites: ApiInvite[] | n
       await refresh()
       onAction(t('settings.invite.revoked'))
     } catch (error) {
-      onAction(error instanceof Error ? error.message : t('settings.invite.revokeFailed'))
+      onAction(errorMessage(error, 'settings.invite.revokeFailed'))
     }
   }
   const copy = async () => {
@@ -789,7 +809,7 @@ function DetailModal({ detail, data, loading, error, healthLoading, actionLoadin
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [onClose])
-  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><div className="modal detail-modal" role="dialog" aria-modal="true" aria-label={title}><div className="modal-head"><div><h2>{title}</h2><p>{t('detail.subtitle')}</p></div><IconButton label={t('detail.close')} onClick={onClose}><X size={17} /></IconButton></div>{loading && <div className="detail-loading"><RefreshCw size={18} className="spin" />{t('detail.loading')}</div>}{error && <div className="auth-error"><AlertCircle size={14} />{error}</div>}{!loading && !error && data?.kind === 'server' && <ServerDetailContent value={data.value} onOpenPlugin={onOpenPlugin} />}{!loading && !error && data?.kind === 'plugin' && <PluginDetailContent value={data.value} healthLoading={healthLoading} actionLoading={actionLoading} onHealth={onHealth} onAction={onAction} />}</div></div>
+  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><div className="modal detail-modal" role="dialog" aria-modal="true" aria-label={title}><div className="modal-head"><div><h2>{title}</h2><p>{t('detail.subtitle')}</p></div><IconButton label={t('detail.close')} onClick={onClose}><X size={17} /></IconButton></div>{loading && <div className="detail-loading"><RefreshCw size={18} className="spin" />{t('detail.loading')}</div>}{error && <div className="auth-error"><AlertCircle size={14} />{translateError(error)}</div>}{!loading && !error && data?.kind === 'server' && <ServerDetailContent value={data.value} onOpenPlugin={onOpenPlugin} />}{!loading && !error && data?.kind === 'plugin' && <PluginDetailContent value={data.value} healthLoading={healthLoading} actionLoading={actionLoading} onHealth={onHealth} onAction={onAction} />}</div></div>
 }
 
 function ServerDetailContent({ value, onOpenPlugin }: { value: ApiServerDetail; onOpenPlugin: (id: string) => void }) {
@@ -846,7 +866,7 @@ function Modal({ type, plugins, onClose, onConfirm }: { type: 'server' | 'domain
     try {
       setResult(await onConfirm({ prefix: type === 'domain' ? value : undefined, pluginInstanceId: type === 'server' ? undefined : selectedPluginId }))
     } catch (submissionError) {
-      setError(submissionError instanceof Error ? submissionError.message : t('modal.failed'))
+      setError(errorMessage(submissionError, 'modal.failed'))
     } finally {
       setSubmitting(false)
     }
@@ -865,7 +885,7 @@ function Modal({ type, plugins, onClose, onConfirm }: { type: 'server' | 'domain
     }
   }
 
-  return <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget && !submitting) onClose() }}><div className="modal" role="dialog" aria-modal="true" aria-label={content.title}><div className="modal-head"><div><h2>{content.title}</h2><p>{content.description}</p></div><IconButton label={t('modal.close')} onClick={onClose}><X size={17} /></IconButton></div>{result?.kind === 'registration' && <div className="code-callout"><span>{t('modal.codeExpires', { time: formatDateTime(result.expiresAt) })}</span><div className="code-value"><strong>{result.code}</strong><button className="row-action" onClick={() => void copyCode(result.code)} aria-label={t('modal.copyCode')} title={t('modal.copyCode')}><Copy size={15} /></button></div></div>}{result?.kind === 'plugin' && <div className="empty-panel"><div className="empty-illustration"><Check size={22} /></div><h3>{t('modal.loadConfirmed')}</h3><p>{t('modal.loadConfirmedState', { state: result.state })}</p></div>}{result?.kind === 'domain' && <div className="empty-panel"><div className="empty-illustration"><Check size={22} /></div><h3>{t('modal.domainAssigned')}</h3><p>{result.hostname}</p></div>}{!result && type === 'server' && <div className="empty-panel"><div className="empty-illustration"><LockKeyhole size={22} /></div><h3>{t('modal.generateCode')}</h3><p>{t('modal.codeHint')}</p></div>}{!result && type !== 'server' && <>{candidates.length > 0 ? <label className="modal-field">{t('modal.pluginInstance')}<select autoFocus value={selectedPluginId} onChange={(event) => setSelectedPluginId(event.target.value)}><option value="">{t('modal.selectPlugin')}</option>{candidates.map((plugin) => <option value={plugin.id} key={plugin.id}>{plugin.name} · {plugin.plugin_id} · {plugin.server_name}</option>)}</select></label> : <div className="empty-panel"><div className="empty-illustration"><AlertCircle size={22} /></div><h3>{type === 'plugin' ? t('modal.noLoadable') : t('modal.noAssignable')}</h3><p>{type === 'plugin' ? t('modal.noLoadableHint') : t('modal.noAssignableHint')}</p></div>}{type === 'domain' && candidates.length > 0 && <label className="modal-field">{t('modal.prefix')}<input autoFocus value={value} onChange={(event) => setValue(event.target.value)} placeholder={t('modal.prefixPlaceholder')} maxLength={48} /><span className="field-hint">{t('modal.prefixHint')}</span></label>}</>}{error && <div className="auth-error"><AlertCircle size={14} />{error}</div>}<div className="modal-actions"><button className="button secondary" onClick={onClose} disabled={submitting}>{t('modal.closeAction')}</button>{!result && <button className="button primary" onClick={() => void submit()} disabled={submitting || (type !== 'server' && (!selectedPluginId || candidates.length === 0))}>{submitting ? t('common.submitting') : type === 'server' ? t('modal.submitServer') : type === 'domain' ? t('modal.submitDomain') : t('modal.submitPlugin')}<ArrowUpRight size={14} /></button>}</div></div></div>
+  return <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget && !submitting) onClose() }}><div className="modal" role="dialog" aria-modal="true" aria-label={content.title}><div className="modal-head"><div><h2>{content.title}</h2><p>{content.description}</p></div><IconButton label={t('modal.close')} onClick={onClose}><X size={17} /></IconButton></div>{result?.kind === 'registration' && <div className="code-callout"><span>{t('modal.codeExpires', { time: formatDateTime(result.expiresAt) })}</span><div className="code-value"><strong>{result.code}</strong><button className="row-action" onClick={() => void copyCode(result.code)} aria-label={t('modal.copyCode')} title={t('modal.copyCode')}><Copy size={15} /></button></div></div>}{result?.kind === 'plugin' && <div className="empty-panel"><div className="empty-illustration"><Check size={22} /></div><h3>{t('modal.loadConfirmed')}</h3><p>{t('modal.loadConfirmedState', { state: result.state })}</p></div>}{result?.kind === 'domain' && <div className="empty-panel"><div className="empty-illustration"><Check size={22} /></div><h3>{t('modal.domainAssigned')}</h3><p>{result.hostname}</p></div>}{!result && type === 'server' && <div className="empty-panel"><div className="empty-illustration"><LockKeyhole size={22} /></div><h3>{t('modal.generateCode')}</h3><p>{t('modal.codeHint')}</p></div>}{!result && type !== 'server' && <>{candidates.length > 0 ? <label className="modal-field">{t('modal.pluginInstance')}<select autoFocus value={selectedPluginId} onChange={(event) => setSelectedPluginId(event.target.value)}><option value="">{t('modal.selectPlugin')}</option>{candidates.map((plugin) => <option value={plugin.id} key={plugin.id}>{plugin.name} · {plugin.plugin_id} · {plugin.server_name}</option>)}</select></label> : <div className="empty-panel"><div className="empty-illustration"><AlertCircle size={22} /></div><h3>{type === 'plugin' ? t('modal.noLoadable') : t('modal.noAssignable')}</h3><p>{type === 'plugin' ? t('modal.noLoadableHint') : t('modal.noAssignableHint')}</p></div>}{type === 'domain' && candidates.length > 0 && <label className="modal-field">{t('modal.prefix')}<input autoFocus value={value} onChange={(event) => setValue(event.target.value)} placeholder={t('modal.prefixPlaceholder')} maxLength={48} /><span className="field-hint">{t('modal.prefixHint')}</span></label>}</>}{error && <div className="auth-error"><AlertCircle size={14} />{translateError(error)}</div>}<div className="modal-actions"><button className="button secondary" onClick={onClose} disabled={submitting}>{t('modal.closeAction')}</button>{!result && <button className="button primary" onClick={() => void submit()} disabled={submitting || (type !== 'server' && (!selectedPluginId || candidates.length === 0))}>{submitting ? t('common.submitting') : type === 'server' ? t('modal.submitServer') : type === 'domain' ? t('modal.submitDomain') : t('modal.submitPlugin')}<ArrowUpRight size={14} /></button>}</div></div></div>
 }
 
 export default App
