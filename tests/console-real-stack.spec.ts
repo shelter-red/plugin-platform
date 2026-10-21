@@ -89,6 +89,13 @@ test('管理端在真实 C++ 服务器上加载、启用插件并分配域名', 
     await detail.getByRole('button', { name: '启用', exact: true }).click()
     await expect(page.getByText('Sample Plugin 已启用')).toBeVisible()
     await expect(detail.getByText('已启用').first()).toBeVisible()
+
+    await detail.getByRole('button', { name: '健康检查', exact: true }).click()
+    await expect(page.getByText(/Sample Plugin 健康检查通过（200，\d+ B）/)).toBeVisible()
+
+    await detail.getByRole('button', { name: '重载', exact: true }).click()
+    await expect(page.getByText('Sample Plugin 已重载')).toBeVisible()
+    await expect(detail.getByText('已启用').first()).toBeVisible()
     await detail.getByRole('button', { name: '关闭详情' }).click()
 
     await page.getByRole('button', { name: '公开域名', exact: true }).click()

@@ -49,7 +49,7 @@
 | manifest 校验和目录越界防护 | 本地已验证 | `plugin-manager`、`plugin-loader` CTest。 |
 | `.so` 动态加载和 C ABI v2/v3 | 本地已验证 | Linux 示例插件和 ABI/lifecycle CTest。 |
 | `.dll` 动态加载 | 部分实现 | 示例插件已交叉编译为 `libplugmesh-*.dll`，在 Wine 下由 `plugin-loader`、`plugin-host`、`plugin-manager`、崩溃隔离和 WebSocket 生命周期用例实际 `LoadLibrary` 加载并执行 ABI v2/v3 回调；真实 Windows 上的加载路径与错误码未验证。 |
-| 插件加载、卸载、启停、重载和健康检查 | 本地已验证 | `plugin-manager` CTest 覆盖加载、卸载、启停、重载与健康检查；本地 UI 的 `/api/plugins/<id>/<action>` 由 `native-ui:smoke` 在 Linux 与 Wine 下依次点击“加载”“启用”“检查”“停用”“重载”“卸载”，逐项断言状态徽标、已启用计数和日志同步变化。健康检查接口同时接受 `GET` 与 `POST /api/plugins/<id>/health`：此前 `POST` 落入通用动作分支返回 `unknown plugin action`，与 Worker 管理端使用的 `POST` 不一致，现已修复并有 curl 实测（两种方法均返回 `ok=true`、`status=200`）。 |
+| 插件加载、卸载、启停、重载和健康检查 | 本地已验证 | `plugin-manager` CTest 覆盖加载、卸载、启停、重载与健康检查；本地 UI 的 `/api/plugins/<id>/<action>` 由 `native-ui:smoke` 在 Linux 与 Wine 下依次点击“加载”“启用”“检查”“停用”“重载”“卸载”，逐项断言状态徽标、已启用计数和日志同步变化。健康检查接口同时接受 `GET` 与 `POST /api/plugins/<id>/health`：此前 `POST` 落入通用动作分支返回 `unknown plugin action`，与 Worker 管理端使用的 `POST` 不一致，现已修复并有 curl 实测（两种方法均返回 `ok=true`、`status=200`）。管理端 `ui:real-stack` 第三条用例在真实 `wrangler dev` + 真实 C++ 服务器上通过插件详情弹窗点击“健康检查”与“重载”，断言 Toast「健康检查通过（200，2 B）」与「已重载」，覆盖 Worker→Durable Object→服务器→插件 的完整链路。 |
 | HTTP、SSE、文件流和 WebSocket 回调 | 本地已验证 | C++ manager/control client/WebSocket lifecycle 测试。 |
 | 协议错误和网络断线恢复 | 本地已验证 | 控制帧校验、nonce/时间窗以及 reconnect smoke。 |
 | 插件原生崩溃隔离 | 本地已验证 | 每个插件由独立 `plugmesh-plugin-host` 子进程加载，父子进程通过逐行 JSON 管道通信；`plugin-manager-crash-smoke` 让插件空指针崩溃后断言仅宿主退出、插件转 `failed` 并记录错误、服务器可继续服务其他插件且可重新加载。Windows 分支在 Wine 下运行同一 `plugmesh-plugin-manager-crash-smoke` 通过：`CreateProcess` 拉起 `plugmesh-plugin-host.exe`、管道协议与崩溃隔离均生效，宿主崩溃后服务器继续服务并可重新加载；真实 Windows 主机仍未验证。边界：宿主内同步调用阻塞期间崩溃只能在下一次调用时被发现，崩溃后需要重新加载插件。 |
