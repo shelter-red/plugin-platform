@@ -115,6 +115,29 @@ test('Cloudflare Analytics 合并 D1/KV/DO 用量并写入五分钟缓存', { ti
   expect(secondBody).not.toHaveProperty('accessToken')
 })
 
+test('Cloudflare Analytics 缓存过期后重新回源并刷新时间', { timeout: 20_000 }, async () => {
+  await saveCredential()
+  const firstCalls: Array<{ authorization: string | null; query: string }> = []
+  const first = await cloudflareUsageApi(testEnv, admin, analyticsFetcher(firstCalls, graphqlHandler))
+  expect(first.status).toBe(200)
+  expect(firstCalls).toHaveLength(2)
+  const cached = await testEnv.DB.prepare('SELECT updated_at FROM usage_cache WHERE key = ?').bind('cloudflare:workers').first<{ updated_at: string }>()
+  expect(cached).toBeTruthy()
+
+  await testEnv.DB.prepare('UPDATE usage_cache SET expires_at = ? WHERE key = ?').bind(new Date(Date.now() - 1_000).toISOString(), 'cloudflare:workers').run()
+
+  const calls: Array<{ authorization: string | null; query: string }> = []
+  const refreshed = await cloudflareUsageApi(testEnv, admin, analyticsFetcher(calls, graphqlHandler))
+  expect(refreshed.status).toBe(200)
+  const body = await refreshed.json() as Record<string, unknown>
+  expect(body).toMatchObject({ configured: true, cached: false, requests: 4321, source: 'cloudflare_graphql' })
+  expect(calls).toHaveLength(2)
+
+  const next = await testEnv.DB.prepare('SELECT expires_at, updated_at FROM usage_cache WHERE key = ?').bind('cloudflare:workers').first<{ expires_at: string; updated_at: string }>()
+  expect(Date.parse(next!.updated_at)).toBeGreaterThan(Date.parse(cached!.updated_at))
+  expect(Date.parse(next!.expires_at)).toBeGreaterThan(Date.now())
+})
+
 test('Cloudflare Analytics 错误与权限失败返回 502 且不写缓存', { timeout: 20_000 }, async () => {
   await saveCredential()
   const failed = await cloudflareUsageApi(testEnv, admin, analyticsFetcher([], () => new Response('forbidden', { status: 403 })))
