@@ -67,6 +67,19 @@ PLUGMESH_LOCAL_UI_DIRECTORY="$PWD/native-ui/dist" \
 
 4. 通过管理 API 加载并启用 `sample.plugin`，再分配域名（示例为 `e2e.plugins.example.com`）。分配域名会先执行健康检查。
 
+对应管理 API 命令示例（`<plugin-id>` 为 `/api/plugins` 返回的实例 id）：
+
+```bash
+curl -s -X POST -H 'Cookie: plugmesh_session=e2e-session-token' http://127.0.0.1:18888/api/registration-codes
+curl -s -H 'Cookie: plugmesh_session=e2e-session-token' http://127.0.0.1:18888/api/plugins
+curl -s -X POST -H 'Cookie: plugmesh_session=e2e-session-token' http://127.0.0.1:18888/api/plugins/<plugin-id>/load
+curl -s -X POST -H 'Cookie: plugmesh_session=e2e-session-token' http://127.0.0.1:18888/api/plugins/<plugin-id>/enable
+curl -s -X POST -H 'Cookie: plugmesh_session=e2e-session-token' -H 'content-type: application/json' \
+  -d '{"pluginInstanceId":"<plugin-id>","prefix":"e2e"}' http://127.0.0.1:18888/api/domains
+```
+
+`load` 返回 `{"state":"loaded","accepted":true}`，`enable` 返回 `{"state":"enabled","accepted":true}`，域名分配在通过健康检查后返回 `{"hostname":"e2e.plugins.example.com","status":"online"}`。
+
 ## 验收用例
 
 以下命令中的 `e2e.plugins.example.com` 需替换为实际分配的域名。
