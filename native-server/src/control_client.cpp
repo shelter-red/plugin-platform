@@ -329,7 +329,11 @@ void ControlClient::handle_sse_request(const ControlFrame& frame) {
   std::string error;
   if (stream_id.empty() || !plugins_.sse(id, stream_id, request, error)) {
     send_request_error(frame, error.empty() ? "invalid SSE stream" : error);
+    return;
   }
+  auto opened = make_control_frame("request.open", config_.server_id, {{"status", 200}, {"headers", {{"content-type", "text/event-stream; charset=utf-8"}, {"cache-control", "no-cache"}}}}, id);
+  opened.request_id = frame.request_id;
+  send_frame(std::move(opened));
 }
 
 void ControlClient::handle_websocket_open(const ControlFrame& frame) {

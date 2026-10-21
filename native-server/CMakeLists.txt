@@ -70,7 +70,7 @@ add_executable(plugmesh-local-http-server-smoke tests/local_http_server_smoke.cp
 target_link_libraries(plugmesh-local-http-server-smoke PRIVATE plugmesh_core)
 
 add_test(NAME plugmesh-control-protocol-smoke COMMAND plugmesh-control-protocol-smoke)
-add_test(NAME plugmesh-control-client-smoke COMMAND plugmesh-control-client-smoke)
+add_test(NAME plugmesh-control-client-smoke COMMAND plugmesh-control-client-smoke "${CMAKE_CURRENT_BINARY_DIR}/plugins")
 add_test(NAME plugmesh-credential-store-smoke COMMAND plugmesh-credential-store-smoke)
 add_test(NAME plugmesh-registration-client-smoke COMMAND plugmesh-registration-client-smoke)
 add_test(NAME plugmesh-plugin-loader-smoke COMMAND plugmesh-plugin-loader-smoke $<TARGET_FILE:plugmesh-sample>)
