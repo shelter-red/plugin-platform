@@ -111,11 +111,12 @@ require_secret_length() {
 }
 
 echo "==> 构建管理端静态资源"
-if [[ $CLOUDFLARE_BUILD -eq 1 && $SKIP_BUILD -eq 0 ]]; then
-  echo "    Workers Builds 已执行项目 build，跳过重复构建"
-elif [[ $SKIP_BUILD -eq 1 ]]; then
+if [[ $SKIP_BUILD -eq 1 ]]; then
   echo "    已跳过（--skip-build）"
+elif [[ $CLOUDFLARE_BUILD -eq 1 && -s dist/index.html ]]; then
+  echo "    Workers Builds 已执行项目 build，跳过重复构建"
 else
+  [[ $CLOUDFLARE_BUILD -eq 1 ]] && echo "    Workers Builds 未发现有效 dist，执行兜底构建"
   npm run build
 fi
 
@@ -165,9 +166,14 @@ else
   fi
 fi
 
+DEPLOY_ARGS=(--config "$CONFIG")
+if [[ $CLOUDFLARE_BUILD -eq 1 ]]; then
+  DEPLOY_ARGS+=(--x-provision)
+fi
+
 if [[ $PROVISION_ON_DEPLOY -eq 1 ]]; then
   echo "==> 首次发布 Worker $WORKER_NAME（触发 D1 / R2 自动创建并绑定）"
-  wrangler deploy --config "$CONFIG"
+  wrangler deploy "${DEPLOY_ARGS[@]}"
 fi
 
 echo "==> 应用远端 D1 migrations"
@@ -175,7 +181,7 @@ wrangler d1 migrations apply DB --remote --config "$CONFIG"
 
 if [[ $PROVISION_ON_DEPLOY -eq 0 ]]; then
   echo "==> 发布 Worker $WORKER_NAME"
-  wrangler deploy --config "$CONFIG"
+  wrangler deploy "${DEPLOY_ARGS[@]}"
 fi
 
 echo "==> 检查基础设施 Secret"

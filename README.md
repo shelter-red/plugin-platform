@@ -72,14 +72,19 @@ cmake --build native-server/build --target test
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/<OWNER>/<REPO>)
 ```
 
-点击按钮后，Cloudflare 会克隆仓库并启动 Workers Builds：
+点击按钮后，Cloudflare 会克隆仓库并启动 Workers Builds。部署页会根据 `package.json` 预填命令，请核对为：
 
-1. 自动执行 `npm ci` 和 `npm run build`；
-2. 执行 `npm run deploy`，首次发布时由 Cloudflare 自动创建并绑定 D1 与 R2；
+- Build command：`npm run build`
+- Deploy command：`npm run deploy`
+
+不需要填写 D1 `database_id`、R2 Bucket、`SESSION_SECRET`、`SETUP_TOKEN`、GitHub/Cloudflare OAuth 或 SMTP 配置，也不要把 Deploy command 改成 `npx wrangler deploy`，否则会跳过迁移和基础设施 Secret 初始化。之后 Cloudflare 会：
+
+1. 执行 `npm run deploy`；如果平台上没有生成有效的 `dist/index.html`，脚本会先兜底执行 `npm run build`；
+2. 首次缺少 D1 `database_id` 时显式启用 Wrangler 资源自动创建，由 Cloudflare 创建并绑定 D1 与 R2；
 3. 资源就绪后自动应用数据库迁移、生成基础设施 Secret 并完成 Worker 发布；
 4. 首次部署的 `SETUP_TOKEN` 会显示在该次构建日志的「初始化令牌」一行。
 
-如果仓库已经在 Cloudflare 中直连 Workers Builds，且 `wrangler.toml` 还没有 `database_id`，脚本也会先部署一次触发 D1/R2 自动绑定，再执行迁移，不需要手工填写资源 ID。
+如果仓库已经在 Cloudflare 中直连 Workers Builds，且 `wrangler.toml` 还没有 `database_id`，同一脚本会先发布一次触发 D1/R2 自动绑定，再执行迁移，不需要手工填写资源 ID。
 
 当前仓库尚未配置公开 Git remote，因此 README 不写死会失效的按钮地址；公开发布后只需替换上面的仓库地址。
 
