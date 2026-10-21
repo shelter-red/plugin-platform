@@ -12,6 +12,7 @@ import {
   Command,
   Copy,
   Database,
+  Download,
   ExternalLink,
   FileText,
   Mail,
@@ -93,6 +94,20 @@ function LoginPage() {
 
 function StatusBadge({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: 'success' | 'warning' | 'danger' | 'neutral' }) {
   return <span className={`status-badge ${tone}`}><span className="status-dot" />{children}</span>
+}
+
+function downloadCsv(filename: string, headers: string[], rows: Array<Array<string | number | null>>) {
+  const escape = (value: string | number | null) => `"${String(value ?? '').replaceAll('"', '""')}"`
+  const csv = '\uFEFF' + [headers, ...rows].map((row) => row.map(escape).join(',')).join('\r\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
 }
 
 function App() {
@@ -323,6 +338,20 @@ function App() {
     setSidebarOpen(false)
   }
 
+  const exportAccessLogs = () => {
+    const rows = accessLogs ?? []
+    if (rows.length === 0) return showToast('暂无可导出的访问日志')
+    downloadCsv(`plugmesh-access-logs-${new Date().toISOString().slice(0, 10)}.csv`, ['入口', '方法', '路径', '状态', '耗时（毫秒）', '错误', '时间'], rows.map((log) => [log.hostname, log.method, log.path, log.status, log.duration_ms, log.error, log.created_at]))
+    showToast(`已导出 ${rows.length} 条访问日志`)
+  }
+
+  const exportAudit = () => {
+    const rows = audits ?? []
+    if (rows.length === 0) return showToast('暂无可导出的审计记录')
+    downloadCsv(`plugmesh-audit-${new Date().toISOString().slice(0, 10)}.csv`, ['事件', '详情', '操作者', '操作者邮箱', '时间'], rows.map((item) => [item.action, item.detail_json, item.actor_name, item.actor_email, item.created_at]))
+    showToast(`已导出 ${rows.length} 条审计记录`)
+  }
+
   if (authEnabled && authState === 'loading') return <AuthLoading />
   if (authEnabled && authState === 'anonymous') return <LoginPage />
 
@@ -363,8 +392,8 @@ function App() {
             {page === 'plugins' && <Plugins plugins={filteredPlugins} loading={dataLoading} onAction={showToast} onLoad={() => setModal('plugin')} onDetail={(id) => void openDetail('plugin', id)} onHealth={(plugin) => void runHealthCheck(plugin)} />}
             {page === 'domains' && <Domains domains={domains ?? []} loading={dataLoading} onAction={showToast} onAssign={() => setModal('domain')} />}
             {page === 'usage' && <Usage settings={platformSettings} usage={usage} localUsage={localUsage} loading={usageLoading} error={usageError} onNavigate={selectPage} />}
-            {page === 'logs' && <AccessLogs logs={accessLogs ?? []} loading={accessLogsLoading} error={accessLogsError} />}
-            {page === 'audit' && <Audit audits={audits ?? []} loading={auditLoading} error={auditError} />}
+            {page === 'logs' && <AccessLogs logs={accessLogs ?? []} loading={accessLogsLoading} error={accessLogsError} onExport={exportAccessLogs} />}
+            {page === 'audit' && <Audit audits={audits ?? []} loading={auditLoading} error={auditError} onExport={exportAudit} />}
             {page === 'settings' && <SettingsPage settings={platformSettings} onSettingsChange={setPlatformSettings} cloudflareSettings={cloudflareSettings} onCloudflareChange={setCloudflareSettings} smtpSettings={smtpSettings} onSmtpChange={setSmtpSettings} invites={invites} onInvitesChange={setInvites} onAction={showToast} />}
           </div>
         </div>
@@ -499,12 +528,12 @@ function formatBytes(value: number): string {
 
 function ResourceCard({ title, current, limit, unit, percent = 0, icon: Icon }: { title: string; current: string; limit: string; unit: string; percent?: number; icon: typeof Cloud }) { return <div className="resource-card"><div className="resource-card-head"><div className="resource-card-icon"><Icon size={17} /></div><span>{title}</span></div><strong>{current}</strong><div className="resource-card-limit">上限 {limit} <span>{unit}</span></div><div className="progress"><span style={{ width: `${percent}%` }} /></div></div> }
 
-function AccessLogs({ logs, loading, error }: { logs: ApiAccessLog[]; loading: boolean; error: string | null }) {
+function AccessLogs({ logs, loading, error, onExport }: { logs: ApiAccessLog[]; loading: boolean; error: string | null; onExport: () => void }) {
   const errors = logs.filter((log) => log.status >= 500).length
-  return <div className="stack">{error && <div className="notice-bar compact"><div className="notice-icon"><AlertCircle size={16} /></div><div><strong>访问日志读取失败</strong><span>{error}</span></div></div>}<div className="filter-row"><div className="filter-summary"><Activity size={15} />最近 30 天 <span className="divider" />错误 {errors} 条</div><button className="button secondary small" disabled><FileText size={14} />导出日志</button></div>{loading ? <div className="empty-panel"><div className="empty-illustration"><RefreshCw size={20} /></div><h3>正在读取访问日志</h3><p>Worker 正在返回最近 30 天的公开入口请求。</p></div> : logs.length === 0 ? <div className="empty-panel"><div className="empty-illustration"><Activity size={20} /></div><h3>暂无访问日志</h3><p>插件域名收到请求后，状态和耗时会显示在这里。</p></div> : <div className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>入口</th><th>请求</th><th>状态</th><th>耗时</th><th>时间</th></tr></thead><tbody>{logs.map((log) => <tr key={log.id}><td><div className="cell-title"><div className="table-icon"><Globe2 size={15} /></div><div><strong>{log.hostname}</strong><small>{log.path}</small></div></div></td><td>{log.method}</td><td><StatusBadge tone={log.status >= 500 ? 'danger' : log.status >= 400 ? 'warning' : 'success'}>{log.status}{log.error ? ` · ${log.error}` : ''}</StatusBadge></td><td>{log.duration_ms} ms</td><td className="muted">{new Date(log.created_at).toLocaleString('zh-CN')}</td></tr>)}</tbody></table></div></div>}</div>
+  return <div className="stack">{error && <div className="notice-bar compact"><div className="notice-icon"><AlertCircle size={16} /></div><div><strong>访问日志读取失败</strong><span>{error}</span></div></div>}<div className="filter-row"><div className="filter-summary"><Activity size={15} />最近 30 天 <span className="divider" />错误 {errors} 条</div><button className="button secondary small" onClick={onExport} disabled={loading || logs.length === 0}><Download size={14} />导出日志</button></div>{loading ? <div className="empty-panel"><div className="empty-illustration"><RefreshCw size={20} /></div><h3>正在读取访问日志</h3><p>Worker 正在返回最近 30 天的公开入口请求。</p></div> : logs.length === 0 ? <div className="empty-panel"><div className="empty-illustration"><Activity size={20} /></div><h3>暂无访问日志</h3><p>插件域名收到请求后，状态和耗时会显示在这里。</p></div> : <div className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>入口</th><th>请求</th><th>状态</th><th>耗时</th><th>时间</th></tr></thead><tbody>{logs.map((log) => <tr key={log.id}><td><div className="cell-title"><div className="table-icon"><Globe2 size={15} /></div><div><strong>{log.hostname}</strong><small>{log.path}</small></div></div></td><td>{log.method}</td><td><StatusBadge tone={log.status >= 500 ? 'danger' : log.status >= 400 ? 'warning' : 'success'}>{log.status}{log.error ? ` · ${log.error}` : ''}</StatusBadge></td><td>{log.duration_ms} ms</td><td className="muted">{new Date(log.created_at).toLocaleString('zh-CN')}</td></tr>)}</tbody></table></div></div>}</div>
 }
 
-function Audit({ audits, loading, error }: { audits: ApiAudit[]; loading: boolean; error: string | null }) { return <div className="stack">{error && <div className="notice-bar compact"><div className="notice-icon"><AlertCircle size={16} /></div><div><strong>审计日志读取失败</strong><span>{error}</span></div></div>}<div className="filter-row"><div className="filter-summary"><ListFilter size={15} />全部事件 <span className="divider" />最近 180 天</div><button className="button secondary small" disabled><FileText size={14} />导出日志</button></div>{loading ? <div className="empty-panel"><div className="empty-illustration"><RefreshCw size={20} /></div><h3>正在读取审计记录</h3><p>Worker 正在返回最近 180 天的事件。</p></div> : audits.length === 0 ? <div className="empty-panel"><div className="empty-illustration"><Activity size={20} /></div><h3>暂无审计记录</h3><p>平台产生审计事件后会显示在这里，导出功能尚未接入。</p></div> : <div className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>事件</th><th>详情</th><th>操作者</th><th>时间</th></tr></thead><tbody>{audits.map((item) => <tr key={item.id}><td><div className="cell-title"><div className="audit-icon"><Activity size={14} /></div><strong>{auditActionLabel(item.action)}</strong></div></td><td>{auditDetail(item)}</td><td><span className="operator"><div className="mini-avatar">{(item.actor_name ?? '系统').slice(0, 1)}</div><span>{item.actor_name ?? '系统事件'}<small>{item.actor_email ?? '无用户标识'}</small></span></span></td><td className="muted">{new Date(item.created_at).toLocaleString('zh-CN')}</td></tr>)}</tbody></table></div></div>}</div> }
+function Audit({ audits, loading, error, onExport }: { audits: ApiAudit[]; loading: boolean; error: string | null; onExport: () => void }) { return <div className="stack">{error && <div className="notice-bar compact"><div className="notice-icon"><AlertCircle size={16} /></div><div><strong>审计日志读取失败</strong><span>{error}</span></div></div>}<div className="filter-row"><div className="filter-summary"><ListFilter size={15} />全部事件 <span className="divider" />最近 180 天</div><button className="button secondary small" onClick={onExport} disabled={loading || audits.length === 0}><Download size={14} />导出日志</button></div>{loading ? <div className="empty-panel"><div className="empty-illustration"><RefreshCw size={20} /></div><h3>正在读取审计记录</h3><p>Worker 正在返回最近 180 天的事件。</p></div> : audits.length === 0 ? <div className="empty-panel"><div className="empty-illustration"><Activity size={20} /></div><h3>暂无审计记录</h3><p>平台产生审计事件后会显示在这里。</p></div> : <div className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>事件</th><th>详情</th><th>操作者</th><th>时间</th></tr></thead><tbody>{audits.map((item) => <tr key={item.id}><td><div className="cell-title"><div className="audit-icon"><Activity size={14} /></div><strong>{auditActionLabel(item.action)}</strong></div></td><td>{auditDetail(item)}</td><td><span className="operator"><div className="mini-avatar">{(item.actor_name ?? '系统').slice(0, 1)}</div><span>{item.actor_name ?? '系统事件'}<small>{item.actor_email ?? '无用户标识'}</small></span></span></td><td className="muted">{new Date(item.created_at).toLocaleString('zh-CN')}</td></tr>)}</tbody></table></div></div>}</div> }
 
 function SettingsPage({ settings, onSettingsChange, cloudflareSettings, onCloudflareChange, smtpSettings, onSmtpChange, invites, onInvitesChange, onAction }: { settings: PlatformSettings | null; onSettingsChange: (settings: PlatformSettings) => void; cloudflareSettings: CloudflareSettings | null; onCloudflareChange: (settings: CloudflareSettings) => void; smtpSettings: SmtpSettings | null; onSmtpChange: (settings: SmtpSettings) => void; invites: ApiInvite[] | null; onInvitesChange: (invites: ApiInvite[]) => void; onAction: (message: string) => void }) {
   const [saving, setSaving] = useState(false)
