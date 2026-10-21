@@ -27,6 +27,11 @@ void PluginHostClient::set_event_handler(EventHandler handler) { event_handler_ 
 #ifdef _WIN32
 
 bool PluginHostClient::start(const std::filesystem::path& executable, const std::filesystem::path& library, std::string& error) {
+  std::lock_guard lifecycle_lock(lifecycle_mutex_);
+  if (running_) {
+    error = "plugin host is already running";
+    return false;
+  }
   SECURITY_ATTRIBUTES attributes{sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
   HANDLE child_stdin_read = nullptr;
   HANDLE child_stdin_write = nullptr;
@@ -59,11 +64,18 @@ bool PluginHostClient::start(const std::filesystem::path& executable, const std:
   process_ = process.hProcess;
   stdin_handle_ = child_stdin_write;
   stdout_handle_ = child_stdout_read;
+  read_buffer_.clear();
   running_ = true;
+  reader_ = std::thread([this] { reader_loop(); });
   return true;
 }
 
 bool PluginHostClient::write_line(const std::string& line, std::string& error) {
+  std::lock_guard lock(write_mutex_);
+  if (!running_ || !stdin_handle_) {
+    error = "plugin host is not running";
+    return false;
+  }
   const std::string payload = line + "\n";
   DWORD written = 0;
   if (!WriteFile(static_cast<HANDLE>(stdin_handle_), payload.data(), static_cast<DWORD>(payload.size()), &written, nullptr) || written != payload.size()) {
@@ -95,28 +107,51 @@ bool PluginHostClient::read_line(std::string& line, std::string& error) {
 
 bool PluginHostClient::alive() {
   if (!running_) return false;
+  if (!process_) return false;
   if (WaitForSingleObject(static_cast<HANDLE>(process_), 0) == WAIT_TIMEOUT) return true;
   running_ = false;
   return false;
 }
 
+void PluginHostClient::close_stdin() {
+  std::lock_guard lock(write_mutex_);
+  if (stdin_handle_) {
+    CloseHandle(static_cast<HANDLE>(stdin_handle_));
+    stdin_handle_ = nullptr;
+  }
+}
+
 void PluginHostClient::stop() {
-  if (!running_) return;
-  std::string ignored;
-  write_line("{\"op\":\"shutdown\"}", ignored);
-  CloseHandle(static_cast<HANDLE>(stdin_handle_));
-  stdin_handle_ = nullptr;
-  if (WaitForSingleObject(static_cast<HANDLE>(process_), 500) == WAIT_TIMEOUT) TerminateProcess(static_cast<HANDLE>(process_), 1);
-  CloseHandle(static_cast<HANDLE>(process_));
-  process_ = nullptr;
-  CloseHandle(static_cast<HANDLE>(stdout_handle_));
-  stdout_handle_ = nullptr;
+  std::lock_guard lifecycle_lock(lifecycle_mutex_);
+  if (running_) {
+    std::string ignored;
+    send_without_reply({{"op", "shutdown"}}, ignored);
+  }
   running_ = false;
+  close_stdin();
+  if (process_) {
+    if (WaitForSingleObject(static_cast<HANDLE>(process_), 500) == WAIT_TIMEOUT) {
+      TerminateProcess(static_cast<HANDLE>(process_), 1);
+      WaitForSingleObject(static_cast<HANDLE>(process_), 1000);
+    }
+  }
+  if (reader_.joinable()) reader_.join();
+  if (process_) {
+    CloseHandle(static_cast<HANDLE>(process_));
+    process_ = nullptr;
+  }
+  if (stdout_handle_) {
+    CloseHandle(static_cast<HANDLE>(stdout_handle_));
+    stdout_handle_ = nullptr;
+  }
+  read_buffer_.clear();
+  fail_all_pending("plugin host stopped");
 }
 
 #else
 
 bool PluginHostClient::start(const std::filesystem::path& executable, const std::filesystem::path& library, std::string& error) {
+  std::lock_guard lifecycle_lock(lifecycle_mutex_);
   if (running_) {
     error = "plugin host is already running";
     return false;
@@ -151,11 +186,18 @@ bool PluginHostClient::start(const std::filesystem::path& executable, const std:
   stdin_fd_ = input_pipe[1];
   stdout_fd_ = output_pipe[0];
   pid_ = static_cast<int>(pid);
+  read_buffer_.clear();
   running_ = true;
+  reader_ = std::thread([this] { reader_loop(); });
   return true;
 }
 
 bool PluginHostClient::write_line(const std::string& line, std::string& error) {
+  std::lock_guard lock(write_mutex_);
+  if (!running_ || stdin_fd_ < 0) {
+    error = "plugin host is not running";
+    return false;
+  }
   const std::string payload = line + "\n";
   size_t offset = 0;
   while (offset < payload.size()) {
@@ -207,39 +249,45 @@ bool PluginHostClient::alive() {
   return false;
 }
 
-void PluginHostClient::stop() {
-  if (pid_ <= 0) {
-    if (stdin_fd_ >= 0) close(stdin_fd_);
-    if (stdout_fd_ >= 0) close(stdout_fd_);
+void PluginHostClient::close_stdin() {
+  std::lock_guard lock(write_mutex_);
+  if (stdin_fd_ >= 0) {
+    close(stdin_fd_);
     stdin_fd_ = -1;
-    stdout_fd_ = -1;
-    running_ = false;
-    return;
   }
+}
+
+void PluginHostClient::stop() {
+  std::lock_guard lifecycle_lock(lifecycle_mutex_);
   if (running_) {
     std::string ignored;
-    write_line("{\"op\":\"shutdown\"}", ignored);
+    send_without_reply({{"op", "shutdown"}}, ignored);
   }
-  if (stdin_fd_ >= 0) close(stdin_fd_);
-  stdin_fd_ = -1;
-  for (int attempt = 0; attempt < 20; ++attempt) {
-    int status = 0;
-    if (waitpid(pid_, &status, WNOHANG) == pid_) {
-      pid_ = -1;
-      break;
-    }
-    usleep(25 * 1000);
-  }
-  if (pid_ > 0) {
-    kill(pid_, SIGKILL);
-    int status = 0;
-    waitpid(pid_, &status, 0);
-    pid_ = -1;
-  }
-  if (stdout_fd_ >= 0) close(stdout_fd_);
-  stdout_fd_ = -1;
   running_ = false;
+  close_stdin();
+  if (pid_ > 0) {
+    for (int attempt = 0; attempt < 20; ++attempt) {
+      int status = 0;
+      if (waitpid(pid_, &status, WNOHANG) == pid_) {
+        pid_ = -1;
+        break;
+      }
+      usleep(25 * 1000);
+    }
+    if (pid_ > 0) {
+      kill(pid_, SIGKILL);
+      int status = 0;
+      waitpid(pid_, &status, 0);
+      pid_ = -1;
+    }
+  }
+  if (reader_.joinable()) reader_.join();
+  if (stdout_fd_ >= 0) {
+    close(stdout_fd_);
+    stdout_fd_ = -1;
+  }
   read_buffer_.clear();
+  fail_all_pending("plugin host stopped");
 }
 
 #endif
@@ -249,42 +297,157 @@ bool PluginHostClient::request(const nlohmann::json& operation, nlohmann::json& 
     error = "plugin host is not running";
     return false;
   }
-  const uint64_t id = next_id_++;
+  const uint64_t id = next_id_.fetch_add(1, std::memory_order_relaxed);
   nlohmann::json message = operation;
   message["id"] = id;
-  if (!write_line(message.dump(), error)) return false;
+  {
+    std::lock_guard lock(pending_mutex_);
+    if (!running_) {
+      error = "plugin host is not running";
+      return false;
+    }
+    pending_[id] = PendingResponse{};
+  }
+  if (!write_line(message.dump(), error)) {
+    std::lock_guard lock(pending_mutex_);
+    pending_.erase(id);
+    return false;
+  }
+
+  std::unique_lock lock(pending_mutex_);
+  pending_cv_.wait(lock, [&] { return pending_[id].done || !running_; });
+  const auto iterator = pending_.find(id);
+  if (iterator == pending_.end()) {
+    error = "plugin host request state was lost";
+    return false;
+  }
+  const auto result = iterator->second;
+  pending_.erase(iterator);
+  if (!result.done) {
+    error = result.error.empty() ? "plugin host stopped before replying" : result.error;
+    return false;
+  }
+  response = result.response;
+  if (!result.ok) {
+    error = result.error.empty() ? "plugin host request failed" : result.error;
+    return false;
+  }
+  return true;
+}
+
+bool PluginHostClient::cancel_sse(const std::string& stream_id, const std::string& reason, std::string& error) {
+  if (stream_id.empty()) {
+    error = "SSE stream id is empty";
+    return false;
+  }
+  return send_without_reply({{"op", "sse.cancel"}, {"streamId", stream_id}, {"reason", reason}}, error);
+}
+
+bool PluginHostClient::send_without_reply(const nlohmann::json& operation, std::string& error) {
+  if (!running_) {
+    error = "plugin host is not running";
+    return false;
+  }
+  const uint64_t id = next_id_.fetch_add(1, std::memory_order_relaxed);
+  nlohmann::json message = operation;
+  message["id"] = id;
+  {
+    std::lock_guard lock(pending_mutex_);
+    if (!running_) {
+      error = "plugin host is not running";
+      return false;
+    }
+    ignored_responses_.insert(id);
+  }
+  if (!write_line(message.dump(), error)) {
+    std::lock_guard lock(pending_mutex_);
+    ignored_responses_.erase(id);
+    return false;
+  }
+  return true;
+}
+
+void PluginHostClient::reader_loop() {
+  std::string terminal_error;
   for (;;) {
     std::string line;
-    if (!read_line(line, error)) return false;
+    if (!read_line(line, terminal_error)) break;
     nlohmann::json parsed;
     try {
       parsed = nlohmann::json::parse(line);
     } catch (const nlohmann::json::exception& exception) {
-      error = protocol_error(exception.what());
+      terminal_error = protocol_error(exception.what());
       running_ = false;
-      return false;
+      break;
     }
     if (!parsed.is_object()) {
-      error = protocol_error("message is not an object");
+      terminal_error = protocol_error("message is not an object");
       running_ = false;
-      return false;
+      break;
     }
     if (parsed.contains("event")) {
-      if (event_handler_) event_handler_(parsed);
+      if (event_handler_) {
+        try {
+          event_handler_(parsed);
+        } catch (...) {
+          // 插件事件消费者异常不能破坏宿主读取线程。
+        }
+      }
       continue;
     }
-    if (!parsed.contains("id") || parsed["id"] != id) {
-      error = protocol_error("response id does not match the request");
+    if (!parsed.contains("id") || !parsed["id"].is_number_unsigned()) {
+      terminal_error = protocol_error("response id is missing");
       running_ = false;
-      return false;
+      break;
     }
-    response = parsed;
-    if (!parsed.value("ok", false)) {
-      error = parsed.value("error", std::string("plugin host request failed"));
-      return false;
+    const auto id = parsed["id"].get<uint64_t>();
+    {
+      std::lock_guard lock(pending_mutex_);
+      if (ignored_responses_.erase(id) > 0) continue;
+      const auto iterator = pending_.find(id);
+      if (iterator == pending_.end()) {
+        terminal_error = protocol_error("response id does not match the request");
+        running_ = false;
+        break;
+      }
+      iterator->second.done = true;
+      iterator->second.ok = parsed.value("ok", false);
+      iterator->second.response = parsed;
+      iterator->second.error = parsed.value("error", std::string());
     }
-    return true;
+    pending_cv_.notify_all();
   }
+  running_ = false;
+  fail_all_pending(terminal_error.empty() ? "plugin host stopped" : terminal_error);
+  pending_cv_.notify_all();
+}
+
+void PluginHostClient::finish_pending(uint64_t id, bool ok, nlohmann::json response, std::string error) {
+  {
+    std::lock_guard lock(pending_mutex_);
+    auto iterator = pending_.find(id);
+    if (iterator == pending_.end()) return;
+    iterator->second.done = true;
+    iterator->second.ok = ok;
+    iterator->second.response = std::move(response);
+    iterator->second.error = std::move(error);
+  }
+  pending_cv_.notify_all();
+}
+
+void PluginHostClient::fail_all_pending(const std::string& error) {
+  {
+    std::lock_guard lock(pending_mutex_);
+    for (auto& [id, pending] : pending_) {
+      (void)id;
+      if (pending.done) continue;
+      pending.done = true;
+      pending.ok = false;
+      pending.error = error;
+    }
+    ignored_responses_.clear();
+  }
+  pending_cv_.notify_all();
 }
 
 }  // namespace plugmesh
