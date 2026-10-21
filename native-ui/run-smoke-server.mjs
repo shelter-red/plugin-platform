@@ -20,7 +20,9 @@ if (!executable) {
   throw new Error('local UI smoke server executable was not built')
 }
 
-const child = spawn(executable, ['18771', resolve(repositoryRoot, 'native-ui', 'dist')], { stdio: 'inherit' })
+const mode = process.argv[2] ?? 'authenticated'
+const port = process.argv[3] ?? '18771'
+const child = spawn(executable, [port, resolve(repositoryRoot, 'native-ui', 'dist'), mode], { stdio: 'inherit' })
 let stopping = false
 
 const stop = (signal) => {

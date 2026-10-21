@@ -38,7 +38,7 @@
 | --- | --- | --- |
 | Linux 构建、启动和 localhost UI | 本地已验证 | CMake 构建、CTest `8/8`、`native-ui:smoke` 通过。 |
 | Windows 构建与启动 | 未验证 | 代码包含 DLL、Credential Manager 和 Winsock 路径；当前环境没有执行 Windows 构建。 |
-| 首次 UI 设置本地口令和一次性注册码绑定 | 部分实现 | localhost 口令设置 API、注册 client 和登录后的 Playwright 会话流程分别有测试；首次绑定浏览器全流程及已部署 Worker 联调未验证。 |
+| 首次 UI 设置本地口令和一次性注册码绑定 | 本地已验证 | Native UI Playwright smoke 覆盖绑定表单、localhost 服务重启和新口令登录；注册码交换仍由本地 mock handler 承载，未连接已部署 Worker。 |
 | 长期密钥持久化和重启恢复 | 部分实现 | Linux 加密文件保存/读取有 CTest；真实 Worker 重连恢复未做端到端测试。 |
 | Windows Credential Manager、macOS Keychain | 未验证 | 平台实现存在，当前 Linux 环境未执行。 |
 | 加密凭据文件回退 | 本地已验证 | AES-256-GCM、PBKDF2 和文件权限由 `credential-store` CTest 覆盖。 |
@@ -72,7 +72,7 @@
 ```text
 npm run build
 npm run ui:smoke                         2 passed
-npm run native-ui:smoke                  1 passed
+npm run native-ui:smoke                  2 passed
 npm run worker:typecheck
 npm run worker:smoke                     21 smoke checks passed
 npx wrangler deploy --dry-run --config worker/wrangler.toml
