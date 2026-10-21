@@ -19,7 +19,7 @@
 | 通配 Host 路由、管理 API 优先级、未知域名和离线维护页 | 本地已验证 | `public-route`、`public-proxy` smoke，覆盖插件 Host、未知域名、API 路径和桥接离线响应。 |
 | 一次性注册码原子消费 | 模块已验证 | `registration-race` smoke 强制并发消费同一注册码。 |
 | 控制连接注册、心跳、断线、重连和旧断线竞态 | 模块已验证 | `durable-object-lifecycle` smoke 覆盖 manifest 注册以及断线/重连交错；C++ `control-client` smoke 覆盖连接重试。未连接真实 Durable Object。 |
-| 密钥轮换和绑定撤销 | 部分实现 | Worker 控制帧、C++ 持久化和本地 UI 操作均已实现；没有 Worker 与真实本地服务器的端到端轮换测试。 |
+| 密钥轮换和绑定撤销 | 模块已验证 | `server-binding` smoke 驱动 Durable Object 的 `server.rotate`/`server.revoke`：新 token 哈希落库、旧 token 不再匹配、撤销后插件转 `server_offline`、域名转 `offline`、连接被关闭，重复撤销与撤销后轮换都被拒绝；C++ 侧持久化和本地 UI 操作已有覆盖。未连接真实 Durable Object 与本地服务器做端到端轮换。 |
 | Durable Object 请求映射和并发隔离 | 部分实现 | HTTP、命令、流和连接映射有模块 smoke；真实 Durable Object isolate 并发与休眠恢复未验证。 |
 | HTTP 方法、状态、响应头、Cookie 和二进制请求/响应 | 本地已验证 | `public-proxy`、`response-validation`、C++ `control-client` smoke。 |
 | SSE、公开 WebSocket 和文件流桥接 | 本地已验证 | Worker 流式 smoke 与 C++ WebSocket 生命周期测试覆盖协议路径；真实公网长连接未验证。 |
@@ -74,7 +74,7 @@ npm run build
 npm run ui:smoke                         10 passed（preview 6 + worker-mock 4）
 npm run native-ui:smoke                  3 passed
 npm run worker:typecheck
-npm run worker:smoke                     23 smoke checks passed
+npm run worker:smoke                     24 smoke checks passed
 npx wrangler deploy --dry-run --config worker/wrangler.toml
 cmake --build native-server/build --parallel 2
 ctest --output-on-failure                 8/8 passed
