@@ -15,7 +15,7 @@
 | 验收项 | 状态 | 证据与边界 |
 | --- | --- | --- |
 | GitHub OAuth 登录、邀请过期、身份匹配、并发领取和权限隔离 | 部分/模块已验证 | `github-auth`、`github-oauth`、`invite-claim`、`api-permission` smoke；`worker:runtime-test` 用真实 D1 直接验证 `exchangeGithubCode`（只保留已验证邮箱、主邮箱优先、令牌/用户/邮箱异常与未配置返回 null）、`claimInvite`（邮箱和 GitHub 登录名大小写不敏感匹配、过期/已撤销/未知令牌拒绝、领取后 `used` 且不可重复使用）与 `upsertGithubUser`（按 `github_id` 去重并更新资料和角色）。`worker:runtime-test` 的 `oauth-route.test.ts` 还在 workerd 中经 `SELF.fetch` 走完 `/auth/github/start` 与 `/auth/github/callback`：state 哈希与邀请令牌哈希落库、授权跳转携带 `client_id`/`redirect_uri`/`scope`；回调经 `outboundService` 桩（模拟 `github.com` 与 `api.github.com`）换取令牌与身份后领取邀请并签发 `HttpOnly` 会话 Cookie；`state` 二次使用返回「OAuth 状态已过期」，未被邀请身份返回「该 GitHub 身份未被邀请」且不创建用户，白名单身份直接成为 `super_admin`。真实 GitHub OAuth App 仍未连接。 |
-| Cloudflare OAuth 回调、管理员权限、state、凭据加密、刷新和撤销 | 部分/模块已验证 | `cloudflare-oauth` 与 `cloudflare-oauth-route` smoke 覆盖回调、state 校验和路由；`worker:runtime-test` 用真实 D1 验证 `/api/settings/cloudflare`：access token 与 account ID 加密落库且密文不含明文、读取只返回脱敏账号 `0123...cdef` 不回显 token、成员 403、缺少 token 400、删除后 `configured=false`，审计动作 `cloudflare.credentials.updated`/`revoked` 不含 token。未连接真实 Cloudflare OAuth client，也未用落库凭据发起真实 API 查询或刷新。 |
+| Cloudflare OAuth 回调、管理员权限、state、凭据加密、刷新和撤销 | 部分/模块已验证 | `cloudflare-oauth` 与 `cloudflare-oauth-route` smoke 覆盖回调、state 校验和路由；`worker:runtime-test` 用真实 D1 验证 `/api/settings/cloudflare`：access token 与 account ID 加密落库且密文不含明文、读取只返回脱敏账号 `0123...cdef` 不回显 token、成员 403、缺少 token 400、删除后 `configured=false`，审计动作 `cloudflare.credentials.updated`/`revoked` 不含 token。`worker:runtime-test` 的 `cloudflare-oauth.test.ts` 另经 `outboundService` 桩（`dash.cloudflare.com/oauth2/token`、`api.cloudflare.com/client/v4/accounts`）在 workerd 中走完 `/auth/cloudflare/start` 与回调：授权跳转携带 `client_id`/`redirect_uri`/`scope`、state 哈希落库并一次性消费、授权码换取令牌后自动发现唯一账号、凭据加密落库且密文不含 access token、审计 `cloudflare.oauth.connected`，重放同一 state 返回「状态已过期或已使用」。同一文件验证令牌刷新：临近过期时先刷新再查询用量、Analytics 返回 401 时刷新并重试一次、刷新失败返回 502 且不改动已存凭据；刷新成功后新的 access token、refresh token 与 `expiresAt` 落库并记录 `cloudflare.oauth.refreshed`。仍未连接真实 Cloudflare OAuth client，也未对真实账号发起查询。 |
 | 通配 Host 路由、管理 API 优先级、未知域名和离线维护页 | 本地已验证 | `public-route`、`public-proxy` smoke，覆盖插件 Host、未知域名、API 路径和桥接离线响应。另以真实 `wrangler dev` + 本地 C++ 服务器 + 示例插件联调：`Host: e2e.plugins.example.com` 的 `GET /`、带 query 的 GET 和 POST 均转达插件并返回 200，未知插件 Host 返回 404 `Plugin domain not found`，控制台 Host 仍返回 SPA HTML。联调首次暴露静态资源层会截获插件域名根路径，现由 `[assets] run_worker_first = true` 保证请求先经 Worker 路由；仍是本地 miniflare/workerd，不是已部署 Cloudflare。 |
 | 一次性注册码原子消费 | 本地已验证 | `worker:runtime-test` 对真实 D1 并发三次提交同一注册码，仅一次 201、两次 401，并核对服务端只新增一条记录；`registration-race` smoke 覆盖并发消费逻辑。 |
 | 控制连接注册、心跳、断线、重连和旧断线竞态 | 本地已验证 | `worker:runtime-test` 通过 workerd 中的真实 Durable Object 验证心跳置为在线、控制连接断开后插件转 `server_offline`、域名转 `offline` 且公开入口返回维护页；`durable-object-lifecycle` smoke 覆盖 manifest 注册与断线/重连交错；C++ `control-client` smoke 覆盖连接重试。本地真实栈重启验证：停止 `plugmesh-server` 后公开入口立即返回 503 维护页、服务器转 `offline`，重新启动后自动重连、插件恢复 `enabled`、域名恢复 `online` 且请求返回 200（步骤见 `docs/local-e2e.md`）。真实多地域网络未验证。 |
@@ -83,9 +83,9 @@ PLUGMESH_REAL_STACK_URL=http://127.0.0.1:18888 npm run ui:real-stack
                                          3 passed（需先启动本地 wrangler dev 并写入验收数据；会话令牌默认值即 docs/local-e2e.md 的 e2e-session-token；第三条用例自动注册并启动真实 C++ 服务器）
 npm run worker:typecheck
 npm run worker:smoke                     25 个 smoke 脚本全部通过
-npm run worker:runtime-test              52 passed（workerd + 真实 D1/Durable Object/R2 模拟）
+npm run worker:runtime-test              56 passed（workerd + 真实 D1/Durable Object/R2 模拟）
   # 本机 glibc 2.31，经 node:22-bookworm-slim 容器执行；glibc ≥ 2.35 可直接运行
-  # 容器内没有系统 CA，必须只读挂载 /etc/ssl/certs，否则 15 个测试文件全部启动失败
+  # 容器内没有系统 CA，必须只读挂载 /etc/ssl/certs，否则 16 个测试文件全部启动失败
   docker run --rm -v "$PWD":/work -v /etc/ssl/certs:/etc/ssl/certs:ro \
     -w /work -e CI=1 node:22-bookworm-slim \
     npx vitest run --config vitest.workers.config.ts
