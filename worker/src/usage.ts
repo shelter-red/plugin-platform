@@ -44,7 +44,10 @@ export async function activateMaintenance(env: Env, reason = 'platform quota rea
 }
 
 async function notifyMaintenance(env: Env, reason: string, sendEmail: MaintenanceEmailSender): Promise<void> {
-  if (!env.SESSION_SECRET) return
+  if (!env.SESSION_SECRET) {
+    await recordMaintenanceNotice(env, 'maintenance.email.skipped', { reason, error: 'SESSION_SECRET is not configured' })
+    return
+  }
   const stored = await env.DB.prepare('SELECT ciphertext, iv FROM smtp_settings WHERE id = ?').bind('primary').first<{ ciphertext: string; iv: string }>()
   const administrators = await env.DB.prepare('SELECT id, email FROM users WHERE role = ? AND email IS NOT NULL').bind('super_admin').all<{ id: string; email: string }>()
   if (!stored || administrators.results.length === 0) {

@@ -86,4 +86,17 @@ async function createEnvironment() {
   assert.equal(audits[0].detail.includes(smtpPassword), false)
 }
 
+{
+  const { env, audits, settings } = await createEnvironment()
+  const withoutSecret = { DB: env.DB } as unknown as Env
+  await activateMaintenance(withoutSecret, 'request quota reached', async () => {
+    throw new Error('未配置 SESSION_SECRET 时不应尝试发送')
+  })
+
+  assert.equal(settings.maintenance, true)
+  assert.equal(audits.length, 1)
+  assert.equal(audits[0].action, 'maintenance.email.skipped')
+  assert.deepEqual(JSON.parse(audits[0].detail), { reason: 'request quota reached', error: 'SESSION_SECRET is not configured' })
+}
+
 console.log('maintenance email retry smoke test passed')
