@@ -118,3 +118,52 @@ test('大文件中转配额耗尽时返回维护响应并清理 R2 对象', { ti
   expect(Boolean(JSON.parse(stored?.value_json ?? '{}').maintenance)).toBe(true)
   socket.close(1000, 'test complete')
 })
+
+test('插件 25 秒无响应时返回 504，并回收 HTTP、SSE 与文件流的占用', { timeout: 120_000 }, async () => {
+  const hostname = await seedServer()
+  const { socket, channel } = await openControl()
+  const started = Date.now()
+
+  const plain = publicRequest(hostname, '/hang')
+  const plainFrame = await channel.next()
+  expect(plainFrame.type).toBe('request.open')
+  expect(plainFrame.payload?.path).toBe('/hang')
+
+  const sse = publicRequest(hostname, '/hang-events', { headers: { accept: 'text/event-stream' } })
+  const sseFrame = await channel.next()
+  expect(sseFrame.type).toBe('stream.open')
+  await expect.poll(activeConnections, { timeout: 5_000 }).toBe(1)
+
+  const file = publicRequest(hostname, '/hang-file', { headers: { 'x-plugmesh-file-stream': 'true' } })
+  const fileFrame = await channel.next()
+  expect(fileFrame.type).toBe('request.open')
+  const declaredBytes = 2 * 1024 * 1024
+  sendFrame(socket, 'request.open', { status: 200, fileStream: true, headers: { 'content-type': 'application/octet-stream', 'content-length': String(declaredBytes) } }, fileFrame.requestId)
+  for (let index = 0; index < 40; index += 1) sendFrame(socket, 'request.chunk', { data: encodedChunk, encoding: 'base64' }, fileFrame.requestId)
+
+  const [plainResponse, sseResponse, fileResponse] = await Promise.all([plain, sse, file])
+  expect(Date.now() - started).toBeGreaterThanOrEqual(25_000)
+  expect(plainResponse.status).toBe(504)
+  expect(await plainResponse.text()).toBe('Plugin request timed out')
+  expect(sseResponse.status).toBe(504)
+  expect(await sseResponse.text()).toBe('Plugin request timed out')
+  expect(fileResponse.status).toBe(504)
+  expect(await fileResponse.text()).toBe('Plugin request timed out')
+
+  await expect.poll(activeConnections, { timeout: 5_000 }).toBe(0)
+  await expect.poll(async () => (await testEnv.BLOB_BUCKET.list()).objects.length, { timeout: 5_000 }).toBe(0)
+  const usage = await testEnv.DB.prepare('SELECT r2_bytes, r2_objects FROM platform_usage WHERE key = ?').bind('global').first<{ r2_bytes: number; r2_objects: number }>()
+  expect(`${usage?.r2_bytes ?? 0}/${usage?.r2_objects ?? 0}`).toBe('0/0')
+  const tempObjects = await testEnv.DB.prepare('SELECT COUNT(*) AS count FROM temp_objects').first<{ count: number }>()
+  expect(tempObjects?.count).toBe(0)
+
+  const log = await testEnv.DB.prepare('SELECT status FROM request_logs WHERE hostname = ? AND path = ? ORDER BY created_at DESC LIMIT 1').bind(hostname, '/hang').first<{ status: number }>()
+  expect(log?.status).toBe(504)
+
+  const after = publicRequest(hostname, '/after-timeout')
+  const afterFrame = await channel.next()
+  expect(afterFrame.payload?.path).toBe('/after-timeout')
+  reply(socket, afterFrame, 200, 'still alive')
+  expect(await (await after).text()).toBe('still alive')
+  socket.close(1000, 'test complete')
+})

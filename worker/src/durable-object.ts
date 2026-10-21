@@ -481,17 +481,23 @@ export class PluginBridge {
       if (Number.isSafeInteger(contentLength) && contentLength >= pending.bytes) {
         const stream = new FixedLengthStream(contentLength)
         const key = `stream/${crypto.randomUUID()}`
-        pending.r2Upload = { key, writer: stream.writable.getWriter(), upload: this.env.BLOB_BUCKET.put(key, stream.readable).then(() => undefined) }
+        const upload = { key, writer: stream.writable.getWriter(), upload: this.env.BLOB_BUCKET.put(key, stream.readable).then(() => undefined) }
+        // Timeout or failure aborts the fixed-length stream, so the upload and later writes reject.
+        // Handle them here so a timed-out stream never surfaces as an unhandled rejection;
+        // finishFileResponse still fails on close() and cleans up.
+        void upload.upload.catch(() => undefined)
+        pending.r2Upload = upload
         const buffered = pending.buffered.splice(0)
         pending.fileWriteChain = pending.fileWriteChain.then(async () => {
-          for (const chunk of buffered) await pending.r2Upload?.writer.write(chunk)
-          await pending.r2Upload?.writer.write(bytes)
-        })
+          for (const chunk of buffered) await upload.writer.write(chunk)
+          await upload.writer.write(bytes)
+        }).catch(() => undefined)
         return
       }
     }
     if (pending.r2Upload) {
-      pending.fileWriteChain = pending.fileWriteChain.then(() => pending.r2Upload!.writer.write(bytes))
+      const upload = pending.r2Upload
+      pending.fileWriteChain = pending.fileWriteChain.then(() => upload.writer.write(bytes)).catch(() => undefined)
       return
     }
     pending.buffered.push(bytes)
