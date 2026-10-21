@@ -174,8 +174,49 @@ async function consumeBlob(request: Request, env: Env, ctx: ExecutionContext, ur
     })())
     return new Response('Resource not found', { status: 404 })
   }
-  ctx.waitUntil(finalizeConsumedBlob(env, object.id, object.object_key, object.size_bytes, consumedAt))
-  return new Response(blob.body, { headers: { 'content-type': object.content_type, 'content-length': String(blob.size), 'cache-control': 'no-store' } })
+  return new Response(streamConsumedBlob(env, ctx, blob.body, object.id, object.object_key, object.size_bytes, consumedAt), { headers: { 'content-type': object.content_type, 'content-length': String(blob.size), 'cache-control': 'no-store' } })
+}
+
+function streamConsumedBlob(env: Env, ctx: ExecutionContext, body: ReadableStream<Uint8Array>, id: string, objectKey: string, sizeBytes: number, consumedAt: string): ReadableStream<Uint8Array> {
+  const reader = body.getReader()
+  let cleaned = false
+  let resolveCleanup: () => void = () => undefined
+  const cleanupComplete = new Promise<void>((resolve) => { resolveCleanup = resolve })
+  const cleanup = async () => {
+    if (cleaned) return
+    cleaned = true
+    try {
+      await finalizeConsumedBlob(env, id, objectKey, sizeBytes, consumedAt)
+    } catch {
+      // Scheduled cleanup retries stale consumed objects without corrupting the response stream.
+    } finally {
+      resolveCleanup()
+    }
+  }
+  ctx.waitUntil(cleanupComplete)
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const result = await reader.read()
+        if (result.done) {
+          await cleanup()
+          controller.close()
+        } else {
+          controller.enqueue(result.value)
+        }
+      } catch (error) {
+        await cleanup()
+        controller.error(error)
+      }
+    },
+    async cancel(reason) {
+      try {
+        await reader.cancel(reason)
+      } finally {
+        await cleanup()
+      }
+    },
+  })
 }
 
 async function cleanupExpiredBlobs(env: Env): Promise<void> {
