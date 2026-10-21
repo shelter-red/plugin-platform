@@ -252,6 +252,16 @@ test('管理端维护开关与配额保存落到真实平台状态并写入审�
 
     await page.getByRole('button', { name: '审计日志', exact: true }).click()
     await expect(page.getByRole('row', { name: /更新平台设置/ }).first()).toBeVisible()
+
+    const downloadPromise = page.waitForEvent('download')
+    await page.getByRole('button', { name: '导出日志' }).click()
+    const csvFile = test.info().outputPath('audit-logs.csv')
+    await (await downloadPromise).saveAs(csvFile)
+    const csv = await readFile(csvFile, 'utf8')
+    expect(csv.startsWith('\uFEFF'), 'CSV 应带 UTF-8 BOM，便于表格软件直接打开').toBe(true)
+    expect(csv).toContain('"platform.settings.updated"')
+    expect(csv).toContain('E2E Admin')
+    expect(csv).toContain('e2e@example.com')
   } finally {
     await call('/api/settings/platform', { method: 'PUT', data: { maintenance: false, quotas: original.quotas } })
   }
