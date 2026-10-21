@@ -59,7 +59,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   if (url.pathname === '/api/settings/smtp') return smtpSettingsApi(request, env, user)
   if (url.pathname === '/api/settings/smtp/test') return smtpTestApi(request, env, user)
   if (url.pathname === '/api/usage/cloudflare') return cloudflareUsageApi(env, user)
-  if (url.pathname === '/api/usage/local') return localUsageApi(env, user)
+  if (url.pathname === '/api/usage/local') return localUsageApi(env, user, url)
   const serverDetail = url.pathname.match(/^\/api\/servers\/([^/]+)$/)
   const serverSync = url.pathname.match(/^\/api\/servers\/([^/]+)\/sync$/)
   if (request.method === 'POST' && serverSync) return syncServer(request, env, user, decodeURIComponent(serverSync[1]))
@@ -238,6 +238,7 @@ async function runScheduledMaintenance(env: Env): Promise<void> {
   const accessSince = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString()
   const auditSince = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000).toISOString()
   await Promise.all([
+    recordUsageSnapshot(env),
     cleanupExpiredBlobs(env),
     cleanupStaleConsumedBlobs(env),
     env.DB.prepare('DELETE FROM request_logs WHERE created_at < ?').bind(accessSince).run(),
@@ -808,9 +809,13 @@ async function cloudflareUsageApi(env: Env, user: AuthenticatedUser): Promise<Re
   return json({ ...result, cached: false, updatedAt })
 }
 
-async function localUsageApi(env: Env, user: AuthenticatedUser): Promise<Response> {
+export async function localUsageApi(env: Env, user: AuthenticatedUser, url = new URL('https://worker.invalid/api/usage/local')): Promise<Response> {
   if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
   const usage = await env.DB.prepare('SELECT request_count, request_window_started_at, active_connections, r2_bytes, r2_objects, updated_at FROM platform_usage WHERE key = ?').bind('global').first<{ request_count: number; request_window_started_at: string; active_connections: number; r2_bytes: number; r2_objects: number; updated_at: string }>()
+  const range = url.searchParams.get('range')
+  const durationMs = range === '24h' ? 24 * 60 * 60 * 1000 : range === '30d' ? 30 * 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000
+  const since = new Date(Date.now() - durationMs).toISOString()
+  const snapshots = await env.DB.prepare('SELECT captured_at, request_count, active_connections, r2_bytes, r2_objects FROM usage_snapshots WHERE captured_at >= ? ORDER BY captured_at ASC').bind(since).all<UsageSnapshot>()
   return json({
     requestCount: usage?.request_count ?? 0,
     requestWindowStartedAt: usage?.request_window_started_at ?? null,
@@ -818,7 +823,24 @@ async function localUsageApi(env: Env, user: AuthenticatedUser): Promise<Respons
     r2Bytes: usage?.r2_bytes ?? 0,
     r2Objects: usage?.r2_objects ?? 0,
     updatedAt: usage?.updated_at ?? null,
+    snapshots: snapshots.results,
   })
+}
+
+type UsageSnapshot = {
+  captured_at: string
+  request_count: number
+  active_connections: number
+  r2_bytes: number
+  r2_objects: number
+}
+
+async function recordUsageSnapshot(env: Env): Promise<void> {
+  const usage = await env.DB.prepare('SELECT request_count, active_connections, r2_bytes, r2_objects FROM platform_usage WHERE key = ?').bind('global').first<{ request_count: number; active_connections: number; r2_bytes: number; r2_objects: number }>()
+  if (!usage) return
+  const capturedAt = new Date().toISOString()
+  await env.DB.prepare('INSERT INTO usage_snapshots (captured_at, request_count, active_connections, r2_bytes, r2_objects) VALUES (?, ?, ?, ?, ?)').bind(capturedAt, usage.request_count, usage.active_connections, usage.r2_bytes, usage.r2_objects).run()
+  await env.DB.prepare('DELETE FROM usage_snapshots WHERE captured_at < ?').bind(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()).run()
 }
 
 function maintenanceResponse(title = '平台维护中', detail = '平台当前暂停新流量，请稍后再试。'): Response {

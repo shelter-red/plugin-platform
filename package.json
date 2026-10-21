@@ -9,6 +9,7 @@
     "native-ui:build": "tsc -p native-ui/tsconfig.json && vite build --config native-ui/vite.config.ts",
     "worker:response-validation-smoke": "node --experimental-strip-types worker/response-validation.smoke.ts",
     "worker:request-mode-smoke": "node --experimental-strip-types worker/request-mode.smoke.ts",
+    "worker:local-usage-smoke": "esbuild worker/local-usage.smoke.ts --bundle --platform=node --format=esm --external:cloudflare:sockets --outfile=/tmp/plugmesh-local-usage-smoke.mjs && node /tmp/plugmesh-local-usage-smoke.mjs",
     "worker:server-sync-smoke": "esbuild worker/server-sync.smoke.ts --bundle --platform=node --format=esm --external:cloudflare:sockets --outfile=/tmp/plugmesh-server-sync-smoke.mjs && node /tmp/plugmesh-server-sync-smoke.mjs",
     "preview": "vite preview",
     "worker:typecheck": "tsc -p worker/tsconfig.json",
