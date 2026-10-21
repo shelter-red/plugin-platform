@@ -33,7 +33,11 @@ test('管理端读取真实 Worker 数据并展示服务器、插件和域名', 
   await expect(page.getByText('real.plugins.example.com')).toBeVisible()
 })
 
-test('管理端邀请与注册码操作落到真实 D1', async ({ page }) => {
+test('管理端邀请与注册码操作落到真实 D1', async ({ page, context }) => {
+  const { call } = createStackApi(page.request, sessionToken)
+  // 「复制链接」写入系统剪贴板，Playwright 需要显式授权才能读回校验。
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: baseURL! })
+
   await page.goto('/')
   await page.getByRole('button', { name: '系统设置', exact: true }).click()
   await expect(page.getByRole('heading', { name: '用户与邀请' })).toBeVisible()
@@ -43,12 +47,44 @@ test('管理端邀请与注册码操作落到真实 D1', async ({ page }) => {
   const invitee = `real-invitee-${Date.now()}`
   await githubInput.fill(invitee)
   await page.getByRole('button', { name: '创建邀请' }).click()
-  await expect(page.getByLabel('新创建的邀请链接')).toHaveValue(/\/auth\/github\/start\?invite=/)
-  await expect(page.getByRole('row', { name: new RegExp(invitee) })).toBeVisible()
+  const inviteLink = page.getByLabel('新创建的邀请链接')
+  await expect(inviteLink).toHaveValue(/\/auth\/github\/start\?invite=/)
+  const inviteUrl = await inviteLink.inputValue()
+
+  await page.getByRole('button', { name: '复制链接' }).click()
+  await expect(page.getByText('邀请链接已复制')).toBeVisible()
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(inviteUrl)
+
+  const inviteRow = page.getByRole('row', { name: new RegExp(invitee) })
+  await expect(inviteRow).toBeVisible()
+  const pendingInvites = (await (await call('/api/invites')).json()) as {
+    results: Array<{ id: string; github_login: string | null; status: string }>
+  }
+  const invite = pendingInvites.results.find((item) => item.github_login === invitee)
+  expect(invite?.status).toBe('pending')
 
   await githubInput.fill('bad login!')
   await page.getByRole('button', { name: '创建邀请' }).click()
   await expect(page.getByText('邮箱或 GitHub 用户名至少填写一个，且格式必须有效')).toBeVisible()
+
+  page.once('dialog', (dialog) => dialog.accept())
+  await inviteRow.getByRole('button', { name: '撤销邀请' }).click()
+  await expect(page.getByText('邀请已撤销')).toBeVisible()
+  await expect(inviteRow).toContainText('已撤销')
+  await expect(inviteRow.getByRole('button', { name: '撤销邀请' })).toHaveCount(0)
+
+  const revokedInvites = (await (await call('/api/invites')).json()) as { results: Array<{ id: string; status: string }> }
+  expect(revokedInvites.results.find((item) => item.id === invite!.id)?.status).toBe('revoked')
+  // 非 pending 的邀请不能再次撤销，Worker 返回 409 而不是静默成功。
+  expect((await call(`/api/invites/${invite!.id}`, { method: 'DELETE' })).status()).toBe(409)
+
+  // 撤销状态来自 D1：整页重载后列表仍显示已撤销。
+  await page.reload()
+  await page.getByRole('button', { name: '系统设置', exact: true }).click()
+  await expect(page.getByRole('row', { name: new RegExp(invitee) })).toContainText('已撤销')
+
+  await page.getByRole('button', { name: '审计日志', exact: true }).click()
+  await expect(page.getByRole('row').filter({ hasText: invite!.id }).first()).toContainText('撤销平台邀请')
 
   await page.getByRole('button', { name: '插件服务器', exact: true }).click()
   await page.getByRole('button', { name: '绑定服务器' }).click()

@@ -82,7 +82,8 @@ PLUGMESH_REAL_STACK_URL=http://127.0.0.1:18888 npm run ui:real-stack
 该 Playwright 项目会携带 `plugmesh_session` Cookie 直接打开 Worker 提供的控制台，断言：
 
 - 插件服务器、插件实例和公开域名页面显示上面写入的真实记录；
-- 在系统设置中创建 GitHub 邀请后返回邀请链接，并在列表中读到该记录；
+- 在系统设置中创建 GitHub 邀请后返回邀请链接，并在列表中读到该记录；点「复制链接」后从系统剪贴板读回同一链接（断言 Toast「邀请链接已复制」）；
+- 撤销该邀请（自动确认弹窗）后断言 Toast「邀请已撤销」、行状态变为「已撤销」且撤销按钮消失，`/api/invites` 回源 `status=revoked`，再次 `DELETE` 返回 409；整页重载后列表仍为「已撤销」，审计日志出现「撤销平台邀请」且详情带该邀请 ID；
 - 非法 GitHub 用户名提交后显示服务端校验错误；
 - 打开“绑定插件服务器”弹窗后从 `/api/registration-codes` 取得一次性注册码；
 - 第三条用例用一次性注册码启动真实 `plugmesh-server`，在管理端加载并启用 `sample.plugin`、分配以 `console-` 开头的唯一域名，再从该域名请求插件得到 `200` 和 `ok`。
