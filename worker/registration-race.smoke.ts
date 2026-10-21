@@ -5,27 +5,16 @@ import type { Env } from './src/types.ts'
 let used = false
 let serverInserts = 0
 const database = {
-  prepare(sql: string) {
-    const query = {
-      bind: (..._values: unknown[]) => query,
-      first: async <T>() => {
-        if (sql.includes('FROM registration_codes')) return used ? null : { id: 'registration-1', user_id: 'user-1' } as T
-        return null
-      },
-      run: async () => {
-        if (sql.includes('UPDATE registration_codes')) {
-          if (used) return { meta: { changes: 0 } }
-          used = true
-          return { meta: { changes: 1 } }
-        }
-        return { meta: { changes: 1 } }
-      },
-    }
-    return query
+  prepare() {
+    return { bind: () => ({}) }
   },
   batch: async (statements: unknown[]) => {
-    serverInserts += statements.length > 0 ? 1 : 0
-    return statements.map(() => ({ meta: { changes: 1 } }))
+    const changes = used ? 0 : 1
+    if (changes === 1) {
+      used = true
+      serverInserts += 1
+    }
+    return statements.map(() => ({ meta: { changes } }))
   },
 }
 const env = { DB: database } as unknown as Env

@@ -1,5 +1,6 @@
 import { SELF } from 'cloudflare:test'
 import { beforeEach, expect, test } from 'vitest'
+import { createServerRegistration } from '../src/index'
 import { CONTROL_TOKEN, connectControl, hashToken, openControl, seedServer, sendFrame, testEnv, resetDatabase } from './helpers'
 
 const register = (code: string, name: string) => SELF.fetch('https://console.example.com/control/register', {
@@ -21,6 +22,31 @@ test('真实 D1 保证一次性注册码在并发下只被消费一次', { timeo
   const servers = await testEnv.DB.prepare('SELECT COUNT(*) AS count FROM servers').first<{ count: number }>()
   const used = await testEnv.DB.prepare('SELECT used_at FROM registration_codes WHERE id = ?').bind('code-runtime').first<{ used_at: string | null }>()
   expect(servers?.count).toBe(1)
+  expect(used?.used_at).not.toBeNull()
+})
+
+test('真实 D1 在服务器创建失败时回滚注册码消费', { timeout: 20_000 }, async () => {
+  const now = new Date().toISOString()
+  await testEnv.DB.batch([
+    testEnv.DB.prepare('INSERT INTO users (id, github_id, email, display_name, role, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind('user-runtime', 'gh-runtime', 'owner@example.com', 'Runtime Owner', 'member', now),
+    testEnv.DB.prepare('INSERT INTO registration_codes (id, user_id, code_hash, expires_at, used_at, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind('code-runtime', 'user-runtime', await hashToken('one-time-code'), new Date(Date.now() + 60_000).toISOString(), null, now),
+  ])
+  await testEnv.DB.prepare("CREATE TRIGGER fail_server_insert BEFORE INSERT ON servers BEGIN SELECT RAISE(ABORT, 'forced server insert failure'); END").run()
+  try {
+    await expect(createServerRegistration(testEnv, 'one-time-code', 'failed')).rejects.toThrow('forced server insert failure')
+    const used = await testEnv.DB.prepare('SELECT used_at FROM registration_codes WHERE id = ?').bind('code-runtime').first<{ used_at: string | null }>()
+    const servers = await testEnv.DB.prepare('SELECT COUNT(*) AS count FROM servers').first<{ count: number }>()
+    const audits = await testEnv.DB.prepare("SELECT COUNT(*) AS count FROM audit_log WHERE action = 'server.registered'").first<{ count: number }>()
+    expect(used?.used_at).toBeNull()
+    expect(servers?.count).toBe(0)
+    expect(audits?.count).toBe(0)
+  } finally {
+    await testEnv.DB.prepare('DROP TRIGGER IF EXISTS fail_server_insert').run()
+  }
+
+  const retried = await createServerRegistration(testEnv, 'one-time-code', 'retried')
+  expect('value' in retried).toBe(true)
+  const used = await testEnv.DB.prepare('SELECT used_at FROM registration_codes WHERE id = ?').bind('code-runtime').first<{ used_at: string | null }>()
   expect(used?.used_at).not.toBeNull()
 })
 

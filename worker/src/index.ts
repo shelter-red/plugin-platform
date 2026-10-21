@@ -621,16 +621,16 @@ function registerServerSocket(env: Env): Response {
 export async function createServerRegistration(env: Env, code: string | undefined, name: string | undefined): Promise<{ value: { serverId: string; accessToken: string; protocolVersion: number } } | { error: string; status: number }> {
   if (!code || !name?.trim()) return { error: 'code and name are required', status: 400 }
   const codeHash = await hashControlToken(code)
-  const registration = await env.DB.prepare('SELECT id, user_id FROM registration_codes WHERE code_hash = ? AND used_at IS NULL AND expires_at > ?').bind(codeHash, new Date().toISOString()).first<{ id: string; user_id: string }>()
-  if (!registration) return { error: 'Registration code is invalid or expired', status: 401 }
-  const marked = await env.DB.prepare('UPDATE registration_codes SET used_at = ? WHERE id = ? AND used_at IS NULL AND expires_at > ?').bind(new Date().toISOString(), registration.id, new Date().toISOString()).run()
-  if ((marked.meta.changes ?? 0) !== 1) return { error: 'Registration code is invalid or expired', status: 401 }
   const serverId = crypto.randomUUID()
   const accessToken = crypto.randomUUID() + crypto.randomUUID()
-  await env.DB.batch([
-    env.DB.prepare('INSERT INTO servers (id, user_id, name, token_hash, status, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(serverId, registration.user_id, name.trim(), await hashControlToken(accessToken), 'offline', new Date().toISOString()),
-    env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), registration.user_id, 'server.registered', JSON.stringify({ serverId }), new Date().toISOString()),
+  const tokenHash = await hashControlToken(accessToken)
+  const claimedAt = new Date().toISOString()
+  const [inserted, claimed] = await env.DB.batch([
+    env.DB.prepare('INSERT INTO servers (id, user_id, name, token_hash, status, created_at) SELECT ?, user_id, ?, ?, ?, ? FROM registration_codes WHERE code_hash = ? AND used_at IS NULL AND expires_at > ?').bind(serverId, name.trim(), tokenHash, 'offline', claimedAt, codeHash, claimedAt),
+    env.DB.prepare('UPDATE registration_codes SET used_at = ? WHERE code_hash = ? AND used_at IS NULL AND expires_at > ?').bind(claimedAt, codeHash, claimedAt),
+    env.DB.prepare("INSERT INTO audit_log (id, user_id, action, detail_json, created_at) SELECT ?, user_id, 'server.registered', ?, ? FROM servers WHERE id = ?").bind(crypto.randomUUID(), JSON.stringify({ serverId }), claimedAt, serverId),
   ])
+  if ((inserted.meta.changes ?? 0) !== 1 || (claimed.meta.changes ?? 0) !== 1) return { error: 'Registration code is invalid or expired', status: 401 }
   return { value: { serverId, accessToken, protocolVersion: 1 } }
 }
 
