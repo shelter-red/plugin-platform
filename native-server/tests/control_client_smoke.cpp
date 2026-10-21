@@ -33,6 +33,8 @@ int main(int argc, char** argv) {
   bool requests_valid = true;
   int validated_connections = 0;
   int registration_count = 0;
+  int health_response_count = 0;
+  int stale_response_count = 0;
   bool stream_payload_valid = false;
   std::vector<std::string> stream_frames;
   server.set_validate_handler([&](websocketpp::connection_hdl handle) {
@@ -63,11 +65,27 @@ int main(int argc, char** argv) {
         websocketpp::lib::error_code close_error;
         server.close(handle, websocketpp::close::status::going_away, "test reconnect", close_error);
       } else if (current_registration_count == 2) {
+        auto stale = plugmesh::make_control_frame("plugin.health", "server-1", plugmesh::Json::object(), "sample.plugin");
+        stale.request_id = "stale-health";
+        stale.timestamp = "2000-01-01T00:00:00.000Z";
+        auto health = plugmesh::make_control_frame("plugin.health", "server-1", plugmesh::Json::object(), "sample.plugin");
+        health.request_id = "health-1";
         auto request = plugmesh::make_control_frame("stream.open", "server-1", {{"streamId", "sse-1"}, {"method", "GET"}, {"path", "/events"}, {"headers", plugmesh::Json::object()}, {"body", ""}, {"bodyEncoding", "base64"}}, "sample.plugin");
         request.request_id = "sse-1";
         websocketpp::lib::error_code send_error;
+        server.send(handle, plugmesh::serialize_control_frame(stale), websocketpp::frame::opcode::text, send_error);
+        const auto serialized_health = plugmesh::serialize_control_frame(health);
+        server.send(handle, serialized_health, websocketpp::frame::opcode::text, send_error);
+        server.send(handle, serialized_health, websocketpp::frame::opcode::text, send_error);
         server.send(handle, plugmesh::serialize_control_frame(request), websocketpp::frame::opcode::text, send_error);
       }
+      return;
+    }
+    if (frame.type == "plugin.result") {
+      std::lock_guard lock(mutex);
+      if (frame.request_id == "health-1") ++health_response_count;
+      if (frame.request_id == "stale-health") ++stale_response_count;
+      condition.notify_all();
       return;
     }
     if (frame.request_id != "sse-1" || (frame.type != "request.open" && frame.type != "stream.chunk" && frame.type != "stream.close")) return;
@@ -122,7 +140,7 @@ int main(int argc, char** argv) {
   server.get_io_service().post([&] { server.stop(); });
   if (server_thread.joinable()) server_thread.join();
 
-  if (!completed || !requests_valid || validated_connections < 2 || registration_count < 2 || !stream_payload_valid || stream_frames != std::vector<std::string>{"request.open", "stream.chunk", "stream.close"} || !client_result) {
+  if (!completed || !requests_valid || validated_connections < 2 || registration_count < 2 || health_response_count != 1 || stale_response_count != 0 || !stream_payload_valid || stream_frames != std::vector<std::string>{"request.open", "stream.chunk", "stream.close"} || !client_result) {
     std::cerr << "plain control client reconnect smoke failed: " << client_error << '\n';
     return 1;
   }

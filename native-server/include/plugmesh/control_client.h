@@ -76,6 +76,7 @@ class ControlClient {
   std::shared_ptr<websocketpp::lib::asio::steady_timer> reconnect_timer_;
   std::atomic<bool> stopping_{false};
   std::atomic<bool> opened_{false};
+  ControlFrameReplayGuard replay_guard_;
   std::mutex binding_action_mutex_;
   std::condition_variable binding_action_cv_;
   std::map<std::string, BindingActionResult> binding_actions_;

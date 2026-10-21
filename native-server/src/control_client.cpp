@@ -168,7 +168,7 @@ void ControlClient::on_message(const std::string& payload, bool is_text) {
   if (!is_text) return;
   ControlFrame frame;
   std::string error;
-  if (!parse_control_frame(payload, frame, error) || frame.server_id != config_.server_id) return;
+  if (!parse_control_frame(payload, frame, error) || frame.server_id != config_.server_id || !replay_guard_.accept(frame)) return;
   handle_frame(frame);
 }
 

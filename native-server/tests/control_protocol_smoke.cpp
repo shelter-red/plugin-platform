@@ -14,6 +14,23 @@ int main() {
     std::cerr << "control frame round-trip failed: " << error << '\n';
     return 1;
   }
+  plugmesh::ControlFrameReplayGuard replay_guard;
+  if (!replay_guard.accept(decoded) || replay_guard.accept(decoded)) {
+    std::cerr << "control frame replay guard did not reject a duplicate nonce\n";
+    return 1;
+  }
+  auto stale = plugmesh::make_control_frame("plugin.health", "server-1");
+  stale.timestamp = "2000-01-01T00:00:00.000Z";
+  if (replay_guard.accept(stale)) {
+    std::cerr << "control frame replay guard accepted a stale timestamp\n";
+    return 1;
+  }
+  auto malformed_timestamp = plugmesh::make_control_frame("plugin.health", "server-1");
+  malformed_timestamp.timestamp = "2026-02-30T00:00:00.000Z";
+  if (replay_guard.accept(malformed_timestamp)) {
+    std::cerr << "control frame replay guard accepted an invalid timestamp\n";
+    return 1;
+  }
   if (plugmesh::parse_control_frame("{\"type\":\"invalid\"}", decoded, error)) {
     std::cerr << "invalid control frame was accepted\n";
     return 1;
