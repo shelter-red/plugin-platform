@@ -87,3 +87,21 @@ test('管理端窄窗口各页面空态可用', async ({ page }) => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
   }
 })
+
+test('管理端窄窗口弹窗可用', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/')
+  await page.getByRole('button', { name: '打开导航' }).click()
+  await page.getByRole('button', { name: '插件实例', exact: true }).click()
+  await page.getByRole('button', { name: '加载插件' }).first().click()
+
+  const dialog = page.getByRole('dialog', { name: '加载插件' })
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByText('暂无可加载插件')).toBeVisible()
+  const box = await dialog.boundingBox()
+  expect(box!.width).toBeLessThanOrEqual(390)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
+
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+})
