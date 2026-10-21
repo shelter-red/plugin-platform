@@ -107,6 +107,27 @@ for deploy_file in scripts/deploy-worker.sh wrangler.toml .github/workflows/depl
 done
 printf 'ok：部署脚本、Wrangler 配置和 CI 均不包含 OAuth、SMTP 或插件域名后缀业务配置\n'
 
+node - "$ROOT" <<'NODE'
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const root = process.argv[2]
+const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
+assert.equal(pkg.scripts.deploy, 'bash scripts/deploy-worker.sh')
+assert.equal(pkg.cloudflare, undefined, '部署页不应通过 package.json.cloudflare.bindings 追加输入项')
+assert.equal(fs.existsSync(path.join(root, '.dev.vars.example')), false, '不应添加会出现在部署页的 .dev.vars.example')
+const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8')
+for (const marker of [
+  '[![Deploy to Cloudflare]',
+  '唯一部署必填项：Cloudflare 账号授权',
+  '`npm run build`',
+  '`npm run deploy`',
+  '不要填写任何业务变量',
+  'GitHub OAuth 回调地址由当前访问域名自动生成',
+]) assert.ok(readme.includes(marker), `README 缺少最小部署约束：${marker}`)
+NODE
+printf 'ok：README 与 package.json 锁定 Cloudflare 授权即部署，且不声明额外输入项\n'
+
 mkdir -p "$TMP/state-local-fresh"
 cp "$ROOT/wrangler.toml" "$TMP/wrangler.toml"
 printf '[]\n' > "$TMP/state-local-fresh/secrets.json"

@@ -18,7 +18,6 @@ type SetupState = {
 
 type SetupValues = {
   clientId: string
-  redirectUri: string
   allowlist: string
 }
 
@@ -135,7 +134,7 @@ function setupPage(url: URL, state: SetupState, values: SetupValues, error = '',
     ${tokenField}
     <label>GitHub Client ID<input name="clientId" required value="${escapeHtml(values.clientId)}" placeholder="Iv1.xxxxxxxxxxxxxxxx"></label>
     <label>GitHub Client Secret<input name="clientSecret" type="password" autocomplete="new-password" required placeholder="仅加密保存，不会回显"></label>
-    <label>OAuth 回调地址<input name="redirectUri" type="url" required value="${escapeHtml(values.redirectUri || callback)}"><small>必须与 GitHub OAuth App 中填写的地址完全一致。</small></label>
+    <div class="notice">GitHub OAuth 回调地址由当前访问域名自动生成：<code>${escapeHtml(callback)}</code></div>
     <label>管理员白名单<input name="allowlist" required value="${escapeHtml(values.allowlist)}" placeholder="octocat, admin@example.com"><small>GitHub 用户名或已验证邮箱，逗号分隔。</small></label>
     <button type="submit">保存并登录 GitHub</button>
   </form>
@@ -149,15 +148,14 @@ export async function setupApi(request: Request, env: Env, url: URL): Promise<Re
   const state = await setupState(env)
   if (state.unavailable) return new Response('Setup is not available', { status: 404, headers: SECURITY_HEADERS })
   if (!env.SESSION_SECRET) {
-    return setupPage(url, state, { clientId: '', redirectUri: '', allowlist: '' }, 'SESSION_SECRET 未配置，无法安全保存 OAuth 凭据。请使用一键部署脚本或先写入该 Secret。', 503)
+    return setupPage(url, state, { clientId: '', allowlist: '' }, 'SESSION_SECRET 未配置，无法安全保存 OAuth 凭据。请使用一键部署脚本或先写入该 Secret。', 503)
   }
 
-  const values: SetupValues = { clientId: '', redirectUri: `${url.origin}/auth/github/callback`, allowlist: '' }
+  const values: SetupValues = { clientId: '', allowlist: '' }
   if (request.method === 'GET') return setupPage(url, state, values)
 
   const body = await readForm(request)
   values.clientId = body.clientId?.trim() ?? ''
-  values.redirectUri = body.redirectUri?.trim() ?? values.redirectUri
   values.allowlist = body.allowlist?.trim() ?? ''
 
   if (state.tokenRequired && !await constantTimeTokenMatch(env.SETUP_TOKEN ?? '', body.setupToken ?? '')) {
@@ -167,7 +165,7 @@ export async function setupApi(request: Request, env: Env, url: URL): Promise<Re
   const github = parseGithubOAuthConfig({
     clientId: values.clientId,
     clientSecret: body.clientSecret,
-    redirectUri: values.redirectUri,
+    redirectUri: `${url.origin}/auth/github/callback`,
     allowlist: values.allowlist,
   })
   if (!github || github.allowlist.length === 0) {

@@ -13,7 +13,6 @@ function submitSetup(overrides: Record<string, string> = {}): Promise<Response> 
     setupToken: SETUP_TOKEN,
     clientId: 'setup-github-client',
     clientSecret: 'setup-github-secret',
-    redirectUri: 'https://console.example.com/auth/github/callback',
     allowlist: 'runtime-admin',
     ...overrides,
   })
@@ -31,6 +30,8 @@ test('初始化页拒绝错误部署令牌且不保存 OAuth 配置', async () =
   const html = await page.text()
   expect(html).toContain('初始化 Plugmesh')
   expect(html).toContain('部署令牌')
+  expect(html).toContain('https://console.example.com/auth/github/callback')
+  expect(html).not.toContain('name="redirectUri"')
   expect(html).not.toContain(SETUP_TOKEN)
 
   const response = await submitSetup({ setupToken: 'wrong-token' })
@@ -54,6 +55,7 @@ test('正确初始化后 GitHub 白名单账号成为首个超级管理员，入
   expect(start.status).toBe(302)
   const authorize = new URL(start.headers.get('location') ?? '')
   expect(authorize.searchParams.get('client_id')).toBe('setup-github-client')
+  expect(authorize.searchParams.get('redirect_uri')).toBe('https://console.example.com/auth/github/callback')
   const state = authorize.searchParams.get('state') ?? ''
 
   const callback = await SELF.fetch(`https://console.example.com/auth/github/callback?code=runtime-admin&state=${encodeURIComponent(state)}`, { redirect: 'manual' })
