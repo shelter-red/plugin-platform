@@ -9,6 +9,9 @@ export const defaultPlatformSettings: PlatformSettings = {
     activeConnections: 100,
     r2Bytes: 10 * 1024 * 1024 * 1024,
     r2Objects: 1000,
+    d1Queries: 5_000_000,
+    kvOperations: 100_000,
+    durableObjectRequests: 100_000,
   },
 }
 
@@ -116,6 +119,19 @@ export async function reserveR2Usage(env: Env, quotas: PlatformQuotas, bytes: nu
 export async function releaseR2Usage(env: Env, bytes: number): Promise<void> {
   await ensureUsageRow(env)
   await env.DB.prepare('UPDATE platform_usage SET r2_bytes = MAX(r2_bytes - ?, 0), r2_objects = MAX(r2_objects - 1, 0), updated_at = ? WHERE key = ?').bind(bytes, new Date().toISOString(), usageKey).run()
+}
+
+export function cloudflareQuotaReason(usage: {
+  d1?: { readQueries: number; writeQueries: number }
+  kv?: { read: number; write: number; delete: number; list: number }
+  durableObjects?: { requests: number }
+}, quotas: PlatformQuotas): string | null {
+  const d1Queries = usage.d1 ? usage.d1.readQueries + usage.d1.writeQueries : 0
+  if (d1Queries >= quotas.d1Queries) return 'D1 query quota reached'
+  const kvOperations = usage.kv ? usage.kv.read + usage.kv.write + usage.kv.delete + usage.kv.list : 0
+  if (kvOperations >= quotas.kvOperations) return 'KV operation quota reached'
+  if ((usage.durableObjects?.requests ?? 0) >= quotas.durableObjectRequests) return 'Durable Object request quota reached'
+  return null
 }
 
 async function ensureUsageRow(env: Env): Promise<void> {

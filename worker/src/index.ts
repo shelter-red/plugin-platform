@@ -5,7 +5,7 @@ import type { AuthenticatedUser, Env } from './types'
 import { decryptSecret, encryptSecret } from './secrets'
 import { isEmail, parseSmtpSettings, publicSmtpSettings, sendInviteEmail, sendSmtpTest, type SmtpSettings } from './email'
 import { discoverCloudflareAccountId, exchangeCloudflareCode, readCloudflareCredential, refreshCloudflareCredential, revokeCloudflareToken, type CloudflareCredential } from './cloudflare-oauth'
-import { activateMaintenance, countStream, defaultPlatformSettings, getPlatformSettings, isMaintenanceMode, releaseR2Usage, reserveR2Usage, reserveRequest, setPlatformSettingsCache } from './usage'
+import { activateMaintenance, cloudflareQuotaReason, countStream, defaultPlatformSettings, getPlatformSettings, isMaintenanceMode, releaseR2Usage, reserveR2Usage, reserveRequest, setPlatformSettingsCache } from './usage'
 import { findPluginRoute, invalidatePluginRoute } from './route-cache'
 import { selectPublicRequestMode } from './request-mode'
 import { resolvePublicRoute } from './public-route'
@@ -240,6 +240,7 @@ async function runScheduledMaintenance(env: Env): Promise<void> {
   const auditSince = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000).toISOString()
   await Promise.all([
     recordUsageSnapshot(env),
+    refreshCloudflareUsageOnSchedule(env),
     cleanupExpiredBlobs(env),
     cleanupStaleConsumedBlobs(env),
     env.DB.prepare('DELETE FROM request_logs WHERE created_at < ?').bind(accessSince).run(),
@@ -250,6 +251,12 @@ async function runScheduledMaintenance(env: Env): Promise<void> {
     env.DB.prepare('DELETE FROM cloudflare_oauth_states WHERE expires_at <= ?').bind(nowIso).run(),
     env.DB.prepare('DELETE FROM registration_codes WHERE expires_at <= ?').bind(nowIso).run(),
   ])
+}
+
+async function refreshCloudflareUsageOnSchedule(env: Env): Promise<void> {
+  const administrator = await env.DB.prepare('SELECT id, github_id, email, display_name, role FROM users WHERE role = ? ORDER BY created_at ASC LIMIT 1').bind('super_admin').first<AuthenticatedUser>()
+  if (!administrator) return
+  await cloudflareUsageApi(env, administrator)
 }
 
 async function startGithubAuth(request: Request, env: Env, url: URL): Promise<Response> {
@@ -627,6 +634,9 @@ async function platformSettingsApi(request: Request, env: Env, user: Authenticat
       activeConnections: parsePositiveQuota(body?.quotas?.activeConnections, settings.quotas.activeConnections),
       r2Bytes: parsePositiveQuota(body?.quotas?.r2Bytes, settings.quotas.r2Bytes),
       r2Objects: parsePositiveQuota(body?.quotas?.r2Objects, settings.quotas.r2Objects),
+      d1Queries: parsePositiveQuota(body?.quotas?.d1Queries, settings.quotas.d1Queries),
+      kvOperations: parsePositiveQuota(body?.quotas?.kvOperations, settings.quotas.kvOperations),
+      durableObjectRequests: parsePositiveQuota(body?.quotas?.durableObjectRequests, settings.quotas.durableObjectRequests),
     },
   }
   await env.DB.prepare('INSERT INTO platform_settings (key, value_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at').bind('platform', JSON.stringify(next), new Date().toISOString()).run()
@@ -767,7 +777,11 @@ function redactSmtpError(message: string, password: string): string {
 export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser): Promise<Response> {
   if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
   const cached = await env.DB.prepare('SELECT value_json, expires_at, updated_at FROM usage_cache WHERE key = ? AND expires_at > ?').bind('cloudflare:workers', new Date().toISOString()).first<{ value_json: string; expires_at: string; updated_at: string }>()
-  if (cached) return json({ ...JSON.parse(cached.value_json), cached: true, updatedAt: cached.updated_at })
+  if (cached) {
+    const result = JSON.parse(cached.value_json) as CloudflareUsageResult
+    await enforceCloudflareUsageQuotas(env, result)
+    return json({ ...result, cached: true, updatedAt: cached.updated_at })
+  }
   if (!env.SESSION_SECRET) return json({ error: 'SESSION_SECRET is not configured' }, 503)
   const credentials = await env.DB.prepare('SELECT ciphertext, iv FROM cloudflare_credentials WHERE id = ?').bind('primary').first<{ ciphertext: string; iv: string }>()
   if (!credentials) return json({ configured: false, cached: false })
@@ -857,10 +871,29 @@ export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser): Pro
     cpuTime: resourceAccount?.durableObjectsPeriodicGroups?.reduce((total, row) => total + (row.sum?.cpuTime ?? 0), 0) ?? 0,
     storedBytes: Math.max(0, ...(resourceAccount?.durableObjectsStorageGroups ?? []).map((row) => row.max?.storedBytes ?? 0)),
   }
-  const result = { configured: true, accountIdConfigured: true, period: { start: start.toISOString(), end: end.toISOString() }, requests, d1, kv, durableObjects, source: 'cloudflare_graphql' }
+  const result: CloudflareUsageResult = { configured: true, accountIdConfigured: true, period: { start: start.toISOString(), end: end.toISOString() }, requests, d1, kv, durableObjects, source: 'cloudflare_graphql' }
   const updatedAt = new Date().toISOString()
   await env.DB.prepare('INSERT INTO usage_cache (key, value_json, expires_at, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, expires_at = excluded.expires_at, updated_at = excluded.updated_at').bind('cloudflare:workers', JSON.stringify(result), new Date(Date.now() + 5 * 60 * 1000).toISOString(), updatedAt).run()
+  await enforceCloudflareUsageQuotas(env, result)
   return json({ ...result, cached: false, updatedAt })
+}
+
+type CloudflareUsageResult = {
+  configured: true
+  accountIdConfigured: true
+  period: { start: string; end: string }
+  requests: number
+  d1: { readQueries: number; writeQueries: number; rowsRead: number; rowsWritten: number }
+  kv: { read: number; write: number; delete: number; list: number }
+  durableObjects: { requests: number; cpuTime: number; storedBytes: number }
+  source: 'cloudflare_graphql'
+}
+
+async function enforceCloudflareUsageQuotas(env: Env, usage: CloudflareUsageResult): Promise<void> {
+  const settings = await getPlatformSettings(env)
+  if (settings.maintenance) return
+  const reason = cloudflareQuotaReason(usage, settings.quotas)
+  if (reason) await activateMaintenance(env, reason)
 }
 
 export async function localUsageApi(env: Env, user: AuthenticatedUser, url = new URL('https://worker.invalid/api/usage/local')): Promise<Response> {

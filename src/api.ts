@@ -174,6 +174,9 @@ export interface PlatformSettings {
     activeConnections: number
     r2Bytes: number
     r2Objects: number
+    d1Queries: number
+    kvOperations: number
+    durableObjectRequests: number
   }
 }
 
