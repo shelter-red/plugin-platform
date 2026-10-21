@@ -148,6 +148,21 @@ test('管理端总览显示平台维护状态', async ({ page }) => {
   await expect(page.getByText('平台维护中')).toBeVisible()
 })
 
+test('管理端总览展示连接异常', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  const worker = await mockWorker(page)
+  worker.servers = [
+    { id: 'server-offline', name: '离线节点', status: 'offline', last_seen_at: '2026-10-21T01:00:00.000Z', created_at: '2026-10-20T00:00:00.000Z' },
+    { id: 'server-online', name: '在线节点', status: 'online', last_seen_at: '2026-10-21T02:00:00.000Z', created_at: '2026-10-20T00:00:00.000Z' },
+  ]
+  await page.goto('/')
+
+  await expect(page.getByText('离线节点')).toBeVisible()
+  await expect(page.getByText('离线', { exact: true })).toBeVisible()
+  await expect(page.getByText('在线节点')).toHaveCount(0)
+  await expect(page.getByText('暂无错误摘要')).toBeHidden()
+})
+
 test('管理端总览展示最近错误并可跳转访问日志', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 })
   const worker = await mockWorker(page)

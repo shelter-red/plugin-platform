@@ -126,7 +126,7 @@ export default {
     },
     errors: {
       title: '最近错误和连接异常',
-      subtitle: '最近 30 天状态码 5xx 的公开访问',
+      subtitle: '最近 30 天 5xx 公开访问与离线/撤销连接',
       viewAll: '查看访问日志',
       loadFailed: '错误摘要读取失败',
       loadingTitle: '正在读取错误摘要',

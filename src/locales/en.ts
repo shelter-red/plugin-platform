@@ -126,7 +126,7 @@ export default {
     },
     errors: {
       title: 'Recent errors and connection issues',
-      subtitle: 'Public requests that returned 5xx in the last 30 days',
+      subtitle: '5xx public requests and offline/revoked connections in the last 30 days',
       viewAll: 'View access logs',
       loadFailed: 'Could not read error summary',
       loadingTitle: 'Reading error summary',
