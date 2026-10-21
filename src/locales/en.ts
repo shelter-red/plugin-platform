@@ -98,6 +98,7 @@ export default {
       connections: 'Active connections',
     },
     note: { fromApi: 'From the Worker API', localCount: 'Platform-local counter', noLocalCount: 'No local connection data' },
+    maintenance: { on: 'Platform under maintenance', off: 'Platform running', unknown: 'Maintenance status unavailable' },
     trend: {
       title: 'Request trend',
       subtitle: 'Platform-local request counter snapshots',
@@ -118,6 +119,10 @@ export default {
       kv: 'KV operations',
       durableObjects: 'Durable Object requests',
       allQuotas: 'View all quotas',
+      officialUpdated: 'Official Analytics · {{time}}',
+      localUpdated: 'Local counters · {{time}}',
+      officialMissing: 'Official Analytics · not connected',
+      localMissing: 'Local counters · not updated',
     },
     errors: {
       title: 'Recent errors and connection issues',

@@ -27,6 +27,7 @@ type WorkerMock = {
   accessLogs: unknown[]
   snapshots: unknown[]
   domainError: string | null
+  maintenance: boolean
   registrationCodeRequests: number
   domainRequests: { pluginInstanceId: string; prefix: string }[]
   commandRequests: string[]
@@ -45,6 +46,7 @@ async function mockWorker(page: Page): Promise<WorkerMock> {
     accessLogs: [],
     snapshots: [],
     domainError: null,
+    maintenance: false,
     registrationCodeRequests: 0,
     domainRequests: [],
     commandRequests: [],
@@ -110,7 +112,7 @@ async function handleApi(route: Route, state: WorkerMock, logsGate: Promise<void
     case '/api/usage/local':
       return route.fulfill({ json: { ...localUsage, snapshots: state.snapshots } })
     case '/api/settings/platform':
-      return route.fulfill({ json: platformSettings })
+      return route.fulfill({ json: { ...platformSettings, maintenance: state.maintenance } })
     case '/api/settings/cloudflare':
       return route.fulfill({ json: { configured: false, accountIdConfigured: false, accountId: null, updatedAt: null } })
     case '/api/settings/smtp':
@@ -129,9 +131,21 @@ test('管理端显示 Worker 实时数据并在刷新后提示', async ({ page }
   await expect(page.locator('.metric-card', { hasText: '在线服务器' }).locator('.metric-number')).toHaveText(/^2/)
   await expect(page.locator('.metric-card', { hasText: '已启用插件' }).locator('.metric-number')).toHaveText(/^3/)
   await expect(page.locator('.metric-card', { hasText: '公开域名' }).locator('.metric-number')).toHaveText(/^1/)
+  await expect(page.getByText('平台运行中')).toBeVisible()
+  await expect(page.getByText(/^官方 Analytics · 未连接$/)).toBeVisible()
+  await expect(page.getByText(/^本地计数 · /)).toBeVisible()
 
   await page.getByRole('button', { name: '刷新状态' }).click()
   await expect(page.locator('.toast')).toHaveText('平台数据已刷新')
+})
+
+test('管理端总览显示平台维护状态', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  const worker = await mockWorker(page)
+  worker.maintenance = true
+  await page.goto('/')
+
+  await expect(page.getByText('平台维护中')).toBeVisible()
 })
 
 test('管理端总览展示最近错误并可跳转访问日志', async ({ page }) => {

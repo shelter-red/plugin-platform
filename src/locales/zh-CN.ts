@@ -98,6 +98,7 @@ export default {
       connections: '当前连接',
     },
     note: { fromApi: '来自 Worker API', localCount: '平台本地计数', noLocalCount: '暂无本地连接计数' },
+    maintenance: { on: '平台维护中', off: '平台运行中', unknown: '维护状态未读取' },
     trend: {
       title: '请求趋势',
       subtitle: '平台本地请求计数快照',
@@ -118,6 +119,10 @@ export default {
       kv: 'KV 操作',
       durableObjects: 'Durable Object 请求',
       allQuotas: '查看全部配额',
+      officialUpdated: '官方 Analytics · {{time}}',
+      localUpdated: '本地计数 · {{time}}',
+      officialMissing: '官方 Analytics · 未连接',
+      localMissing: '本地计数 · 未更新',
     },
     errors: {
       title: '最近错误和连接异常',
