@@ -41,7 +41,7 @@
 | Windows 构建与启动 | 部分实现 | 用 MinGW-w64 交叉编译出 `plugmesh-server.exe`、`plugmesh-plugin-host.exe`、本地 UI smoke 服务器、10 个 smoke 可执行文件和三个示例 `.dll`（PE32+），据此补齐 Windows 分支的链接库（`advapi32`/`ws2_32`/`mswsock`/`crypt32`），并对 MinGW 显式启用 websocketpp 的 C++11 线程宏（否则回退 `boost::thread`）。构建步骤见 `native-server/README.md`「Windows 构建」与 `native-server/cmake/mingw-w64-toolchain.cmake`。产物静态链接 MinGW 运行时，只依赖系统 DLL。在 Wine 5.0（`wine64`）下 10 个 smoke 全部通过，`plugmesh-server.exe` 以 setup 模式启动、`/api/health` 返回 `systemCredentialsAvailable=true`，并正常提供本地 UI 的 `index.html` 与静态资源；`native-ui/run-wine-smoke.sh` 让 `native-ui` Playwright 连到 Wine 下的 `plugmesh-local-ui-smoke-server.exe`，首次绑定、会话流程、日志与诊断（含健康检查与停用/重载/卸载）、主题与语言五条用例 5/5 通过（新增用例暴露并修复了 Windows 下插件宿主可执行文件缺少 `.exe` 后缀、导致本地 UI 加载插件失败的问题）；未在真实 Windows 主机上启动。 |
 | 首次 UI 设置本地口令和一次性注册码绑定 | 本地已验证 | Native UI Playwright smoke 覆盖绑定表单、localhost 服务重启和新口令登录；注册码交换仍由本地 mock handler 承载，未连接已部署 Worker。 |
 | 长期密钥持久化和重启恢复 | 本地已验证 | Linux 加密文件保存/读取有 CTest；本地真实栈中加密凭据文件重启 `plugmesh-server` 后自动重连 Worker，插件状态和域名恢复，公开入口返回 200（`docs/local-e2e.md`）。Windows 凭据存储未验证。 |
-| Windows Credential Manager | 部分实现 | Windows 分支在 Wine 下经 `CredWriteA`/`CredReadA`/`CredDeleteA` 完成保存、读取和删除往返（`plugmesh-credential-store-smoke`），`plugmesh-server.exe` 启动时报告系统凭据可用；真实 Windows 账户与注册表凭据存储仍未验证。 |
+| Windows Credential Manager | 部分实现 | Windows 分支在 Wine 下设置 `PLUGMESH_TEST_SYSTEM_CREDENTIALS=required` 后，经 `CredWriteA`/`CredReadA`/`CredDeleteA` 完成首次保存、读取、覆盖更新、删除以及删除后不可读取的完整往返（`plugmesh-credential-store-smoke`）；`plugmesh-server.exe` 启动时报告系统凭据可用。真实 Windows 账户与注册表凭据存储仍未验证。 |
 | macOS Keychain | 未验证 | `native-server/src/credential_store.cpp` 的 `__APPLE__` 分支以通用密码项（service `Plugmesh`、account `default`）调用 `SecItemAdd`/`SecItemUpdate`/`SecItemCopyMatching`/`SecItemDelete`；`system_credentials_available()` 使用 `SecItemCopyMatching` 做只读探测，只有 `errSecSuccess`/`errSecItemNotFound` 才报告系统存储可用，其他状态会让首次绑定界面要求凭据文件路径和口令并走现有 AES-256-GCM 文件回退。`native-server/CMakeLists.txt` 的 `APPLE` 分支链接 `-framework Security` 与 `-framework CoreFoundation`，并已与 Linux 共用 `PLUGMESH_PLATFORM_POSIX`（此前 macOS 上凭据文件的 `chmod 0600` 分支被编译掉，已修复）。当前环境没有 macOS 工具链，该分支从未编译或运行：授权弹窗、无头/无登录钥匙串、`errSecItemNotFound` 与重复项更新路径、以及回退到加密凭据文件的实际行为均未取得证据。 |
 | 加密凭据文件回退 | 本地已验证 | AES-256-GCM、PBKDF2 和文件权限由 `credential-store` CTest 覆盖。 |
 | 重新绑定、撤销和密钥轮换 | 本地已验证 | 本地 `wrangler dev` + 真实 `plugmesh-server` 控制台流程：轮换后凭据文件与 D1 token 哈希同时更新、连接保持、重启后自动重连；撤销后凭据文件删除、服务器转 `revoked`、插件转 `server_offline`、域名转 `offline` 且公开入口 503；在同一进程内通过本地 UI 重新绑定后取得新 serverId 并恢复 `online`（步骤见 `docs/local-e2e.md`）。联调中发现并修复了重新绑定成功后进程误判启动失败而退出的缺陷。边界：本地 miniflare，未在已部署 Worker 上验证。 |
@@ -97,7 +97,8 @@ cmake -S native-server -B /tmp/build-win -DCMAKE_TOOLCHAIN_FILE=native-server/cm
   -DOPENSSL_ROOT_DIR=/tmp/mingw-openssl -DCMAKE_BUILD_TYPE=Release && cmake --build /tmp/build-win -j8
                                          13 个 PE32+ 可执行文件与三个示例 .dll 交叉编译通过
                                           （/tmp/mingw-openssl 为交叉编译静态 OpenSSL 前缀，步骤见 native-server/README.md）
-（Wine 冒烟）4 个无参数用例直接运行，另 6 个按 native-server/README.md 传 winepath 参数
+（Wine 冒烟）4 个无参数用例直接运行，另 6 个按 native-server/README.md 传 winepath 参数；
+  凭据用例以 PLUGMESH_TEST_SYSTEM_CREDENTIALS=required 强制验证 Credential Manager 往返
                                          10/10 passed（Wine 5.0，Windows 构建产物；非真实 Windows）
 cd native-server/build && ctest --output-on-failure
                                          10/10 passed（本机 ctest 3.16 不支持 --test-dir，须先进入构建目录，否则会以 0 个测试「通过」）

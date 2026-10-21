@@ -1,5 +1,7 @@
 #include "plugmesh/credential_store.h"
 
+#include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -57,10 +59,35 @@ int main() {
     std::cerr << "credential removal failed: " << error << '\n';
     return 9;
   }
-  if (!plugmesh::system_credentials_available()) {
+  const auto* system_test = std::getenv("PLUGMESH_TEST_SYSTEM_CREDENTIALS");
+  const bool require_system_store = system_test && std::strcmp(system_test, "required") == 0;
+  const bool system_store_available = plugmesh::system_credentials_available();
+  if (require_system_store && !system_store_available) {
+    std::cerr << "required system credential store is unavailable\n";
+    return 10;
+  }
+  if (!system_store_available) {
     if (plugmesh::save_system_credentials(expected, error) || plugmesh::load_system_credentials(actual, error)) {
       std::cerr << "unavailable system credential store was reported as usable\n";
-      return 10;
+      return 11;
+    }
+  } else if (require_system_store) {
+    if (!plugmesh::save_system_credentials(expected, error)) {
+      std::cerr << "system credential save failed: " << error << '\n';
+      return 12;
+    }
+    if (!plugmesh::load_system_credentials(actual, error) || actual.worker_url != expected.worker_url || actual.server_id != expected.server_id || actual.access_token != expected.access_token || actual.local_ui_password_verifier != expected.local_ui_password_verifier) {
+      std::cerr << "system credential round-trip failed: " << error << '\n';
+      return 13;
+    }
+    const plugmesh::StoredCredentials updated{"https://updated.example", "server-2", "updated-token", verifier};
+    if (!plugmesh::save_system_credentials(updated, error) || !plugmesh::load_system_credentials(actual, error) || actual.worker_url != updated.worker_url || actual.server_id != updated.server_id || actual.access_token != updated.access_token) {
+      std::cerr << "system credential update failed: " << error << '\n';
+      return 14;
+    }
+    if (!plugmesh::remove_system_credentials(error) || plugmesh::load_system_credentials(actual, error)) {
+      std::cerr << "system credential removal failed: " << error << '\n';
+      return 15;
     }
   }
   std::filesystem::remove(path, ignored);

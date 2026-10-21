@@ -119,7 +119,7 @@ cmake --build /tmp/build-win -j"$(nproc)"
 ```bash
 export WINEPREFIX="$HOME/.wine-plugmesh"
 cd /tmp/build-win
-wine64 plugmesh-credential-store-smoke.exe
+PLUGMESH_TEST_SYSTEM_CREDENTIALS=required wine64 plugmesh-credential-store-smoke.exe
 wine64 plugmesh-control-protocol-smoke.exe
 wine64 plugmesh-local-http-server-smoke.exe
 wine64 plugmesh-registration-client-smoke.exe
