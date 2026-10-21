@@ -35,8 +35,12 @@ int main(int argc, char** argv) {
   int registration_count = 0;
   int health_response_count = 0;
   int stale_response_count = 0;
+  bool http_payload_valid = false;
   bool stream_payload_valid = false;
+  bool file_payload_valid = false;
+  std::vector<std::string> http_frames;
   std::vector<std::string> stream_frames;
+  std::vector<std::string> file_frames;
   server.set_validate_handler([&](websocketpp::connection_hdl handle) {
     const auto connection = server.get_con_from_hdl(handle);
     std::lock_guard lock(mutex);
@@ -70,8 +74,8 @@ int main(int argc, char** argv) {
         stale.timestamp = "2000-01-01T00:00:00.000Z";
         auto health = plugmesh::make_control_frame("plugin.health", "server-1", plugmesh::Json::object(), "sample.plugin");
         health.request_id = "health-1";
-        auto request = plugmesh::make_control_frame("stream.open", "server-1", {{"streamId", "sse-1"}, {"method", "GET"}, {"path", "/events"}, {"headers", plugmesh::Json::object()}, {"body", ""}, {"bodyEncoding", "base64"}}, "sample.plugin");
-        request.request_id = "sse-1";
+        auto request = plugmesh::make_control_frame("request.open", "server-1", {{"method", "GET"}, {"path", "/health"}, {"headers", plugmesh::Json::object()}, {"body", ""}, {"bodyEncoding", "base64"}, {"mode", "http"}}, "sample.plugin");
+        request.request_id = "http-1";
         websocketpp::lib::error_code send_error;
         server.send(handle, plugmesh::serialize_control_frame(stale), websocketpp::frame::opcode::text, send_error);
         const auto serialized_health = plugmesh::serialize_control_frame(health);
@@ -88,14 +92,46 @@ int main(int argc, char** argv) {
       condition.notify_all();
       return;
     }
-    if (frame.request_id != "sse-1" || (frame.type != "request.open" && frame.type != "stream.chunk" && frame.type != "stream.close")) return;
-    {
+    if (frame.request_id == "http-1") {
+      std::lock_guard lock(mutex);
+      http_frames.push_back(frame.type);
+      if (frame.type == "request.open") {
+        http_payload_valid = frame.payload.value("status", 0) == 200;
+      } else if (frame.type == "request.chunk") {
+        http_payload_valid = http_payload_valid && websocketpp::base64_decode(frame.payload.value("data", "")) == "ok";
+      } else if (frame.type == "request.close") {
+        auto request = plugmesh::make_control_frame("stream.open", "server-1", {{"streamId", "sse-1"}, {"method", "GET"}, {"path", "/events"}, {"headers", plugmesh::Json::object()}, {"body", ""}, {"bodyEncoding", "base64"}}, "sample.plugin");
+        request.request_id = "sse-1";
+        websocketpp::lib::error_code send_error;
+        server.send(handle, plugmesh::serialize_control_frame(request), websocketpp::frame::opcode::text, send_error);
+      }
+      condition.notify_all();
+      return;
+    }
+    if (frame.request_id == "sse-1") {
       std::lock_guard lock(mutex);
       stream_frames.push_back(frame.type);
       if (frame.type == "request.open") {
         stream_payload_valid = frame.payload.value("status", 0) == 200 && frame.payload.value("headers", plugmesh::Json::object()).value("content-type", "") == "text/event-stream; charset=utf-8";
       } else if (frame.type == "stream.chunk") {
         stream_payload_valid = stream_payload_valid && websocketpp::base64_decode(frame.payload.value("data", "")) == "data: sample-plugin\n\n";
+      } else if (frame.type == "stream.close") {
+        auto request = plugmesh::make_control_frame("request.open", "server-1", {{"method", "GET"}, {"path", "/download"}, {"headers", plugmesh::Json::object()}, {"body", ""}, {"bodyEncoding", "base64"}, {"mode", "file"}}, "sample.plugin");
+        request.request_id = "file-1";
+        websocketpp::lib::error_code send_error;
+        server.send(handle, plugmesh::serialize_control_frame(request), websocketpp::frame::opcode::text, send_error);
+      }
+      condition.notify_all();
+      return;
+    }
+    if (frame.request_id != "file-1" || (frame.type != "request.open" && frame.type != "stream.chunk" && frame.type != "stream.close")) return;
+    {
+      std::lock_guard lock(mutex);
+      file_frames.push_back(frame.type);
+      if (frame.type == "request.open") {
+        file_payload_valid = frame.payload.value("status", 0) == 200 && frame.payload.value("fileStream", false);
+      } else if (frame.type == "stream.chunk") {
+        file_payload_valid = file_payload_valid && websocketpp::base64_decode(frame.payload.value("data", "")) == "sample-file-stream";
       }
     }
     condition.notify_all();
@@ -133,14 +169,14 @@ int main(int argc, char** argv) {
   bool completed = false;
   {
     std::unique_lock lock(mutex);
-    completed = condition.wait_for(lock, std::chrono::seconds(8), [&] { return registration_count >= 2 && stream_frames.size() >= 3 && stream_frames.back() == "stream.close"; });
+    completed = condition.wait_for(lock, std::chrono::seconds(8), [&] { return registration_count >= 2 && file_frames.size() >= 3 && file_frames.back() == "stream.close"; });
   }
   client.stop();
   if (client_thread.joinable()) client_thread.join();
   server.get_io_service().post([&] { server.stop(); });
   if (server_thread.joinable()) server_thread.join();
 
-  if (!completed || !requests_valid || validated_connections < 2 || registration_count < 2 || health_response_count != 1 || stale_response_count != 0 || !stream_payload_valid || stream_frames != std::vector<std::string>{"request.open", "stream.chunk", "stream.close"} || !client_result) {
+  if (!completed || !requests_valid || validated_connections < 2 || registration_count < 2 || health_response_count != 1 || stale_response_count != 0 || !http_payload_valid || http_frames != std::vector<std::string>{"request.open", "request.chunk", "request.close"} || !stream_payload_valid || stream_frames != std::vector<std::string>{"request.open", "stream.chunk", "stream.close"} || !file_payload_valid || file_frames != std::vector<std::string>{"request.open", "stream.chunk", "stream.close"} || !client_result) {
     std::cerr << "plain control client reconnect smoke failed: " << client_error << '\n';
     return 1;
   }
