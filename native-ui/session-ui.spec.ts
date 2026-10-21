@@ -52,9 +52,25 @@ test('local UI diagnostics and logs follow plugin lifecycle actions', async ({ p
   await expect(samplePlugin).toContainText('已启用')
   await expect(metric('已启用').locator('strong')).toHaveText('1')
 
+  await samplePlugin.getByRole('button', { name: '检查' }).click()
+  await expect(page.getByRole('status')).toContainText('健康检查通过')
+
+  await samplePlugin.getByRole('button', { name: '停用' }).click()
+  await expect(samplePlugin).toContainText('已停用')
+  await expect(metric('已启用').locator('strong')).toHaveText('0')
+
+  await samplePlugin.getByRole('button', { name: '重载' }).click()
+  await expect(page.getByRole('status')).toContainText('已停用')
+
+  await samplePlugin.getByRole('button', { name: '卸载' }).click()
+  await expect(samplePlugin).toContainText('已卸载')
+
   const logSection = page.locator('#logs')
   await expect(logSection).toContainText('plugin loaded: sample.plugin')
   await expect(logSection).toContainText('plugin enabled: sample.plugin')
+  await expect(logSection).toContainText('plugin disabled: sample.plugin')
+  await expect(logSection).toContainText('plugin reloaded: sample.plugin')
+  await expect(logSection).toContainText('plugin unloaded: sample.plugin')
   await expect(logSection.locator('.log-row').first()).toContainText('INFO')
   await expect(page.locator('a.side-link[href="#logs"] span')).toHaveText(/^[1-9]\d*$/)
 })

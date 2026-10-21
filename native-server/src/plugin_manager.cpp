@@ -339,8 +339,9 @@ bool PluginManager::reload(const std::string& plugin_id, std::string& error) {
   const bool was_disabled = existing && existing->state == PluginState::Disabled;
   if (loaded(plugin_id) && !unload(plugin_id, error)) return false;
   if (!load(plugin_id, error)) return false;
-  if (was_enabled) return enable(plugin_id, error);
+  if (was_enabled && !enable(plugin_id, error)) return false;
   if (was_disabled) find(plugin_id)->state = PluginState::Disabled;
+  write_log(1, ("plugin reloaded: " + plugin_id).c_str());
   return true;
 }
 

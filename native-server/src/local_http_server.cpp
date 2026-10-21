@@ -455,7 +455,7 @@ void LocalHttpServer::handle_http(void* handle) {
   }
 
   constexpr std::string_view prefix = "/api/plugins/";
-  if (method == "GET" && plugins_ && resource.rfind(prefix, 0) == 0) {
+  if ((method == "GET" || method == "POST") && plugins_ && resource.rfind(prefix, 0) == 0) {
     const auto operation = resource.substr(prefix.size());
     constexpr std::string_view health_suffix = "/health";
     if (operation.size() > health_suffix.size() && operation.ends_with(health_suffix)) {
