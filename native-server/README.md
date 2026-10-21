@@ -54,7 +54,22 @@ PLUGMESH_REGISTRATION_CODE='一次性注册码' \
 native-server/build/plugmesh-server --register https://console.example.com '工作站插件服务器' ~/.config/plugmesh/credentials.json
 ```
 
-注册成功后，服务器启动时设置 `PLUGMESH_CREDENTIAL_FILE`、`PLUGMESH_CREDENTIAL_PASSWORD` 和 `PLUGMESH_PLUGIN_DIRECTORY`，即可从加密凭据文件恢复长期连接参数。注册码和口令也可以在交互提示中输入，不必放在环境变量中。
+注册成功后，服务器启动时设置 `PLUGMESH_CREDENTIAL_FILE`、`PLUGMESH_CREDENTIAL_PASSWORD` 和 `PLUGMESH_PLUGIN_DIRECTORY`，即可从加密凭据文件恢复长期连接参数。
+
+所有参数都可以省略，交给交互式提示（无浏览器环境的备用入口）：
+
+```bash
+native-server/build/plugmesh-server --register
+# Worker URL: https://console.example.com
+# Server name: 工作站插件服务器
+# Credential file: ~/.config/plugmesh/credentials.json
+# Registration code: 一次性注册码
+# Local UI password: ********
+# Confirm local UI password: ********
+# Credential file password: ********
+```
+
+省略的参数依次从 `PLUGMESH_WORKER_URL`、`PLUGMESH_SERVER_NAME`、`PLUGMESH_CREDENTIAL_FILE` 读取，注册码与口令分别使用 `PLUGMESH_REGISTRATION_CODE`、`PLUGMESH_LOCAL_UI_PASSWORD`（及 `PLUGMESH_LOCAL_UI_PASSWORD_CONFIRMATION`）、`PLUGMESH_CREDENTIAL_PASSWORD`；环境变量优先于提示，输入会去掉首尾空白，本地 UI 口令至少 8 位。
 
 ## Windows 构建
 

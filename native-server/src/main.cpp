@@ -27,12 +27,25 @@
 
 namespace {
 
+std::string trim(std::string value) {
+  const auto first = value.find_first_not_of(" \t\r\n");
+  if (first == std::string::npos) return {};
+  const auto last = value.find_last_not_of(" \t\r\n");
+  return value.substr(first, last - first + 1);
+}
+
 std::string read_value(const char* environment_name, const char* prompt) {
-  if (const char* value = std::getenv(environment_name); value && *value) return value;
-  std::cout << prompt;
+  if (const char* value = std::getenv(environment_name); value && *value) return trim(value);
+  std::cout << prompt << std::flush;
   std::string value;
   std::getline(std::cin, value);
-  return value;
+  return trim(value);
+}
+
+// 无参数时从环境变量或交互式提示读取；供 `--register` 在无浏览器环境下使用。
+std::string argument_or_prompt(int argc, char** argv, int index, const char* environment_name, const char* prompt) {
+  if (argc > index && *argv[index]) return trim(argv[index]);
+  return read_value(environment_name, prompt);
 }
 
 std::string read_secret(const char* environment_name, const char* prompt) {
@@ -195,8 +208,16 @@ bool run_registration_setup(plugmesh::ServerConfig& config, uint16_t port, const
 }
 
 int register_server(int argc, char** argv) {
-  if (argc != 5) {
-    std::cerr << "usage: plugmesh-server --register <worker-url> <server-name> <credential-file>\n";
+  if (argc > 5) {
+    std::cerr << "usage: plugmesh-server --register [<worker-url> <server-name> <credential-file>]\n"
+                 "省略参数时依次从 PLUGMESH_WORKER_URL、PLUGMESH_SERVER_NAME、PLUGMESH_CREDENTIAL_FILE 或交互式提示读取。\n";
+    return 2;
+  }
+  const auto worker_url = argument_or_prompt(argc, argv, 2, "PLUGMESH_WORKER_URL", "Worker URL: ");
+  const auto server_name = argument_or_prompt(argc, argv, 3, "PLUGMESH_SERVER_NAME", "Server name: ");
+  const auto credential_file = argument_or_prompt(argc, argv, 4, "PLUGMESH_CREDENTIAL_FILE", "Credential file: ");
+  if (worker_url.empty() || server_name.empty() || credential_file.empty()) {
+    std::cerr << "plugmesh-server: worker URL, server name and credential file are required\n";
     return 2;
   }
   const auto code = read_value("PLUGMESH_REGISTRATION_CODE", "Registration code: ");
@@ -220,17 +241,17 @@ int register_server(int argc, char** argv) {
     return 2;
   }
   plugmesh::RegistrationResult registration;
-  if (!plugmesh::register_server(argv[2], code, argv[3], registration, error)) {
+  if (!plugmesh::register_server(worker_url, code, server_name, registration, error)) {
     std::cerr << "plugmesh-server: " << error << '\n';
     return 1;
   }
-  const plugmesh::StoredCredentials credentials{argv[2], registration.server_id, registration.access_token, local_ui_password_verifier};
-  if (!plugmesh::save_credentials(argv[4], credentials, password, error)) {
+  const plugmesh::StoredCredentials credentials{worker_url, registration.server_id, registration.access_token, local_ui_password_verifier};
+  if (!plugmesh::save_credentials(credential_file, credentials, password, error)) {
     std::cerr << "plugmesh-server: " << error << '\n';
     return 1;
   }
   std::cout << "server registered as " << registration.server_id << "\n";
-  std::cout << "credentials saved to " << argv[4] << "\n";
+  std::cout << "credentials saved to " << credential_file << "\n";
   return 0;
 }
 

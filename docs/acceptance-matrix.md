@@ -44,7 +44,7 @@
 | 加密凭据文件回退 | 本地已验证 | AES-256-GCM、PBKDF2 和文件权限由 `credential-store` CTest 覆盖。 |
 | 重新绑定、撤销和密钥轮换 | 本地已验证 | 本地 `wrangler dev` + 真实 `plugmesh-server` 控制台流程：轮换后凭据文件与 D1 token 哈希同时更新、连接保持、重启后自动重连；撤销后凭据文件删除、服务器转 `revoked`、插件转 `server_offline`、域名转 `offline` 且公开入口 503；在同一进程内通过本地 UI 重新绑定后取得新 serverId 并恢复 `online`（步骤见 `docs/local-e2e.md`）。联调中发现并修复了重新绑定成功后进程误判启动失败而退出的缺陷。边界：本地 miniflare，未在已部署 Worker 上验证。 |
 | 仅监听 localhost、本地会话口令和登录限速 | 本地已验证 | `local-http-server` CTest 与 Native UI Playwright smoke。 |
-| 无浏览器 CLI 注册入口 | 本地已验证 | `--register` 路径可构建，注册 client 有本地 WebSocket smoke；`npm run ui:real-stack` 第三条用例通过 `plugmesh-server --register <worker> <name> <credentialFile>` 连接本地 `wrangler dev` 兑换一次性注册码并取得 serverId，随后同一凭据文件启动服务器并完成插件加载与域名访问。未连接已部署 Worker。 |
+| 无浏览器 CLI 注册入口 | 本地已验证 | `--register` 支持省略全部位置参数后逐项交互提示（Worker 地址、服务器名、凭据文件、注册码、本地 UI 口令及确认、凭据口令），也可用 `PLUGMESH_WORKER_URL`/`PLUGMESH_SERVER_NAME`/`PLUGMESH_CREDENTIAL_FILE` 等环境变量替代提示；2026-10-21 在本地 `wrangler dev` 上以管道输入完成一次真实注册，凭据文件权限 0600，随后用该文件启动服务器得到 `/api/status` 的 `configured=true`、`connected=true`，空输入时以退出码 2 报缺少必填项。注册 client 另有本地 WebSocket smoke；`npm run ui:real-stack` 第三条用例通过 `plugmesh-server --register <worker> <name> <credentialFile>` 连接本地 `wrangler dev` 兑换一次性注册码并取得 serverId，随后同一凭据文件启动服务器并完成插件加载与域名访问。未连接已部署 Worker。 |
 | manifest 校验和目录越界防护 | 本地已验证 | `plugin-manager`、`plugin-loader` CTest。 |
 | `.so` 动态加载和 C ABI v2/v3 | 本地已验证 | Linux 示例插件和 ABI/lifecycle CTest。 |
 | `.dll` 动态加载 | 部分实现 | 示例插件已交叉编译为 `libplugmesh-*.dll`，在 Wine 下由 `plugin-loader`、`plugin-host`、`plugin-manager`、崩溃隔离和 WebSocket 生命周期用例实际 `LoadLibrary` 加载并执行 ABI v2/v3 回调；真实 Windows 上的加载路径与错误码未验证。 |

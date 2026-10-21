@@ -90,6 +90,12 @@ PLUGMESH_REGISTRATION_CODE='一次性注册码' \
 native-server/build/plugmesh-server --register http://127.0.0.1:18888 'E2E Server' /tmp/plugmesh-e2e-creds.json
 ```
 
+也可以完全交互式执行（无参数，逐项提示，适合无浏览器环境）：
+
+```bash
+native-server/build/plugmesh-server --register
+```
+
 3. 启动服务器并连接 Worker：
 
 ```bash
