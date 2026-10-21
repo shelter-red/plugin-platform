@@ -18,8 +18,8 @@ bool PluginLoader::load(const std::filesystem::path& library_path, std::string& 
     error = "LoadLibraryW failed";
     return false;
   }
-  auto entry_v3 = reinterpret_cast<plugmesh_plugin_get_api_v3_fn>(GetProcAddress(static_cast<HMODULE>(handle_), "plugmesh_plugin_get_api_v3"));
-  auto entry_v2 = reinterpret_cast<plugmesh_plugin_get_api_v2_fn>(GetProcAddress(static_cast<HMODULE>(handle_), "plugmesh_plugin_get_api_v2"));
+  auto entry_v3 = reinterpret_cast<plugmesh_plugin_get_api_v3_fn>(reinterpret_cast<void*>(GetProcAddress(static_cast<HMODULE>(handle_), "plugmesh_plugin_get_api_v3")));
+  auto entry_v2 = reinterpret_cast<plugmesh_plugin_get_api_v2_fn>(reinterpret_cast<void*>(GetProcAddress(static_cast<HMODULE>(handle_), "plugmesh_plugin_get_api_v2")));
 #else
   handle_ = dlopen(library_path.c_str(), RTLD_NOW | RTLD_LOCAL);
   if (!handle_) {

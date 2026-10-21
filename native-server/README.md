@@ -9,6 +9,8 @@
 - `ControlClient` 使用 WebSocket++、standalone Asio 和 nlohmann/json 建立出站控制连接；生产地址使用 `wss`，localhost 开发地址可使用 `ws`。控制连接处理注册、心跳、插件命令、健康检查和 HTTP 请求帧，注册描述来自已校验的 manifest。
 - `examples/sample_plugin.cpp`、`examples/lifecycle_plugin.cpp` 和对应 smoke 测试验证动态库导出、ABI 检查、基本生命周期以及 WebSocket 建立/关闭回调。`examples/crashing_plugin.cpp` 故意触发空指针崩溃，由 `plugin-manager-crash-smoke` 验证宿主隔离和失败标记。
 
+非 MSVC 构建默认启用 `-Wall -Wextra`；`third_party/include` 以 SYSTEM 方式包含，第三方头文件的警告不会混入自家源码。
+
 部署时 `plugmesh-server` 与 `plugmesh-plugin-host` 需要放在同一目录，或通过 `PLUGMESH_PLUGIN_HOST` 指定宿主路径。宿主调用是同步的：插件回调长时间阻塞会阻塞控制面的对应请求，这段边界尚未改为异步或超时模型。
 
 启动配置可以由环境变量提供；当连接参数缺失且指定了凭据文件时，服务器会使用口令解密持久化凭据：

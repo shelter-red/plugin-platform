@@ -7,6 +7,11 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+if (NOT MSVC)
+  # 自家源码保持 0 警告；第三方头文件不产生警告，已用 -Wall -Wextra 全量构建确认。
+  add_compile_options(-Wall -Wextra)
+endif()
+
 if (MINGW)
   # 静态链接 MinGW 运行时，产物只依赖系统 DLL，部署时无需附带 libstdc++/libgcc/libwinpthread。
   add_link_options(-static)
@@ -28,7 +33,8 @@ add_library(plugmesh_core STATIC
   src/server_config.cpp
 )
 target_compile_definitions(plugmesh_core PUBLIC ASIO_STANDALONE)
-target_include_directories(plugmesh_core PUBLIC include third_party/include)
+target_include_directories(plugmesh_core PUBLIC include)
+target_include_directories(plugmesh_core SYSTEM PUBLIC third_party/include)
 target_link_libraries(plugmesh_core PUBLIC OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
 
 add_executable(plugmesh-server src/main.cpp)
