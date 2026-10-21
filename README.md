@@ -62,6 +62,8 @@ cmake --build native-server/build --target test
 
 ## 一键部署（Cloudflare Workers）
 
+> **最小配置原则：唯一必填项只有 Cloudflare 账号授权。** 部署页若出现 D1/R2 ID、OAuth、SMTP、插件域名后缀或应用 Secret 输入框，都不应手工填写；这些资源、密钥或业务设置分别由部署脚本和后台自动处理。
+
 一键部署只保留 Cloudflare 基础授权。D1、R2、Durable Object、数据库迁移、`SESSION_SECRET`、`SETUP_TOKEN` 和 Worker 发布全部自动完成；OAuth、SMTP、配额、维护策略和插件域名后缀都不进入部署环境。
 
 | 部署方式 | 必要配置 | 说明 |
