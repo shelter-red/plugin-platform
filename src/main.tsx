@@ -486,6 +486,7 @@ function auditActionLabel(action: string): string {
     'invite.created': '创建平台邀请',
     'server.registration_code.created': '生成服务器注册码',
     'server.registered': '插件服务器已注册',
+    'server.manifest_sync.requested': '请求同步插件清单',
     'cloudflare.oauth.connected': '完成 Cloudflare 授权',
     'cloudflare.oauth.refreshed': '刷新 Cloudflare 授权',
     'cloudflare.oauth.failed': 'Cloudflare 授权失败',

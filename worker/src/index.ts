@@ -98,7 +98,9 @@ async function syncServer(request: Request, env: Env, user: AuthenticatedUser, s
   if (!server) return json({ error: 'Plugin server not found' }, 404)
   if (server.status !== 'online') return json({ error: 'Plugin server is offline' }, 409)
   const bridge = env.PLUGIN_BRIDGE.get(env.PLUGIN_BRIDGE.idFromName(serverId))
-  return bridge.fetch(new Request(new URL('/command', request.url), { method: 'POST', headers: { 'content-type': 'application/json', 'x-plugmesh-server-id': serverId }, body: JSON.stringify({ type: 'server.sync' }) }))
+  const response = await bridge.fetch(new Request(new URL('/command', request.url), { method: 'POST', headers: { 'content-type': 'application/json', 'x-plugmesh-server-id': serverId }, body: JSON.stringify({ type: 'server.sync' }) }))
+  if (response.ok) await recordAudit(env, user.id, 'server.manifest_sync.requested', { serverId })
+  return response
 }
 
 async function pluginDetailsApi(env: Env, user: AuthenticatedUser, pluginInstanceId: string): Promise<Response> {
