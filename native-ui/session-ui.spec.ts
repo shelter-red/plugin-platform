@@ -16,7 +16,7 @@ test('local UI session flow is responsive', async ({ page }) => {
   await expect(page.getByRole('heading', { name: '插件服务器' })).toBeVisible()
   await expect(page.getByRole('heading', { name: '已发现插件' })).toBeVisible()
   const samplePlugin = page.locator('.plugin-row', { hasText: 'Sample Plugin' })
-  await expect(samplePlugin).toContainText('libplugmesh-sample.so')
+  await expect(samplePlugin).toContainText(/libplugmesh-sample\.(so|dll)/)
   await expect(samplePlugin).toContainText('健康检查: /health')
   await expect(samplePlugin).toContainText('权限: 无')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()

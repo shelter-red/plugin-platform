@@ -2,9 +2,11 @@ import { expect, test } from '@playwright/test'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+const setupBaseUrl = process.env.PLUGMESH_NATIVE_UI_SETUP_URL ?? 'http://127.0.0.1:18772'
+
 test('local UI first-time binding survives the server restart', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 900 })
-  await page.goto('http://127.0.0.1:18772/')
+  await page.goto(`${setupBaseUrl}/`)
 
   await expect(page.getByRole('heading', { name: '绑定插件服务器' })).toBeVisible()
   await page.getByLabel('Worker 地址').fill('https://console.example.test')

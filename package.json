@@ -39,7 +39,8 @@
     "preview": "vite preview",
     "worker:typecheck": "tsc -p worker/tsconfig.json",
     "worker:runtime-test": "vitest run --config vitest.workers.config.ts",
-    "worker:dev": "wrangler dev --config worker/wrangler.toml"
+    "worker:dev": "wrangler dev --config worker/wrangler.toml",
+    "native-ui:smoke:wine": "bash native-ui/run-wine-smoke.sh"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",

@@ -118,6 +118,17 @@ PLUGMESH_LOCAL_PORT=8899 PLUGMESH_LOCAL_UI_DIRECTORY="$(winepath -w ../native-ui
 curl -s http://127.0.0.1:8899/api/health
 ```
 
+### 在 Wine 下运行本地 UI 冒烟用例
+
+`native-ui/run-wine-smoke.sh`（等价于 `npm run native-ui:smoke:wine`）会用 Wine 启动两个 `plugmesh-local-ui-smoke-server.exe` 实例（认证端口 18771、首次绑定端口 18772），再把 `native-ui` 的 Playwright 用例指向它们，覆盖首次绑定、会话流程、主题切换和语言切换：
+
+```bash
+native-ui/run-wine-smoke.sh            # 默认使用 native-server/build-win
+native-ui/run-wine-smoke.sh /path/to/build-win
+```
+
+脚本通过 `PLUGMESH_NATIVE_UI_SMOKE_URL`、`PLUGMESH_NATIVE_UI_SETUP_URL` 复用外部服务（此时 Playwright 不再自行拉起 Linux smoke 服务器），并用 `PLUGMESH_SMOKE_PLUGIN_DIRECTORY` 把插件目录换成 Windows 构建产物里的 `.dll`。
+
 崩溃隔离用例会让插件宿主故意触发空指针崩溃，Wine 会打印 `page fault` 日志，属于预期现象。Wine 不是 Windows：真实 Win32 API 行为、注册表凭据存储、服务账户和多用户场景仍需要在 Windows 主机上验证。
 
 网络传输层复用 `worker/src/protocol.ts` 的协议字段约定；当前已接入控制 WebSocket、HTTP 回调、SSE/文件流和公开 WebSocket 的 base64 二进制桥接。HTTP 请求体和响应块使用 `bodyEncoding`/`encoding: "base64"` 传输二进制数据；未编码的错误块保留为 UTF-8 文本。文件流响应通过 `fileStream: true` 标记，大于 1 MiB 时由 Worker 临时写入 R2 并在响应消费或 15 分钟超时后回收。服务器重连后会按管理端保存的期望状态恢复插件；启用态插件必须重新通过健康检查，公开域名才会恢复在线。域名首次分配前同样会执行健康检查。本地服务器日志环与 `/api/logs` 已接入；插件主动日志回传尚未定义独立控制帧。

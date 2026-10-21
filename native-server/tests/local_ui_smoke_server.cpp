@@ -6,6 +6,7 @@
 #include <charconv>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <string>
@@ -25,7 +26,10 @@ bool parse_port(const char* value, uint16_t& port) {
 int run_authenticated_server(uint16_t port, const std::filesystem::path& ui_directory, const std::string& verifier, const std::string& worker_url = {}, const std::string& credential_file = {}) {
   plugmesh::PluginManager plugins;
   std::string plugin_error;
-  const auto plugin_directory = ui_directory.parent_path().parent_path() / "native-server" / "build" / "plugins";
+  const auto plugin_directory = [&ui_directory] {
+    if (const char* override = std::getenv("PLUGMESH_SMOKE_PLUGIN_DIRECTORY"); override && *override) return std::filesystem::path(override);
+    return ui_directory.parent_path().parent_path() / "native-server" / "build" / "plugins";
+  }();
   if (!plugins.discover(plugin_directory, plugin_error)) std::cerr << "local UI smoke plugin discovery failed: " << plugin_error << '\n';
   plugmesh::LocalHttpServer server(port, &plugins, [worker_url, credential_file] {
     return nlohmann::json{
