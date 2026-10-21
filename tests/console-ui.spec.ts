@@ -7,6 +7,7 @@ test('管理端桌面空态和主题切换可用', async ({ page }) => {
   await expect(page.getByRole('heading', { name: '总览', level: 1 })).toBeVisible()
   await expect(page.getByText('等待 Worker 数据').first()).toBeVisible()
   await expect(page.locator('.app-shell')).toHaveClass(/theme-dark/)
+  await expect(page).toHaveScreenshot('console-desktop-dark.png', { fullPage: true, animations: 'disabled' })
 
   await page.getByLabel('选择主题').selectOption('light')
   await expect(page.locator('.app-shell')).toHaveClass(/theme-light/)
@@ -29,8 +30,7 @@ test('管理端移动侧栏和布局可用', async ({ page }) => {
   await expect(page.getByRole('heading', { name: '系统设置', level: 1 })).toBeVisible()
   await expect(page.locator('.sidebar')).not.toHaveClass(/open/)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
-  await page.waitForTimeout(300)
-  await page.screenshot({ path: '/tmp/plugmesh-console-mobile-smoke.png', fullPage: true })
+  await expect(page).toHaveScreenshot('console-mobile-settings.png', { fullPage: true, animations: 'disabled' })
 })
 
 test('管理端系统主题跟随系统偏好并持久化', async ({ page }) => {
