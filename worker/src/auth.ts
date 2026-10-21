@@ -29,6 +29,18 @@ export function isAllowlisted(env: Env, identity: { login: string; emails: strin
   return configured.includes(identity.login.toLowerCase()) || identity.emails.some((email) => configured.includes(email.toLowerCase()))
 }
 
+export async function upsertGithubUser(env: Env, identity: { emails: string[]; displayName: string; githubId: string }, role: AuthenticatedUser['role']): Promise<string> {
+  const candidateId = crypto.randomUUID()
+  await env.DB.prepare(`
+    INSERT INTO users (id, github_id, email, display_name, role, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(github_id) DO UPDATE SET email = excluded.email, display_name = excluded.display_name, role = excluded.role
+  `).bind(candidateId, identity.githubId, identity.emails[0], identity.displayName, role, new Date().toISOString()).run()
+  const user = await env.DB.prepare('SELECT id FROM users WHERE github_id = ?').bind(identity.githubId).first<{ id: string }>()
+  if (!user) throw new Error('GitHub user could not be saved')
+  return user.id
+}
+
 export async function getCurrentUser(request: Request, env: Env): Promise<AuthenticatedUser | null> {
   const token = getCookie(request, SESSION_COOKIE)
   if (!token) return null

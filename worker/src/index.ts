@@ -1,6 +1,6 @@
 import { PluginBridge } from './durable-object'
 import { hashControlToken } from './security'
-import { createSession, digest, exchangeGithubCode, getCurrentUser, isAllowlisted, redirectWithError, sessionCookie, clearSessionCookie } from './auth'
+import { createSession, digest, exchangeGithubCode, getCurrentUser, isAllowlisted, redirectWithError, sessionCookie, clearSessionCookie, upsertGithubUser } from './auth'
 import type { AuthenticatedUser, Env } from './types'
 import { decryptSecret, encryptSecret } from './secrets'
 import { isEmail, parseSmtpSettings, publicSmtpSettings, sendInviteEmail, sendSmtpTest, type SmtpSettings } from './email'
@@ -295,9 +295,7 @@ async function finishGithubAuth(request: Request, env: Env, url: URL): Promise<R
   }
   if (!allowlisted && !invite && !existing) return redirectWithError(request, '该 GitHub 身份未被邀请')
   const role = allowlisted ? 'super_admin' : 'member'
-  const userId = existing?.id ?? crypto.randomUUID()
-  if (existing) await env.DB.prepare('UPDATE users SET email = ?, display_name = ?, role = ? WHERE id = ?').bind(identity.emails[0], identity.displayName, role, userId).run()
-  else await env.DB.prepare('INSERT INTO users (id, github_id, email, display_name, role, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(userId, identity.githubId, identity.emails[0], identity.displayName, role, new Date().toISOString()).run()
+  const userId = await upsertGithubUser(env, identity, role)
   const token = await createSession(env, userId)
   return new Response(null, { status: 302, headers: { location: '/', 'set-cookie': sessionCookie(token, url.protocol === 'https:') } })
 }
