@@ -271,9 +271,12 @@ bool PluginManager::reload(const std::string& plugin_id, std::string& error) {
   std::lock_guard lock(mutex_);
   const auto* existing = find(plugin_id);
   const bool was_enabled = existing && existing->state == PluginState::Enabled;
+  const bool was_disabled = existing && existing->state == PluginState::Disabled;
   if (loaded(plugin_id) && !unload(plugin_id, error)) return false;
   if (!load(plugin_id, error)) return false;
-  return !was_enabled || enable(plugin_id, error);
+  if (was_enabled) return enable(plugin_id, error);
+  if (was_disabled) find(plugin_id)->state = PluginState::Disabled;
+  return true;
 }
 
 bool PluginManager::health(const std::string& plugin_id, plugmesh_http_response& response, std::string& error) const {

@@ -70,8 +70,8 @@ int main(int argc, char** argv) {
     std::cerr << "file stream callback failed: " << error << '\n';
     return 1;
   }
-  if (!manager.disable("sample.plugin", error) || manager.snapshot()[0].state != plugmesh::PluginState::Disabled || !manager.unload("sample.plugin", error) || manager.snapshot()[0].state != plugmesh::PluginState::Unloaded) {
-    std::cerr << "disable/unload failed: " << error << '\n';
+  if (!manager.disable("sample.plugin", error) || manager.snapshot()[0].state != plugmesh::PluginState::Disabled || !manager.reload("sample.plugin", error) || manager.snapshot()[0].state != plugmesh::PluginState::Disabled || !manager.unload("sample.plugin", error) || manager.snapshot()[0].state != plugmesh::PluginState::Unloaded) {
+    std::cerr << "disable/reload/unload failed: " << error << '\n';
     return 1;
   }
   const auto source_library = manager.snapshot()[0].library;
