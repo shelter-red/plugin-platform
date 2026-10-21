@@ -1,3 +1,4 @@
+import { resolveOauthSettings } from './oauth-settings'
 import { decryptSecret } from './secrets'
 import type { Env } from './types'
 
@@ -23,15 +24,16 @@ function basicAuth(clientId: string, clientSecret: string): string {
 }
 
 export async function exchangeCloudflareCode(env: Env, code: string): Promise<CloudflareCredential | null> {
-  if (!env.CLOUDFLARE_OAUTH_CLIENT_ID || !env.CLOUDFLARE_OAUTH_CLIENT_SECRET || !env.CLOUDFLARE_OAUTH_REDIRECT_URI) return null
+  const { cloudflare } = await resolveOauthSettings(env)
+  if (!cloudflare) return null
   const response = await fetch('https://dash.cloudflare.com/oauth2/token', {
     method: 'POST',
     headers: {
-      authorization: basicAuth(env.CLOUDFLARE_OAUTH_CLIENT_ID, env.CLOUDFLARE_OAUTH_CLIENT_SECRET),
+      authorization: basicAuth(cloudflare.clientId, cloudflare.clientSecret),
       accept: 'application/json',
       'content-type': 'application/x-www-form-urlencoded',
     },
-    body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: env.CLOUDFLARE_OAUTH_REDIRECT_URI }).toString(),
+    body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: cloudflare.redirectUri }).toString(),
   })
   if (!response.ok) return null
   const payload = await response.json().catch(() => null) as TokenResponse | null
@@ -46,11 +48,12 @@ export async function exchangeCloudflareCode(env: Env, code: string): Promise<Cl
 }
 
 export async function refreshCloudflareCredential(env: Env, credential: CloudflareCredential): Promise<CloudflareCredential | null> {
-  if (!env.CLOUDFLARE_OAUTH_CLIENT_ID || !env.CLOUDFLARE_OAUTH_CLIENT_SECRET || !credential.refreshToken) return null
+  const { cloudflare } = await resolveOauthSettings(env)
+  if (!cloudflare || !credential.refreshToken) return null
   const response = await fetch('https://dash.cloudflare.com/oauth2/token', {
     method: 'POST',
     headers: {
-      authorization: basicAuth(env.CLOUDFLARE_OAUTH_CLIENT_ID, env.CLOUDFLARE_OAUTH_CLIENT_SECRET),
+      authorization: basicAuth(cloudflare.clientId, cloudflare.clientSecret),
       accept: 'application/json',
       'content-type': 'application/x-www-form-urlencoded',
     },
@@ -77,11 +80,12 @@ export async function discoverCloudflareAccountId(accessToken: string): Promise<
 }
 
 export async function revokeCloudflareToken(env: Env, accessToken: string): Promise<void> {
-  if (!env.CLOUDFLARE_OAUTH_CLIENT_ID || !env.CLOUDFLARE_OAUTH_CLIENT_SECRET) return
+  const { cloudflare } = await resolveOauthSettings(env)
+  if (!cloudflare) return
   await fetch('https://dash.cloudflare.com/oauth2/revoke', {
     method: 'POST',
     headers: {
-      authorization: basicAuth(env.CLOUDFLARE_OAUTH_CLIENT_ID, env.CLOUDFLARE_OAUTH_CLIENT_SECRET),
+      authorization: basicAuth(cloudflare.clientId, cloudflare.clientSecret),
       accept: 'application/json',
       'content-type': 'application/x-www-form-urlencoded',
     },

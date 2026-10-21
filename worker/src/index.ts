@@ -9,6 +9,7 @@ import { activateMaintenance, cloudflareQuotaReason, defaultPlatformSettings, ge
 import { findPluginRoute, invalidatePluginRoute } from './route-cache'
 import { selectPublicRequestMode } from './request-mode'
 import { resolvePublicRoute } from './public-route'
+import { oauthSettingsApi, resolveOauthSettings } from './oauth-settings'
 
 export { PluginBridge }
 
@@ -56,6 +57,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     return json(await env.DB.prepare('SELECT audit_log.id, audit_log.action, audit_log.detail_json, audit_log.created_at, users.display_name AS actor_name, users.email AS actor_email FROM audit_log LEFT JOIN users ON users.id = audit_log.user_id WHERE audit_log.user_id = ? AND audit_log.created_at >= ? ORDER BY audit_log.created_at DESC LIMIT 100').bind(user.id, since).all())
   }
   if (request.method === 'GET' && url.pathname === '/api/access-logs') return accessLogsApi(env, user)
+  if (url.pathname === '/api/settings/oauth') return oauthSettingsApi(request, env, user)
   if (url.pathname === '/api/settings/platform') return platformSettingsApi(request, env, user)
   if (url.pathname === '/api/settings/cloudflare') return cloudflareSettingsApi(request, env, user)
   if (url.pathname === '/api/settings/smtp') return smtpSettingsApi(request, env, user)
@@ -310,13 +312,14 @@ async function refreshCloudflareUsageOnSchedule(env: Env): Promise<void> {
 }
 
 async function startGithubAuth(env: Env, url: URL): Promise<Response> {
-  if (!env.GITHUB_CLIENT_ID || !env.GITHUB_REDIRECT_URI) return new Response('GitHub OAuth is not configured', { status: 503 })
+  const { github } = await resolveOauthSettings(env)
+  if (!github) return new Response('GitHub OAuth is not configured', { status: 503 })
   const state = crypto.randomUUID()
   const inviteToken = url.searchParams.get('invite')
   await env.DB.prepare('INSERT INTO oauth_states (state_hash, invite_token_hash, expires_at, created_at) VALUES (?, ?, ?, ?)').bind(await digest(state), inviteToken ? await digest(inviteToken) : null, new Date(Date.now() + 10 * 60 * 1000).toISOString(), new Date().toISOString()).run()
   const githubUrl = new URL('https://github.com/login/oauth/authorize')
-  githubUrl.searchParams.set('client_id', env.GITHUB_CLIENT_ID)
-  githubUrl.searchParams.set('redirect_uri', env.GITHUB_REDIRECT_URI)
+  githubUrl.searchParams.set('client_id', github.clientId)
+  githubUrl.searchParams.set('redirect_uri', github.redirectUri)
   githubUrl.searchParams.set('scope', 'read:user user:email')
   githubUrl.searchParams.set('state', state)
   return Response.redirect(githubUrl.toString(), 302)
@@ -334,7 +337,7 @@ async function finishGithubAuth(request: Request, env: Env, url: URL): Promise<R
   if ((consumedState.meta.changes ?? 0) !== 1) return redirectWithError(request, 'OAuth 状态已过期或已使用')
   const identity = await exchangeGithubCode(env, code)
   if (!identity) return redirectWithError(request, '无法读取 GitHub 身份')
-  const allowlisted = isAllowlisted(env, { login: identity.login, emails: identity.emails })
+  const allowlisted = await isAllowlisted(env, { login: identity.login, emails: identity.emails })
   const existing = await env.DB.prepare('SELECT id FROM users WHERE github_id = ?').bind(identity.githubId).first<{ id: string }>()
   let inviteAccepted = false
   if (oauthState.invite_token_hash) {
@@ -352,14 +355,15 @@ async function startCloudflareAuth(request: Request, env: Env): Promise<Response
   const user = await getCurrentUser(request, env)
   if (!user) return json({ error: 'Authentication required' }, 401)
   if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
-  if (!env.CLOUDFLARE_OAUTH_CLIENT_ID || !env.CLOUDFLARE_OAUTH_REDIRECT_URI) return json({ error: 'Cloudflare OAuth is not configured' }, 503)
+  const { cloudflare } = await resolveOauthSettings(env)
+  if (!cloudflare) return json({ error: 'Cloudflare OAuth is not configured' }, 503)
   const state = crypto.randomUUID() + crypto.randomUUID()
   await env.DB.prepare('INSERT INTO cloudflare_oauth_states (state_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)').bind(await digest(state), user.id, new Date(Date.now() + 10 * 60 * 1000).toISOString(), new Date().toISOString()).run()
   const authorizeUrl = new URL('https://dash.cloudflare.com/oauth2/auth')
-  authorizeUrl.searchParams.set('client_id', env.CLOUDFLARE_OAUTH_CLIENT_ID)
-  authorizeUrl.searchParams.set('redirect_uri', env.CLOUDFLARE_OAUTH_REDIRECT_URI)
+  authorizeUrl.searchParams.set('client_id', cloudflare.clientId)
+  authorizeUrl.searchParams.set('redirect_uri', cloudflare.redirectUri)
   authorizeUrl.searchParams.set('response_type', 'code')
-  authorizeUrl.searchParams.set('scope', env.CLOUDFLARE_OAUTH_SCOPE ?? 'workers-platform.read workers-platform.write')
+  authorizeUrl.searchParams.set('scope', cloudflare.scope)
   authorizeUrl.searchParams.set('state', state)
   return new Response(null, { status: 302, headers: { location: authorizeUrl.toString(), 'referrer-policy': 'no-referrer' } })
 }

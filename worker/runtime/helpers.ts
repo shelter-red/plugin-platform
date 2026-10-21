@@ -42,6 +42,7 @@ export async function resetDatabase(): Promise<void> {
     testEnv.DB.prepare('DELETE FROM cloudflare_oauth_states'),
     testEnv.DB.prepare('DELETE FROM invites'),
     testEnv.DB.prepare('DELETE FROM smtp_settings'),
+    testEnv.DB.prepare('DELETE FROM oauth_settings'),
     testEnv.DB.prepare('DELETE FROM cloudflare_credentials'),
     testEnv.DB.prepare('DELETE FROM users'),
   ])

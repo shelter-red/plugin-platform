@@ -1,3 +1,4 @@
+import { resolveOauthSettings } from './oauth-settings'
 import type { AuthenticatedUser, Env } from './types'
 
 const SESSION_COOKIE = 'plugmesh_session'
@@ -24,8 +25,9 @@ export async function digest(value: string): Promise<string> {
   return [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
-export function isAllowlisted(env: Env, identity: { login: string; emails: string[] }): boolean {
-  const configured = (env.GITHUB_ALLOWLIST ?? '').split(',').map((value) => value.trim().toLowerCase()).filter(Boolean)
+export async function isAllowlisted(env: Env, identity: { login: string; emails: string[] }): Promise<boolean> {
+  const { github } = await resolveOauthSettings(env)
+  const configured = github?.allowlist ?? []
   return configured.includes(identity.login.toLowerCase()) || identity.emails.some((email) => configured.includes(email.toLowerCase()))
 }
 
@@ -63,11 +65,12 @@ export function redirectWithError(request: Request, message: string): Response {
 }
 
 export async function exchangeGithubCode(env: Env, code: string, fetchImpl: typeof fetch = fetch): Promise<{ login: string; emails: string[]; displayName: string; githubId: string } | null> {
-  if (!env.GITHUB_CLIENT_ID || !env.GITHUB_CLIENT_SECRET) return null
+  const { github } = await resolveOauthSettings(env)
+  if (!github) return null
   const tokenResponse = await fetchImpl('https://github.com/login/oauth/access_token', {
     method: 'POST',
     headers: { accept: 'application/json', 'content-type': 'application/json' },
-    body: JSON.stringify({ client_id: env.GITHUB_CLIENT_ID, client_secret: env.GITHUB_CLIENT_SECRET, code }),
+    body: JSON.stringify({ client_id: github.clientId, client_secret: github.clientSecret, code }),
   })
   if (!tokenResponse.ok) return null
   const tokenPayload = await tokenResponse.json() as { access_token?: string }
