@@ -45,8 +45,9 @@ test('公开入口在数百并发下的 HTTP、SSE 和 WebSocket 表现', async 
 
   const { server, target } = await preparePublicPlugin(baseURL!, api)
   try {
-    const usage = async () => (await (await api('/api/usage/local')).json()) as { activeConnections: number }
+    const usage = async () => (await (await api('/api/usage/local')).json()) as { activeConnections: number; requestCount: number }
     expect((await usage()).activeConnections).toBe(0)
+    const requestsBefore = (await usage()).requestCount
 
     const samples: number[] = []
     for (let round = 1; round <= rounds; round += 1) {
@@ -75,6 +76,11 @@ test('公开入口在数百并发下的 HTTP、SSE 和 WebSocket 表现', async 
     await expect.poll(async () => (await usage()).activeConnections, { timeout: 30_000 }).toBe(0)
 
     console.log(`WebSocket：${websocketConnections} 条连接同时驻留并逐条回显，关闭后活跃连接归零`)
+
+    const reserved = httpRequests * rounds + streamConnections + websocketConnections
+    const requestsAfter = (await usage()).requestCount
+    expect(requestsAfter - requestsBefore, '平台请求计数应覆盖本轮压测的每次公开请求与长连接升级').toBeGreaterThanOrEqual(reserved)
+    console.log(`用量计数：本轮新增 ${requestsAfter - requestsBefore} 次请求记录（预期至少 ${reserved}）`)
   } finally {
     await server.stop()
   }
