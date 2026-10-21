@@ -4,6 +4,7 @@ const overview = { onlineServers: 2, enabledPlugins: 3, domains: 1 }
 
 const platformSettings = {
   maintenance: false,
+  pluginDomainSuffix: '.plugins.example.com',
   quotas: { requests: 1_000_000, activeConnections: 200, r2Bytes: 1_073_741_824, r2Objects: 1_000, d1Queries: 500_000, kvOperations: 100_000, durableObjectRequests: 500_000 },
 }
 
@@ -41,6 +42,7 @@ type WorkerMock = {
   domainRequests: { pluginInstanceId: string; prefix: string }[]
   commandRequests: string[]
   oauthUpdates: unknown[]
+  platformUpdates: unknown[]
 }
 
 async function mockWorker(page: Page): Promise<WorkerMock> {
@@ -61,6 +63,7 @@ async function mockWorker(page: Page): Promise<WorkerMock> {
     domainRequests: [],
     commandRequests: [],
     oauthUpdates: [],
+    platformUpdates: [],
   }
 
   await page.route('**/api/**', (route) => handleApi(route, state, logsGate))
@@ -111,6 +114,11 @@ async function handleApi(route: Route, state: WorkerMock, logsGate: Promise<void
       } })
     }
     return route.fulfill({ json: oauthSettings })
+  }
+  if (pathname === '/api/settings/platform' && method === 'PUT') {
+    const body = route.request().postDataJSON() as typeof platformSettings
+    state.platformUpdates.push(body)
+    return route.fulfill({ json: { ...platformSettings, ...body, maintenance: state.maintenance } })
   }
   if (pathname === '/api/access-logs') {
     await logsGate
@@ -178,6 +186,21 @@ test('管理端在后台保存 OAuth 配置且不回显密钥', async ({ page })
   expect(worker.oauthUpdates).toEqual([{ github: { clientId: 'mock-github-client-new', clientSecret: 'mock-secret', redirectUri: 'https://console.example.test/auth/github/callback', allowlist: 'admin' } }])
   await expect(panel.getByLabel('Client Secret').first()).toHaveValue('')
   await expect(panel).toContainText('后台配置')
+})
+
+test('管理端在后台保存插件域名后缀', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  const worker = await mockWorker(page)
+  await page.goto('/')
+  await page.getByRole('button', { name: '系统设置', exact: true }).click()
+  await page.getByRole('button', { name: '维护、域名与配额' }).click()
+  const panel = page.locator('#settings-maintenance')
+  await expect(panel.getByLabel('插件域名后缀')).toHaveValue('.plugins.example.com')
+  await panel.getByLabel('插件域名后缀').fill('plugins.example.net')
+  await panel.getByRole('button', { name: '保存域名后缀' }).click()
+  await expect(page.getByText('插件域名后缀已保存')).toBeVisible()
+  expect(worker.platformUpdates).toHaveLength(1)
+  expect(worker.platformUpdates[0]).toMatchObject({ pluginDomainSuffix: 'plugins.example.net' })
 })
 
 test('管理端总览显示平台维护状态', async ({ page }) => {

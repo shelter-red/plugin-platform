@@ -318,7 +318,7 @@ export default {
     'smtp.test.failed': 'SMTP test email failed',
   },
   settings: {
-    nav: { invites: 'Users & invites', oauth: 'Login & authorization', smtp: 'Email SMTP', maintenance: 'Maintenance & quotas' },
+    nav: { invites: 'Users & invites', oauth: 'Login & authorization', smtp: 'Email SMTP', maintenance: 'Maintenance, domains & quotas' },
     cloudflare: {
       title: 'Cloudflare authorization',
       description: 'The platform account manages Worker, D1, R2 and Durable Object resources.',
@@ -390,6 +390,15 @@ export default {
       resume: 'Platform resumed operation',
       updateFailed: 'Could not update maintenance state',
       notConnected: 'The Worker API is not connected; platform configuration will not be changed',
+    },
+    domainSuffix: {
+      label: 'Plugin domain suffix',
+      hint: 'Configure once here; new plugin domains use this suffix without redeploying.',
+      save: 'Save domain suffix',
+      saved: 'Plugin domain suffix saved',
+      saveFailed: 'Could not save the plugin domain suffix',
+      invalid: 'Enter a valid domain suffix, such as plugins.example.com',
+      notConnected: 'The Worker API is not connected; the domain suffix will not be saved',
     },
     quotas: {
       requests: 'Requests / 24h',

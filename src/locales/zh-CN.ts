@@ -318,7 +318,7 @@ export default {
     'smtp.test.failed': 'SMTP 测试邮件发送失败',
   },
   settings: {
-    nav: { invites: '用户与邀请', oauth: '登录与授权', smtp: '邮件 SMTP', maintenance: '维护与配额' },
+    nav: { invites: '用户与邀请', oauth: '登录与授权', smtp: '邮件 SMTP', maintenance: '维护、域名与配额' },
     cloudflare: {
       title: 'Cloudflare 授权',
       description: '平台账号统一管理 Worker、D1、R2 和 Durable Object 资源。',
@@ -390,6 +390,15 @@ export default {
       resume: '平台已恢复运行',
       updateFailed: '维护状态更新失败',
       notConnected: 'Worker API 未连接，不会修改平台配置',
+    },
+    domainSuffix: {
+      label: '插件域名后缀',
+      hint: '只在这里配置一次；新增插件域名会使用该后缀，无需重新部署。',
+      save: '保存域名后缀',
+      saved: '插件域名后缀已保存',
+      saveFailed: '插件域名后缀保存失败',
+      invalid: '请输入有效的域名后缀，例如 plugins.example.com',
+      notConnected: 'Worker API 未连接，不会保存域名后缀',
     },
     quotas: {
       requests: '请求数 / 24 小时',

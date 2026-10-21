@@ -187,6 +187,7 @@ export interface UsageSnapshot {
 
 export interface PlatformSettings {
   maintenance: boolean
+  pluginDomainSuffix: string
   quotas: {
     requests: number
     activeConnections: number
