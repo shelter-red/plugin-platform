@@ -72,9 +72,12 @@ PLUGMESH_REAL_STACK_URL=http://127.0.0.1:18888 npm run ui:real-stack
 - 插件服务器、插件实例和公开域名页面显示上面写入的真实记录；
 - 在系统设置中创建 GitHub 邀请后返回邀请链接，并在列表中读到该记录；
 - 非法 GitHub 用户名提交后显示服务端校验错误；
-- 打开“绑定插件服务器”弹窗后从 `/api/registration-codes` 取得一次性注册码。
+- 打开“绑定插件服务器”弹窗后从 `/api/registration-codes` 取得一次性注册码；
+- 第三条用例用一次性注册码启动真实 `plugmesh-server`，在管理端加载并启用 `sample.plugin`、分配以 `console-` 开头的唯一域名，再从该域名请求插件得到 `200` 和 `ok`。
 
-期望结果：`2 passed`。它验证的是管理端到真实 Worker/D1 的链路，不依赖已部署 Cloudflare。
+第三条用例要求已构建 `native-server/build/plugmesh-server`、`native-server/build/plugins` 与 `native-ui/dist`。它自行完成注册、启动和退出清理：每次运行生成新的服务器名与域名前缀，结束后向子进程发送 `SIGTERM` 并删除临时凭据目录，因此可以在同一份 D1 上重复执行（历史服务器与域名记录会累积，不影响断言）。
+
+期望结果：`3 passed`。它验证的是管理端到真实 Worker/D1 与真实 C++ 服务器的链路，不依赖已部署 Cloudflare。
 
 ## 注册并启动本地服务器
 
