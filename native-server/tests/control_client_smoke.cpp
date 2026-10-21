@@ -74,7 +74,7 @@ int main(int argc, char** argv) {
         stale.timestamp = "2000-01-01T00:00:00.000Z";
         auto health = plugmesh::make_control_frame("plugin.health", "server-1", plugmesh::Json::object(), "sample.plugin");
         health.request_id = "health-1";
-        auto request = plugmesh::make_control_frame("request.open", "server-1", {{"method", "GET"}, {"path", "/health"}, {"headers", plugmesh::Json::object()}, {"body", ""}, {"bodyEncoding", "base64"}, {"mode", "http"}}, "sample.plugin");
+        auto request = plugmesh::make_control_frame("request.open", "server-1", {{"method", "GET"}, {"path", "/cookie"}, {"headers", plugmesh::Json::object()}, {"body", ""}, {"bodyEncoding", "base64"}, {"mode", "http"}}, "sample.plugin");
         request.request_id = "http-1";
         websocketpp::lib::error_code send_error;
         server.send(handle, plugmesh::serialize_control_frame(stale), websocketpp::frame::opcode::text, send_error);
@@ -96,9 +96,11 @@ int main(int argc, char** argv) {
       std::lock_guard lock(mutex);
       http_frames.push_back(frame.type);
       if (frame.type == "request.open") {
-        http_payload_valid = frame.payload.value("status", 0) == 200;
+        const auto headers = frame.payload.value("headers", plugmesh::Json::object());
+        const auto cookies = headers.value("set-cookie", plugmesh::Json::array());
+        http_payload_valid = frame.payload.value("status", 0) == 200 && cookies.is_array() && cookies.size() == 2 && cookies[0] == "plugmesh_e2e=1; Path=/" && cookies[1] == "plugmesh_second=2; Path=/";
       } else if (frame.type == "request.chunk") {
-        http_payload_valid = http_payload_valid && websocketpp::base64_decode(frame.payload.value("data", "")) == "ok";
+        http_payload_valid = http_payload_valid && websocketpp::base64_decode(frame.payload.value("data", "")) == "cookie-set";
       } else if (frame.type == "request.close") {
         auto request = plugmesh::make_control_frame("stream.open", "server-1", {{"streamId", "sse-1"}, {"method", "GET"}, {"path", "/events"}, {"headers", plugmesh::Json::object()}, {"body", ""}, {"bodyEncoding", "base64"}}, "sample.plugin");
         request.request_id = "sse-1";

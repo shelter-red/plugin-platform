@@ -30,9 +30,9 @@ int health_plugin(plugmesh_http_response* response) {
 int handle_http(const plugmesh_http_request* request, plugmesh_http_response* response) {
   static const uint8_t cookie_body[] = "cookie-set";
   if (request && request->path) {
-    // /cookie 返回 Set-Cookie，供真实浏览器验收确认 Worker 原样透传响应头。
+    // /cookie 返回多条 Set-Cookie，供真实浏览器验收确认 Worker 原样透传重复响应头。
     if (std::strcmp(request->path, "/cookie") == 0) {
-      static const char headers[] = "{\"content-type\":\"text/plain; charset=utf-8\",\"set-cookie\":\"plugmesh_e2e=1; Path=/\"}";
+      static const char headers[] = "{\"content-type\":\"text/plain; charset=utf-8\",\"set-cookie\":[\"plugmesh_e2e=1; Path=/\",\"plugmesh_second=2; Path=/\"]}";
       response->status = 200;
       response->headers_json = headers;
       response->body = {cookie_body, sizeof(cookie_body) - 1};

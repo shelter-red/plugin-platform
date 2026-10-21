@@ -44,14 +44,14 @@ test('真实 Durable Object 转发 Cookie 与二进制请求/响应', { timeout:
 
   const responseBytes = new Uint8Array([255, 254, 0, 42])
   const requestId = frame.requestId
-  sendFrame(socket, 'request.open', { status: 206, headers: { 'content-type': 'application/octet-stream', 'set-cookie': 'session=rotated; Path=/; HttpOnly; SameSite=Lax' } }, requestId)
+  sendFrame(socket, 'request.open', { status: 206, headers: { 'content-type': 'application/octet-stream', 'set-cookie': ['session=rotated; Path=/; HttpOnly; SameSite=Lax', 'theme=light; Path=/; SameSite=Lax'] } }, requestId)
   sendFrame(socket, 'request.chunk', { data: btoa(String.fromCharCode(...responseBytes)), encoding: 'base64' }, requestId)
   sendFrame(socket, 'request.close', {}, requestId)
 
   const response = await responsePromise
   expect(response.status).toBe(206)
   expect(response.headers.get('content-type')).toBe('application/octet-stream')
-  expect(response.headers.get('set-cookie')).toBe('session=rotated; Path=/; HttpOnly; SameSite=Lax')
+  expect(response.headers.getSetCookie()).toEqual(['session=rotated; Path=/; HttpOnly; SameSite=Lax', 'theme=light; Path=/; SameSite=Lax'])
   expect(new Uint8Array(await response.arrayBuffer())).toEqual(responseBytes)
   socket.close(1000, 'test complete')
 })
