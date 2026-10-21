@@ -21,5 +21,6 @@ export default defineConfig(async () => ({
   test: {
     include: ['worker/runtime/**/*.test.ts'],
     setupFiles: ['worker/runtime/setup.ts'],
+    globalSetup: ['worker/runtime/smtp-sink.setup.ts'],
   },
 }))

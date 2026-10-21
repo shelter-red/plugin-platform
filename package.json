@@ -57,6 +57,9 @@
     "@playwright/test": "^1.55.1",
     "@types/react": "latest",
     "@types/react-dom": "latest",
+    "@types/smtp-server": "^3.5.13",
+    "mailparser": "^3.10.0",
+    "smtp-server": "^3.20.2",
     "typescript": "latest",
     "vitest": "^4.1.0",
     "wrangler": "latest"

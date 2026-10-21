@@ -2,6 +2,7 @@ import { SELF } from 'cloudflare:test'
 import { afterEach, beforeEach, expect, test } from 'vitest'
 import { defaultPlatformSettings, setPlatformSettingsCache } from '../src/usage'
 import { hashToken, openControl, resetDatabase, seedServer, testEnv } from './helpers'
+import { smtpSinkSettings } from './smtp-sink.config'
 
 const ADMIN_TOKEN = 'smtp-admin-session'
 const MEMBER_TOKEN = 'smtp-member-session'
@@ -144,4 +145,53 @@ test('SMTP 不可达时邀请仍然创建并记录邮件失败审计', { timeout
   expect(failed.attempts).toBe(3)
   expect(failed.to).toBe('invitee@example.com')
   expect(audit.results.some((row) => row.detail_json.includes(PASSWORD))).toBe(false)
+})
+
+test('SMTP 测试发送经真实 SMTP 会话投递', { timeout: 20_000 }, async () => {
+  expect((await api('/api/settings/smtp', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify(smtpSinkSettings) })).status).toBe(200)
+  const sent = await api('/api/settings/smtp/test', ADMIN_TOKEN, { method: 'POST', body: JSON.stringify({ to: 'ops@example.com' }) })
+  expect(sent.status).toBe(200)
+  expect(await sent.json()).toEqual({ sent: true, attempts: 1 })
+
+  const audit = await testEnv.DB.prepare("SELECT detail_json FROM audit_log WHERE action = 'smtp.test.sent'").all<{ detail_json: string }>()
+  expect(audit.results).toHaveLength(1)
+  expect(JSON.parse(audit.results[0]!.detail_json)).toEqual({ to: 'ops@example.com', attempts: 1 })
+})
+
+test('SMTP 凭据被服务器拒绝时返回 502 且不泄漏密码', { timeout: 20_000 }, async () => {
+  await api('/api/settings/smtp', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify({ ...smtpSinkSettings, password: 'wrong-sink-password' }) })
+  const failed = await api('/api/settings/smtp/test', ADMIN_TOKEN, { method: 'POST', body: JSON.stringify({ to: 'ops@example.com' }) })
+  expect(failed.status).toBe(502)
+  expect((await failed.json() as { attempts: number }).attempts).toBe(3)
+  const audit = await testEnv.DB.prepare("SELECT detail_json FROM audit_log WHERE action LIKE 'smtp.test.%'").all<{ detail_json: string }>()
+  expect(audit.results).toHaveLength(1)
+  expect(audit.results[0]!.detail_json).not.toContain('wrong-sink-password')
+})
+
+test('邀请邮件经真实 SMTP 会话投递', { timeout: 20_000 }, async () => {
+  await api('/api/settings/smtp', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify(smtpSinkSettings) })
+  const created = await api('/api/invites', ADMIN_TOKEN, { method: 'POST', body: JSON.stringify({ email: 'invitee@example.com' }) })
+  expect(created.status).toBe(201)
+  const body = await created.json() as { emailSent: boolean | null }
+  expect(body.emailSent).toBe(true)
+})
+
+test('维护模式通知经真实 SMTP 会话投递', { timeout: 30_000 }, async () => {
+  await api('/api/settings/smtp', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify(smtpSinkSettings) })
+  const { socket } = await openControl()
+  const platform = { maintenance: false, quotas: { ...defaultPlatformSettings.quotas, requests: 0 } }
+  await testEnv.DB.prepare('INSERT INTO platform_settings (key, value_json, updated_at) VALUES (?, ?, ?)').bind('platform', JSON.stringify(platform), new Date().toISOString()).run()
+  setPlatformSettingsCache(platform)
+
+  expect((await SELF.fetch(`https://${hostname}/`)).status).toBe(503)
+
+  await expect.poll(async () => {
+    const row = await testEnv.DB.prepare("SELECT COUNT(*) AS count FROM audit_log WHERE action LIKE 'maintenance.email.%'").first<{ count: number }>()
+    return row?.count ?? 0
+  }, { timeout: 10_000 }).toBe(1)
+  const audit = await testEnv.DB.prepare("SELECT action, detail_json FROM audit_log WHERE action LIKE 'maintenance.email.%'").first<{ action: string; detail_json: string }>()
+  expect(audit?.action).toBe('maintenance.email.sent')
+  expect(JSON.parse(audit?.detail_json ?? '{}')).toMatchObject({ reason: 'request quota reached' })
+  socket.close(1000, 'test complete')
+  setPlatformSettingsCache(defaultPlatformSettings)
 })

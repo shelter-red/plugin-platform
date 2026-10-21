@@ -27,7 +27,7 @@
 | R2 上传、一次性读取、过期和删除 | 本地已验证 | `blob-stream` 与 `durable-object-stream` smoke 覆盖流式消费、一次性读取和删除；`blob-expiry` smoke 覆盖过期对象清理、24 小时陈旧对象清理、重试三次、删除失败后回滚占用和用量释放。`worker:runtime-test` 用 workerd + 本地 R2 验证：`POST /api/blobs` 必须以 `content-length` 声明长度（缺失返回 411，超 50 MiB 返回 413），上传后返回 `/blobs/<token>`，首次 GET 返回原始内容并删除对象、清空 `temp_objects`、归还 `r2_bytes`/`r2_objects`，重复 GET 返回 410；R2 配额为 0 时上传返回 503 且不残留对象；Durable Object 的定长流与缺长度回退两条文件流路径也会在读取后清理。真实 R2 一致性与费用仍未验证。 |
 | D1/KV 路由缓存读穿和配置写穿 | 部分实现 | Host 路由内存缓存和更新失效逻辑已接入；`route-cache` smoke 覆盖读穿、负缓存、主动失效、5 秒 TTL 和 256 条上限淘汰；`worker:runtime-test` 用真实 D1 验证 Host 路由解析与未启用插件的维护页，并验证缓存命中期间直接改 D1 域名状态仍按旧路由转发、插件停用命令成功后立即失效并返回 503 不可用页。真实多 isolate 缓存传播未验证。按设计不引入 KV 业务缓存：KV 最小过期粒度为 60 秒且跨地域最终一致，域名撤销或转移后可能继续命中旧路由，当前用 5 秒 isolate 缓存加 D1 回源保证正确性。 |
 | 总配额触发全局维护模式 | 本地已验证 | `worker:runtime-test` 在真实 D1 上把请求配额设为 1：首个公开请求经 Durable Object 正常返回 200，第二个请求因配额耗尽返回 503 维护页并把 `platform_settings` 的 `maintenance` 置为 true，写入 `maintenance.email.skipped` 审计（原因 `request quota reached`），后续请求直接走维护页；`worker:runtime-test` 另外用注入的 GraphQL 响应把 D1 查询配额设为 10，验证 Analytics 汇总达到阈值后进入维护模式并记录 `maintenance.email.skipped`（原因 `D1 query quota reached`）。真实 Cloudflare 账号的 Analytics 阈值触发仍未验证。 |
-| SMTP 测试发送、维护通知、失败重试和审计 | 本地已验证 | `maintenance-email` smoke 注入发送器验证第三次成功、最终失败、审计和敏感字段不落日志。`worker:runtime-test` 用真实 D1 验证管理 API：SMTP 设置加密落库（密文不含密码与发件地址）、读取不回显密码、成员 403、非法端口 400、删除后 `configured=false`；测试发送经 `worker-mailer` 真实连接不可达服务器重试三次后返回 502 并写入脱敏 `smtp.test.failed` 审计；请求配额耗尽触发维护模式时向超级管理员发送通知，失败重试三次后记录 `maintenance.email.failed`；SMTP 不可达时创建邀请仍成功落库为 `pending`，响应 `emailSent=false`，`invite.email.failed` 重试三次且审计不含密码。真实 SMTP 服务器成功投递、退信和外部联通仍未验证。 |
+| SMTP 测试发送、维护通知、失败重试和审计 | 本地已验证 | `maintenance-email` smoke 注入发送器验证第三次成功、最终失败、审计和敏感字段不落日志。`worker:runtime-test` 用真实 D1 验证管理 API：SMTP 设置加密落库（密文不含密码与发件地址）、读取不回显密码、成员 403、非法端口 400、删除后 `configured=false`；测试发送经 `worker-mailer` 真实连接不可达服务器重试三次后返回 502 并写入脱敏 `smtp.test.failed` 审计；请求配额耗尽触发维护模式时向超级管理员发送通知，失败重试三次后记录 `maintenance.email.failed`；SMTP 不可达时创建邀请仍成功落库为 `pending`，响应 `emailSent=false`，`invite.email.failed` 重试三次且审计不含密码。`worker:runtime-test` 另外启动本地真实 SMTP 服务端（`smtp-server`，监听 `127.0.0.1`），`worker-mailer` 经真实 TCP/SMTP 会话完成 PLAIN 认证与投递；服务端用 `mailparser` 解析邮件并校验收件人、发件人与主题，不匹配时以 450 拒绝（已用错误主题反证接口返回 502）——覆盖测试邮件、邀请邮件（`emailSent=true`）和配额触发的维护通知（审计 `smtp.test.sent`/`maintenance.email.sent`），错误凭据三次失败后返回 502 且审计不含密码。公网 SMTP、STARTTLS/SMTPS、退信和外部联通仍未验证。 |
 | Cloudflare Analytics/GraphQL 缓存、权限错误和过期 | 模块已验证 | `cloudflare-usage` smoke；`worker:runtime-test` 直接调用 `cloudflareUsageApi` 并注入 GraphQL fetch：合并 D1 读写、KV 按 actionType 分类和 Durable Object 请求/CPU/存储用量，首次调用只发起两条 GraphQL 查询，第二次命中 `usage_cache` 且 TTL 五分钟、不再发起外部请求；把缓存 `expires_at` 置为过去后再次调用会重新发起两条 GraphQL 查询、返回 `cached=false` 并刷新 `updated_at`/`expires_at`；HTTP 403 与 GraphQL errors 返回 502 且不写缓存；账号 ID 缺失时跳过查询；成员访问 403。真实 token 刷新与真实 Cloudflare 账号查询未验证。 |
 | 30 天用量/访问日志和 180 天审计清理 | 本地已验证 | `scheduled-maintenance` smoke 覆盖保留时间边界；`worker:runtime-test` 在 workerd 中直接调用 scheduled 维护函数，用真实 D1 与本地 R2 验证：31 天前的访问日志、181 天前的审计删除而保留期内数据保留，过期邀请转 `expired`、过期会话 / OAuth state / Cloudflare OAuth state / 注册码删除，过期与 24 小时前已消费的临时对象连同 R2 对象删除并归还 `r2_bytes`/`r2_objects`，30 天前的用量快照清理并写入新快照。真实 Cron 触发时刻未验证。 |
 | Wrangler bundle 和资源绑定 | 本地已验证 | `wrangler deploy --dry-run` 通过；`wrangler-config` smoke 断言 `[assets]` 的 `directory`、`binding`、`not_found_handling` 和 `run_worker_first = true`，防止插件域名根路径被静态资源层截获。D1 ID 仍为占位符，没有生产部署。 |
@@ -79,14 +79,14 @@ PLUGMESH_REAL_STACK_URL=http://127.0.0.1:18888 npm run ui:real-stack
                                          3 passed（需先启动本地 wrangler dev 并写入验收数据；第三条用例自动注册并启动真实 C++ 服务器）
 npm run worker:typecheck
 npm run worker:smoke                     25 smoke checks passed
-npm run worker:runtime-test              44 passed（workerd + 真实 D1/Durable Object/R2 模拟）
+npm run worker:runtime-test              48 passed（workerd + 真实 D1/Durable Object/R2 模拟）
   # 本机 glibc 2.31，经 node:22-bookworm-slim 容器执行；glibc ≥ 2.35 可直接运行
 npx wrangler deploy --dry-run --config worker/wrangler.toml
 cmake --build native-server/build --parallel 2
 ctest --output-on-failure                 10/10 passed
 ```
 
-这些结果不代表真实 Cloudflare、GitHub、SMTP、Windows 或生产网络已联通。
+这些结果不代表真实 Cloudflare、GitHub、公网 SMTP（STARTTLS/SMTPS 与退信）、Windows 或生产网络已联通。
 
 ## 生产发布阻塞项
 
