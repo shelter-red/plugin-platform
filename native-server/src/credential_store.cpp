@@ -233,8 +233,24 @@ bool verify_local_ui_password(const std::string& password, const std::string& ve
 }
 
 bool system_credentials_available() {
-#if defined(_WIN32) || defined(__APPLE__)
+#if defined(_WIN32)
   return true;
+#elif defined(__APPLE__)
+  CFStringRef service = CFStringCreateWithCString(kCFAllocatorDefault, kSystemService, kCFStringEncodingUTF8);
+  CFStringRef account = CFStringCreateWithCString(kCFAllocatorDefault, kSystemAccount, kCFStringEncodingUTF8);
+  if (!service || !account) {
+    if (account) CFRelease(account);
+    if (service) CFRelease(service);
+    return false;
+  }
+  const void* keys[] = {kSecClass, kSecAttrService, kSecAttrAccount};
+  const void* values[] = {kSecClassGenericPassword, service, account};
+  CFDictionaryRef query = CFDictionaryCreate(kCFAllocatorDefault, keys, values, 3, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+  const auto status = query ? SecItemCopyMatching(query, nullptr) : errSecAllocate;
+  if (query) CFRelease(query);
+  CFRelease(account);
+  CFRelease(service);
+  return status == errSecSuccess || status == errSecItemNotFound;
 #else
   return false;
 #endif

@@ -40,7 +40,7 @@
 
 当 Worker 地址、服务器 ID 或访问令牌缺失时，`plugmesh-server` 不会直接退出，而是进入 setup mode 并等待 localhost 控制台提交一次性注册码。注册成功后当前进程继续启动控制连接；注册接口在正常运行态关闭。已绑定状态可以在本地控制台轮换访问令牌或撤销绑定；撤销完成后当前进程清空内存配置并重新打开 setup mode。CLI `--register` 仍作为无浏览器环境的备用入口。
 
-Windows 使用 Credential Manager、macOS 使用 Keychain 保存系统凭据；当前 Linux 构建未检测到 Secret Service 开发依赖，因此使用 OpenSSL AES-256-GCM 加密文件回退。文件回退的口令通过 PBKDF2-HMAC-SHA256 派生密钥，文件只保存加密 envelope，不保存明文 access token，Linux 下权限收紧为用户可读写。
+Windows 使用 Credential Manager、macOS 使用 Keychain 保存系统凭据。macOS 会先通过 `SecItemCopyMatching` 只读探测默认钥匙串；无钥匙串、锁定或无权访问时，首次绑定界面会要求填写凭据文件路径和口令，改用 OpenSSL AES-256-GCM 加密文件。当前 Linux 构建未检测到 Secret Service 开发依赖，因此直接使用同一套加密文件回退。文件回退的口令通过 PBKDF2-HMAC-SHA256 派生密钥，文件只保存加密 envelope，不保存明文 access token，POSIX 下权限收紧为用户可读写。
 
 凭据存储回归测试：
 
