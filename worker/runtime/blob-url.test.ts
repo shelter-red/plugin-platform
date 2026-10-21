@@ -54,7 +54,7 @@ test('一次上传返回短时链接，下载一次后删除对象并归还用�
 test('R2 配额耗尽时拒绝上传并清理已写入对象', { timeout: 20_000 }, async () => {
   await seedServer()
   await seedMemberSession()
-  const settings = { maintenance: false, quotas: { ...defaultPlatformSettings.quotas, r2Bytes: 0 } }
+  const settings = { ...defaultPlatformSettings, quotas: { ...defaultPlatformSettings.quotas, r2Bytes: 0 } }
   await testEnv.DB.prepare('INSERT INTO platform_settings (key, value_json, updated_at) VALUES (?, ?, ?)').bind('platform', JSON.stringify(settings), new Date().toISOString()).run()
   setPlatformSettingsCache(settings)
 

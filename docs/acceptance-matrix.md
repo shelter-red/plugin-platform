@@ -76,7 +76,7 @@
 
 ```text
 npm run build
-npm run ui:smoke                         21 passed（preview 8 + worker-mock 13）
+npm run ui:smoke                         22 passed（preview 8 + worker-mock 14）
 npm run native-ui:smoke                  5 passed
 npm run native-ui:smoke:wine -- /tmp/build-win
                                          5 passed（Wine 5.0，指向 Windows 交叉编译产物；默认目录为 native-server/build-win）

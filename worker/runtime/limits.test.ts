@@ -6,7 +6,7 @@ beforeEach(resetDatabase)
 afterEach(() => setPlatformSettingsCache(defaultPlatformSettings))
 
 async function storeSettings(quotas: Partial<typeof defaultPlatformSettings.quotas>): Promise<void> {
-  const settings = { maintenance: false, quotas: { ...defaultPlatformSettings.quotas, ...quotas } }
+  const settings = { ...defaultPlatformSettings, maintenance: false, quotas: { ...defaultPlatformSettings.quotas, ...quotas } }
   await testEnv.DB.prepare('INSERT INTO platform_settings (key, value_json, updated_at) VALUES (?, ?, ?)').bind('platform', JSON.stringify(settings), new Date().toISOString()).run()
   setPlatformSettingsCache(settings)
 }
@@ -67,7 +67,7 @@ test('活跃连接配额耗尽时拒绝新连接，关闭后释放额度', { tim
   await expect.poll(activeConnections, { timeout: 3_000 }).toBe(1)
 
   await testEnv.DB.prepare("UPDATE platform_settings SET value_json = json_set(value_json, '$.maintenance', 0), updated_at = ? WHERE key = ?").bind(new Date().toISOString(), 'platform').run()
-  setPlatformSettingsCache({ maintenance: false, quotas: { ...defaultPlatformSettings.quotas, activeConnections: 2 } })
+  setPlatformSettingsCache({ ...defaultPlatformSettings, maintenance: false, quotas: { ...defaultPlatformSettings.quotas, activeConnections: 2 } })
   const reconnected = await openPublicSocket(hostname, '/stream?client=fourth')
   expect(reconnected.status).toBe(101)
   reconnected.webSocket?.accept()

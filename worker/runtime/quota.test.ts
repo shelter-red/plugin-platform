@@ -7,7 +7,7 @@ beforeEach(resetDatabase)
 test('真实 D1 在公开请求配额耗尽后进入全局维护模式', { timeout: 20_000 }, async () => {
   const hostname = await seedServer()
   const { socket, channel } = await openControl()
-  const settings = { maintenance: false, quotas: { ...defaultPlatformSettings.quotas, requests: 1 } }
+  const settings = { ...defaultPlatformSettings, maintenance: false, quotas: { ...defaultPlatformSettings.quotas, requests: 1 } }
   await testEnv.DB.prepare('INSERT INTO platform_settings (key, value_json, updated_at) VALUES (?, ?, ?)').bind('platform', JSON.stringify(settings), new Date().toISOString()).run()
   setPlatformSettingsCache(settings)
 

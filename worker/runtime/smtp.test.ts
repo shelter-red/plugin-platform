@@ -107,7 +107,7 @@ test('SMTP 测试发送在不可达服务器上重试三次并记录脱敏审计
 test('配额触发维护模式时向管理员发送通知并记录失败重试', { timeout: 30_000 }, async () => {
   await api('/api/settings/smtp', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify(settings) })
   const { socket } = await openControl()
-  const platform = { maintenance: false, quotas: { ...defaultPlatformSettings.quotas, requests: 0 } }
+  const platform = { ...defaultPlatformSettings, maintenance: false, quotas: { ...defaultPlatformSettings.quotas, requests: 0 } }
   await testEnv.DB.prepare('INSERT INTO platform_settings (key, value_json, updated_at) VALUES (?, ?, ?)').bind('platform', JSON.stringify(platform), new Date().toISOString()).run()
   setPlatformSettingsCache(platform)
 
@@ -179,7 +179,7 @@ test('邀请邮件经真实 SMTP 会话投递', { timeout: 20_000 }, async () =>
 test('维护模式通知经真实 SMTP 会话投递', { timeout: 30_000 }, async () => {
   await api('/api/settings/smtp', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify(smtpSinkSettings) })
   const { socket } = await openControl()
-  const platform = { maintenance: false, quotas: { ...defaultPlatformSettings.quotas, requests: 0 } }
+  const platform = { ...defaultPlatformSettings, maintenance: false, quotas: { ...defaultPlatformSettings.quotas, requests: 0 } }
   await testEnv.DB.prepare('INSERT INTO platform_settings (key, value_json, updated_at) VALUES (?, ?, ?)').bind('platform', JSON.stringify(platform), new Date().toISOString()).run()
   setPlatformSettingsCache(platform)
 
