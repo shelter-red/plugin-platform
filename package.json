@@ -40,6 +40,7 @@
     "worker:typecheck": "tsc -p worker/tsconfig.json",
     "worker:runtime-test": "vitest run --config vitest.workers.config.ts",
     "worker:dev": "wrangler dev --config worker/wrangler.toml",
+    "deploy:worker": "bash scripts/deploy-worker.sh",
     "native-ui:smoke:wine": "bash native-ui/run-wine-smoke.sh",
     "stack:load": "playwright test --config playwright.load.config.ts",
     "stack:streams": "playwright test --config playwright.streams.config.ts",
