@@ -1,8 +1,17 @@
+#include <cstdint>
+#include <cstring>
+#include <string>
+#include <vector>
+
 #include "plugmesh/plugin_api.h"
 
 namespace {
 
 const plugmesh_host_api* host = nullptr;
+// /large 用于验收经 R2 中转的大文件路径：8 MiB 超过 Durable Object 的 1 MiB 内存缓冲阈值。
+constexpr uint64_t kLargeFileBytes = 8ull * 1024 * 1024;
+// 单帧上限 64 KiB，32 KiB 原始数据经 base64 后仍在限制内。
+constexpr uint64_t kLargeChunkBytes = 32ull * 1024;
 
 int start_plugin(const plugmesh_host_api* next_host) {
   host = next_host;
@@ -28,9 +37,22 @@ int handle_sse(const char* stream_id, const plugmesh_http_request*) {
   return host && host->stream_write ? host->stream_write(stream_id, event, sizeof(event) - 1, 1) : -1;
 }
 
-int handle_file(const char* stream_id, const plugmesh_http_request*) {
+int stream_large_file(const char* stream_id) {
+  const std::string headers = "{\"content-type\":\"application/octet-stream\",\"content-length\":\"" + std::to_string(kLargeFileBytes) + "\"}";
+  if (host->stream_open(stream_id, 200, headers.c_str()) != 0) return -1;
+  std::vector<uint8_t> chunk(kLargeChunkBytes);
+  for (uint64_t offset = 0; offset < kLargeFileBytes; offset += kLargeChunkBytes) {
+    for (uint64_t index = 0; index < kLargeChunkBytes; ++index) chunk[index] = static_cast<uint8_t>((offset + index) % 251);
+    const int finished = offset + kLargeChunkBytes >= kLargeFileBytes ? 1 : 0;
+    if (host->stream_write(stream_id, chunk.data(), kLargeChunkBytes, finished) != 0) return -1;
+  }
+  return 0;
+}
+
+int handle_file(const char* stream_id, const plugmesh_http_request* request) {
   static const uint8_t body[] = "sample-file-stream";
   if (!host || !host->stream_open || !host->stream_write) return -1;
+  if (request && request->path && std::strcmp(request->path, "/large") == 0) return stream_large_file(stream_id);
   if (host->stream_open(stream_id, 200, "{\"content-type\":\"application/octet-stream\"}") != 0) return -1;
   return host->stream_write(stream_id, body, sizeof(body) - 1, 1);
 }

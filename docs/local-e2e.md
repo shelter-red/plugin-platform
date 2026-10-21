@@ -144,6 +144,7 @@ curl -s -X POST -H 'Cookie: plugmesh_session=e2e-session-token' -H 'content-type
 | SSE | `curl -N -H 'Host: ...' -H 'accept: text/event-stream' http://127.0.0.1:18888/events` | `data: sample-plugin` |
 | WebSocket 回显 | 见下方脚本 | 收到与服务端发送一致的文本帧 |
 | 文件流 | `curl -H 'Host: ...' -H 'x-plugmesh-file-stream: true' http://127.0.0.1:18888/file` | `sample-file-stream`，`content-type: application/octet-stream` |
+| 大文件流（R2 中转） | `curl -H 'Host: ...' -H 'x-plugmesh-file-stream: true' http://127.0.0.1:18888/large -o /tmp/large.bin` | 8 MiB，`content-type: application/octet-stream`；超过 1 MiB 阈值，经 R2 定长流中转，读取后 `r2Objects`/`r2Bytes` 归零 |
 | 未知插件域名 | `curl -H 'Host: unknown.plugins.example.com' http://127.0.0.1:18888/` | 404 `Plugin domain not found` |
 | 控制台静态资源 | `curl -H 'Host: console.example.com' http://127.0.0.1:18888/` | 控制台 HTML，`/assets/*.js` 返回 JavaScript |
 | 服务器离线 | 停止 `plugmesh-server` 后请求插件域名 | 503 `插件暂时不可用`，服务器转 `offline` |
@@ -229,11 +230,12 @@ npm run stack:streams
 
 - SSE 请求返回 200 且 `content-type` 含 `text/event-stream`，首帧为 `data: sample-plugin`；
 - 公开 WebSocket 经 Worker → Durable Object → C++ → 插件回显 `hello-ws`，关闭后 `activeConnections` 归零；
-- 带 `x-plugmesh-file-stream: true` 的请求返回 200，`content-type: application/octet-stream`，正文恰好 18 字节 `sample-file-stream`；
-- 文件流结束后 `/api/usage/local` 的 `r2Objects`/`r2Bytes` 回到 0（用例开始前同样要求为 0，避免把历史残留当作通过）；
-- `/api/access-logs` 记录了该域名的 `/file` 200 请求。
+- 18 字节小文件（`/file`）：200、`content-type: application/octet-stream`、正文 `sample-file-stream`；该尺寸低于 Durable Object 的 1 MiB 缓冲阈值，直接走内存返回，不会产生 R2 对象；
+- 8 MiB 大文件（`/large`，超过阈值）：拿到响应头后先暂停读取，此时断言 `/api/usage/local` 的 `r2Objects=1` 且 `r2Bytes ≥ 8388608`，证明对象确实在 R2 中中转；恢复读取后校验 8388608 字节且每个字节等于 `下标 % 251`；
+- 读取完成后 `r2Objects`/`r2Bytes` 回到 0（用例开始前同样要求为 0，避免把历史残留当作通过）；
+- `/api/access-logs` 记录了该域名的 `/file` 与 `/large` 200 请求。
 
-2026-10-21 实测：`1 passed (1.1s)`；结束后 `r2Objects=0`、`r2Bytes=0`、`activeConnections=0`。边界同上：单机 miniflare 单 isolate，未验证真实公网长连接。
+2026-10-21 实测：`1 passed (3.0s)`；结束后 `r2Objects=0`、`r2Bytes=0`、`activeConnections=0`。边界同上：单机 miniflare 单 isolate，未验证真实公网长连接。
 
 ## 配额耗尽与维护模式验证
 

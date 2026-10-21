@@ -41,9 +41,31 @@ export function getPublic(target: Target): Promise<PublicResponse> {
   return readPublic(target)
 }
 
-/** 带 `x-plugmesh-file-stream: true` 的公开请求，用于验证经 R2 中转的文件流路径。 */
+/** 带 `x-plugmesh-file-stream: true` 的公开请求；小文件走内存缓冲，超过 1 MiB 才经 R2 中转。 */
 export function getFileStream(target: Target, path = '/'): Promise<PublicResponse> {
   return readPublic(target, { path, headers: { 'x-plugmesh-file-stream': 'true' } })
+}
+
+/** 发起文件流请求，拿到响应头后保持暂停，便于在此刻观察 R2 中转用量。 */
+export function openFileStream(target: Target, path = '/'): Promise<http.IncomingMessage> {
+  const request = publicRequest(target, { path, headers: { 'x-plugmesh-file-stream': 'true' } })
+  const responsePromise = once(request, 'response') as Promise<[http.IncomingMessage]>
+  request.end()
+  return responsePromise.then(([response]) => {
+    if (response.statusCode !== 200) throw new Error(`文件流状态码 ${response.statusCode}`)
+    response.pause()
+    return response
+  })
+}
+
+export function readBody(response: http.IncomingMessage): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = []
+    response.on('data', (chunk: Buffer) => chunks.push(chunk))
+    response.on('end', () => resolve(Buffer.concat(chunks)))
+    response.on('error', reject)
+    response.resume()
+  })
 }
 
 export async function openStream(target: Target) {
