@@ -97,6 +97,9 @@ setup_token=$(cat "$TMP/state/secret_SETUP_TOKEN")
 [[ $(stat -c %a "$TMP/.wrangler/plugmesh-setup-token") == 600 ]]
 [[ "$first_output" != *"$session_secret"* ]]
 [[ "$first_output" != *"$setup_token"* ]]
+[[ "$first_output" == *'在初始化页填写 GitHub OAuth App 的 Client ID、Client Secret 和管理员白名单'* ]]
+[[ "$first_output" == *'回调地址由当前访问域名自动生成，无需手填'* ]]
+[[ "$first_output" != *'Client ID、Client Secret、回调地址'* ]]
 grep -q 'test-database-id' "$TMP/wrangler.toml"
 [[ $(grep -c '^database_id = ' "$TMP/wrangler.toml") -eq 1 ]]
 ! grep -Eq 'GITHUB|CLOUDFLARE_OAUTH|SMTP' "$TMP/state/puts.log"

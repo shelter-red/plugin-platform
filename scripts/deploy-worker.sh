@@ -228,7 +228,8 @@ cat <<'NEXT_STEPS'
   2. 初始化令牌来源：
      - 本地 / GitHub Actions：.wrangler/plugmesh-setup-token（Actions 还会写入 Job Summary）
      - Cloudflare Workers Builds：本轮构建日志中的“初始化令牌”一行
-  3. 在初始化页填写 GitHub OAuth App 的 Client ID、Client Secret、回调地址和管理员白名单。
+  3. 在初始化页填写 GitHub OAuth App 的 Client ID、Client Secret 和管理员白名单。
+     回调地址由当前访问域名自动生成，无需手填。
   4. 完成 GitHub 登录后，在管理后台配置 Cloudflare OAuth、SMTP、配额和插件域名后缀。
   5. 如需自定义插件域名，再在 Cloudflare 配置一次 DNS / Worker Route，并在后台保存域名后缀。
 
