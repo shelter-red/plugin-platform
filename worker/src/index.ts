@@ -822,7 +822,7 @@ function redactSmtpError(message: string, password: string): string {
   return message.replaceAll(password, '[REDACTED]').slice(0, 256)
 }
 
-export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser): Promise<Response> {
+export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser, fetchImpl: typeof fetch = fetch): Promise<Response> {
   if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
   const cached = await env.DB.prepare('SELECT value_json, expires_at, updated_at FROM usage_cache WHERE key = ? AND expires_at > ?').bind('cloudflare:workers', new Date().toISOString()).first<{ value_json: string; expires_at: string; updated_at: string }>()
   if (cached) {
@@ -848,7 +848,7 @@ export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser): Pro
   const accountId = credential.accountId
   const end = new Date()
   const start = new Date(end.getTime() - 24 * 60 * 60 * 1000)
-  const analyticsRequest = (accessToken: string) => fetch('https://api.cloudflare.com/client/v4/graphql', {
+  const analyticsRequest = (accessToken: string) => fetchImpl('https://api.cloudflare.com/client/v4/graphql', {
     method: 'POST',
     headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
     body: JSON.stringify({ query: `query Usage($accountTag: String!, $start: Time!, $end: Time!) { viewer { accounts(filter: { accountTag: $accountTag }) { workersInvocationsAdaptive(limit: 1, filter: { datetime_geq: $start, datetime_leq: $end }) { sum { requests } } } } }`, variables: { accountTag: accountId, start: start.toISOString(), end: end.toISOString() } }),
@@ -868,7 +868,7 @@ export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser): Pro
   const payload = await response.json() as { errors?: unknown[]; data?: { viewer?: { accounts?: Array<{ workersInvocationsAdaptive?: Array<{ sum?: { requests?: number } }> }> } } }
   if (payload.errors?.length) return json({ error: 'Cloudflare Analytics returned errors', details: payload.errors }, 502)
   const requests = payload.data?.viewer?.accounts?.[0]?.workersInvocationsAdaptive?.[0]?.sum?.requests ?? 0
-  const resourceAnalyticsRequest = (accessToken: string) => fetch('https://api.cloudflare.com/client/v4/graphql', {
+  const resourceAnalyticsRequest = (accessToken: string) => fetchImpl('https://api.cloudflare.com/client/v4/graphql', {
     method: 'POST',
     headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
     body: JSON.stringify({ query: `query ResourceUsage($accountTag: String!, $start: Date, $end: Date) { viewer { accounts(filter: { accountTag: $accountTag }) { d1AnalyticsAdaptiveGroups(limit: 10000, filter: { date_geq: $start, date_leq: $end }) { sum { readQueries writeQueries rowsRead rowsWritten } } kvOperationsAdaptiveGroups(limit: 10000, filter: { date_geq: $start, date_leq: $end }) { sum { requests } dimensions { actionType } } durableObjectsInvocationsAdaptiveGroups(limit: 1000, filter: { date_geq: $start, date_leq: $end }) { sum { requests } } durableObjectsPeriodicGroups(limit: 1000, filter: { date_geq: $start, date_leq: $end }) { sum { cpuTime } } durableObjectsStorageGroups(limit: 1000, filter: { date_geq: $start, date_leq: $end }) { max { storedBytes } } } } }`, variables: { accountTag: accountId, start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) } }),
