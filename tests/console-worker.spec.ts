@@ -165,6 +165,8 @@ test('管理端显示 Worker 实时数据并在刷新后提示', async ({ page }
   await expect(page.getByText('平台运行中')).toBeVisible()
   await expect(page.getByText(/^官方 Analytics · 未连接$/)).toBeVisible()
   await expect(page.getByText(/^本地计数 · /)).toBeVisible()
+  const requestProgress = page.getByRole('progressbar', { name: '平台请求' })
+  expect(await requestProgress.evaluate((element) => Number.parseFloat((element.firstElementChild as HTMLElement).style.width))).toBeGreaterThan(0)
 
   await page.getByRole('button', { name: '刷新状态' }).click()
   await expect(page.locator('.toast')).toHaveText('平台数据已刷新')
