@@ -12,8 +12,8 @@
 - D1 表结构：用户、服务器、插件实例、域名和审计日志。
 - 控制 token 使用 SHA-256 摘要后与 D1 字段比对。
 - SMTP 配置使用 `worker-mailer` 开源依赖，支持密文保存、脱敏读取和管理员测试发送。
-- Cloudflare Analytics GraphQL 查询按 5 分钟写入 D1 缓存，权限错误和未配置状态会明确返回。
-- 平台全局配额计数：请求窗口、活跃连接、R2 对象和字节用量；达到阈值后自动进入维护模式。
+- Cloudflare Analytics GraphQL 查询按 5 分钟写入 D1 缓存，权限错误和未配置状态会明确返回；D1、KV 和 Durable Object 官方用量也参与维护判定。
+- 平台全局配额计数：请求窗口、活跃连接、R2 对象和字节用量；官方 Analytics 的 D1 查询、KV 操作和 Durable Object 请求达到阈值后同样自动进入维护模式。
 - 维护模式支持全局暂停流量、停止新增域名/插件操作，并通过已配置 SMTP 向超级管理员发送带重试和审计记录的通知。
 - Worker Cron 定时清理 30 天访问日志、180 天审计日志、过期邀请、会话和临时 R2 对象。
 - 插件公开访问日志记录状态、耗时和错误摘要，并按用户隔离展示在管理端。
@@ -40,6 +40,9 @@ npm run native-ui:build
 ```bash
 npm run build
 npm run worker:typecheck
+npm run worker:github-auth-smoke
+npm run worker:registration-race-smoke
+npm run worker:durable-object-stream-smoke
 cmake -S native-server -B native-server/build
 cmake --build native-server/build --parallel 2
 cmake --build native-server/build --target test
