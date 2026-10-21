@@ -93,6 +93,39 @@ socket.on('open', () => socket.send('hello-ws'))
 socket.on('message', (data) => { console.log(data.toString()); socket.close() })
 ```
 
+## 密钥轮换、撤销与重新绑定
+
+本地控制台通过 `POST /api/credentials/*` 操作，需要先登录本地 UI 取得会话 Cookie：
+
+```bash
+curl -s -c /tmp/plugmesh-local-cookies -X POST -H 'content-type: application/json' \
+  -d '{"password":"本地 UI 口令"}' http://127.0.0.1:18787/api/session
+
+# 轮换访问密钥
+curl -s -b /tmp/plugmesh-local-cookies -X POST -H 'content-type: application/json' \
+  -d '{"credentialPassword":"凭据文件口令"}' http://127.0.0.1:18787/api/credentials/rotate
+
+# 撤销绑定
+curl -s -b /tmp/plugmesh-local-cookies -X POST -H 'content-type: application/json' \
+  -d '{"credentialPassword":"凭据文件口令"}' http://127.0.0.1:18787/api/credentials/revoke
+```
+
+撤销后服务器进入本地设置模式，可继续用同一个进程重新绑定（注册码需重新生成）：
+
+```bash
+curl -s -X POST -H 'content-type: application/json' \
+  -d '{"workerUrl":"http://127.0.0.1:18888","serverName":"E2E Server","registrationCode":"新注册码","localUiPassword":"新的本地 UI 口令","localUiPasswordConfirmation":"新的本地 UI 口令","credentialPassword":"凭据文件口令","credentialFile":"/tmp/plugmesh-e2e-creds.json"}' \
+  http://127.0.0.1:18787/api/register
+```
+
+| 用例 | 期望 |
+| --- | --- |
+| 轮换密钥 | 返回 `{"ok":true,"storage":"file"}`；凭据文件内容变化，D1 `servers.token_hash` 同步变化，`/api/status` 保持 `connected`；重启 `plugmesh-server` 后自动重连 |
+| 撤销绑定 | 返回 `{"ok":true,"rebindRequired":true}`；凭据文件被删除，`/api/session` 返回 `configured=false`；服务器转 `revoked`，插件转 `server_offline`，域名转 `offline`，公开入口返回 503 |
+| 重新绑定 | 返回新 `serverId`；无需重启进程，本地 UI 恢复 `configured=true`，`/api/status` 返回 `connected=true`，管理端显示新服务器 `online` |
+
+2026-10-21 在本地 `wrangler dev` + 真实 `plugmesh-server` 上按上述步骤执行通过。联调中发现：重新绑定成功后，本地设置服务器被主动关闭，`run()` 返回 `false` 被误判为启动失败，进程以退出码 2 结束。现改为只要注册完成即视为成功，并留出响应写回时间；退出码与重新绑定结果已在修复后复验。
+
 ## 清理
 
 ```bash

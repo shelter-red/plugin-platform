@@ -19,7 +19,7 @@
 | 通配 Host 路由、管理 API 优先级、未知域名和离线维护页 | 本地已验证 | `public-route`、`public-proxy` smoke，覆盖插件 Host、未知域名、API 路径和桥接离线响应。另以真实 `wrangler dev` + 本地 C++ 服务器 + 示例插件联调：`Host: e2e.plugins.example.com` 的 `GET /`、带 query 的 GET 和 POST 均转达插件并返回 200，未知插件 Host 返回 404 `Plugin domain not found`，控制台 Host 仍返回 SPA HTML。联调首次暴露静态资源层会截获插件域名根路径，现由 `[assets] run_worker_first = true` 保证请求先经 Worker 路由；仍是本地 miniflare/workerd，不是已部署 Cloudflare。 |
 | 一次性注册码原子消费 | 本地已验证 | `worker:runtime-test` 对真实 D1 并发三次提交同一注册码，仅一次 201、两次 401，并核对服务端只新增一条记录；`registration-race` smoke 覆盖并发消费逻辑。 |
 | 控制连接注册、心跳、断线、重连和旧断线竞态 | 本地已验证 | `worker:runtime-test` 通过 workerd 中的真实 Durable Object 验证心跳置为在线、控制连接断开后插件转 `server_offline`、域名转 `offline` 且公开入口返回维护页；`durable-object-lifecycle` smoke 覆盖 manifest 注册与断线/重连交错；C++ `control-client` smoke 覆盖连接重试。本地真实栈重启验证：停止 `plugmesh-server` 后公开入口立即返回 503 维护页、服务器转 `offline`，重新启动后自动重连、插件恢复 `enabled`、域名恢复 `online` 且请求返回 200（步骤见 `docs/local-e2e.md`）。真实多地域网络未验证。 |
-| 密钥轮换和绑定撤销 | 本地已验证 | `worker:runtime-test` 在 workerd 的真实 Durable Object 上执行 `server.rotate`/`server.revoke`：新 token 哈希落库、旧 token 被 401 拒绝、新 token 可重连、撤销后插件转 `server_offline`、域名转 `offline`、连接以 1000 关闭；`server-binding` smoke 另外覆盖重复撤销与撤销后轮换被拒。C++ 侧持久化和本地 UI 操作已有覆盖，真实本地服务器端到端轮换未验证。 |
+| 密钥轮换和绑定撤销 | 本地已验证 | `worker:runtime-test` 在 workerd 的真实 Durable Object 上执行 `server.rotate`/`server.revoke`：新 token 哈希落库、旧 token 被 401 拒绝、新 token 可重连、撤销后插件转 `server_offline`、域名转 `offline`、连接以 1000 关闭；`server-binding` smoke 另外覆盖重复撤销与撤销后轮换被拒。C++ 侧持久化和本地 UI 操作已有覆盖，本地真实栈端到端轮换与撤销见 `docs/local-e2e.md`。 |
 | Durable Object 请求映射和并发隔离 | 本地已验证 | `worker:runtime-test` 在 workerd 中为同一服务器建立真实控制连接，并发 16 个公开 HTTP 请求并乱序回帧，验证响应按 `requestId` 一一对应；同时建立两条公开 WebSocket，验证 `connectionId` 隔离。未验证休眠恢复和多 isolate 场景。 |
 | HTTP 方法、状态、响应头、Cookie 和二进制请求/响应 | 本地已验证 | `public-proxy`、`response-validation`、C++ `control-client` smoke。 |
 | SSE、公开 WebSocket 和文件流桥接 | 本地已验证 | 真实 `wrangler dev` + C++ 服务器联调中，`accept: text/event-stream` 请求收到 `data: sample-plugin`；公开 WebSocket 经 Worker→Durable Object→C++→插件回显 `hello-ws`；`x-plugmesh-file-stream: true` 返回 18 字节 `sample-file-stream`，结束后 `r2Objects`/`r2Bytes` 归零（步骤见 `docs/local-e2e.md`）。 Worker 流式 smoke 与 C++ WebSocket 生命周期测试覆盖协议路径；`worker:runtime-test` 在 workerd 中验证 SSE 分块经真实 Durable Object 送达并在结束后释放活跃连接，1MB+ 文件在声明 `content-length` 时经真实 R2 定长流中转、缺少长度时回退一次性上传，且两种路径都会在读取后删除对象并归还用量。真实公网长连接未验证。 |
@@ -42,7 +42,7 @@
 | 长期密钥持久化和重启恢复 | 本地已验证 | Linux 加密文件保存/读取有 CTest；本地真实栈中加密凭据文件重启 `plugmesh-server` 后自动重连 Worker，插件状态和域名恢复，公开入口返回 200（`docs/local-e2e.md`）。Windows 凭据存储未验证。 |
 | Windows Credential Manager、macOS Keychain | 未验证 | 平台实现存在，当前 Linux 环境未执行。 |
 | 加密凭据文件回退 | 本地已验证 | AES-256-GCM、PBKDF2 和文件权限由 `credential-store` CTest 覆盖。 |
-| 重新绑定、撤销和密钥轮换 | 部分实现 | 本地 API/UI 和控制协议已实现；缺少部署环境端到端验证。 |
+| 重新绑定、撤销和密钥轮换 | 本地已验证 | 本地 `wrangler dev` + 真实 `plugmesh-server` 控制台流程：轮换后凭据文件与 D1 token 哈希同时更新、连接保持、重启后自动重连；撤销后凭据文件删除、服务器转 `revoked`、插件转 `server_offline`、域名转 `offline` 且公开入口 503；在同一进程内通过本地 UI 重新绑定后取得新 serverId 并恢复 `online`（步骤见 `docs/local-e2e.md`）。联调中发现并修复了重新绑定成功后进程误判启动失败而退出的缺陷。边界：本地 miniflare，未在已部署 Worker 上验证。 |
 | 仅监听 localhost、本地会话口令和登录限速 | 本地已验证 | `local-http-server` CTest 与 Native UI Playwright smoke。 |
 | 无浏览器 CLI 注册入口 | 模块已验证 | `--register` 路径可构建，注册 client 有本地 WebSocket smoke；完整 CLI 进程流程未连接已部署 Worker。 |
 | manifest 校验和目录越界防护 | 本地已验证 | `plugin-manager`、`plugin-loader` CTest。 |
@@ -91,6 +91,6 @@ ctest --output-on-failure                 10/10 passed
 3. 配置 GitHub OAuth、Cloudflare OAuth、`SESSION_SECRET` 和超级管理员白名单，执行真实登录与授权。
 4. 配置真实 SMTP，验证邀请、测试邮件、维护通知、重试和退信处理。
 5. 在 Windows 上构建并验证 DLL、Credential Manager、本地 UI 和重启恢复。
-6. 使用已部署 Worker、本地 C++ 服务器和示例插件完成 HTTP、SSE、WebSocket、文件流、轮换、撤销和离线维护端到端验收；本地 `wrangler dev` 联调已覆盖 HTTP、SSE、WebSocket、文件流、插件域名路由、健康检查、离线维护和重启恢复，仍缺已部署环境与轮换/撤销的本地控制台流程。
+6. 使用已部署 Worker、本地 C++ 服务器和示例插件完成 HTTP、SSE、WebSocket、文件流、轮换、撤销和离线维护端到端验收；本地 `wrangler dev` 联调已覆盖 HTTP、SSE、WebSocket、文件流、插件域名路由、健康检查、离线维护和重启恢复，本地控制台的轮换、撤销和同进程重新绑定已联调通过，仍缺已部署环境。
 7. 对几百并发目标执行长连接、超时、R2 大文件和配额维护压力测试。
 8. 在 Windows 上验证插件宿主子进程、DLL 加载和管道协议；Linux 侧进程隔离已由 `plugin-manager-crash-smoke` 覆盖。

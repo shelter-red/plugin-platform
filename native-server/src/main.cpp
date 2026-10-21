@@ -181,14 +181,14 @@ bool run_registration_setup(plugmesh::ServerConfig& config, uint16_t port, const
     }
   });
   while ((!registration_complete || callback_active) && !server_failed) std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  // 等待响应写回后再关闭监听，避免重新绑定成功后进程误判为启动失败。
+  std::this_thread::sleep_for(std::chrono::milliseconds(150));
   local_http.stop();
   if (local_thread.joinable()) local_thread.join();
-  if (server_failed) {
-    error = server_error.empty() ? "local setup server stopped unexpectedly" : server_error;
-    return false;
-  }
+  // run() 在主动 stop() 时同样返回 false；只要注册已经完成就算成功，
+  // 否则重新绑定后进程会误判为启动失败并退出。
   if (!registered) {
-    error = "local registration did not complete";
+    error = server_failed ? (server_error.empty() ? "local setup server stopped unexpectedly" : server_error) : "local registration did not complete";
     return false;
   }
   return true;
