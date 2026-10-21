@@ -43,6 +43,7 @@ npm run native-ui:build
 npm run build
 npm run ui:smoke
 npm run native-ui:smoke
+npm run stack:load
 npm run worker:typecheck
 npm run worker:smoke
 npm run worker:runtime-test

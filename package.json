@@ -40,7 +40,8 @@
     "worker:typecheck": "tsc -p worker/tsconfig.json",
     "worker:runtime-test": "vitest run --config vitest.workers.config.ts",
     "worker:dev": "wrangler dev --config worker/wrangler.toml",
-    "native-ui:smoke:wine": "bash native-ui/run-wine-smoke.sh"
+    "native-ui:smoke:wine": "bash native-ui/run-wine-smoke.sh",
+    "stack:load": "playwright test --config playwright.load.config.ts"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
@@ -59,10 +60,12 @@
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "@types/smtp-server": "^3.5.13",
+    "@types/ws": "^8.18.1",
     "mailparser": "^3.10.0",
     "smtp-server": "^3.20.2",
     "typescript": "latest",
     "vitest": "^4.1.0",
-    "wrangler": "latest"
+    "wrangler": "latest",
+    "ws": "^8.21.0"
   }
 }

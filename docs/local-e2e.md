@@ -175,6 +175,29 @@ curl -s -X POST -H 'content-type: application/json' \
 
 2026-10-21 在本地 `wrangler dev` + 真实 `plugmesh-server` 上按上述步骤执行通过。联调中发现：重新绑定成功后，本地设置服务器被主动关闭，`run()` 返回 `false` 被误判为启动失败，进程以退出码 2 结束。现改为只要注册完成即视为成功，并留出响应写回时间；退出码与重新绑定结果已在修复后复验。
 
+## 并发与长连接压力验证
+
+`npm run stack:load` 用 `tests/load-stack.spec.ts` 在同一个真实栈（`wrangler dev` + 真实 `plugmesh-server` + `sample.plugin`）上跑并发场景：自动生成注册码、启动服务器、加载并启用插件、分配唯一域名，然后依次施加 HTTP 并发、SSE 并发和 WebSocket 驻留压力，并在结束后断言 `activeConnections` 归零。
+
+```bash
+PLUGMESH_REAL_STACK_URL=http://127.0.0.1:18888 \
+PLUGMESH_REAL_STACK_TOKEN=e2e-session-token \
+npm run stack:load
+```
+
+可通过环境变量调整强度：`PLUGMESH_LOAD_HTTP_REQUESTS`（默认 300）、`PLUGMESH_LOAD_HTTP_CONCURRENCY`（默认 100）、`PLUGMESH_LOAD_ROUNDS`（默认 3）、`PLUGMESH_LOAD_STREAMS`（默认 40）、`PLUGMESH_LOAD_WEBSOCKETS`（默认 40）。WebSocket 数量必须低于平台 `activeConnections` 配额（默认 100），否则会按设计触发维护模式。
+
+2026-10-21 在本机 `wrangler dev`（miniflare/workerd 单 isolate）+ 真实 `plugmesh-server` 上的实测结果：
+
+```text
+HTTP 3 轮 × 300 请求 / 并发 100：1.6s / 1.5s / 1.6s，900 次全部 200 "ok"
+HTTP 延迟：p50 479 ms，p95 666 ms，max 729 ms（含 miniflare 单线程排队）
+SSE：40 条并发流全部收到首帧
+WebSocket：40 条连接同时驻留并逐条回显，关闭后 activeConnections 归零
+```
+
+`sample.plugin` 的 SSE 处理器写完一帧就结束，无法让连接驻留，因此 SSE 只验证并发建立与首帧到达；连接驻留上限由 WebSocket 场景覆盖。这仍是单机 miniflare，不代表已部署 Cloudflare 的多 isolate、跨地域调度或真实网络抖动。
+
 ## 清理
 
 ```bash
@@ -189,4 +212,4 @@ pkill -f 'build/plugmesh[-]server'
 - 当前为本地 miniflare/workerd 与本地 D1/R2 模拟，不是已部署 Cloudflare；未验证真实 DNS、证书、Worker routes 和公网长连接。
 - 未连接真实 GitHub OAuth、Cloudflare OAuth 和 SMTP。
 - 本地服务器的轮换与撤销仍以 CTest、`worker:runtime-test` 和 Native UI smoke 覆盖，尚未在真实栈上用本地控制台执行完整轮换流程。
-- Windows 的构建、DLL 和 Credential Manager 未验证。
+- Windows 的构建、DLL 和 Credential Manager 只在 Wine 下验证过，真实 Windows 主机仍未验证。
