@@ -92,7 +92,7 @@ test('管理端邀请与注册码操作落到真实 D1', async ({ page }) => {
   await expect(page.locator('.code-value strong')).toHaveText(/[0-9a-f-]{20,}/)
 })
 
-test('管理端在真实 C++ 服务器上加载、启用插件并分配域名', async ({ page }) => {
+test('管理端在真实 C++ 服务器上加载、启停插件并分配域名', async ({ page }) => {
   test.setTimeout(180_000)
 
   const codeResponse = await page.request.post('/api/registration-codes')
@@ -117,7 +117,8 @@ test('管理端在真实 C++ 服务器上加载、启用插件并分配域名', 
     await page.locator('.header-actions').getByRole('button', { name: '加载插件' }).click()
     const loadDialog = page.getByRole('dialog', { name: '加载插件' })
     const loadOption = loadDialog.locator('option').filter({ hasText: 'sample.plugin' }).filter({ hasText: server.name })
-    await loadDialog.locator('select').selectOption((await loadOption.getAttribute('value'))!)
+    const pluginId = (await loadOption.getAttribute('value'))!
+    await loadDialog.locator('select').selectOption(pluginId)
     await loadDialog.getByRole('button', { name: '加载插件', exact: true }).click()
     await expect(loadDialog.getByRole('heading', { name: '加载命令已确认' })).toBeVisible()
     await expect(loadDialog.getByText('插件当前状态：loaded')).toBeVisible()
@@ -156,9 +157,28 @@ test('管理端在真实 C++ 服务器上加载、启用插件并分配域名', 
     expect(publicResponse.status).toBe(200)
     expect(publicResponse.body).toBe('ok')
 
+    // 停用后公开入口立即降级为维护页，重新启用后恢复转发（状态写真实 D1）。
     await page.getByRole('button', { name: '插件实例', exact: true }).click()
     await pluginRow.getByRole('button', { name: '查看 Sample Plugin 详情' }).click()
     const lifecycleDialog = page.getByRole('dialog', { name: '插件实例详情' })
+    await lifecycleDialog.getByRole('button', { name: '停用', exact: true }).click()
+    await expect(page.getByText('Sample Plugin 已停用')).toBeVisible()
+    await expect(lifecycleDialog.getByText('已停用').first()).toBeVisible()
+    await expect.poll(async () => ((await (await page.request.get(`/api/plugins/${pluginId}`)).json()) as { plugin: { state: string } }).plugin.state).toBe('disabled')
+
+    const disabledPublic = await getPublic(baseURL!, hostname)
+    expect(disabledPublic.status).toBe(503)
+    expect(disabledPublic.body).toContain('插件暂时不可用')
+
+    await lifecycleDialog.getByRole('button', { name: '启用', exact: true }).click()
+    await expect(page.getByText('Sample Plugin 已启用')).toBeVisible()
+    await expect.poll(async () => ((await (await page.request.get(`/api/plugins/${pluginId}`)).json()) as { plugin: { state: string } }).plugin.state).toBe('enabled')
+    // 生命周期命令会把该插件的域名状态置回 offline，健康检查通过后公开入口才恢复转发。
+    expect((await getPublic(baseURL!, hostname)).status).toBe(503)
+    await lifecycleDialog.getByRole('button', { name: '健康检查', exact: true }).click()
+    await expect(page.getByText(/Sample Plugin 健康检查通过/)).toBeVisible()
+    await expect.poll(async () => (await getPublic(baseURL!, hostname)).status, { timeout: 15_000 }).toBe(200)
+
     page.once('dialog', (dialog) => void dialog.accept())
     await lifecycleDialog.getByRole('button', { name: '卸载', exact: true }).click()
     await expect(page.getByText('Sample Plugin 已卸载')).toBeVisible()
