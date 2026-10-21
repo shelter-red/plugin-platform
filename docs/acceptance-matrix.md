@@ -61,7 +61,7 @@
 | 桌面、移动和窄窗口响应式布局 | 本地已验证 | 管理端 1440px/390px smoke；Native UI 1440px/390px smoke。 |
 | 服务器、插件、域名、用量和维护空态 | 本地已验证 | 页面使用真实 API 空数据，不注入伪造业务数据；管理端 Playwright 在桌面和 390px 窄窗口逐页断言服务器、插件实例、公开域名、访问日志、审计日志、用量与系统设置的空态，并校验设置页维护/授权状态在未连接时显示“未读取/未连接”。 |
 | 加载态、错误态、连接变化和 Toast | 本地已验证 | `console-worker` Playwright 项目用拦截的 Worker 响应验证：访问日志加载态→空态、服务器/插件/域名 500 后的“数据读取失败”与重试恢复、刷新成功 Toast、未连接/已连接切换和维护状态展示。边界：响应为测试夹具，不是已部署 Worker。 |
-| 表单校验、注册码、本地口令、轮换和撤销确认 | 部分实现 | UI 与本地 API 有覆盖；完整 Worker 联调未验证。 |
+| 表单校验、注册码、本地口令、轮换和撤销确认 | 部分实现 | 管理端 Playwright 覆盖注册码生成与弹窗内展示、域名前缀长度与空值校验、服务端校验错误回显、域名分配结果和插件加载命令提交；本地服务器口令、轮换和撤销有 CTest 与 Native UI smoke。完整 Worker 端到端联调未验证。 |
 | 表格、图表和弹窗移动布局 | 部分实现 | 各页面在 390px 下断言无横向溢出；弹窗在 390px 下断言宽度不超出视口并可用 Escape 关闭；尚无逐页面视觉回归基线。 |
 | 中文优先和国际化预留 | 部分实现 | 当前界面为中文优先；尚未接入 i18n 资源系统。 |
 
@@ -71,7 +71,7 @@
 
 ```text
 npm run build
-npm run ui:smoke                         10 passed（preview 6 + worker-mock 4）
+npm run ui:smoke                         14 passed（preview 6 + worker-mock 8）
 npm run native-ui:smoke                  3 passed
 npm run worker:typecheck
 npm run worker:smoke                     24 smoke checks passed

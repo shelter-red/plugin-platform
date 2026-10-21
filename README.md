@@ -35,7 +35,7 @@ npm run native-ui:build
 
 管理端默认启用 GitHub OAuth；仅查看无后端的静态空态时可使用 `VITE_AUTH_ENABLED=false npm run dev`。
 
-`npm run ui:smoke` 由两个 Playwright 项目组成：`preview`（4183，静态空态、主题、响应式和弹窗）与 `worker-mock`（4184，用拦截响应验证加载态、错误重试、Toast 和维护状态）。
+`npm run ui:smoke` 由两个 Playwright 项目组成：`preview`（4183，静态空态、主题、响应式和弹窗）与 `worker-mock`（4184，用拦截响应验证加载态、错误重试、Toast、维护状态，以及注册码生成、域名分配校验和插件加载等表单流程）。
 
 验证命令：
 
