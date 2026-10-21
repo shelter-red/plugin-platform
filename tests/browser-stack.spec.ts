@@ -39,6 +39,14 @@ test('真实浏览器经插件域名完成 HTTP、POST、SSE、WebSocket 与大�
     })
     expect(post).toEqual({ status: 200, text: 'ok' })
 
+    // Cookie：插件返回 Set-Cookie，浏览器保存后下次请求必须把它带回插件，验证 Worker 双向透传。
+    const cookiePage = await page.goto(`${origin}/cookie`)
+    expect(cookiePage?.status()).toBe(200)
+    expect(await page.textContent('body')).toBe('cookie-set')
+    expect(await page.evaluate(() => document.cookie)).toContain('plugmesh_e2e=1')
+    const forwardedHeaders = await page.evaluate(async () => (await fetch('/headers')).text())
+    expect(forwardedHeaders).toContain('"cookie":"plugmesh_e2e=1"')
+
     // SSE：EventSource 自动携带 accept: text/event-stream，Worker 据此桥接插件流。
     const sse = await page.evaluate(
       () =>
@@ -133,7 +141,7 @@ test('真实浏览器经插件域名完成 HTTP、POST、SSE、WebSocket 与大�
       ).toBeTruthy()
     }
 
-    console.log('浏览器：HTTP 200 / POST 透传 / EventSource 收到 sample-plugin / WebSocket 回显 hello-ws / 8 MiB 流式下载逐字节一致')
+    console.log('浏览器：HTTP 200 / POST 透传 / Set-Cookie 被保存并回传 / EventSource 收到 sample-plugin / WebSocket 回显 hello-ws / 8 MiB 流式下载逐字节一致')
   } finally {
     await browser.close()
     await server.stop()

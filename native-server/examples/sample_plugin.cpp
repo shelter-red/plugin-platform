@@ -27,7 +27,28 @@ int health_plugin(plugmesh_http_response* response) {
   return 0;
 }
 
-int handle_http(const plugmesh_http_request*, plugmesh_http_response* response) { return health_plugin(response); }
+int handle_http(const plugmesh_http_request* request, plugmesh_http_response* response) {
+  static const uint8_t cookie_body[] = "cookie-set";
+  if (request && request->path) {
+    // /cookie 返回 Set-Cookie，供真实浏览器验收确认 Worker 原样透传响应头。
+    if (std::strcmp(request->path, "/cookie") == 0) {
+      static const char headers[] = "{\"content-type\":\"text/plain; charset=utf-8\",\"set-cookie\":\"plugmesh_e2e=1; Path=/\"}";
+      response->status = 200;
+      response->headers_json = headers;
+      response->body = {cookie_body, sizeof(cookie_body) - 1};
+      return 0;
+    }
+    // /headers 原样回显 Worker 转发的请求头 JSON，用于验证 Cookie 等头部确实到达插件。
+    if (std::strcmp(request->path, "/headers") == 0 && request->headers_json) {
+      static const char headers[] = "{\"content-type\":\"application/json\"}";
+      response->status = 200;
+      response->headers_json = headers;
+      response->body = {reinterpret_cast<const uint8_t*>(request->headers_json), std::strlen(request->headers_json)};
+      return 0;
+    }
+  }
+  return health_plugin(response);
+}
 int handle_websocket(const char* connection_id, const uint8_t* data, uint64_t size, int) {
   return host && host->stream_write ? host->stream_write(connection_id, data, size, 0) : -1;
 }

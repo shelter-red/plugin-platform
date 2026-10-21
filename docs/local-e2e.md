@@ -251,6 +251,7 @@ npm run stack:browser
 
 - 访问插件域名首页返回 200，正文 `ok`；
 - 页面内 `fetch('/echo', { method: 'POST', body: 'browser-body' })` 返回 200 与 `ok`，方法未被改写；
+- 访问 `/cookie` 后浏览器实际保存 `plugmesh_e2e=1`，随后 `fetch('/headers')` 的回显 JSON 中出现 `"cookie":"plugmesh_e2e=1"`，证明 Set-Cookie 与 Cookie 双向透传；
 - 原生 `EventSource('/')` 收到首帧事件 `sample-plugin`（`EventSource` 自带 `accept: text/event-stream`，由 Worker 判定为 SSE）；
 - 原生 `WebSocket` 发送 `hello-ws` 并收到同样内容（二进制帧按 `ArrayBuffer` 解码）；
 - `/file` 返回 18 字节 `sample-file-stream`；`/large` 用 `ReadableStream` 分块读取 8388608 字节并逐字节校验 `下标 % 251`；
