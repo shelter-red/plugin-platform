@@ -22,9 +22,9 @@
 | 密钥轮换和绑定撤销 | 本地已验证 | `worker:runtime-test` 在 workerd 的真实 Durable Object 上执行 `server.rotate`/`server.revoke`：新 token 哈希落库、旧 token 被 401 拒绝、新 token 可重连、撤销后插件转 `server_offline`、域名转 `offline`、连接以 1000 关闭；`server-binding` smoke 另外覆盖重复撤销与撤销后轮换被拒。C++ 侧持久化和本地 UI 操作已有覆盖，真实本地服务器端到端轮换未验证。 |
 | Durable Object 请求映射和并发隔离 | 本地已验证 | `worker:runtime-test` 在 workerd 中为同一服务器建立真实控制连接，并发 16 个公开 HTTP 请求并乱序回帧，验证响应按 `requestId` 一一对应；同时建立两条公开 WebSocket，验证 `connectionId` 隔离。未验证休眠恢复和多 isolate 场景。 |
 | HTTP 方法、状态、响应头、Cookie 和二进制请求/响应 | 本地已验证 | `public-proxy`、`response-validation`、C++ `control-client` smoke。 |
-| SSE、公开 WebSocket 和文件流桥接 | 本地已验证 | Worker 流式 smoke 与 C++ WebSocket 生命周期测试覆盖协议路径；真实公网长连接未验证。 |
-| 请求超时、帧大小、响应大小和活跃连接上限 | 模块已验证 | Durable Object 中有硬限制和超时；配额 smoke 覆盖计数边界，尚未做持续压力测试。 |
-| R2 上传、一次性读取、过期和删除 | 部分实现 | `blob-stream` 与 `durable-object-stream` smoke 覆盖流式消费、一次性读取和删除；`blob-expiry` smoke 覆盖过期对象清理、24 小时陈旧对象清理、重试三次、删除失败后回滚占用和用量释放。真实 R2 一致性与费用仍未验证。 |
+| SSE、公开 WebSocket 和文件流桥接 | 本地已验证 | Worker 流式 smoke 与 C++ WebSocket 生命周期测试覆盖协议路径；`worker:runtime-test` 在 workerd 中验证 SSE 分块经真实 Durable Object 送达并在结束后释放活跃连接，1MB+ 文件在声明 `content-length` 时经真实 R2 定长流中转、缺少长度时回退一次性上传，且两种路径都会在读取后删除对象并归还用量。真实公网长连接未验证。 |
+| 请求超时、帧大小、响应大小和活跃连接上限 | 模块已验证 | Durable Object 中有硬限制和超时；配额 smoke 覆盖计数边界，`worker:runtime-test` 验证超过 32 KiB 的公开请求体返回 413 并写入访问日志、SSE 结束后活跃连接数归零；尚未做持续压力测试。 |
+| R2 上传、一次性读取、过期和删除 | 部分实现 | `blob-stream` 与 `durable-object-stream` smoke 覆盖流式消费、一次性读取和删除；`blob-expiry` smoke 覆盖过期对象清理、24 小时陈旧对象清理、重试三次、删除失败后回滚占用和用量释放；`worker:runtime-test` 用本地 R2 模拟验证大文件上传、读取后对象删除、`temp_objects` 清空与用量归零。真实 R2 一致性与费用仍未验证。 |
 | D1/KV 路由缓存读穿和配置写穿 | 部分实现 | Host 路由内存缓存和更新失效逻辑已接入；`route-cache` smoke 覆盖读穿、负缓存、主动失效、5 秒 TTL 和 256 条上限淘汰；`worker:runtime-test` 用真实 D1 验证 Host 路由解析与未启用插件的维护页。真实多 isolate 缓存传播未验证，当前实现没有独立 KV 业务缓存。 |
 | 总配额触发全局维护模式 | 模块已验证 | 本地计数和官方 Analytics 阈值逻辑已实现；未在真实账号用量上触发。 |
 | SMTP 测试发送、维护通知、失败重试和审计 | 模块已验证 | `maintenance-email` smoke 注入发送器验证第三次成功、最终失败、审计和敏感字段不落日志；`worker-mailer` 真实传输和外部 SMTP 仍未联调。 |
@@ -75,7 +75,7 @@ npm run ui:smoke                         10 passed（preview 6 + worker-mock 4�
 npm run native-ui:smoke                  3 passed
 npm run worker:typecheck
 npm run worker:smoke                     24 smoke checks passed
-npm run worker:runtime-test              9 passed（workerd + 真实 D1/Durable Object）
+npm run worker:runtime-test              13 passed（workerd + 真实 D1/Durable Object/R2 模拟）
   # 本机 glibc 2.31，经 node:22-bookworm-slim 容器执行；glibc ≥ 2.35 可直接运行
 npx wrangler deploy --dry-run --config worker/wrangler.toml
 cmake --build native-server/build --parallel 2

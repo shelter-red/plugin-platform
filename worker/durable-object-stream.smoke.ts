@@ -20,19 +20,24 @@ const stored = new Map<string, Uint8Array>()
 let putCount = 0
 let deleteCount = 0
 const bucket = {
-  put: async (key: string, value: ReadableStream<Uint8Array>) => {
-    const reader = value.getReader()
-    const chunks: Uint8Array[] = []
-    for (;;) {
-      const result = await reader.read()
-      if (result.done) break
-      chunks.push(result.value)
-    }
-    const body = new Uint8Array(chunks.reduce((total, chunk) => total + chunk.byteLength, 0))
-    let offset = 0
-    for (const chunk of chunks) {
-      body.set(chunk, offset)
-      offset += chunk.byteLength
+  put: async (key: string, value: ReadableStream<Uint8Array> | Uint8Array) => {
+    let body: Uint8Array
+    if (value instanceof Uint8Array) {
+      body = value
+    } else {
+      const reader = value.getReader()
+      const chunks: Uint8Array[] = []
+      for (;;) {
+        const result = await reader.read()
+        if (result.done) break
+        chunks.push(result.value)
+      }
+      body = new Uint8Array(chunks.reduce((total, chunk) => total + chunk.byteLength, 0))
+      let offset = 0
+      for (const chunk of chunks) {
+        body.set(chunk, offset)
+        offset += chunk.byteLength
+      }
     }
     stored.set(key, body)
     putCount += 1

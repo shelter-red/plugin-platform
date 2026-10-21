@@ -477,15 +477,18 @@ export class PluginBridge {
 
   private writeFileChunk(pending: PendingResponse, bytes: Uint8Array) {
     if (!pending.r2Upload && pending.bytes > FILE_STREAM_R2_THRESHOLD_BYTES) {
-      const transform = new TransformStream<Uint8Array, Uint8Array>()
-      const key = `stream/${crypto.randomUUID()}`
-      pending.r2Upload = { key, writer: transform.writable.getWriter(), upload: this.env.BLOB_BUCKET.put(key, transform.readable).then(() => undefined) }
-      const buffered = pending.buffered.splice(0)
-      pending.fileWriteChain = pending.fileWriteChain.then(async () => {
-        for (const chunk of buffered) await pending.r2Upload?.writer.write(chunk)
-        await pending.r2Upload?.writer.write(bytes)
-      })
-      return
+      const contentLength = Number(pending.responseHeaders?.get('content-length') ?? '')
+      if (Number.isSafeInteger(contentLength) && contentLength >= pending.bytes) {
+        const stream = new FixedLengthStream(contentLength)
+        const key = `stream/${crypto.randomUUID()}`
+        pending.r2Upload = { key, writer: stream.writable.getWriter(), upload: this.env.BLOB_BUCKET.put(key, stream.readable).then(() => undefined) }
+        const buffered = pending.buffered.splice(0)
+        pending.fileWriteChain = pending.fileWriteChain.then(async () => {
+          for (const chunk of buffered) await pending.r2Upload?.writer.write(chunk)
+          await pending.r2Upload?.writer.write(bytes)
+        })
+        return
+      }
     }
     if (pending.r2Upload) {
       pending.fileWriteChain = pending.fileWriteChain.then(() => pending.r2Upload!.writer.write(bytes))
@@ -497,21 +500,28 @@ export class PluginBridge {
   private async finishFileResponse(requestId: string, pending: PendingResponse, payload: Record<string, unknown>) {
     let reserved = false
     let tempObjectCreated = false
+    let objectKey: string | null = null
     try {
       await pending.fileWriteChain
-      if (!pending.r2Upload) {
+      if (pending.r2Upload) {
+        objectKey = pending.r2Upload.key
+        await pending.r2Upload.writer.close()
+        await pending.r2Upload.upload
+      } else if (pending.bytes > FILE_STREAM_R2_THRESHOLD_BYTES) {
+        objectKey = `stream/${crypto.randomUUID()}`
+        await this.env.BLOB_BUCKET.put(objectKey, combineBytes(pending.buffered))
+        pending.buffered = []
+      }
+      if (!objectKey) {
         const body = toArrayBuffer(combineBytes(pending.buffered))
         this.pending.delete(requestId)
         this.releasePendingConnection(pending)
         pending.resolve(new Response(body, { status: pending.responseStatus ?? (typeof payload.status === 'number' ? payload.status : 200), headers: pending.responseHeaders }))
         return
       }
-      await pending.r2Upload.writer.close()
-      await pending.r2Upload.upload
       const settings = await getPlatformSettings(this.env)
       if (!await reserveR2Usage(this.env, settings.quotas, pending.bytes)) {
-        await pending.r2Upload.writer.abort('R2 storage quota reached').catch(() => undefined)
-        await this.env.BLOB_BUCKET.delete(pending.r2Upload.key)
+        await this.env.BLOB_BUCKET.delete(objectKey)
         await activateMaintenance(this.env, 'R2 storage quota reached')
         this.pending.delete(requestId)
         this.releasePendingConnection(pending)
@@ -519,23 +529,23 @@ export class PluginBridge {
         return
       }
       reserved = true
-      const object = await this.env.BLOB_BUCKET.get(pending.r2Upload.key)
+      const object = await this.env.BLOB_BUCKET.get(objectKey)
       if (!object?.body) throw new Error('R2 file stream is unavailable')
       const tempObjectId = crypto.randomUUID()
       const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString()
-      await this.env.DB.prepare('INSERT INTO temp_objects (id, object_key, token_hash, content_type, size_bytes, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(tempObjectId, pending.r2Upload.key, await hashControlToken(crypto.randomUUID()), pending.responseHeaders?.get('content-type') ?? 'application/octet-stream', pending.bytes, expiresAt, new Date().toISOString()).run()
+      await this.env.DB.prepare('INSERT INTO temp_objects (id, object_key, token_hash, content_type, size_bytes, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(tempObjectId, objectKey, await hashControlToken(crypto.randomUUID()), pending.responseHeaders?.get('content-type') ?? 'application/octet-stream', pending.bytes, expiresAt, new Date().toISOString()).run()
       tempObjectCreated = true
       this.pending.delete(requestId)
       this.releasePendingConnection(pending)
       const headers = new Headers(pending.responseHeaders)
       if (!headers.has('content-length')) headers.set('content-length', String(pending.bytes))
-      pending.resolve(new Response(this.consumeR2Stream(object.body, pending.r2Upload.key, pending.bytes, tempObjectId), { status: pending.responseStatus ?? (typeof payload.status === 'number' ? payload.status : 200), headers }))
+      pending.resolve(new Response(this.consumeR2Stream(object.body, objectKey, pending.bytes, tempObjectId), { status: pending.responseStatus ?? (typeof payload.status === 'number' ? payload.status : 200), headers }))
     } catch {
       if (pending.r2Upload) await pending.r2Upload.writer.abort('Plugin file stream failed').catch(() => undefined)
-      const deleted = pending.r2Upload ? await deleteR2ObjectWithRetry(this.env, pending.r2Upload.key) : true
+      const deleted = objectKey ? await deleteR2ObjectWithRetry(this.env, objectKey) : true
       if (reserved) {
         if (deleted) await releaseR2Usage(this.env, pending.bytes)
-        else if (!tempObjectCreated) await this.trackUncollectedObject(pending.r2Upload?.key ?? '', pending.bytes)
+        else if (!tempObjectCreated) await this.trackUncollectedObject(objectKey ?? '', pending.bytes)
       }
       this.pending.delete(requestId)
       this.releasePendingConnection(pending)
