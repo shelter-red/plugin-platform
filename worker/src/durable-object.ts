@@ -184,7 +184,11 @@ export class PluginBridge {
       this.publicSockets.delete(connectionId)
       if (this.reservedPublicConnections.delete(connectionId)) void releaseActiveConnection(this.env)
       if (this.serverSocket?.readyState === WebSocket.OPEN) {
-        this.serverSocket.send(JSON.stringify(makeFrame('stream.close', this.serverId, { connectionId }, pluginId)))
+        try {
+          this.serverSocket.send(JSON.stringify(makeFrame('stream.close', this.serverId, { connectionId }, pluginId)))
+        } catch {
+          // The server may disconnect between the readyState check and send.
+        }
       }
     })
     try {
