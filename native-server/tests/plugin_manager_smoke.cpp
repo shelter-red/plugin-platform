@@ -35,11 +35,16 @@ int main(int argc, char** argv) {
     return 0;
   });
   std::string error;
-  if (!manager.discover(std::filesystem::path(argv[1]), error) || manager.snapshot().size() != 1 || manager.snapshot()[0].id != "sample.plugin" || manager.snapshot()[0].health_path != "/health") {
+  if (!manager.discover(std::filesystem::path(argv[1]), error)) {
     std::cerr << "discovery failed: " << error << '\n';
     return 1;
   }
-  if (!manager.load("sample.plugin", error) || manager.snapshot()[0].state != plugmesh::PluginState::Loaded) {
+  auto sample = manager.info_snapshot("sample.plugin");
+  if (!sample || sample->health_path != "/health") {
+    std::cerr << "sample plugin was not discovered\n";
+    return 1;
+  }
+  if (!manager.load("sample.plugin", error) || manager.info_snapshot("sample.plugin")->state != plugmesh::PluginState::Loaded) {
     std::cerr << "load failed: " << error << '\n';
     return 1;
   }
@@ -47,7 +52,7 @@ int main(int argc, char** argv) {
     std::cerr << "plugin log callback failed\n";
     return 1;
   }
-  if (!manager.enable("sample.plugin", error) || manager.snapshot()[0].state != plugmesh::PluginState::Enabled) {
+  if (!manager.enable("sample.plugin", error) || manager.info_snapshot("sample.plugin")->state != plugmesh::PluginState::Enabled) {
     std::cerr << "enable failed: " << error << '\n';
     return 1;
   }
@@ -70,11 +75,11 @@ int main(int argc, char** argv) {
     std::cerr << "file stream callback failed: " << error << '\n';
     return 1;
   }
-  if (!manager.disable("sample.plugin", error) || manager.snapshot()[0].state != plugmesh::PluginState::Disabled || !manager.reload("sample.plugin", error) || manager.snapshot()[0].state != plugmesh::PluginState::Disabled || !manager.unload("sample.plugin", error) || manager.snapshot()[0].state != plugmesh::PluginState::Unloaded) {
+  if (!manager.disable("sample.plugin", error) || manager.info_snapshot("sample.plugin")->state != plugmesh::PluginState::Disabled || !manager.reload("sample.plugin", error) || manager.info_snapshot("sample.plugin")->state != plugmesh::PluginState::Disabled || !manager.unload("sample.plugin", error) || manager.info_snapshot("sample.plugin")->state != plugmesh::PluginState::Unloaded) {
     std::cerr << "disable/reload/unload failed: " << error << '\n';
     return 1;
   }
-  const auto source_library = manager.snapshot()[0].library;
+  const auto source_library = manager.info_snapshot("sample.plugin")->library;
   const auto traversal_root = std::filesystem::temp_directory_path() / ("plugmesh-plugin-path-smoke-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
   const auto traversal_plugin = traversal_root / "traversal.plugin";
   const auto outside_library = traversal_root / ("outside" + source_library.extension().string());

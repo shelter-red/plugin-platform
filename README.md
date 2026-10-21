@@ -42,6 +42,7 @@ npm run build
 npm run worker:typecheck
 cmake -S native-server -B native-server/build
 cmake --build native-server/build --parallel 2
+cmake --build native-server/build --target test
 ```
 
 Worker 本地调试前需要把 `worker/wrangler.toml` 中的 D1、R2 和 Durable Object 配置替换为实际资源：

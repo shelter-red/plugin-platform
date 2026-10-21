@@ -100,6 +100,7 @@ bool LocalHttpServer::run(std::string& error) {
   server->clear_access_channels(websocketpp::log::alevel::all);
   server->clear_error_channels(websocketpp::log::elevel::all);
   server->init_asio();
+  server->set_reuse_addr(true);
   server->set_http_handler([this](websocketpp::connection_hdl handle) { handle_http(handle.lock().get()); });
   try {
     const auto address = websocketpp::lib::asio::ip::address::from_string("127.0.0.1");

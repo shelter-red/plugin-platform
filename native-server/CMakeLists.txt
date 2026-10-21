@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
 project(plugmesh_server LANGUAGES CXX)
 
+enable_testing()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -63,6 +65,14 @@ target_link_libraries(plugmesh-registration-client-smoke PRIVATE plugmesh_core)
 
 add_executable(plugmesh-local-http-server-smoke tests/local_http_server_smoke.cpp)
 target_link_libraries(plugmesh-local-http-server-smoke PRIVATE plugmesh_core)
+
+add_test(NAME plugmesh-control-protocol-smoke COMMAND plugmesh-control-protocol-smoke)
+add_test(NAME plugmesh-credential-store-smoke COMMAND plugmesh-credential-store-smoke)
+add_test(NAME plugmesh-registration-client-smoke COMMAND plugmesh-registration-client-smoke)
+add_test(NAME plugmesh-plugin-loader-smoke COMMAND plugmesh-plugin-loader-smoke $<TARGET_FILE:plugmesh-sample>)
+add_test(NAME plugmesh-plugin-manager-smoke COMMAND plugmesh-plugin-manager-smoke "${CMAKE_CURRENT_BINARY_DIR}/plugins")
+add_test(NAME plugmesh-plugin-websocket-lifecycle-smoke COMMAND plugmesh-plugin-websocket-lifecycle-smoke "${CMAKE_CURRENT_BINARY_DIR}/plugins")
+add_test(NAME plugmesh-local-http-server-smoke COMMAND plugmesh-local-http-server-smoke)
 
 if (WIN32)
   target_compile_definitions(plugmesh_core PRIVATE PLUGMESH_PLATFORM_WINDOWS=1)
