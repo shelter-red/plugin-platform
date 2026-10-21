@@ -40,7 +40,8 @@
 | Windows 构建与启动 | 部分实现 | 用 MinGW-w64 交叉编译出 `plugmesh-server.exe`、`plugmesh-plugin-host.exe`、本地 UI smoke 服务器、10 个 smoke 可执行文件和三个示例 `.dll`（PE32+），据此补齐 Windows 分支的链接库（`advapi32`/`ws2_32`/`mswsock`/`crypt32`），并对 MinGW 显式启用 websocketpp 的 C++11 线程宏（否则回退 `boost::thread`）。构建步骤见 `native-server/README.md`「Windows 构建」与 `native-server/cmake/mingw-w64-toolchain.cmake`。产物静态链接 MinGW 运行时，只依赖系统 DLL。在 Wine 5.0（`wine64`）下 10 个 smoke 全部通过，`plugmesh-server.exe` 以 setup 模式启动、`/api/health` 返回 `systemCredentialsAvailable=true`，并正常提供本地 UI 的 `index.html` 与静态资源；`native-ui/run-wine-smoke.sh` 让 `native-ui` Playwright 连到 Wine 下的 `plugmesh-local-ui-smoke-server.exe`，首次绑定、会话流程、主题与语言四条用例 4/4 通过；未在真实 Windows 主机上启动。 |
 | 首次 UI 设置本地口令和一次性注册码绑定 | 本地已验证 | Native UI Playwright smoke 覆盖绑定表单、localhost 服务重启和新口令登录；注册码交换仍由本地 mock handler 承载，未连接已部署 Worker。 |
 | 长期密钥持久化和重启恢复 | 本地已验证 | Linux 加密文件保存/读取有 CTest；本地真实栈中加密凭据文件重启 `plugmesh-server` 后自动重连 Worker，插件状态和域名恢复，公开入口返回 200（`docs/local-e2e.md`）。Windows 凭据存储未验证。 |
-| Windows Credential Manager、macOS Keychain | 部分实现 | Windows 分支在 Wine 下经 `CredWriteA`/`CredReadA`/`CredDeleteA` 完成保存、读取和删除往返（`plugmesh-credential-store-smoke`），`plugmesh-server.exe` 启动时报告系统凭据可用；真实 Windows 账户与注册表凭据存储、macOS Keychain 仍未验证。 |
+| Windows Credential Manager | 部分实现 | Windows 分支在 Wine 下经 `CredWriteA`/`CredReadA`/`CredDeleteA` 完成保存、读取和删除往返（`plugmesh-credential-store-smoke`），`plugmesh-server.exe` 启动时报告系统凭据可用；真实 Windows 账户与注册表凭据存储仍未验证。 |
+| macOS Keychain | 未验证 | `native-server/src/credential_store.cpp` 的 `__APPLE__` 分支以通用密码项（service `Plugmesh`、account `default`）调用 `SecItemAdd`/`SecItemUpdate`/`SecItemCopyMatching`/`SecItemDelete`，`native-server/CMakeLists.txt` 的 `APPLE` 分支已链接 `-framework Security` 与 `-framework CoreFoundation`，构建配置无缺口。但当前环境没有 macOS 工具链，该分支从未被编译或运行：授权弹窗、无钥匙串/无头会话、`errSecItemNotFound` 与重复项更新路径、以及 `PLUGMESH_PLATFORM_MACOS` 之外的平台回退行为均未取得证据。 |
 | 加密凭据文件回退 | 本地已验证 | AES-256-GCM、PBKDF2 和文件权限由 `credential-store` CTest 覆盖。 |
 | 重新绑定、撤销和密钥轮换 | 本地已验证 | 本地 `wrangler dev` + 真实 `plugmesh-server` 控制台流程：轮换后凭据文件与 D1 token 哈希同时更新、连接保持、重启后自动重连；撤销后凭据文件删除、服务器转 `revoked`、插件转 `server_offline`、域名转 `offline` 且公开入口 503；在同一进程内通过本地 UI 重新绑定后取得新 serverId 并恢复 `online`（步骤见 `docs/local-e2e.md`）。联调中发现并修复了重新绑定成功后进程误判启动失败而退出的缺陷。边界：本地 miniflare，未在已部署 Worker 上验证。 |
 | 仅监听 localhost、本地会话口令和登录限速 | 本地已验证 | `local-http-server` CTest 与 Native UI Playwright smoke。 |
@@ -100,7 +101,7 @@ PLUGMESH_REAL_STACK_URL=http://127.0.0.1:18888 npm run stack:load
 2. 配置 `console` 与插件通配域名、DNS 和 Worker routes，并验证证书与 Host 路由。
 3. 配置 GitHub OAuth、Cloudflare OAuth、`SESSION_SECRET` 和超级管理员白名单，执行真实登录与授权。
 4. 配置真实 SMTP，验证邀请、测试邮件、维护通知、重试和退信处理。
-5. 在 Windows 上构建并验证 DLL、Credential Manager、本地 UI 和重启恢复。
+5. 在 Windows 上构建并验证 DLL、Credential Manager、本地 UI 和重启恢复；在 macOS 上编译并验证 Keychain 分支与无钥匙串回退。
 6. 使用已部署 Worker、本地 C++ 服务器和示例插件完成 HTTP、SSE、WebSocket、文件流、轮换、撤销和离线维护端到端验收；本地 `wrangler dev` 联调已覆盖 HTTP、SSE、WebSocket、文件流、插件域名路由、健康检查、离线维护和重启恢复，本地控制台的轮换、撤销和同进程重新绑定已联调通过，管理端经真实 C++ 服务器完成插件加载、启用和域名分配也已联调，仍缺已部署环境。
 7. 对几百并发目标执行长连接、超时、R2 大文件和配额维护的持续压力测试；本地单机 workerd 已覆盖 64 并发乱序隔离、连接/响应大小/R2 配额边界，`npm run stack:load` 已在真实栈上跑 3 轮 × 300 请求（并发 100）、40 条并发 SSE 和 40 条 WebSocket 驻留。
 8. 在 Windows 上验证插件宿主子进程、DLL 加载和管道协议；Linux 侧进程隔离已由 `plugin-manager-crash-smoke` 覆盖。
