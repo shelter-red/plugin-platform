@@ -235,6 +235,21 @@ npm run stack:maintenance
 
 2026-10-21 实测：`1 passed`。边界：单机 miniflare 单 isolate，未验证多 isolate 下的维护状态传播和已部署环境的配额阈值。
 
+## Worker 重启恢复验证
+
+路由缓存是 isolate 内存，Worker 重启后必须回源 D1 重建。用例先预热缓存，再重启承载 `wrangler dev` 的容器，确认新 isolate 在没有任何内存路由时仍能把公开请求转发给自动重连的真实服务器：
+
+```bash
+PLUGMESH_REAL_STACK_URL=http://127.0.0.1:18888 \
+PLUGMESH_REAL_STACK_TOKEN=e2e-session-token \
+PLUGMESH_E2E_CONTAINER=plugmesh-e2e \
+npm run stack:restart
+```
+
+用例断言：重启前公开入口返回 200；`docker restart` 后 `/api/health` 恢复 200；公开入口重新返回 200 且正文含 `ok`（此时新 isolate 缓存必然为空，只能由 D1 回源）；服务器记录回到 `online`（真实 `plugmesh-server` 自动重连）。2026-10-21 实测 `1 passed`。
+
+边界：单容器单 isolate，只验证本 isolate 的冷回源；多 isolate 之间的缓存传播仍未验证。
+
 ## 清理
 
 ```bash
