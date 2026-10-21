@@ -5,17 +5,18 @@
 #include <vector>
 
 int main(int argc, char** argv) {
-  if (argc != 2) {
-    std::cerr << "usage: plugmesh-plugin-websocket-lifecycle-smoke <plugin-directory>\n";
+  if (argc != 3) {
+    std::cerr << "usage: plugmesh-plugin-websocket-lifecycle-smoke <plugin-host> <plugin-directory>\n";
     return 2;
   }
   plugmesh::PluginManager manager;
+  manager.set_host_executable(argv[1]);
   std::vector<std::string> logs;
   manager.set_log_writer([&](int, const char* message) {
     if (message) logs.emplace_back(message);
   });
   std::string error;
-  if (!manager.discover(argv[1], error) || !manager.load("lifecycle.plugin", error) || !manager.enable("lifecycle.plugin", error)) {
+  if (!manager.discover(argv[2], error) || !manager.load("lifecycle.plugin", error) || !manager.enable("lifecycle.plugin", error)) {
     std::cerr << "lifecycle plugin setup failed: " << error << '\n';
     return 1;
   }

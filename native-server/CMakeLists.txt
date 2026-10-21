@@ -50,6 +50,12 @@ add_custom_command(TARGET plugmesh-lifecycle-sample POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:plugmesh-lifecycle-sample>" "${CMAKE_CURRENT_BINARY_DIR}/plugins/lifecycle.plugin/$<TARGET_FILE_NAME:plugmesh-lifecycle-sample>"
 )
 
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/plugins/crashing.plugin/manifest.json" CONTENT "{\n  \"id\": \"crashing.plugin\",\n  \"name\": \"Crashing Plugin\",\n  \"version\": \"0.1.0\",\n  \"abiVersion\": \"2\",\n  \"library\": \"$<TARGET_FILE_NAME:plugmesh-crashing-sample>\",\n  \"capabilities\": {\"http\": true, \"websocket\": false, \"sse\": false, \"fileStream\": false},\n  \"permissions\": [],\n  \"healthPath\": \"/health\"\n}\n")
+add_custom_command(TARGET plugmesh-crashing-sample POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/plugins/crashing.plugin"
+  COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:plugmesh-crashing-sample>" "${CMAKE_CURRENT_BINARY_DIR}/plugins/crashing.plugin/$<TARGET_FILE_NAME:plugmesh-crashing-sample>"
+)
+
 add_executable(plugmesh-plugin-host src/plugin_host_main.cpp)
 target_link_libraries(plugmesh-plugin-host PRIVATE plugmesh_core)
 
@@ -61,6 +67,9 @@ target_link_libraries(plugmesh-plugin-host-smoke PRIVATE plugmesh_core)
 
 add_executable(plugmesh-plugin-manager-smoke tests/plugin_manager_smoke.cpp)
 target_link_libraries(plugmesh-plugin-manager-smoke PRIVATE plugmesh_core)
+
+add_executable(plugmesh-plugin-manager-crash-smoke tests/plugin_manager_crash_smoke.cpp)
+target_link_libraries(plugmesh-plugin-manager-crash-smoke PRIVATE plugmesh_core)
 
 add_executable(plugmesh-plugin-websocket-lifecycle-smoke tests/plugin_websocket_lifecycle_smoke.cpp)
 target_link_libraries(plugmesh-plugin-websocket-lifecycle-smoke PRIVATE plugmesh_core)
@@ -84,13 +93,14 @@ add_executable(plugmesh-local-ui-smoke-server tests/local_ui_smoke_server.cpp)
 target_link_libraries(plugmesh-local-ui-smoke-server PRIVATE plugmesh_core)
 
 add_test(NAME plugmesh-control-protocol-smoke COMMAND plugmesh-control-protocol-smoke)
-add_test(NAME plugmesh-control-client-smoke COMMAND plugmesh-control-client-smoke "${CMAKE_CURRENT_BINARY_DIR}/plugins")
+add_test(NAME plugmesh-control-client-smoke COMMAND plugmesh-control-client-smoke $<TARGET_FILE:plugmesh-plugin-host> "${CMAKE_CURRENT_BINARY_DIR}/plugins")
 add_test(NAME plugmesh-credential-store-smoke COMMAND plugmesh-credential-store-smoke)
 add_test(NAME plugmesh-registration-client-smoke COMMAND plugmesh-registration-client-smoke)
 add_test(NAME plugmesh-plugin-loader-smoke COMMAND plugmesh-plugin-loader-smoke $<TARGET_FILE:plugmesh-sample>)
 add_test(NAME plugmesh-plugin-host-smoke COMMAND plugmesh-plugin-host-smoke $<TARGET_FILE:plugmesh-plugin-host> $<TARGET_FILE:plugmesh-sample> $<TARGET_FILE:plugmesh-crashing-sample>)
-add_test(NAME plugmesh-plugin-manager-smoke COMMAND plugmesh-plugin-manager-smoke "${CMAKE_CURRENT_BINARY_DIR}/plugins")
-add_test(NAME plugmesh-plugin-websocket-lifecycle-smoke COMMAND plugmesh-plugin-websocket-lifecycle-smoke "${CMAKE_CURRENT_BINARY_DIR}/plugins")
+add_test(NAME plugmesh-plugin-manager-smoke COMMAND plugmesh-plugin-manager-smoke $<TARGET_FILE:plugmesh-plugin-host> "${CMAKE_CURRENT_BINARY_DIR}/plugins")
+add_test(NAME plugmesh-plugin-manager-crash-smoke COMMAND plugmesh-plugin-manager-crash-smoke $<TARGET_FILE:plugmesh-plugin-host> "${CMAKE_CURRENT_BINARY_DIR}/plugins")
+add_test(NAME plugmesh-plugin-websocket-lifecycle-smoke COMMAND plugmesh-plugin-websocket-lifecycle-smoke $<TARGET_FILE:plugmesh-plugin-host> "${CMAKE_CURRENT_BINARY_DIR}/plugins")
 add_test(NAME plugmesh-local-http-server-smoke COMMAND plugmesh-local-http-server-smoke)
 
 if (WIN32)

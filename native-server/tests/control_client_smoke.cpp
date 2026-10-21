@@ -17,8 +17,8 @@
 #include <vector>
 
 int main(int argc, char** argv) {
-  if (argc != 2) {
-    std::cerr << "usage: plugmesh-control-client-smoke <plugin-directory>\n";
+  if (argc != 3) {
+    std::cerr << "usage: plugmesh-control-client-smoke <plugin-host> <plugin-directory>\n";
     return 2;
   }
   using Server = websocketpp::server<websocketpp::config::asio>;
@@ -154,8 +154,9 @@ int main(int argc, char** argv) {
   config.server_id = "server-1";
   config.access_token = "control-token";
   plugmesh::PluginManager plugins;
+  plugins.set_host_executable(argv[1]);
   std::string plugin_error;
-  if (!plugins.discover(argv[1], plugin_error) || !plugins.enable("sample.plugin", plugin_error)) {
+  if (!plugins.discover(argv[2], plugin_error) || !plugins.enable("sample.plugin", plugin_error)) {
     server.get_io_service().post([&] { server.stop(); });
     if (server_thread.joinable()) server_thread.join();
     std::cerr << "control test plugin setup failed: " << plugin_error << '\n';

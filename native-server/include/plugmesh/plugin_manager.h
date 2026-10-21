@@ -11,6 +11,8 @@
 #include <string>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 namespace plugmesh {
 
 enum class PluginState {
@@ -35,11 +37,12 @@ struct PluginInfo {
   bool websocket = false;
   bool sse = false;
   bool file_stream = false;
+  std::string last_error;
 };
 
 const char* plugin_state_name(PluginState state);
 
-class PluginLoader;
+class PluginHostClient;
 
 class PluginManager {
  public:
@@ -47,7 +50,7 @@ class PluginManager {
   using StreamOpener = std::function<int(const char*, uint16_t, const char*)>;
   using LogWriter = std::function<void(int, const char*)>;
 
-  explicit PluginManager(plugmesh_host_api host_api = {});
+  PluginManager();
   PluginManager(const PluginManager&) = delete;
   PluginManager& operator=(const PluginManager&) = delete;
   ~PluginManager();
@@ -55,6 +58,8 @@ class PluginManager {
   void set_stream_writer(StreamWriter writer);
   void set_stream_opener(StreamOpener opener);
   void set_log_writer(LogWriter writer);
+  // 未显式设置时按 PLUGMESH_PLUGIN_HOST 环境变量或服务器同目录查找宿主进程。
+  void set_host_executable(std::filesystem::path executable);
 
   bool discover(const std::filesystem::path& directory, std::string& error);
   std::vector<PluginInfo> snapshot() const;
@@ -64,17 +69,19 @@ class PluginManager {
   bool disable(const std::string& plugin_id, std::string& error);
   bool unload(const std::string& plugin_id, std::string& error);
   bool reload(const std::string& plugin_id, std::string& error);
-  bool health(const std::string& plugin_id, plugmesh_http_response& response, std::string& error) const;
-  bool http(const std::string& plugin_id, const plugmesh_http_request& request, plugmesh_http_response& response, std::string& error) const;
-  bool sse(const std::string& plugin_id, const std::string& stream_id, const plugmesh_http_request& request, std::string& error) const;
-  bool file_stream(const std::string& plugin_id, const std::string& stream_id, const plugmesh_http_request& request, std::string& error) const;
-  bool websocket_open(const std::string& plugin_id, const std::string& connection_id, const std::string& path, const std::string& headers_json, std::string& error) const;
-  bool websocket(const std::string& plugin_id, const std::string& connection_id, const uint8_t* data, uint64_t size, bool is_text, std::string& error) const;
-  bool websocket_close(const std::string& plugin_id, const std::string& connection_id, uint16_t code, const std::string& reason, std::string& error) const;
+  bool health(const std::string& plugin_id, plugmesh_http_response& response, std::string& error);
+  bool http(const std::string& plugin_id, const plugmesh_http_request& request, plugmesh_http_response& response, std::string& error);
+  bool sse(const std::string& plugin_id, const std::string& stream_id, const plugmesh_http_request& request, std::string& error);
+  bool file_stream(const std::string& plugin_id, const std::string& stream_id, const plugmesh_http_request& request, std::string& error);
+  bool websocket_open(const std::string& plugin_id, const std::string& connection_id, const std::string& path, const std::string& headers_json, std::string& error);
+  bool websocket(const std::string& plugin_id, const std::string& connection_id, const uint8_t* data, uint64_t size, bool is_text, std::string& error);
+  bool websocket_close(const std::string& plugin_id, const std::string& connection_id, uint16_t code, const std::string& reason, std::string& error);
 
  private:
   struct LoadedPlugin {
-    std::unique_ptr<PluginLoader> loader;
+    std::unique_ptr<PluginHostClient> host;
+    uint32_t abi_version = 0;
+    bool started = false;
   };
 
   PluginInfo* find(const std::string& plugin_id);
@@ -82,19 +89,17 @@ class PluginManager {
   LoadedPlugin* loaded(const std::string& plugin_id);
   const LoadedPlugin* loaded(const std::string& plugin_id) const;
   bool set_failed(PluginInfo& plugin, std::string& error);
-  static int stream_write_trampoline(const char* stream_id, const uint8_t* data, uint64_t size, int finished);
-  int write_stream(const char* stream_id, const uint8_t* data, uint64_t size, int finished);
-  static int stream_open_trampoline(const char* stream_id, uint16_t status, const char* headers_json);
-  int open_stream(const char* stream_id, uint16_t status, const char* headers_json);
-  static void log_trampoline(int level, const char* message);
+  std::filesystem::path resolve_host_executable(std::string& error) const;
+  bool request_plugin(const std::string& plugin_id, const nlohmann::json& operation, nlohmann::json& reply, std::string& error);
+  void handle_host_event(const std::string& plugin_id, const nlohmann::json& event);
+  void fail_runtime(const std::string& plugin_id, const std::string& message);
   void write_log(int level, const char* message);
 
-  plugmesh_host_api host_api_{};
   mutable std::recursive_mutex mutex_;
   StreamOpener stream_opener_;
   StreamWriter stream_writer_;
   LogWriter log_writer_;
-  static PluginManager* active_instance_;
+  std::filesystem::path host_executable_;
   std::vector<PluginInfo> plugins_;
   std::map<std::string, LoadedPlugin> loaded_;
 };

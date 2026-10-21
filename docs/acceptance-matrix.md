@@ -36,7 +36,7 @@
 
 | 验收项 | 状态 | 证据与边界 |
 | --- | --- | --- |
-| Linux 构建、启动和 localhost UI | 本地已验证 | CMake 构建、CTest `8/8`、`native-ui:smoke` 通过。 |
+| Linux 构建、启动和 localhost UI | 本地已验证 | CMake 构建、CTest `10/10`、`native-ui:smoke` 通过。 |
 | Windows 构建与启动 | 未验证 | 代码包含 DLL、Credential Manager 和 Winsock 路径；当前环境没有执行 Windows 构建。 |
 | 首次 UI 设置本地口令和一次性注册码绑定 | 本地已验证 | Native UI Playwright smoke 覆盖绑定表单、localhost 服务重启和新口令登录；注册码交换仍由本地 mock handler 承载，未连接已部署 Worker。 |
 | 长期密钥持久化和重启恢复 | 部分实现 | Linux 加密文件保存/读取有 CTest；真实 Worker 重连恢复未做端到端测试。 |
@@ -51,7 +51,7 @@
 | 插件加载、卸载、启停、重载和健康检查 | 本地已验证 | `plugin-manager` CTest 和本地 UI 操作接口。 |
 | HTTP、SSE、文件流和 WebSocket 回调 | 本地已验证 | C++ manager/control client/WebSocket lifecycle 测试。 |
 | 协议错误和网络断线恢复 | 本地已验证 | 控制帧校验、nonce/时间窗以及 reconnect smoke。 |
-| 插件原生崩溃隔离 | 部分实现 | 回调返回错误可处理；插件动态库与主进程同进程运行，访问违规等原生崩溃仍会终止服务器。生产前需决定进程隔离或接受监督重启策略。 |
+| 插件原生崩溃隔离 | 本地已验证 | 每个插件由独立 `plugmesh-plugin-host` 子进程加载，父子进程通过逐行 JSON 管道通信；`plugin-manager-crash-smoke` 让插件空指针崩溃后断言仅宿主退出、插件转 `failed` 并记录错误、服务器可继续服务其他插件且可重新加载。边界：Windows 子进程路径未构建验证；宿主内同步调用阻塞期间崩溃只能在下一次调用时被发现，崩溃后需要重新加载插件。 |
 
 ## 管理端与本地 UI
 
@@ -79,7 +79,7 @@ npm run worker:runtime-test              13 passed（workerd + 真实 D1/Durable
   # 本机 glibc 2.31，经 node:22-bookworm-slim 容器执行；glibc ≥ 2.35 可直接运行
 npx wrangler deploy --dry-run --config worker/wrangler.toml
 cmake --build native-server/build --parallel 2
-ctest --output-on-failure                 8/8 passed
+ctest --output-on-failure                 10/10 passed
 ```
 
 这些结果不代表真实 Cloudflare、GitHub、SMTP、Windows 或生产网络已联通。
@@ -93,4 +93,4 @@ ctest --output-on-failure                 8/8 passed
 5. 在 Windows 上构建并验证 DLL、Credential Manager、本地 UI 和重启恢复。
 6. 使用已部署 Worker、本地 C++ 服务器和示例插件完成 HTTP、SSE、WebSocket、文件流、轮换、撤销和离线维护端到端验收。
 7. 对几百并发目标执行长连接、超时、R2 大文件和配额维护压力测试。
-8. 明确原生插件崩溃策略；若要求服务器进程不中断，需要增加插件进程隔离与监督重启。
+8. 在 Windows 上验证插件宿主子进程、DLL 加载和管道协议；Linux 侧进程隔离已由 `plugin-manager-crash-smoke` 覆盖。

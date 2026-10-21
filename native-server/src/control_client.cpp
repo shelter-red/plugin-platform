@@ -31,6 +31,7 @@ Json manifest(const PluginInfo& plugin) {
       {"permissions", plugin.permissions},
       {"healthPath", plugin.health_path},
       {"state", plugin_state_name(plugin.state)},
+      {"lastError", plugin.last_error},
   };
 }
 

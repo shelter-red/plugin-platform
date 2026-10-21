@@ -8,11 +8,12 @@
 #include <vector>
 
 int main(int argc, char** argv) {
-  if (argc != 2) {
-    std::cerr << "usage: plugmesh-plugin-manager-smoke <plugin-directory>\n";
+  if (argc != 3) {
+    std::cerr << "usage: plugmesh-plugin-manager-smoke <plugin-host> <plugin-directory>\n";
     return 2;
   }
   plugmesh::PluginManager manager;
+  manager.set_host_executable(argv[1]);
   std::string stream_id;
   std::vector<uint8_t> streamed;
   std::vector<std::string> logs;
@@ -35,7 +36,7 @@ int main(int argc, char** argv) {
     return 0;
   });
   std::string error;
-  if (!manager.discover(std::filesystem::path(argv[1]), error)) {
+  if (!manager.discover(std::filesystem::path(argv[2]), error)) {
     std::cerr << "discovery failed: " << error << '\n';
     return 1;
   }

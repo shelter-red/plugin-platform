@@ -97,7 +97,19 @@ int main(int argc, char** argv) {
     if (message.contains("id")) reply["id"] = message["id"];
     bool shutdown = false;
 
-    if (op == "start") {
+    if (op == "describe") {
+      reply["pluginId"] = api->plugin_id ? api->plugin_id : "";
+      reply["name"] = api->plugin_name ? api->plugin_name : "";
+      reply["version"] = api->plugin_version ? api->plugin_version : "";
+      reply["abiVersion"] = loader.abi_version();
+      reply["capabilities"] = {
+          {"http", api->handle_http != nullptr},
+          {"websocket", api->handle_websocket != nullptr},
+          {"sse", api->handle_sse != nullptr},
+          {"fileStream", api->handle_file != nullptr},
+          {"websocketOpen", v3 && v3->handle_websocket_open != nullptr},
+      };
+    } else if (op == "start") {
       if (api->start(&HOST_API) != 0) {
         reply = {{"ok", false}, {"error", "plugin start failed"}};
       } else {

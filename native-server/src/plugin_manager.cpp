@@ -1,15 +1,17 @@
 #include "plugmesh/plugin_manager.h"
 
-#include "plugmesh/plugin_loader.h"
+#include "plugmesh/plugin_host_client.h"
+#include "plugmesh/plugin_host_protocol.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <fstream>
 
-#include <nlohmann/json.hpp>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 namespace plugmesh {
-
-PluginManager* PluginManager::active_instance_ = nullptr;
 
 namespace {
 
@@ -131,22 +133,18 @@ const char* plugin_state_name(PluginState state) {
   return "failed";
 }
 
-PluginManager::PluginManager(plugmesh_host_api host_api) : host_api_(host_api) {
-  if (host_api_.abi_version == 0) host_api_.abi_version = PLUGMESH_PLUGIN_ABI_VERSION;
-  if (!host_api_.log) host_api_.log = &PluginManager::log_trampoline;
-  if (!host_api_.stream_open) host_api_.stream_open = &PluginManager::stream_open_trampoline;
-  if (!host_api_.stream_write) host_api_.stream_write = &PluginManager::stream_write_trampoline;
-  active_instance_ = this;
-}
+PluginManager::PluginManager() = default;
 
 PluginManager::~PluginManager() {
   std::lock_guard lock(mutex_);
-  for (auto& [plugin_id, loaded_plugin] : loaded_) {
-    const auto* plugin = find(plugin_id);
-    if (plugin && plugin->state == PluginState::Enabled && loaded_plugin.loader && loaded_plugin.loader->loaded() && loaded_plugin.loader->api()->stop) loaded_plugin.loader->api()->stop();
+  for (auto& [plugin_id, runtime] : loaded_) {
+    if (!runtime.host) continue;
+    nlohmann::json ignored_reply;
+    std::string ignored_error;
+    if (runtime.started) runtime.host->request({{"op", "stop"}}, ignored_reply, ignored_error);
+    runtime.host->stop();
   }
   loaded_.clear();
-  if (active_instance_ == this) active_instance_ = nullptr;
 }
 
 void PluginManager::set_stream_writer(StreamWriter writer) {
@@ -162,6 +160,11 @@ void PluginManager::set_stream_opener(StreamOpener opener) {
 void PluginManager::set_log_writer(LogWriter writer) {
   std::lock_guard lock(mutex_);
   log_writer_ = std::move(writer);
+}
+
+void PluginManager::set_host_executable(std::filesystem::path executable) {
+  std::lock_guard lock(mutex_);
+  host_executable_ = std::move(executable);
 }
 
 bool PluginManager::discover(const std::filesystem::path& directory, std::string& error) {
@@ -197,6 +200,29 @@ bool PluginManager::discover(const std::filesystem::path& directory, std::string
   return true;
 }
 
+std::filesystem::path PluginManager::resolve_host_executable(std::string& error) const {
+  if (!host_executable_.empty()) return host_executable_;
+  if (const char* value = std::getenv("PLUGMESH_PLUGIN_HOST"); value && *value) return value;
+  std::filesystem::path self;
+#ifdef _WIN32
+  wchar_t buffer[MAX_PATH];
+  if (GetModuleFileNameW(nullptr, buffer, MAX_PATH) != 0) self = buffer;
+#else
+  std::error_code path_error;
+  self = std::filesystem::read_symlink("/proc/self/exe", path_error);
+#endif
+  if (self.empty()) {
+    error = "cannot locate plugmesh-plugin-host; set PLUGMESH_PLUGIN_HOST";
+    return {};
+  }
+  const auto candidate = self.parent_path() / "plugmesh-plugin-host";
+  if (!std::filesystem::is_regular_file(candidate)) {
+    error = "plugin host executable not found: " + candidate.string();
+    return {};
+  }
+  return candidate;
+}
+
 bool PluginManager::load(const std::string& plugin_id, std::string& error) {
   std::lock_guard lock(mutex_);
   auto* plugin = find(plugin_id);
@@ -205,15 +231,28 @@ bool PluginManager::load(const std::string& plugin_id, std::string& error) {
     return false;
   }
   if (loaded(plugin_id)) return true;
-  auto loader = std::make_unique<PluginLoader>();
-  if (!loader->load(plugin->library, error)) return set_failed(*plugin, error);
-  const auto* api = loader->api();
-  if (plugin->abi_version != std::to_string(loader->abi_version()) || !api->plugin_id || !api->plugin_name || !api->plugin_version || plugin->id != api->plugin_id || plugin->name != api->plugin_name || plugin->version != api->plugin_version || (plugin->http && !api->handle_http) || (plugin->websocket && !api->handle_websocket) || (plugin->sse && !api->handle_sse) || (plugin->file_stream && !api->handle_file) || (loader->api_v3() && (!loader->api_v3()->handle_websocket_open || !loader->api_v3()->handle_websocket_close))) {
+  const auto executable = resolve_host_executable(error);
+  if (executable.empty()) return set_failed(*plugin, error);
+  auto host = std::make_unique<PluginHostClient>();
+  const std::string id = plugin_id;
+  host->set_event_handler([this, id](const nlohmann::json& event) { handle_host_event(id, event); });
+  if (!host->start(executable, plugin->library, error)) return set_failed(*plugin, error);
+  nlohmann::json reply;
+  if (!host->request({{"op", "describe"}}, reply, error)) {
+    host->stop();
+    return set_failed(*plugin, error);
+  }
+  const auto abi_version = reply.value("abiVersion", 0u);
+  const auto capabilities = reply.value("capabilities", nlohmann::json::object());
+  if (plugin->abi_version != std::to_string(abi_version) || reply.value("pluginId", std::string()) != plugin->id || reply.value("name", std::string()) != plugin->name || reply.value("version", std::string()) != plugin->version ||
+      (plugin->http && !capabilities.value("http", false)) || (plugin->websocket && !capabilities.value("websocket", false)) || (plugin->sse && !capabilities.value("sse", false)) || (plugin->file_stream && !capabilities.value("fileStream", false))) {
+    host->stop();
     error = "manifest does not match plugin ABI: " + plugin->id;
     return set_failed(*plugin, error);
   }
-  loaded_.emplace(plugin_id, LoadedPlugin{std::move(loader)});
+  loaded_.emplace(plugin_id, LoadedPlugin{std::move(host), abi_version, false});
   plugin->state = PluginState::Loaded;
+  plugin->last_error.clear();
   write_log(1, ("plugin loaded: " + plugin_id).c_str());
   return true;
 }
@@ -228,8 +267,18 @@ bool PluginManager::enable(const std::string& plugin_id, std::string& error) {
   if (plugin->state == PluginState::Enabled) return true;
   if (!load(plugin_id, error)) return false;
   auto* runtime = loaded(plugin_id);
-  if (!runtime || !runtime->loader || runtime->loader->api()->start(&host_api_) != 0) return set_failed(*plugin, error = "plugin start failed: " + plugin_id);
+  if (!runtime) {
+    error = "plugin is not loaded: " + plugin_id;
+    return set_failed(*plugin, error);
+  }
+  nlohmann::json reply;
+  if (!request_plugin(plugin_id, {{"op", "start"}}, reply, error)) {
+    if (plugin->state != PluginState::Failed) set_failed(*plugin, error);
+    return false;
+  }
+  if (auto* current = loaded(plugin_id)) current->started = true;
   plugin->state = PluginState::Enabled;
+  plugin->last_error.clear();
   write_log(1, ("plugin enabled: " + plugin_id).c_str());
   return true;
 }
@@ -238,7 +287,7 @@ bool PluginManager::disable(const std::string& plugin_id, std::string& error) {
   std::lock_guard lock(mutex_);
   auto* plugin = find(plugin_id);
   auto* runtime = loaded(plugin_id);
-  if (!plugin || !runtime || !runtime->loader) {
+  if (!plugin || !runtime || !runtime->host) {
     error = "plugin is not loaded: " + plugin_id;
     return false;
   }
@@ -246,7 +295,12 @@ bool PluginManager::disable(const std::string& plugin_id, std::string& error) {
     plugin->state = PluginState::Disabled;
     return true;
   }
-  if (runtime->loader->api()->stop() != 0) return set_failed(*plugin, error = "plugin stop failed: " + plugin_id);
+  nlohmann::json reply;
+  if (!request_plugin(plugin_id, {{"op", "stop"}}, reply, error)) {
+    if (plugin->state != PluginState::Failed) set_failed(*plugin, error);
+    return false;
+  }
+  if (auto* current = loaded(plugin_id)) current->started = false;
   plugin->state = PluginState::Disabled;
   write_log(1, ("plugin disabled: " + plugin_id).c_str());
   return true;
@@ -256,13 +310,19 @@ bool PluginManager::unload(const std::string& plugin_id, std::string& error) {
   std::lock_guard lock(mutex_);
   auto* plugin = find(plugin_id);
   auto* runtime = loaded(plugin_id);
-  if (!plugin || !runtime || !runtime->loader) {
+  if (!plugin || !runtime || !runtime->host) {
     error = "plugin is not loaded: " + plugin_id;
     return false;
   }
-  if (plugin->state == PluginState::Enabled && runtime->loader->api()->stop() != 0) return set_failed(*plugin, error = "plugin stop failed: " + plugin_id);
+  if (runtime->started) {
+    nlohmann::json reply;
+    std::string ignored;
+    runtime->host->request({{"op", "stop"}}, reply, ignored);
+  }
+  runtime->host->stop();
   loaded_.erase(plugin_id);
   plugin->state = PluginState::Unloaded;
+  plugin->last_error.clear();
   write_log(1, ("plugin unloaded: " + plugin_id).c_str());
   return true;
 }
@@ -279,113 +339,172 @@ bool PluginManager::reload(const std::string& plugin_id, std::string& error) {
   return true;
 }
 
-bool PluginManager::health(const std::string& plugin_id, plugmesh_http_response& response, std::string& error) const {
+bool PluginManager::request_plugin(const std::string& plugin_id, const nlohmann::json& operation, nlohmann::json& reply, std::string& error) {
+  auto* runtime = loaded(plugin_id);
+  if (!runtime || !runtime->host) {
+    error = "plugin is not loaded: " + plugin_id;
+    return false;
+  }
+  if (!runtime->host->request(operation, reply, error)) {
+    if (!runtime->host->alive()) fail_runtime(plugin_id, error);
+    return false;
+  }
+  return true;
+}
+
+void PluginManager::handle_host_event(const std::string&, const nlohmann::json& event) {
+  const auto name = event.value("event", std::string());
+  if (name == "log") {
+    const auto message = event.value("message", std::string());
+    write_log(event.value("level", 1), message.c_str());
+    return;
+  }
+  const auto stream_id = event.value("streamId", std::string());
+  if (stream_id.empty()) return;
+  if (name == "stream.open") {
+    const auto headers = event.value("headersJson", std::string("{}"));
+    if (stream_opener_) stream_opener_(stream_id.c_str(), static_cast<uint16_t>(event.value("status", 0)), headers.c_str());
+    return;
+  }
+  if (name == "stream.write") {
+    std::string data;
+    std::string decode_error;
+    if (!base64_decode(event.value("data", std::string()), data, decode_error)) {
+      write_log(2, ("plugin stream payload is invalid: " + stream_id).c_str());
+      return;
+    }
+    if (stream_writer_) stream_writer_(stream_id.c_str(), reinterpret_cast<const uint8_t*>(data.data()), data.size(), event.value("finished", 0));
+  }
+}
+
+void PluginManager::fail_runtime(const std::string& plugin_id, const std::string& message) {
+  if (auto iterator = loaded_.find(plugin_id); iterator != loaded_.end()) {
+    if (iterator->second.host) iterator->second.host->stop();
+    loaded_.erase(iterator);
+  }
+  if (auto* plugin = find(plugin_id)) {
+    plugin->state = PluginState::Failed;
+    plugin->last_error = message;
+  }
+}
+
+namespace {
+
+nlohmann::json request_payload(const plugmesh_http_request& request) {
+  return {
+      {"method", request.method ? request.method : ""},
+      {"path", request.path ? request.path : ""},
+      {"headersJson", request.headers_json ? request.headers_json : "{}"},
+      {"body", request.body ? base64_encode(request.body, request.body_size) : std::string()},
+  };
+}
+
+void fill_response(const nlohmann::json& reply, plugmesh_http_response& response) {
+  // 调用方在返回后立即消费响应，thread_local 缓冲保证指针在本次调用期间有效。
+  thread_local std::string headers;
+  thread_local std::string body;
+  const auto& payload = reply.value("response", nlohmann::json::object());
+  headers = payload.value("headersJson", std::string("{}"));
+  std::string decode_error;
+  if (!base64_decode(payload.value("body", std::string()), body, decode_error)) body.clear();
+  response.status = static_cast<uint16_t>(payload.value("status", 0));
+  response.headers_json = headers.c_str();
+  response.body = {reinterpret_cast<const uint8_t*>(body.data()), body.size()};
+}
+
+}  // namespace
+
+bool PluginManager::health(const std::string& plugin_id, plugmesh_http_response& response, std::string& error) {
   std::lock_guard lock(mutex_);
   const auto* plugin = find(plugin_id);
-  const auto* runtime = loaded(plugin_id);
-  if (!plugin || !runtime || !runtime->loader || plugin->state != PluginState::Enabled) {
+  if (!plugin || plugin->state != PluginState::Enabled) {
     error = "plugin is not enabled: " + plugin_id;
     return false;
   }
-  if (runtime->loader->api()->health(&response) != 0) {
+  nlohmann::json reply;
+  if (!request_plugin(plugin_id, {{"op", "health"}}, reply, error)) return false;
+  if (!reply.contains("response")) {
     error = "plugin health check failed: " + plugin_id;
     return false;
   }
+  fill_response(reply, response);
   return true;
 }
 
-bool PluginManager::http(const std::string& plugin_id, const plugmesh_http_request& request, plugmesh_http_response& response, std::string& error) const {
+bool PluginManager::http(const std::string& plugin_id, const plugmesh_http_request& request, plugmesh_http_response& response, std::string& error) {
   std::lock_guard lock(mutex_);
   const auto* plugin = find(plugin_id);
-  const auto* runtime = loaded(plugin_id);
-  if (!plugin || !plugin->http || !runtime || !runtime->loader || plugin->state != PluginState::Enabled || !runtime->loader->api()->handle_http) {
+  if (!plugin || !plugin->http || plugin->state != PluginState::Enabled) {
     error = "plugin is not enabled: " + plugin_id;
     return false;
   }
-  if (runtime->loader->api()->handle_http(&request, &response) != 0) {
+  nlohmann::json reply;
+  if (!request_plugin(plugin_id, {{"op", "http"}, {"request", request_payload(request)}}, reply, error)) return false;
+  if (!reply.contains("response")) {
     error = "plugin HTTP handler failed: " + plugin_id;
     return false;
   }
+  fill_response(reply, response);
   return true;
 }
 
-bool PluginManager::sse(const std::string& plugin_id, const std::string& stream_id, const plugmesh_http_request& request, std::string& error) const {
+bool PluginManager::sse(const std::string& plugin_id, const std::string& stream_id, const plugmesh_http_request& request, std::string& error) {
   std::lock_guard lock(mutex_);
   const auto* plugin = find(plugin_id);
-  const auto* runtime = loaded(plugin_id);
-  if (!plugin || !plugin->sse || !runtime || !runtime->loader || plugin->state != PluginState::Enabled || !runtime->loader->api()->handle_sse) {
+  if (!plugin || !plugin->sse || plugin->state != PluginState::Enabled) {
     error = "plugin SSE handler is unavailable: " + plugin_id;
     return false;
   }
-  if (runtime->loader->api()->handle_sse(stream_id.c_str(), &request) != 0) {
-    error = "plugin SSE handler failed: " + plugin_id;
-    return false;
-  }
-  return true;
+  nlohmann::json reply;
+  return request_plugin(plugin_id, {{"op", "sse"}, {"streamId", stream_id}, {"request", request_payload(request)}}, reply, error);
 }
 
-bool PluginManager::file_stream(const std::string& plugin_id, const std::string& stream_id, const plugmesh_http_request& request, std::string& error) const {
+bool PluginManager::file_stream(const std::string& plugin_id, const std::string& stream_id, const plugmesh_http_request& request, std::string& error) {
   std::lock_guard lock(mutex_);
   const auto* plugin = find(plugin_id);
-  const auto* runtime = loaded(plugin_id);
-  if (!plugin || !plugin->file_stream || !runtime || !runtime->loader || plugin->state != PluginState::Enabled || !runtime->loader->api()->handle_file) {
+  if (!plugin || !plugin->file_stream || plugin->state != PluginState::Enabled) {
     error = "plugin file stream handler is unavailable: " + plugin_id;
     return false;
   }
-  if (runtime->loader->api()->handle_file(stream_id.c_str(), &request) != 0) {
-    error = "plugin file stream handler failed: " + plugin_id;
-    return false;
-  }
-  return true;
+  nlohmann::json reply;
+  return request_plugin(plugin_id, {{"op", "file"}, {"streamId", stream_id}, {"request", request_payload(request)}}, reply, error);
 }
 
-bool PluginManager::websocket_open(const std::string& plugin_id, const std::string& connection_id, const std::string& path, const std::string& headers_json, std::string& error) const {
+bool PluginManager::websocket_open(const std::string& plugin_id, const std::string& connection_id, const std::string& path, const std::string& headers_json, std::string& error) {
   std::lock_guard lock(mutex_);
   const auto* plugin = find(plugin_id);
   const auto* runtime = loaded(plugin_id);
-  if (!plugin || !plugin->websocket || !runtime || !runtime->loader || plugin->state != PluginState::Enabled || !runtime->loader->api()->handle_websocket) {
+  if (!plugin || !plugin->websocket || !runtime || plugin->state != PluginState::Enabled) {
     error = "plugin WebSocket handler is unavailable: " + plugin_id;
     return false;
   }
-  const auto* api_v3 = runtime->loader->api_v3();
-  if (!api_v3) return true;
-  if (api_v3->handle_websocket_open(connection_id.c_str(), path.c_str(), headers_json.c_str()) != 0) {
-    error = "plugin WebSocket open handler failed: " + plugin_id;
-    return false;
-  }
-  return true;
+  if (runtime->abi_version < 3) return true;
+  nlohmann::json reply;
+  return request_plugin(plugin_id, {{"op", "websocket.open"}, {"connectionId", connection_id}, {"path", path}, {"headersJson", headers_json}}, reply, error);
 }
 
-bool PluginManager::websocket(const std::string& plugin_id, const std::string& connection_id, const uint8_t* data, uint64_t size, bool is_text, std::string& error) const {
+bool PluginManager::websocket(const std::string& plugin_id, const std::string& connection_id, const uint8_t* data, uint64_t size, bool is_text, std::string& error) {
+  std::lock_guard lock(mutex_);
+  const auto* plugin = find(plugin_id);
+  if (!plugin || !plugin->websocket || plugin->state != PluginState::Enabled) {
+    error = "plugin WebSocket handler is unavailable: " + plugin_id;
+    return false;
+  }
+  nlohmann::json reply;
+  return request_plugin(plugin_id, {{"op", "websocket.data"}, {"connectionId", connection_id}, {"data", data ? base64_encode(data, size) : std::string()}, {"text", is_text}}, reply, error);
+}
+
+bool PluginManager::websocket_close(const std::string& plugin_id, const std::string& connection_id, uint16_t code, const std::string& reason, std::string& error) {
   std::lock_guard lock(mutex_);
   const auto* plugin = find(plugin_id);
   const auto* runtime = loaded(plugin_id);
-  if (!plugin || !plugin->websocket || !runtime || !runtime->loader || plugin->state != PluginState::Enabled || !runtime->loader->api()->handle_websocket) {
+  if (!plugin || !plugin->websocket || !runtime || plugin->state != PluginState::Enabled) {
     error = "plugin WebSocket handler is unavailable: " + plugin_id;
     return false;
   }
-  if (runtime->loader->api()->handle_websocket(connection_id.c_str(), data, size, is_text ? 1 : 0) != 0) {
-    error = "plugin WebSocket handler failed: " + plugin_id;
-    return false;
-  }
-  return true;
-}
-
-bool PluginManager::websocket_close(const std::string& plugin_id, const std::string& connection_id, uint16_t code, const std::string& reason, std::string& error) const {
-  std::lock_guard lock(mutex_);
-  const auto* plugin = find(plugin_id);
-  const auto* runtime = loaded(plugin_id);
-  if (!plugin || !plugin->websocket || !runtime || !runtime->loader || plugin->state != PluginState::Enabled || !runtime->loader->api()->handle_websocket) {
-    error = "plugin WebSocket handler is unavailable: " + plugin_id;
-    return false;
-  }
-  const auto* api_v3 = runtime->loader->api_v3();
-  if (!api_v3) return true;
-  if (api_v3->handle_websocket_close(connection_id.c_str(), code, reason.c_str()) != 0) {
-    error = "plugin WebSocket close handler failed: " + plugin_id;
-    return false;
-  }
-  return true;
+  if (runtime->abi_version < 3) return true;
+  nlohmann::json reply;
+  return request_plugin(plugin_id, {{"op", "websocket.close"}, {"connectionId", connection_id}, {"code", code}, {"reason", reason}}, reply, error);
 }
 
 std::vector<PluginInfo> PluginManager::snapshot() const {
@@ -421,31 +540,8 @@ const PluginManager::LoadedPlugin* PluginManager::loaded(const std::string& plug
 
 bool PluginManager::set_failed(PluginInfo& plugin, std::string& error) {
   plugin.state = PluginState::Failed;
+  plugin.last_error = error;
   return false;
-}
-
-int PluginManager::stream_write_trampoline(const char* stream_id, const uint8_t* data, uint64_t size, int finished) {
-  return active_instance_ ? active_instance_->write_stream(stream_id, data, size, finished) : -1;
-}
-
-int PluginManager::stream_open_trampoline(const char* stream_id, uint16_t status, const char* headers_json) {
-  return active_instance_ ? active_instance_->open_stream(stream_id, status, headers_json) : -1;
-}
-
-int PluginManager::write_stream(const char* stream_id, const uint8_t* data, uint64_t size, int finished) {
-  std::lock_guard lock(mutex_);
-  if (!stream_writer_ || !stream_id || (!data && size > 0)) return -1;
-  return stream_writer_(stream_id, data, size, finished);
-}
-
-int PluginManager::open_stream(const char* stream_id, uint16_t status, const char* headers_json) {
-  std::lock_guard lock(mutex_);
-  if (!stream_opener_ || !stream_id || !headers_json) return -1;
-  return stream_opener_(stream_id, status, headers_json);
-}
-
-void PluginManager::log_trampoline(int level, const char* message) {
-  if (active_instance_) active_instance_->write_log(level, message);
 }
 
 void PluginManager::write_log(int level, const char* message) {

@@ -4,9 +4,12 @@
 
 - `plugin_api.h` 定义兼容的 C ABI v2/v3：v2 通过 `plugmesh_plugin_get_api_v2` 导出 HTTP、WebSocket、SSE 和文件流能力，v3 额外提供公开 WebSocket 的建立与关闭回调。
 - `PluginLoader` 负责按平台加载 `.so` / `.dll`，校验 ABI 版本和必需入口。
-- `PluginManager` 负责扫描包含 `manifest.json` 的插件目录、校验 manifest 与 C ABI v2/v3 描述、编排加载/启停/重载、健康检查、文件流和 WebSocket 生命周期。
+- `plugmesh-plugin-host` 是可执行宿主进程，按 `<library>` 参数加载单个插件动态库，并通过 stdin/stdout 的逐行 JSON 协议响应父进程请求。支持的操作为 `describe`、`start`、`stop`、`health`、`http`、`sse`、`file`、`websocket.open`、`websocket.data`、`websocket.close` 和 `shutdown`；二进制数据统一使用 Base64。
+- `PluginManager` 负责扫描包含 `manifest.json` 的插件目录、校验 manifest 与 C ABI v2/v3 描述、编排加载/启停/重载、健康检查、文件流和 WebSocket 生命周期。每个已加载插件对应一个 `PluginHostClient` 子进程；插件发生访问违规等原生崩溃时只终止宿主进程，管理器把插件标记为 `failed` 并记录 `last_error`，服务器进程本身继续运行。
 - `ControlClient` 使用 WebSocket++、standalone Asio 和 nlohmann/json 建立出站控制连接；生产地址使用 `wss`，localhost 开发地址可使用 `ws`。控制连接处理注册、心跳、插件命令、健康检查和 HTTP 请求帧，注册描述来自已校验的 manifest。
-- `examples/sample_plugin.cpp`、`examples/lifecycle_plugin.cpp` 和对应 smoke 测试验证动态库导出、ABI 检查、基本生命周期以及 WebSocket 建立/关闭回调。
+- `examples/sample_plugin.cpp`、`examples/lifecycle_plugin.cpp` 和对应 smoke 测试验证动态库导出、ABI 检查、基本生命周期以及 WebSocket 建立/关闭回调。`examples/crashing_plugin.cpp` 故意触发空指针崩溃，由 `plugin-manager-crash-smoke` 验证宿主隔离和失败标记。
+
+部署时 `plugmesh-server` 与 `plugmesh-plugin-host` 需要放在同一目录，或通过 `PLUGMESH_PLUGIN_HOST` 指定宿主路径。宿主调用是同步的：插件回调长时间阻塞会阻塞控制面的对应请求，这段边界尚未改为异步或超时模型。
 
 启动配置可以由环境变量提供；当连接参数缺失且指定了凭据文件时，服务器会使用口令解密持久化凭据：
 
@@ -14,6 +17,7 @@
 - `PLUGMESH_SERVER_ID`
 - `PLUGMESH_ACCESS_TOKEN`
 - `PLUGMESH_PLUGIN_DIRECTORY`
+- `PLUGMESH_PLUGIN_HOST`（可选，`plugmesh-plugin-host` 路径；留空时查找与服务器可执行文件同目录的宿主）
 - `PLUGMESH_CREDENTIAL_FILE`（Linux 等无系统凭据存储时使用的加密文件路径；留空时 Windows/macOS 优先使用系统凭据存储）
 - `PLUGMESH_CREDENTIAL_PASSWORD`
 - `PLUGMESH_LOCAL_PORT`（可选，默认 `8787`，仅绑定 `127.0.0.1`）
