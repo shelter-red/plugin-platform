@@ -42,9 +42,11 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
+    "i18next": "^26.5.4",
     "lucide-react": "latest",
     "react": "latest",
     "react-dom": "latest",
+    "react-i18next": "^17.1.0",
     "vite": "latest",
     "worker-mailer": "^1.2.1"
   },

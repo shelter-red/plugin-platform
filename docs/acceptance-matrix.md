@@ -63,7 +63,7 @@
 | 加载态、错误态、连接变化和 Toast | 本地已验证 | `console-worker` Playwright 项目用拦截的 Worker 响应验证：访问日志加载态→空态、服务器/插件/域名 500 后的“数据读取失败”与重试恢复、刷新成功 Toast、未连接/已连接切换和维护状态展示。边界：响应为测试夹具，不是已部署 Worker。 |
 | 表单校验、注册码、本地口令、轮换和撤销确认 | 部分实现 | 管理端 Playwright 覆盖注册码生成与弹窗内展示、域名前缀长度与空值校验、服务端校验错误回显、域名分配结果和插件加载命令提交；本地服务器口令、轮换和撤销有 CTest 与 Native UI smoke。完整 Worker 端到端联调未验证。 |
 | 表格、图表和弹窗移动布局 | 部分实现 | 各页面在 390px 下断言无横向溢出；弹窗在 390px 下断言宽度不超出视口并可用 Escape 关闭；尚无逐页面视觉回归基线。 |
-| 中文优先和国际化预留 | 部分实现 | 当前界面为中文优先；尚未接入 i18n 资源系统。 |
+| 中文优先和国际化预留 | 本地已验证 | 管理端接入 i18next/react-i18next，默认中文、可切换 English，语言写入 localStorage `plugmesh-language` 并同步 `<html lang>`；Playwright 覆盖切换、刷新持久化和回切中文。边界：Native UI 仍为中文，未接入 i18n 资源。 |
 
 ## 当前自动化基线
 
@@ -71,7 +71,7 @@
 
 ```text
 npm run build
-npm run ui:smoke                         14 passed（preview 6 + worker-mock 8）
+npm run ui:smoke                         15 passed（preview 7 + worker-mock 8）
 npm run native-ui:smoke                  3 passed
 npm run worker:typecheck
 npm run worker:smoke                     25 smoke checks passed

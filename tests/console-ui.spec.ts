@@ -105,3 +105,24 @@ test('管理端窄窗口弹窗可用', async ({ page }) => {
   await page.keyboard.press('Escape')
   await expect(dialog).toBeHidden()
 })
+
+test('管理端中英切换并持久化', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: '总览', level: 1 })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.lang)).toBe('zh-CN')
+
+  await page.getByLabel('选择语言').selectOption('en')
+  await expect(page.getByRole('heading', { name: 'Overview', level: 1 })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Plugin instances', exact: true })).toBeVisible()
+  await expect(page.getByLabel('Select theme')).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.lang)).toBe('en')
+  expect(await page.evaluate(() => localStorage.getItem('plugmesh-language'))).toBe('en')
+
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Overview', level: 1 })).toBeVisible()
+
+  await page.getByLabel('Select language').selectOption('zh-CN')
+  await expect(page.getByRole('heading', { name: '总览', level: 1 })).toBeVisible()
+  expect(await page.evaluate(() => localStorage.getItem('plugmesh-language'))).toBe('zh-CN')
+})
