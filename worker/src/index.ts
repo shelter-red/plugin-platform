@@ -5,7 +5,7 @@ import type { AuthenticatedUser, Env } from './types'
 import { decryptSecret, encryptSecret } from './secrets'
 import { isEmail, parseSmtpSettings, publicSmtpSettings, sendInviteEmail, sendSmtpTest, type SmtpSettings } from './email'
 import { discoverCloudflareAccountId, exchangeCloudflareCode, readCloudflareCredential, refreshCloudflareCredential, revokeCloudflareToken, type CloudflareCredential } from './cloudflare-oauth'
-import { activateMaintenance, cloudflareQuotaReason, countStream, defaultPlatformSettings, getPlatformSettings, isMaintenanceMode, releaseR2Usage, reserveR2Usage, reserveRequest, setPlatformSettingsCache } from './usage'
+import { activateMaintenance, cloudflareQuotaReason, defaultPlatformSettings, getPlatformSettings, isMaintenanceMode, releaseR2Usage, reserveR2Usage, reserveRequest, setPlatformSettingsCache } from './usage'
 import { findPluginRoute, invalidatePluginRoute } from './route-cache'
 import { selectPublicRequestMode } from './request-mode'
 import { resolvePublicRoute } from './public-route'
@@ -120,22 +120,30 @@ async function createBlob(request: Request, env: Env): Promise<Response> {
     return json({ error: 'Platform quota reached' }, 503)
   }
   await cleanupExpiredBlobs(env)
-  const contentLength = Number(request.headers.get('content-length') ?? 0)
-  const maxBytes = 50 * 1024 * 1024
   if (!request.body) return json({ error: 'Request body is required' }, 400)
+  if (!request.headers.has('content-length')) return json({ error: 'Content-Length header is required' }, 411)
+  const contentLength = Number(request.headers.get('content-length'))
+  const maxBytes = 50 * 1024 * 1024
+  if (!Number.isSafeInteger(contentLength) || contentLength < 0) return json({ error: 'Content-Length header is invalid' }, 400)
   if (contentLength > maxBytes) return json({ error: 'File is too large' }, 413)
   const objectKey = `temp/${crypto.randomUUID()}`
   const token = crypto.randomUUID() + crypto.randomUUID()
   const tokenHash = await digest(token)
   const contentType = request.headers.get('content-type') ?? 'application/octet-stream'
-  const counter = { bytes: 0 }
   try {
-    await env.BLOB_BUCKET.put(objectKey, countStream(request.body, counter, maxBytes), { httpMetadata: { contentType } })
+    if (contentLength === 0) {
+      await env.BLOB_BUCKET.put(objectKey, new Uint8Array(), { httpMetadata: { contentType } })
+    } else {
+      const fixed = new FixedLengthStream(contentLength)
+      const piping = request.body.pipeTo(fixed.writable).catch(() => undefined)
+      await env.BLOB_BUCKET.put(objectKey, fixed.readable, { httpMetadata: { contentType } })
+      await piping
+    }
   } catch {
-    if (!await deleteR2ObjectWithRetry(env, objectKey)) await trackUncollectedObject(env, objectKey, tokenHash, contentType, counter.bytes)
-    return json({ error: counter.bytes > maxBytes ? 'File is too large' : 'File upload failed' }, counter.bytes > maxBytes ? 413 : 502)
+    if (!await deleteR2ObjectWithRetry(env, objectKey)) await trackUncollectedObject(env, objectKey, tokenHash, contentType, contentLength)
+    return json({ error: 'File upload failed' }, 502)
   }
-  const sizeBytes = counter.bytes
+  const sizeBytes = contentLength
   if (!await reserveR2Usage(env, settings.quotas, sizeBytes)) {
     if (!await deleteR2ObjectWithRetry(env, objectKey)) await trackUncollectedObject(env, objectKey, tokenHash, contentType, sizeBytes)
     await activateMaintenance(env, 'R2 storage quota reached')
