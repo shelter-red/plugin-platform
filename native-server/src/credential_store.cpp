@@ -300,7 +300,7 @@ bool save_system_credentials(const StoredCredentials& credentials, std::string& 
 #endif
 }
 
-bool load_system_credentials(StoredCredentials& credentials, std::string& error) {
+bool load_system_credentials([[maybe_unused]] StoredCredentials& credentials, std::string& error) {
 #if defined(_WIN32)
   PCREDENTIALA credential = nullptr;
   if (!CredReadA("Plugmesh/default", CRED_TYPE_GENERIC, 0, &credential)) {

@@ -110,6 +110,7 @@ PluginInfo make_info(const std::filesystem::path& path, const Manifest& manifest
       manifest.websocket,
       manifest.sse,
       manifest.file_stream,
+      std::string{},
   };
 }
 
