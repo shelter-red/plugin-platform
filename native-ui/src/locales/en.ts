@@ -88,6 +88,7 @@ export default {
     index: '02 / Plugin catalog',
     title: 'Discovered plugins',
     count: '{{count}} entries',
+    loadedCount: '{{count}} loaded',
     healthPassed: '{{name}}: health check passed ({{status}})',
     stateChanged: '{{name}}: {{state}}',
     loading: 'Reading the plugin catalog',
@@ -100,6 +101,10 @@ export default {
     disable: 'Disable',
     unload: 'Unload',
     fileStream: 'File stream',
+    library: 'Library',
+    healthPath: 'Health path',
+    permissions: 'Permissions',
+    noPermissions: 'none',
   },
   binding: {
     index: '03 / Connection',

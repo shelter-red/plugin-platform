@@ -70,7 +70,7 @@ button { cursor: pointer; }
 .plugin-copy { min-width: 0; }
 .plugin-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .plugin-title h3 { margin: 0; font-size: 14px; font-weight: 500; }
-.plugin-id { display: block; margin-top: 7px; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.plugin-id { display: block; margin-top: 7px; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; } .plugin-meta { display: block; margin-top: 5px; color: var(--faint); font-size: 9px; line-height: 1.5; overflow-wrap: anywhere; }
 .capability-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 13px; }
 .capability-list span { padding: 3px 5px; color: var(--faint); border: 1px solid var(--line); font-size: 8px; }
 .status-badge { display: inline-flex; align-items: center; gap: 5px; min-height: 20px; padding: 0 7px; border: 1px solid var(--line); color: var(--muted); font-size: 9px; }

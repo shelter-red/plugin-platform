@@ -92,6 +92,7 @@ export default {
     index: '02 / 插件目录',
     title: '已发现插件',
     count: '{{count}} 个条目',
+    loadedCount: '已加载 {{count}}',
     healthPassed: '{{name}}：健康检查通过（{{status}}）',
     stateChanged: '{{name}}：{{state}}',
     loading: '正在读取插件目录',
@@ -104,6 +105,10 @@ export default {
     disable: '停用',
     unload: '卸载',
     fileStream: '文件流',
+    library: '动态库',
+    healthPath: '健康检查',
+    permissions: '权限',
+    noPermissions: '无',
   },
   binding: {
     index: '03 / 连接设置',
