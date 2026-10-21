@@ -542,9 +542,12 @@ async function proxyPublicHost(request: Request, env: Env, url: URL, ctx: Execut
   const hostname = url.hostname
   const domain = await findPluginRoute(env, hostname)
   if (!domain || domain.status !== 'online' || domain.server_status !== 'online' || domain.plugin_state !== 'enabled') return maintenanceResponse('插件暂时不可用', '公开入口尚未就绪、插件当前未启用或插件服务器当前离线。')
-  const mode = selectPublicRequestMode(request, domain.manifest_json)
-  if (!mode) return new Response('Plugin capability is not available', { status: 501, headers: { 'content-type': 'text/plain; charset=utf-8' } })
   const startedAt = Date.now()
+  const mode = selectPublicRequestMode(request, domain.manifest_json)
+  if (!mode) {
+    ctx.waitUntil(recordAccessLog(env, { userId: domain.user_id, domainId: domain.domain_id, pluginInstanceId: domain.plugin_instance_id, hostname: domain.hostname, method: request.method, path: url.pathname, status: 501, durationMs: Date.now() - startedAt, error: 'plugin capability unavailable' }))
+    return new Response('Plugin capability is not available', { status: 501, headers: { 'content-type': 'text/plain; charset=utf-8' } })
+  }
   if (!await reserveRequest(env, settings.quotas)) {
     await activateMaintenance(env, 'request quota reached')
     ctx.waitUntil(recordAccessLog(env, { userId: domain.user_id, domainId: domain.domain_id, pluginInstanceId: domain.plugin_instance_id, hostname: domain.hostname, method: request.method, path: url.pathname, status: 503, durationMs: Date.now() - startedAt, error: 'platform quota reached' }))
