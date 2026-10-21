@@ -2,6 +2,7 @@ import { isManifest, makeFrame, MAX_CONTROL_FRAME_BYTES, parseControlFrame } fro
 import type { ControlFrame, Env } from './types'
 import { activateMaintenance, getPlatformSettings, releaseActiveConnection, releaseR2Usage, reserveActiveConnection, reserveR2Usage } from './usage'
 import { hashControlToken } from './security'
+import { parseResponseStatus, responseHeaders } from './response-validation'
 
 const MAX_PROXY_REQUEST_BODY_BYTES = 32 * 1024
 const MAX_PROXY_RESPONSE_BODY_BYTES = 16 * 1024 * 1024
@@ -391,7 +392,11 @@ export class PluginBridge {
   private openResponse(requestId: string, payload: Record<string, unknown>) {
     const pending = this.pending.get(requestId)
     if (!pending || pending.writer) return
-    const status = typeof payload.status === 'number' ? payload.status : 200
+    const status = parseResponseStatus(payload.status ?? 200)
+    if (status === null) {
+      this.rejectPendingResponse(requestId, pending, 'Plugin response status is invalid')
+      return
+    }
     const headers = responseHeaders(payload.headers)
     if (payload.fileStream === true) {
       pending.fileStream = true
@@ -446,6 +451,11 @@ export class PluginBridge {
       void pending.writer.close().catch(() => undefined)
       return
     }
+    const status = parseResponseStatus(payload.status ?? 200)
+    if (status === null) {
+      this.rejectPendingResponse(requestId, pending, 'Plugin response status is invalid')
+      return
+    }
     const body = typeof payload.body === 'string' ? payload.body : toArrayBuffer(combineBytes(pending.buffered))
     const bodyBytes = typeof body === 'string' ? new TextEncoder().encode(body) : new Uint8Array(body)
     if (bodyBytes.byteLength > MAX_PROXY_RESPONSE_BODY_BYTES) {
@@ -454,7 +464,7 @@ export class PluginBridge {
     }
     this.pending.delete(requestId)
     this.releasePendingConnection(pending)
-    pending.resolve(new Response(body, { status: typeof payload.status === 'number' ? payload.status : 200, headers: responseHeaders(payload.headers) }))
+    pending.resolve(new Response(body, { status, headers: responseHeaders(payload.headers) }))
   }
 
   private writeFileChunk(pending: PendingResponse, bytes: Uint8Array) {
@@ -657,13 +667,6 @@ async function deleteR2ObjectWithRetry(env: Env, objectKey: string): Promise<boo
     }
   }
   return false
-}
-
-function responseHeaders(value: unknown): Headers {
-  const headers = new Headers()
-  if (!value || typeof value !== 'object') return headers
-  for (const [key, item] of Object.entries(value)) if (typeof item === 'string') headers.set(key, item)
-  return headers
 }
 
 async function readRequestBody(request: Request, maxBytes: number): Promise<{ ok: true; body: Uint8Array } | { ok: false }> {

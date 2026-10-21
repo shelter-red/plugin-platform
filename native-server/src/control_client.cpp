@@ -260,6 +260,10 @@ void ControlClient::handle_http_request(const ControlFrame& frame) {
     send_request_error(frame, "plugin HTTP response is too large");
     return;
   }
+  if (response.status < 200 || response.status > 599) {
+    send_request_error(frame, "plugin HTTP response status is invalid");
+    return;
+  }
   Json response_headers = Json::object();
   if (response.headers_json) {
     const auto parsed = Json::parse(response.headers_json, nullptr, false);
