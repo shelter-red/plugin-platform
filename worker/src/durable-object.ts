@@ -629,8 +629,16 @@ export class PluginBridge {
     const server = await this.env.DB.prepare('UPDATE servers SET status = ?, last_seen_at = ? WHERE id = ? AND status != ? AND (last_seen_at IS NULL OR last_seen_at <= ?)').bind('offline', disconnectedAt, this.serverId, 'revoked', disconnectedAt).run()
     if ((server.meta.changes ?? 0) !== 1) return
     await this.env.DB.batch([
-      this.env.DB.prepare('UPDATE plugin_instances SET state = ?, updated_at = ? WHERE server_id = ? AND state != ?').bind('server_offline', new Date().toISOString(), this.serverId, 'server_offline'),
-      this.env.DB.prepare('UPDATE domains SET status = ? WHERE plugin_instance_id IN (SELECT id FROM plugin_instances WHERE server_id = ?)').bind('offline', this.serverId),
+      this.env.DB.prepare(`
+        UPDATE plugin_instances SET state = ?, updated_at = ?
+        WHERE server_id = ? AND state != ?
+          AND EXISTS (SELECT 1 FROM servers WHERE servers.id = ? AND servers.status = ? AND servers.last_seen_at = ?)
+      `).bind('server_offline', new Date().toISOString(), this.serverId, 'server_offline', this.serverId, 'offline', disconnectedAt),
+      this.env.DB.prepare(`
+        UPDATE domains SET status = ?
+        WHERE plugin_instance_id IN (SELECT id FROM plugin_instances WHERE server_id = ?)
+          AND EXISTS (SELECT 1 FROM servers WHERE servers.id = ? AND servers.status = ? AND servers.last_seen_at = ?)
+      `).bind('offline', this.serverId, this.serverId, 'offline', disconnectedAt),
     ])
   }
 
