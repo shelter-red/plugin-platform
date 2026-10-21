@@ -180,6 +180,43 @@ test('管理端总览展示真实 5xx 访问日志与连接异常', async ({ pag
   }
 })
 
+test('管理端维护开关切换真实平台状态并写入审计', async ({ page }) => {
+  const { call } = createStackApi(page.request, sessionToken)
+  const original = (await (await call('/api/settings/platform')).json()) as { maintenance: boolean }
+  expect(original.maintenance, '真实栈应处于运行状态').toBe(false)
+  try {
+    await page.goto('/')
+    await page.getByRole('button', { name: '系统设置', exact: true }).click()
+    await page.getByRole('button', { name: '维护与配额' }).click()
+    const panel = page.locator('#settings-maintenance')
+    await expect(panel).toContainText('运行中')
+
+    await panel.locator('button.toggle').click()
+    await expect(page.getByText('平台已进入维护模式')).toBeVisible()
+    await expect(panel).toContainText('维护中')
+
+    const paused = await getPublic(baseURL!, 'maintenance-check.plugins.example.com')
+    expect(paused.status).toBe(503)
+    expect(paused.body).toContain('平台维护中')
+
+    await page.getByRole('button', { name: '总览', exact: true }).click()
+    await expect(page.getByText('平台维护中', { exact: true })).toBeVisible()
+
+    await page.getByRole('button', { name: '系统设置', exact: true }).click()
+    await page.getByRole('button', { name: '维护与配额' }).click()
+    await panel.locator('button.toggle').click()
+    await expect(page.getByText('平台已恢复运行')).toBeVisible()
+
+    const resumed = await getPublic(baseURL!, 'maintenance-check.plugins.example.com')
+    expect(resumed.status).toBe(404)
+
+    await page.getByRole('button', { name: '审计日志', exact: true }).click()
+    await expect(page.getByRole('row', { name: /更新平台设置/ }).first()).toBeVisible()
+  } finally {
+    await call('/api/settings/platform', { method: 'PUT', data: { maintenance: false } })
+  }
+})
+
 function getPublic(workerUrl: string, hostname: string) {
   return new Promise<{ status: number; body: string }>((resolve, reject) => {
     const target = new URL(workerUrl)
