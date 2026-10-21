@@ -92,7 +92,7 @@ async function serverDetailsApi(env: Env, user: AuthenticatedUser, serverId: str
   return json({ server, plugins: plugins.results, recentErrors: errors.results })
 }
 
-async function syncServer(request: Request, env: Env, user: AuthenticatedUser, serverId: string): Promise<Response> {
+export async function syncServer(request: Request, env: Env, user: AuthenticatedUser, serverId: string): Promise<Response> {
   if (await isMaintenanceMode(env)) return json({ error: 'Platform is in maintenance mode' }, 503)
   const server = await env.DB.prepare('SELECT id, status FROM servers WHERE id = ? AND user_id = ?').bind(serverId, user.id).first<{ id: string; status: string }>()
   if (!server) return json({ error: 'Plugin server not found' }, 404)
