@@ -10,6 +10,7 @@
 
 #define PLUGMESH_PLUGIN_ABI_VERSION 2u
 #define PLUGMESH_PLUGIN_ABI_VERSION_V3 3u
+#define PLUGMESH_PLUGIN_ABI_VERSION_V4 4u
 
 #ifdef __cplusplus
 extern "C" {
@@ -65,6 +66,15 @@ typedef struct plugmesh_plugin_api_v3 {
 } plugmesh_plugin_api_v3;
 
 typedef const plugmesh_plugin_api_v3* (*plugmesh_plugin_get_api_v3_fn)();
+
+// v4 增加 SSE 取消回调。宿主会在 SSE 回调仍运行时并发调用该函数，
+// 插件必须让 handle_sse 尽快观察到取消并返回；未实现的旧插件继续使用 v2/v3。
+typedef struct plugmesh_plugin_api_v4 {
+  plugmesh_plugin_api_v3 base;
+  int (*handle_sse_cancel)(const char* stream_id);
+} plugmesh_plugin_api_v4;
+
+typedef const plugmesh_plugin_api_v4* (*plugmesh_plugin_get_api_v4_fn)();
 
 #ifdef __cplusplus
 }

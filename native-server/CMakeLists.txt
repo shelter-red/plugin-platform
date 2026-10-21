@@ -49,6 +49,9 @@ target_include_directories(plugmesh-lifecycle-sample PRIVATE include)
 add_library(plugmesh-crashing-sample SHARED examples/crashing_plugin.cpp)
 target_include_directories(plugmesh-crashing-sample PRIVATE include)
 
+add_library(plugmesh-cancellable-sample SHARED examples/cancellable_plugin.cpp)
+target_include_directories(plugmesh-cancellable-sample PRIVATE include)
+
 file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/plugins/sample.plugin/manifest.json" CONTENT "{\n  \"id\": \"sample.plugin\",\n  \"name\": \"Sample Plugin\",\n  \"version\": \"0.1.0\",\n  \"abiVersion\": \"2\",\n  \"library\": \"$<TARGET_FILE_NAME:plugmesh-sample>\",\n  \"capabilities\": {\"http\": true, \"websocket\": true, \"sse\": true, \"fileStream\": true},\n  \"permissions\": [],\n  \"healthPath\": \"/health\"\n}\n")
 add_custom_command(TARGET plugmesh-sample POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/plugins/sample.plugin"
@@ -107,7 +110,7 @@ add_test(NAME plugmesh-control-protocol-smoke COMMAND plugmesh-control-protocol-
 add_test(NAME plugmesh-control-client-smoke COMMAND plugmesh-control-client-smoke $<TARGET_FILE:plugmesh-plugin-host> "${CMAKE_CURRENT_BINARY_DIR}/plugins")
 add_test(NAME plugmesh-credential-store-smoke COMMAND plugmesh-credential-store-smoke)
 add_test(NAME plugmesh-registration-client-smoke COMMAND plugmesh-registration-client-smoke)
-add_test(NAME plugmesh-plugin-loader-smoke COMMAND plugmesh-plugin-loader-smoke $<TARGET_FILE:plugmesh-sample>)
+add_test(NAME plugmesh-plugin-loader-smoke COMMAND plugmesh-plugin-loader-smoke $<TARGET_FILE:plugmesh-sample> $<TARGET_FILE:plugmesh-lifecycle-sample> $<TARGET_FILE:plugmesh-cancellable-sample>)
 add_test(NAME plugmesh-plugin-host-smoke COMMAND plugmesh-plugin-host-smoke $<TARGET_FILE:plugmesh-plugin-host> $<TARGET_FILE:plugmesh-sample> $<TARGET_FILE:plugmesh-crashing-sample>)
 add_test(NAME plugmesh-plugin-manager-smoke COMMAND plugmesh-plugin-manager-smoke $<TARGET_FILE:plugmesh-plugin-host> "${CMAKE_CURRENT_BINARY_DIR}/plugins")
 add_test(NAME plugmesh-plugin-manager-crash-smoke COMMAND plugmesh-plugin-manager-crash-smoke $<TARGET_FILE:plugmesh-plugin-host> "${CMAKE_CURRENT_BINARY_DIR}/plugins")
