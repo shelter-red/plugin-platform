@@ -237,6 +237,28 @@ npm run stack:streams
 
 2026-10-21 实测：`1 passed (3.0s)`；结束后 `r2Objects=0`、`r2Bytes=0`、`activeConnections=0`。边界同上：单机 miniflare 单 isolate，未验证真实公网长连接。
 
+## 真实浏览器验收
+
+`npm run stack:browser` 用 `tests/browser-stack.spec.ts` 把同一套真实栈放进 Chromium：测试用 `--host-resolver-rules` 把插件域名解析到本地 `wrangler dev`，页面因此按真实 Host 走 Worker 的域名路由，覆盖 Node 客户端测不到的浏览器行为（原生 `EventSource`、原生 `WebSocket`、流式 `fetch`）。
+
+```bash
+PLUGMESH_REAL_STACK_URL=http://127.0.0.1:18888 \
+PLUGMESH_REAL_STACK_TOKEN=e2e-session-token \
+npm run stack:browser
+```
+
+断言：
+
+- 访问插件域名首页返回 200，正文 `ok`；
+- 页面内 `fetch('/echo', { method: 'POST', body: 'browser-body' })` 返回 200 与 `ok`，方法未被改写；
+- 原生 `EventSource('/')` 收到首帧事件 `sample-plugin`（`EventSource` 自带 `accept: text/event-stream`，由 Worker 判定为 SSE）；
+- 原生 `WebSocket` 发送 `hello-ws` 并收到同样内容（二进制帧按 `ArrayBuffer` 解码）；
+- `/file` 返回 18 字节 `sample-file-stream`；`/large` 用 `ReadableStream` 分块读取 8388608 字节并逐字节校验 `下标 % 251`；
+- 读取与关闭后 `/api/usage/local` 的 `activeConnections`、`r2Objects`、`r2Bytes` 全部归零；
+- `/api/access-logs` 记录该域名下 `GET /`、`POST /echo`、`GET /large` 三条 200。
+
+2026-10-21 实测：`1 passed (3.1s)`。
+
 ## 配额耗尽与维护模式验证
 
 `npm run stack:maintenance` 用 `tests/maintenance-stack.spec.ts` 在同一真实栈上验证「总配额耗尽 → 全局维护模式」：

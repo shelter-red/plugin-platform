@@ -45,7 +45,8 @@
     "stack:streams": "playwright test --config playwright.streams.config.ts",
     "stack:maintenance": "playwright test --config playwright.maintenance.config.ts",
     "stack:restart": "playwright test --config playwright.restart.config.ts",
-    "stack:multi-isolate": "playwright test --config playwright.multi-isolate.config.ts"
+    "stack:multi-isolate": "playwright test --config playwright.multi-isolate.config.ts",
+    "stack:browser": "playwright test --config playwright.browser.config.ts"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
