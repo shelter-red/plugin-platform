@@ -84,8 +84,8 @@ PLUGMESH_REAL_STACK_URL=http://127.0.0.1:18889 npm run ui:real-stack
                                          8 passed（需先启动本地 wrangler dev 并写入验收数据；会话令牌默认值即 docs/local-e2e.md 的 e2e-session-token；第二条用例覆盖邀请创建、链接复制、撤销（重复撤销 409、整页重载回源与审计）、非法用户名校验和注册码生成，第三、四条用例自动注册并启动真实 C++ 服务器，第五条用例切换维护开关并保存配额后复位，第六条用例校验用量页真实本地计数、R2 用量回收、用户/插件/域名请求分布与官方未连接状态，第七条用例在后台保存 GitHub/Cloudflare OAuth 配置且不回显密钥，第八条用例保存 SMTP 配置并验证测试发送失败路径）
 npm run worker:typecheck
 npm run worker:smoke                     26 个 smoke 脚本全部通过
-npm run worker:runtime-test              68/69 passed（19 个测试文件；workerd + 真实 D1/Durable Object/R2 模拟）
-  # 本次全量唯一失败为 analytics.test.ts 的 TTL 边界断言 300001 <= 300000；单独重跑 analytics.test.ts 为 5/5 passed，待最终全量复跑确认
+npm run worker:runtime-test              69 passed（19 个测试文件；workerd + 真实 D1/Durable Object/R2 模拟）
+  # 最终全量复跑通过；较早一次全量曾出现 analytics.test.ts TTL 边界 300001 <= 300000，单独重跑 5/5，当前未复现
   # 本机 glibc 2.31，经 node:22-bookworm-slim 容器执行；glibc ≥ 2.35 可直接运行
   # 容器内没有系统 CA，必须只读挂载 /etc/ssl/certs，否则 16 个测试文件全部启动失败
   docker run --rm -v "$PWD":/work -v /etc/ssl/certs:/etc/ssl/certs:ro \
