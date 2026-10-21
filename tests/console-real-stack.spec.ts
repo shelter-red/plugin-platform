@@ -175,6 +175,16 @@ test('管理端总览展示真实 5xx 访问日志与连接异常', async ({ pag
 
     await page.reload()
     await expect(panel.locator('.activity-item').filter({ hasText: prepared.server.name })).toContainText('离线')
+
+    await page.getByRole('button', { name: '插件服务器', exact: true }).click()
+    await page.getByRole('button', { name: `查看 ${prepared.server.name} 详情` }).click()
+    const serverDetail = page.getByRole('dialog', { name: '服务器详情' })
+    await expect(serverDetail).toContainText('离线')
+    await expect(serverDetail).toContainText('服务器离线')
+    const detailError = serverDetail.locator('.detail-error').filter({ hasText: hostname })
+    await expect(detailError).toContainText('501')
+    await expect(detailError).toContainText('plugin capability unavailable')
+    await serverDetail.getByRole('button', { name: '关闭详情' }).click()
   } finally {
     await prepared.server.stop()
   }
