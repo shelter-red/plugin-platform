@@ -648,10 +648,12 @@ async function proxyPublicHost(request: Request, env: Env, url: URL, ctx: Execut
   headers.set('x-plugmesh-request-path', url.pathname + url.search)
   headers.set('x-plugmesh-request-mode', mode)
   try {
-    const response = request.headers.get('Upgrade')?.toLowerCase() === 'websocket'
+    const bridgeResponse = request.headers.get('Upgrade')?.toLowerCase() === 'websocket'
       ? await bridge.fetch(new Request(new URL('/websocket', request.url), { method: 'GET', headers }))
       : await bridge.fetch(new Request(new URL('/proxy', request.url), { method: request.method, headers, body: request.body }))
-    ctx.waitUntil(recordAccessLog(env, { userId: domain.user_id, domainId: domain.domain_id, pluginInstanceId: domain.plugin_instance_id, hostname: domain.hostname, method: request.method, path: url.pathname, status: response.status, durationMs: Date.now() - startedAt }))
+    const bridgeOffline = bridgeResponse.status === 503 && bridgeResponse.headers.get('x-plugmesh-bridge-error') === 'server-offline'
+    const response = bridgeOffline ? maintenanceResponse('插件暂时不可用', '插件服务器当前离线，请稍后再试。') : bridgeResponse
+    ctx.waitUntil(recordAccessLog(env, { userId: domain.user_id, domainId: domain.domain_id, pluginInstanceId: domain.plugin_instance_id, hostname: domain.hostname, method: request.method, path: url.pathname, status: response.status, durationMs: Date.now() - startedAt, ...(bridgeOffline ? { error: 'plugin server offline' } : {}) }))
     return response
   } catch {
     ctx.waitUntil(recordAccessLog(env, { userId: domain.user_id, domainId: domain.domain_id, pluginInstanceId: domain.plugin_instance_id, hostname: domain.hostname, method: request.method, path: url.pathname, status: 502, durationMs: Date.now() - startedAt, error: 'bridge request failed' }))

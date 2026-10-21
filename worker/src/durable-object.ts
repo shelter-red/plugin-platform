@@ -82,7 +82,7 @@ export class PluginBridge {
   }
 
   private async proxyRequest(request: Request): Promise<Response> {
-    if (!this.serverSocket || this.serverSocket.readyState !== WebSocket.OPEN) return new Response('Plugin server is offline', { status: 503 })
+    if (!this.serverSocket || this.serverSocket.readyState !== WebSocket.OPEN) return serverOfflineResponse()
     const requestId = crypto.randomUUID()
     const bodyResult = await readRequestBody(request, MAX_PROXY_REQUEST_BODY_BYTES)
     if (!bodyResult.ok) return new Response('Plugin request body is too large', { status: 413 })
@@ -141,7 +141,7 @@ export class PluginBridge {
   }
 
   private async proxyWebSocket(request: Request): Promise<Response> {
-    if (!this.serverSocket || this.serverSocket.readyState !== WebSocket.OPEN) return new Response('Plugin server is offline', { status: 503 })
+    if (!this.serverSocket || this.serverSocket.readyState !== WebSocket.OPEN) return serverOfflineResponse()
     if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') return new Response('WebSocket upgrade required', { status: 426 })
     const settings = await getPlatformSettings(this.env)
     if (!await reserveActiveConnection(this.env, settings.quotas)) {
@@ -250,7 +250,7 @@ export class PluginBridge {
       this.releasePendingConnection(pending)
       void this.discardR2Upload(pending)
       if (pending.writer) void pending.writer.abort(message).catch(() => undefined)
-      else pending.resolve(new Response(message, { status, headers: { 'content-type': 'text/plain; charset=utf-8' } }))
+      else pending.resolve(new Response(message, { status, headers: { 'content-type': 'text/plain; charset=utf-8', ...(status === 503 ? { 'x-plugmesh-bridge-error': 'server-offline' } : {}) } }))
     }
   }
 
@@ -680,6 +680,10 @@ export class PluginBridge {
     await this.markServerOffline()
     socket.close(1008, 'Invalid server registration')
   }
+}
+
+function serverOfflineResponse(): Response {
+  return new Response('Plugin server is offline', { status: 503, headers: { 'x-plugmesh-bridge-error': 'server-offline' } })
 }
 
 async function deleteR2ObjectWithRetry(env: Env, objectKey: string): Promise<boolean> {

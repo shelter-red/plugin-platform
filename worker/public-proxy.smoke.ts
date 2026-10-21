@@ -23,6 +23,7 @@ const routes = new Map<string, PluginRoute | null>([
   ['offline.plugins.example.test', { ...readyRoute, hostname: 'offline.plugins.example.test', server_status: 'offline' }],
   ['sse.plugins.example.test', { ...readyRoute, hostname: 'sse.plugins.example.test', manifest_json: JSON.stringify({ capabilities: { http: false, websocket: false, sse: true, fileStream: false } }) }],
   ['limited.plugins.example.test', { ...readyRoute, hostname: 'limited.plugins.example.test', manifest_json: JSON.stringify({ capabilities: { http: false, websocket: false, sse: false, fileStream: false } }) }],
+  ['stale.plugins.example.test', { ...readyRoute, hostname: 'stale.plugins.example.test' }],
 ])
 
 const bridgeRequests: Request[] = []
@@ -51,6 +52,7 @@ const database = {
 const bridge = {
   async fetch(request: Request): Promise<Response> {
     bridgeRequests.push(request)
+    if (new URL(request.url).hostname === 'stale.plugins.example.test') return new Response('Plugin server is offline', { status: 503, headers: { 'x-plugmesh-bridge-error': 'server-offline' } })
     if (request.headers.get('x-plugmesh-request-mode') === 'sse') return new Response('data: hello\n\n', { status: 200, headers: { 'content-type': 'text/event-stream' } })
     return new Response('proxied', { status: 201, headers: { 'x-plugin-response': 'ok' } })
   },
@@ -110,6 +112,11 @@ assert.equal(response.headers.get('content-type'), 'text/event-stream')
 assert.equal(await response.text(), 'data: hello\n\n')
 assert.equal(bridgeRequests.at(-1)?.headers.get('x-plugmesh-request-mode'), 'sse')
 
+response = await fetchPublic('stale.plugins.example.test')
+assert.equal(response.status, 503)
+assert.match(await response.text(), /插件服务器当前离线/)
+assert.equal(response.headers.get('x-plugmesh-bridge-error'), null)
+
 const bridgeCountBeforeUnsupported = bridgeRequests.length
 response = await fetchPublic('limited.plugins.example.test')
 assert.equal(response.status, 501)
@@ -117,7 +124,7 @@ assert.equal(await response.text(), 'Plugin capability is not available')
 assert.equal(bridgeRequests.length, bridgeCountBeforeUnsupported)
 
 await Promise.all(waits)
-assert.deepEqual(accessLogs.map((entry) => entry.status), [201, 200, 501])
-assert.deepEqual(accessLogs.map((entry) => entry.path), ['/api/items', '/api/items', '/api/items'])
+assert.deepEqual(accessLogs.map((entry) => entry.status), [201, 200, 503, 501])
+assert.deepEqual(accessLogs.map((entry) => entry.path), ['/api/items', '/api/items', '/api/items', '/api/items'])
 
 console.log('public proxy smoke test passed')
