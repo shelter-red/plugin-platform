@@ -41,7 +41,10 @@ npm run native-ui:build
 npm run build
 npm run worker:typecheck
 npm run worker:github-auth-smoke
+npm run worker:github-oauth-smoke
 npm run worker:cloudflare-oauth-smoke
+npm run worker:cloudflare-oauth-route-smoke
+npm run worker:api-permission-smoke
 npm run worker:public-proxy-smoke
 npm run worker:registration-race-smoke
 npm run worker:durable-object-stream-smoke
