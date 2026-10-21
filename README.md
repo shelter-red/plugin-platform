@@ -18,6 +18,8 @@
 - Worker Cron 定时清理 30 天访问日志、180 天审计日志、过期邀请、会话和临时 R2 对象。
 - 插件公开访问日志记录状态、耗时和错误摘要，并按用户隔离展示在管理端。
 - Worker 静态资源绑定管理端 SPA，控制台、API、OAuth 和插件域名共用统一入口。
+- 一键部署脚本自动准备 D1/R2、执行迁移、生成基础设施 Secret 并发布 Worker；OAuth、SMTP 等业务配置在管理后台完成。
+- 一次性 `/setup` 初始化入口：部署令牌保护，首个 GitHub 白名单账号成为超级管理员，创建用户后永久锁定。
 - Cloudflare OAuth Authorization Code 回调：管理员状态校验、一次性 state、令牌密文保存、账号自动发现和官方撤销。
 - C++20 跨平台基础：Linux `.so` / Windows `.dll` 动态库加载、ABI v2/v3 版本检查、插件生命周期管理、公开 WebSocket 建立/关闭回调、Windows Credential Manager/macOS Keychain 系统凭据存储和 WebSocket++ 出站控制连接。插件运行在独立 `plugmesh-plugin-host` 子进程中，原生崩溃只终止宿主并标记插件失败，不会带走服务器。
 - 独立本地 React + TypeScript 控制台：连接状态、插件 manifest、生命周期操作、诊断摘要、运行日志、首次绑定以及访问密钥轮换/绑定撤销。
@@ -58,70 +60,104 @@ cmake --build native-server/build --target test
 
 完整的实现状态、验证证据和生产发布阻塞项见 [`docs/acceptance-matrix.md`](docs/acceptance-matrix.md)。
 
-Worker 本地调试前需要把 `worker/wrangler.toml` 中的 D1、R2 和 Durable Object 配置替换为实际资源：
+## 生产一键部署（Cloudflare Worker）
+
+生产部署只要求一个 Cloudflare API Token。GitHub OAuth、Cloudflare OAuth、SMTP、配额等业务配置全部放在管理后台，不再要求部署时填写 OAuth 环境变量。
+
+### 1. 准备 Cloudflare 凭据
+
+在 Cloudflare 控制台创建 API Token，至少包含：
+
+- Workers Scripts: Edit
+- D1: Edit
+- Workers R2 Storage: Edit
+
+账号多于一个时再设置 `CLOUDFLARE_ACCOUNT_ID`；只有一个账号时可以省略。
+
+### 2. 执行一键部署
+
+```bash
+npm ci
+export CLOUDFLARE_API_TOKEN=...
+# 可选：export CLOUDFLARE_ACCOUNT_ID=...
+npm run deploy:worker
+```
+
+`npm run deploy:worker` 会自动完成：
+
+1. 构建管理端 SPA；
+2. 创建或复用 D1 数据库 `plugmesh`，并把真实 `database_id` 回填到 `worker/wrangler.toml`；
+3. 创建或复用 R2 存储桶 `plugmesh-blobs`；
+4. 对远端 D1 应用 `worker/migrations/` 下的全部迁移；
+5. 发布 Worker；
+6. 仅在远端缺失时生成 `SESSION_SECRET`，已有值绝不轮换；
+7. 仅在远端缺失时生成一次性 `SETUP_TOKEN`，并保存到 `.wrangler/plugmesh-setup-token`（权限 `0600`）。
+
+脚本不会写入 GitHub OAuth、Cloudflare OAuth 或 SMTP 凭据。`SESSION_SECRET` 用于加密后台保存的凭据，必须保留，不能删除或随意轮换，否则已有密文将无法解密。
+
+### 3. 配置入口并完成首次初始化
+
+一键部署不会修改 DNS 或 Worker Routes，需要在 Cloudflare 控制台手动配置一次：
+
+- `console.example.com/*`：管理端、管理 API 和 OAuth 回调
+- `*.plugins.example.com/*`：插件公开入口
+
+同时为控制台和插件通配域名配置 DNS 与证书。示例域名需替换为实际域名。
+
+路由和证书生效后：
+
+1. 在 GitHub 创建 OAuth App，回调地址填写 `https://console.example.com/auth/github/callback`；
+2. 打开 `https://console.example.com/setup`；
+3. 从 `.wrangler/plugmesh-setup-token` 读取部署令牌；
+4. 填写 GitHub Client ID、Client Secret、回调地址和管理员白名单；
+5. 保存后完成 GitHub 授权，白名单中的首个账号会成为 `super_admin`；
+6. 登录管理后台，在「系统设置」中配置 Cloudflare OAuth、SMTP、配额和维护策略。
+
+首个用户创建后 `/setup` 会永久锁定。初始化令牌可通过 `wrangler secret delete SETUP_TOKEN` 删除，不影响后台的 OAuth 配置入口。
+
+### 4. GitHub Actions 自动部署
+
+仓库包含 [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)，推送 `master` 或手动运行 workflow 即可走同一套一键部署脚本。
+
+在 GitHub 仓库中配置：
+
+- Secret：`CLOUDFLARE_API_TOKEN`
+- Variable：`CLOUDFLARE_ACCOUNT_ID`（可选）
+
+首次部署生成的 `SETUP_TOKEN` 会写入该次 Actions 运行的 Job Summary，不会打印到普通部署日志。之后如果远端已有令牌而本地文件不存在，脚本不会自动覆盖；确需重置时显式执行：
+
+```bash
+SETUP_TOKEN='至少 24 个字符的新令牌' npm run deploy:worker
+```
+
+### 5. 校验与高级选项
+
+```bash
+npm run deploy:worker -- --dry-run     # 只构建并校验 bundle，不访问云端、不写密钥、不发布
+npm run deploy:worker -- --skip-build  # 复用已有 dist，只做资源准备与发布
+npm run deploy:worker -- --help
+```
+
+`--dry-run` 使用仓库中的占位 D1 ID 校验 bundle，不会创建 D1/R2 或修改远端资源。真实部署时脚本会自动创建或复用资源并回填 ID。
+
+### 6. 本地 Worker 调试
+
+本地调试仍使用独立的 D1/R2 资源。先创建资源并把 D1 ID 写入 `worker/wrangler.toml`，然后应用本地迁移并启动：
 
 ```bash
 npx wrangler d1 create plugmesh
 npx wrangler r2 bucket create plugmesh-blobs
-# 将 d1 create 返回的 database_id 写入 worker/wrangler.toml
+npx wrangler d1 migrations apply plugmesh --local --config worker/wrangler.toml
 npm run worker:dev
 ```
 
-部署前还需要在 Cloudflare 控制台或 CI 中配置以下 Worker 路由，并将示例域名替换为平台实际域名：
-
-- `console.example.com/*`：管理端、管理 API 和 OAuth 回调。
-- `*.plugins.example.com/*`：插件公开入口。
-
-`worker/wrangler.toml` 中的 `database_id = "replace-with-d1-database-id"` 是仓库占位符，`npm run deploy:worker` 会在部署时自动创建或复用 D1 数据库并回填真实 ID；手动部署前应先把占位符替换掉，或用 `npm run deploy:worker -- --dry-run` 先检查 bundle 和绑定配置。
-
-GitHub OAuth 至少需要配置以下变量，回调地址必须与 GitHub OAuth App 完全一致：
-
-- `GITHUB_CLIENT_ID`
-- `GITHUB_CLIENT_SECRET`
-- `GITHUB_REDIRECT_URI`
-- `GITHUB_ALLOWLIST`（超级管理员 GitHub 用户名或邮箱，逗号分隔）
-- `SESSION_SECRET`
-
-客户端 ID、回调地址和白名单可以作为 Worker 变量；客户端密钥和 `SESSION_SECRET` 应使用 `wrangler secret put` 写入，不要提交到仓库。Cloudflare OAuth 的变量见下节，SMTP 密码通过管理端密文保存，不作为仓库变量提交。
-
-Cloudflare OAuth 使用官方 Authorization Code 流程。创建 OAuth client 时使用服务端客户端认证，回调地址必须与 `CLOUDFLARE_OAUTH_REDIRECT_URI` 完全一致；Worker 需要配置以下变量：
-
-- `CLOUDFLARE_OAUTH_CLIENT_ID`
-- `CLOUDFLARE_OAUTH_CLIENT_SECRET`
-- `CLOUDFLARE_OAUTH_REDIRECT_URI`
-- `CLOUDFLARE_OAUTH_SCOPE`（可选，默认 `workers-platform.read workers-platform.write`）
-- `SESSION_SECRET`
-
-官方端点为授权 `https://dash.cloudflare.com/oauth2/auth`、令牌 `https://dash.cloudflare.com/oauth2/token` 和撤销 `https://dash.cloudflare.com/oauth2/revoke`。回调成功后令牌不会返回浏览器，平台尝试通过 Cloudflare Accounts API 自动识别唯一账号；若授权范围无法得到唯一账号，管理端会明确显示未识别账号，不会伪造 Analytics 可用状态。
-
-## 一键部署 Worker
-
-生产部署只需要一条命令（脚本只调用官方 `wrangler` 子命令，不封装 Cloudflare API）：
+本地开发可以传固定测试密钥：
 
 ```bash
-npm install
-export CLOUDFLARE_API_TOKEN=...      # 需要 Workers / D1 / R2 编辑权限
-export CLOUDFLARE_ACCOUNT_ID=...     # 账号多于一个时必填
-npm run deploy:worker
+npx wrangler dev --config worker/wrangler.toml --var SESSION_SECRET:local-only-session-secret
 ```
 
-脚本按顺序完成：
-
-1. `npm run build` 构建管理端 SPA（`dist/` 由 `[assets]` 绑定随 Worker 一起上传）；
-2. `database_id` 仍是占位符时，用 `wrangler d1 list --json` 复用同名 `plugmesh` 数据库，不存在则 `wrangler d1 create plugmesh`，并把返回的 ID 写回 `worker/wrangler.toml`；
-3. 复用或创建 R2 存储桶 `plugmesh-blobs`；
-4. `wrangler d1 migrations apply plugmesh --remote` 应用全部迁移（可重复执行，已应用的迁移会跳过）；
-5. 若环境里存在 `SESSION_SECRET`、`GITHUB_CLIENT_SECRET`、`CLOUDFLARE_OAUTH_CLIENT_SECRET`，自动 `wrangler secret put` 写入同名 Secret；
-6. `wrangler deploy` 发布 Worker 与静态资源，并打印仍需在控制台/CI 一次性配置的路由与变量。
-
-常用选项：
-
-```bash
-npm run deploy:worker -- --dry-run     # 只构建并校验 bundle，不创建资源、不写密钥、不发布
-npm run deploy:worker -- --skip-build  # 复用已有 dist，只做资源准备与发布
-```
-
-脚本不会改写除 `database_id` 之外的配置；GitHub / Cloudflare OAuth 的变量与回调地址仍需按下方说明配置一次。CI 中请把 `CLOUDFLARE_API_TOKEN` 存为受保护的 Secret，不要提交到仓库。
+该值只用于本地 miniflare，不要用于生产。
 
 ## 当前边界
 
