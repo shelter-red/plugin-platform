@@ -218,6 +218,41 @@ export interface CloudflareSettings {
   updatedAt: string | null
 }
 
+export type OauthSource = 'database' | 'environment' | null
+
+export interface GithubOauthSettings {
+  configured: boolean
+  clientId: string | null
+  redirectUri: string | null
+  allowlist: string
+  secretConfigured: boolean
+  source: OauthSource
+}
+
+export interface CloudflareOauthSettings {
+  configured: boolean
+  clientId: string | null
+  redirectUri: string | null
+  scope: string
+  secretConfigured: boolean
+  source: OauthSource
+}
+
+export interface OauthSettings {
+  github: GithubOauthSettings
+  cloudflare: CloudflareOauthSettings
+  sessionSecretConfigured: boolean
+  updatedAt: string | null
+  unreadable: boolean
+}
+
+export interface OauthSettingsInput {
+  github?: { clientId: string; clientSecret: string; redirectUri: string; allowlist: string }
+  cloudflare?: { clientId: string; clientSecret: string; redirectUri: string; scope: string }
+}
+
+export type OauthProvider = 'github' | 'cloudflare'
+
 export async function fetchOverview(): Promise<ApiOverview> {
   const apiBase = import.meta.env.VITE_API_BASE ?? ''
   const response = await fetch(`${apiBase}/api/overview`, { credentials: 'include' })
@@ -379,6 +414,27 @@ export async function revokeCloudflareSettings(): Promise<CloudflareSettings> {
   const response = await fetch(`${apiBase}/api/settings/cloudflare`, { method: 'DELETE', credentials: 'include' })
   if (!response.ok) throw new ApiError(response.status, 'cloudflare settings revoke request failed')
   return response.json() as Promise<CloudflareSettings>
+}
+
+export async function fetchOauthSettings(): Promise<OauthSettings> {
+  const apiBase = import.meta.env.VITE_API_BASE ?? ''
+  const response = await fetch(`${apiBase}/api/settings/oauth`, { credentials: 'include' })
+  if (!response.ok) throw new ApiError(response.status, 'oauth settings request failed')
+  return response.json() as Promise<OauthSettings>
+}
+
+export async function updateOauthSettings(settings: OauthSettingsInput): Promise<OauthSettings> {
+  const apiBase = import.meta.env.VITE_API_BASE ?? ''
+  const response = await fetch(`${apiBase}/api/settings/oauth`, { method: 'PUT', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(settings) })
+  if (!response.ok) throw new ApiError(response.status, 'oauth settings update request failed')
+  return response.json() as Promise<OauthSettings>
+}
+
+export async function revokeOauthSettings(provider: OauthProvider): Promise<OauthSettings> {
+  const apiBase = import.meta.env.VITE_API_BASE ?? ''
+  const response = await fetch(`${apiBase}/api/settings/oauth?provider=${provider}`, { method: 'DELETE', credentials: 'include' })
+  if (!response.ok) throw new ApiError(response.status, 'oauth settings revoke request failed')
+  return response.json() as Promise<OauthSettings>
 }
 
 export async function fetchSmtpSettings(): Promise<SmtpSettings> {

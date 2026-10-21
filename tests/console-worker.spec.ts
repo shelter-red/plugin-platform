@@ -7,6 +7,14 @@ const platformSettings = {
   quotas: { requests: 1_000_000, activeConnections: 200, r2Bytes: 1_073_741_824, r2Objects: 1_000, d1Queries: 500_000, kvOperations: 100_000, durableObjectRequests: 500_000 },
 }
 
+const oauthSettings = {
+  github: { configured: true, clientId: 'mock-github-client', redirectUri: 'https://console.example.test/auth/github/callback', allowlist: 'admin', secretConfigured: true, source: 'environment' },
+  cloudflare: { configured: true, clientId: 'mock-cloudflare-client', redirectUri: 'https://console.example.test/auth/cloudflare/callback', scope: 'workers-platform.read workers-platform.write', secretConfigured: true, source: 'environment' },
+  sessionSecretConfigured: true,
+  updatedAt: null,
+  unreadable: false,
+}
+
 const localUsage = {
   requestCount: 1_200,
   requestWindowStartedAt: '2026-10-21T00:00:00.000Z',
@@ -32,6 +40,7 @@ type WorkerMock = {
   registrationCodeRequests: number
   domainRequests: { pluginInstanceId: string; prefix: string }[]
   commandRequests: string[]
+  oauthUpdates: unknown[]
 }
 
 async function mockWorker(page: Page): Promise<WorkerMock> {
@@ -51,6 +60,7 @@ async function mockWorker(page: Page): Promise<WorkerMock> {
     registrationCodeRequests: 0,
     domainRequests: [],
     commandRequests: [],
+    oauthUpdates: [],
   }
 
   await page.route('**/api/**', (route) => handleApi(route, state, logsGate))
@@ -89,6 +99,18 @@ async function handleApi(route: Route, state: WorkerMock, logsGate: Promise<void
     const plugin = (state.plugins as { id: string }[]).find((item) => item.id === id)
     if (!plugin) return route.fulfill({ status: 404, json: { error: 'plugin not found' } })
     return route.fulfill({ json: { plugin: { ...plugin, created_at: '2026-10-21T00:00:00.000Z', server_status: 'online', domain_id: 'domain-1', domain_status: 'online' }, recentErrors: [] } })
+  }
+  if (pathname === '/api/settings/oauth') {
+    if (method === 'PUT') {
+      const body = route.request().postDataJSON() as { github?: { clientId: string }; cloudflare?: { clientId: string } }
+      state.oauthUpdates.push(body)
+      return route.fulfill({ json: {
+        ...oauthSettings,
+        github: body.github ? { ...oauthSettings.github, clientId: body.github.clientId, source: 'database' } : oauthSettings.github,
+        cloudflare: body.cloudflare ? { ...oauthSettings.cloudflare, clientId: body.cloudflare.clientId, source: 'database' } : oauthSettings.cloudflare,
+      } })
+    }
+    return route.fulfill({ json: oauthSettings })
   }
   if (pathname === '/api/access-logs') {
     await logsGate
@@ -138,6 +160,24 @@ test('管理端显示 Worker 实时数据并在刷新后提示', async ({ page }
 
   await page.getByRole('button', { name: '刷新状态' }).click()
   await expect(page.locator('.toast')).toHaveText('平台数据已刷新')
+})
+
+test('管理端在后台保存 OAuth 配置且不回显密钥', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  const worker = await mockWorker(page)
+  await page.goto('/')
+  await page.getByRole('button', { name: '系统设置', exact: true }).click()
+  await page.getByRole('button', { name: '登录与授权' }).click()
+  const panel = page.locator('#settings-oauth')
+  await expect(panel).toContainText('环境变量回退')
+  await panel.getByLabel('Client ID').first().fill('mock-github-client-new')
+  await panel.getByLabel('Client Secret').first().fill('mock-secret')
+  await panel.getByLabel('回调地址').first().fill('https://console.example.test/auth/github/callback')
+  await panel.getByRole('button', { name: '保存配置' }).first().click()
+  await expect(page.getByText('OAuth 配置已保存')).toBeVisible()
+  expect(worker.oauthUpdates).toEqual([{ github: { clientId: 'mock-github-client-new', clientSecret: 'mock-secret', redirectUri: 'https://console.example.test/auth/github/callback', allowlist: 'admin' } }])
+  await expect(panel.getByLabel('Client Secret').first()).toHaveValue('')
+  await expect(panel).toContainText('后台配置')
 })
 
 test('管理端总览显示平台维护状态', async ({ page }) => {
