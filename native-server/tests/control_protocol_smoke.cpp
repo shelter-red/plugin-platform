@@ -22,6 +22,20 @@ int main() {
     std::cerr << "oversized control frame was accepted\n";
     return 1;
   }
+  auto sync = plugmesh::make_control_frame("server.sync", "server-1");
+  sync.request_id = "sync-request-1";
+  const auto syncEncoded = plugmesh::serialize_control_frame(sync);
+  if (!plugmesh::parse_control_frame(syncEncoded, decoded, error) || decoded.type != "server.sync" || decoded.request_id != "sync-request-1" || decoded.server_id != "server-1") {
+    std::cerr << "server sync frame round-trip failed: " << error << '\n';
+    return 1;
+  }
+  auto result = plugmesh::make_control_frame("server.result", "server-1", {{"action", "sync"}, {"ok", true}});
+  result.request_id = sync.request_id;
+  const auto resultEncoded = plugmesh::serialize_control_frame(result);
+  if (!plugmesh::parse_control_frame(resultEncoded, decoded, error) || decoded.type != "server.result" || decoded.request_id != sync.request_id || decoded.payload.value("action", "") != "sync" || !decoded.payload.value("ok", false)) {
+    std::cerr << "server sync result frame round-trip failed: " << error << '\n';
+    return 1;
+  }
   const std::string binary("\x00\x01\x7f\x80\xff", 5);
   if (websocketpp::base64_decode(websocketpp::base64_encode(reinterpret_cast<const unsigned char*>(binary.data()), binary.size())) != binary) {
     std::cerr << "binary frame encoding round-trip failed\n";
