@@ -408,6 +408,14 @@ async function commandPlugin(request: Request, env: Env, user: AuthenticatedUser
   const response = await bridge.fetch(new Request(new URL('/command', request.url), { method: 'POST', headers: { 'content-type': 'application/json', 'x-plugmesh-server-id': plugin.server_id }, body: JSON.stringify({ type: `plugin.${action}`, pluginId: plugin.plugin_id }) }))
   if (!response.ok) {
     if (action === 'health') await env.DB.prepare('UPDATE domains SET status = ? WHERE plugin_instance_id = ?').bind('offline', plugin.id).run()
+    else {
+      const failedAt = new Date().toISOString()
+      await env.DB.batch([
+        env.DB.prepare('UPDATE plugin_instances SET state = ?, updated_at = ? WHERE id = ?').bind('failed', failedAt, plugin.id),
+        env.DB.prepare('UPDATE domains SET status = ? WHERE plugin_instance_id = ?').bind('offline', plugin.id),
+        env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, `plugin.${action}.failed`, JSON.stringify({ pluginInstanceId: plugin.id, status: response.status }), failedAt),
+      ])
+    }
     invalidatePluginRoute(plugin.domain_hostname)
     return response
   }
