@@ -62,9 +62,26 @@ cmake --build native-server/build --target test
 
 ## 一键部署（Cloudflare Workers）
 
-部署 Worker 时只保留一个基础配置：`CLOUDFLARE_API_TOKEN`。D1、R2、Durable Object、`SESSION_SECRET`、`SETUP_TOKEN`、数据库迁移和 Worker 发布都由部署流程自动完成；GitHub OAuth、Cloudflare OAuth、SMTP、配额和插件域名后缀都在部署后的页面中配置，不需要重新部署。
+一键部署只保留 Cloudflare 基础授权。D1、R2、Durable Object、数据库迁移、`SESSION_SECRET`、`SETUP_TOKEN` 和 Worker 发布全部自动完成；OAuth、SMTP、配额、维护策略和插件域名后缀都不进入部署环境。
 
-### 方式一：Cloudflare 一键部署按钮
+| 部署方式 | 必要配置 | 说明 |
+| --- | --- | --- |
+| Cloudflare 官方按钮 | Cloudflare 账号授权 | 由 Workers Builds 使用当前 Cloudflare 账号构建和创建资源，不需要手工填写 D1/R2/Secret |
+| 本地一条命令 | `CLOUDFLARE_API_TOKEN` | 至少包含 Workers Scripts: Edit、D1: Edit、Workers R2 Storage: Edit |
+| 多账号环境 | `CLOUDFLARE_ACCOUNT_ID`（可选） | 只有一个账号时不要填写 |
+
+以下业务配置不需要在部署时填写：
+
+| 配置项 | 配置位置 | 是否需重新部署 |
+| --- | --- | --- |
+| GitHub OAuth、首个超级管理员白名单 | 首次打开 `/setup` | 否 |
+| Cloudflare OAuth Client ID/Secret | 管理后台「系统设置 → 登录与授权」 | 否 |
+| SMTP、测试发送 | 管理后台「系统设置 → 邮件 SMTP」 | 否 |
+| 配额、维护策略、插件域名后缀 | 管理后台「系统设置 → 维护、域名与配额」 | 否 |
+
+`SESSION_SECRET` 用于加密后台保存的 OAuth、SMTP 和 Cloudflare 凭据；`SETUP_TOKEN` 用于保护首次初始化。两者仅在一键部署时自动生成、已有值绝不轮换，不需要手工配置。
+
+### 方式一：Cloudflare 官方一键部署
 
 仓库公开到 GitHub 后，把下面地址中的 `<OWNER>/<REPO>` 换成实际仓库：
 
@@ -72,31 +89,23 @@ cmake --build native-server/build --target test
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/<OWNER>/<REPO>)
 ```
 
-点击按钮后，Cloudflare 会克隆仓库并启动 Workers Builds。部署页会根据 `package.json` 预填命令，请核对为：
+点击按钮后：
+
+1. Cloudflare 克隆仓库并启动 Workers Builds；
+2. 平台自动创建并绑定 D1 `plugmesh`、R2 `plugmesh-blobs`；
+3. 执行 `npm run deploy`，应用全部 migrations、生成基础设施 Secret 并发布 Worker；
+4. 首次部署的 `SETUP_TOKEN` 显示在该次构建日志的「初始化令牌」一行。
+
+部署页中请核对命令：
 
 - Build command：`npm run build`
 - Deploy command：`npm run deploy`
 
-不需要填写 D1 `database_id`、R2 Bucket、`SESSION_SECRET`、`SETUP_TOKEN`、GitHub/Cloudflare OAuth 或 SMTP 配置，也不要把 Deploy command 改成 `npx wrangler deploy`，否则会跳过迁移和基础设施 Secret 初始化。之后 Cloudflare 会：
+不要改成 `npx wrangler deploy`，否则会跳过 migrations 和基础设施 Secret 初始化。首次缺少 D1 `database_id` 时，部署脚本会自动使用 `wrangler deploy --x-provision`，不需要手工创建数据库或回填 ID。
 
-1. 执行 `npm run deploy`；如果平台上没有生成有效的 `dist/index.html`，脚本会先兜底执行 `npm run build`；
-2. 首次缺少 D1 `database_id` 时显式启用 Wrangler 资源自动创建，由 Cloudflare 创建并绑定 D1 与 R2；
-3. 资源就绪后自动应用数据库迁移、生成基础设施 Secret 并完成 Worker 发布；
-4. 首次部署的 `SETUP_TOKEN` 会显示在该次构建日志的「初始化令牌」一行。
-
-如果仓库已经在 Cloudflare 中直连 Workers Builds，且 `wrangler.toml` 还没有 `database_id`，同一脚本会先发布一次触发 D1/R2 自动绑定，再执行迁移，不需要手工填写资源 ID。
-
-当前仓库尚未配置公开 Git remote，因此 README 不写死会失效的按钮地址；公开发布后只需替换上面的仓库地址。
+当前仓库尚未配置公开 Git remote，因此 README 保留按钮占位；公开仓库地址确定后只需替换 `<OWNER>/<REPO>`，不要另外维护一套部署脚本。
 
 ### 方式二：本地一条命令部署
-
-准备一个 Cloudflare API Token，至少包含：
-
-- Workers Scripts: Edit
-- D1: Edit
-- Workers R2 Storage: Edit
-
-然后执行：
 
 ```bash
 npm ci
@@ -111,7 +120,7 @@ npm run deploy
 1. 构建管理端；
 2. 创建或复用 D1 `plugmesh`，并回填 `database_id`；
 3. 创建或复用 R2 `plugmesh-blobs`；
-4. 应用 `worker/migrations/` 下的全部迁移；
+4. 应用 `worker/migrations/` 下的全部 migrations；
 5. 发布 Worker；
 6. 仅在远端缺失时生成 `SESSION_SECRET`，已有值绝不轮换；
 7. 仅在远端缺失时生成一次性 `SETUP_TOKEN`，并保存到 `.wrangler/plugmesh-setup-token`（权限 `0600`）。
@@ -129,7 +138,7 @@ GitHub Actions 使用同一个脚本，只需配置 Secret `CLOUDFLARE_API_TOKEN
 5. 登录管理后台，在「系统设置」中继续配置 Cloudflare OAuth、SMTP、配额和维护策略；
 6. 在「系统设置 → 维护、域名与配额」中设置插件域名后缀，例如 `plugins.example.com`。
 
-首个用户创建后 `/setup` 永久锁定。确认管理员可以正常登录后，可删除 Worker 的 `SETUP_TOKEN` Secret。`SESSION_SECRET` 用于加密后台保存的凭据，必须保留，不能随意轮换，否则已有密文将无法解密。
+首个用户创建后 `/setup` 永久锁定。确认管理员可以正常登录后，可删除 Worker 的 `SETUP_TOKEN` Secret。`SESSION_SECRET` 必须保留，不能随意轮换，否则已有密文将无法解密。
 
 ### 自定义域名与插件域名
 

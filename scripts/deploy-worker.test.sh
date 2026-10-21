@@ -82,6 +82,9 @@ grep -q 'test-database-id' "$TMP/wrangler.toml"
 ! grep -Eq 'GITHUB|CLOUDFLARE_OAUTH|SMTP' "$TMP/state/puts.log"
 printf 'ok：首次部署生成基础设施密钥，且不输出明文\n'
 
+! grep -Eq 'GITHUB_CLIENT|CLOUDFLARE_OAUTH_CLIENT|SMTP_|PLUGIN_DOMAIN_SUFFIX' "$ROOT/scripts/deploy-worker.sh"
+printf 'ok：部署脚本不读取 OAuth、SMTP 或插件域名后缀业务配置\n'
+
 printf '[{"name":"SESSION_SECRET"},{"name":"SETUP_TOKEN"}]\n' > "$TMP/state/secrets.json"
 cp "$TMP/state/secret_SESSION_SECRET" "$TMP/session-before"
 cp "$TMP/state/secret_SETUP_TOKEN" "$TMP/setup-before"
