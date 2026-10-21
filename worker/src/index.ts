@@ -761,7 +761,7 @@ function redactSmtpError(message: string, password: string): string {
   return message.replaceAll(password, '[REDACTED]').slice(0, 256)
 }
 
-async function cloudflareUsageApi(env: Env, user: AuthenticatedUser): Promise<Response> {
+export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser): Promise<Response> {
   if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
   const cached = await env.DB.prepare('SELECT value_json, expires_at, updated_at FROM usage_cache WHERE key = ? AND expires_at > ?').bind('cloudflare:workers', new Date().toISOString()).first<{ value_json: string; expires_at: string; updated_at: string }>()
   if (cached) return json({ ...JSON.parse(cached.value_json), cached: true, updatedAt: cached.updated_at })
@@ -803,7 +803,58 @@ async function cloudflareUsageApi(env: Env, user: AuthenticatedUser): Promise<Re
   const payload = await response.json() as { errors?: unknown[]; data?: { viewer?: { accounts?: Array<{ workersInvocationsAdaptive?: Array<{ sum?: { requests?: number } }> }> } } }
   if (payload.errors?.length) return json({ error: 'Cloudflare Analytics returned errors', details: payload.errors }, 502)
   const requests = payload.data?.viewer?.accounts?.[0]?.workersInvocationsAdaptive?.[0]?.sum?.requests ?? 0
-  const result = { configured: true, accountIdConfigured: true, period: { start: start.toISOString(), end: end.toISOString() }, requests, source: 'cloudflare_graphql' }
+  const resourceAnalyticsRequest = (accessToken: string) => fetch('https://api.cloudflare.com/client/v4/graphql', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ query: `query ResourceUsage($accountTag: string!, $start: Date, $end: Date) { viewer { accounts(filter: { accountTag: $accountTag }) { d1AnalyticsAdaptiveGroups(limit: 10000, filter: { date_geq: $start, date_leq: $end }) { sum { readQueries writeQueries rowsRead rowsWritten } } kvOperationsAdaptiveGroups(limit: 10000, filter: { date_geq: $start, date_leq: $end }) { sum { requests } dimensions { actionType } } durableObjectsInvocationsAdaptiveGroups(limit: 1000, filter: { date_geq: $start, date_leq: $end }) { sum { requests } } durableObjectsPeriodicGroups(limit: 1000, filter: { date_geq: $start, date_leq: $end }) { sum { cpuTime } } durableObjectsStorageGroups(limit: 1000, filter: { date_geq: $start, date_leq: $end }) { max { storedBytes } } } } }`, variables: { accountTag: accountId, start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) } }),
+  })
+  let resourceResponse = await resourceAnalyticsRequest(credential.accessToken)
+  if (resourceResponse.status === 401 && !refreshed) {
+    const next = await refreshCloudflareCredential(env, credential)
+    if (next) {
+      credential = next
+      await storeCloudflareCredential(env, credential)
+      await recordAudit(env, user.id, 'cloudflare.oauth.refreshed', {})
+      resourceResponse = await resourceAnalyticsRequest(credential.accessToken)
+    }
+  }
+  if (!resourceResponse.ok) return json({ error: 'Cloudflare resource analytics request failed', status: resourceResponse.status }, 502)
+  const resourcePayload = await resourceResponse.json() as {
+    errors?: unknown[]
+    data?: {
+      viewer?: {
+        accounts?: Array<{
+          d1AnalyticsAdaptiveGroups?: Array<{ sum?: { readQueries?: number; writeQueries?: number; rowsRead?: number; rowsWritten?: number } }>
+          kvOperationsAdaptiveGroups?: Array<{ sum?: { requests?: number }; dimensions?: { actionType?: string } }>
+          durableObjectsInvocationsAdaptiveGroups?: Array<{ sum?: { requests?: number } }>
+          durableObjectsPeriodicGroups?: Array<{ sum?: { cpuTime?: number } }>
+          durableObjectsStorageGroups?: Array<{ max?: { storedBytes?: number } }>
+        }>
+      }
+    }
+  }
+  if (resourcePayload.errors?.length) return json({ error: 'Cloudflare resource analytics returned errors' }, 502)
+  const resourceAccount = resourcePayload.data?.viewer?.accounts?.[0]
+  const d1 = resourceAccount?.d1AnalyticsAdaptiveGroups?.reduce((total, row) => ({
+    readQueries: total.readQueries + (row.sum?.readQueries ?? 0),
+    writeQueries: total.writeQueries + (row.sum?.writeQueries ?? 0),
+    rowsRead: total.rowsRead + (row.sum?.rowsRead ?? 0),
+    rowsWritten: total.rowsWritten + (row.sum?.rowsWritten ?? 0),
+  }), { readQueries: 0, writeQueries: 0, rowsRead: 0, rowsWritten: 0 }) ?? { readQueries: 0, writeQueries: 0, rowsRead: 0, rowsWritten: 0 }
+  const kv = resourceAccount?.kvOperationsAdaptiveGroups?.reduce((total, row) => {
+    const requestsForAction = row.sum?.requests ?? 0
+    if (row.dimensions?.actionType === 'read') total.read += requestsForAction
+    else if (row.dimensions?.actionType === 'write') total.write += requestsForAction
+    else if (row.dimensions?.actionType === 'delete') total.delete += requestsForAction
+    else if (row.dimensions?.actionType === 'list') total.list += requestsForAction
+    return total
+  }, { read: 0, write: 0, delete: 0, list: 0 }) ?? { read: 0, write: 0, delete: 0, list: 0 }
+  const durableObjects = {
+    requests: resourceAccount?.durableObjectsInvocationsAdaptiveGroups?.reduce((total, row) => total + (row.sum?.requests ?? 0), 0) ?? 0,
+    cpuTime: resourceAccount?.durableObjectsPeriodicGroups?.reduce((total, row) => total + (row.sum?.cpuTime ?? 0), 0) ?? 0,
+    storedBytes: Math.max(0, ...(resourceAccount?.durableObjectsStorageGroups ?? []).map((row) => row.max?.storedBytes ?? 0)),
+  }
+  const result = { configured: true, accountIdConfigured: true, period: { start: start.toISOString(), end: end.toISOString() }, requests, d1, kv, durableObjects, source: 'cloudflare_graphql' }
   const updatedAt = new Date().toISOString()
   await env.DB.prepare('INSERT INTO usage_cache (key, value_json, expires_at, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, expires_at = excluded.expires_at, updated_at = excluded.updated_at').bind('cloudflare:workers', JSON.stringify(result), new Date(Date.now() + 5 * 60 * 1000).toISOString(), updatedAt).run()
   return json({ ...result, cached: false, updatedAt })
