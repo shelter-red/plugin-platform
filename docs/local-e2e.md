@@ -12,6 +12,7 @@
 
 ```bash
 docker run -d --name plugmesh-e2e \
+  --user "$(id -u):$(id -g)" -e HOME=/tmp \
   -p 127.0.0.1:18888:18888 \
   -v "$PWD":/app \
   -v /tmp/plugmesh-e2e-data:/data \
@@ -21,7 +22,17 @@ docker run -d --name plugmesh-e2e \
          npx wrangler dev --config worker/wrangler.toml --ip 0.0.0.0 --port 18888 --persist-to /data"
 ```
 
+- `--user "$(id -u):$(id -g)" -e HOME=/tmp`：容器进程与宿主使用同一 UID，且把 `HOME` 指向可写的 `/tmp`；否则 `wrangler` 写 `worker/.wrangler/tmp` 会因权限不足报 `EACCES`。
+- `/etc/ssl/certs` 只读挂载：workerd 拉取远端资源时需要容器内可用的 CA 证书，缺少时会报证书校验失败。
+- `/tmp/plugmesh-e2e-data` 是本地 D1/R2 的持久目录，可换成其它路径；换目录后需重新执行迁移和下文的管理端 seed。
+
 migrations 只需执行一次，之后重启容器可去掉前半段。`wrangler dev` 默认端口 8787 可能被占用，因此显式使用 18888。
+
+容器重启后继续使用同一数据目录：
+
+```bash
+docker start plugmesh-e2e
+```
 
 ## 准备管理端会话（仅本地验收）
 
