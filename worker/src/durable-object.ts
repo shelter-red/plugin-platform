@@ -622,9 +622,15 @@ export class PluginBridge {
     if (!await this.markServerOnline()) return
     const server = await this.env.DB.prepare('SELECT user_id FROM servers WHERE id = ? AND status != ?').bind(this.serverId, 'revoked').first<{ user_id: string }>()
     if (!server) return
-    if (!Array.isArray(payload.manifests)) return
+    if (!Array.isArray(payload.manifests)) {
+      await this.rejectServerRegistration('server manifest list is invalid')
+      return
+    }
     const manifests = payload.manifests.filter(isManifest)
-    if (manifests.length !== payload.manifests.length || new Set(manifests.map((manifest) => manifest.id)).size !== manifests.length) return
+    if (manifests.length !== payload.manifests.length || new Set(manifests.map((manifest) => manifest.id)).size !== manifests.length) {
+      await this.rejectServerRegistration('server manifest is invalid or duplicated')
+      return
+    }
     const now = new Date().toISOString()
     for (const manifest of manifests) {
       await this.env.DB.prepare(`
@@ -658,6 +664,18 @@ export class PluginBridge {
       await this.env.DB.prepare('UPDATE plugin_instances SET state = ?, updated_at = ? WHERE id = ?').bind(state, new Date().toISOString(), plugin.id).run()
     }
     await this.env.DB.prepare("UPDATE domains SET status = CASE WHEN (SELECT state FROM plugin_instances WHERE plugin_instances.id = domains.plugin_instance_id) = 'enabled' THEN 'online' ELSE 'offline' END WHERE plugin_instance_id IN (SELECT id FROM plugin_instances WHERE server_id = ?)").bind(this.serverId).run()
+  }
+
+  private async rejectServerRegistration(message: string): Promise<void> {
+    const socket = this.serverSocket
+    if (!socket || socket.readyState !== WebSocket.OPEN) return
+    try {
+      socket.send(JSON.stringify(makeFrame('error', this.serverId, { message })))
+    } catch {
+      // The close path still marks the server offline when sending fails.
+    }
+    await this.markServerOffline()
+    socket.close(1008, 'Invalid server registration')
   }
 }
 
