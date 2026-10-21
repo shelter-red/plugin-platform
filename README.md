@@ -48,6 +48,8 @@ cmake --build native-server/build --parallel 2
 cmake --build native-server/build --target test
 ```
 
+完整的实现状态、验证证据和生产发布阻塞项见 [`docs/acceptance-matrix.md`](docs/acceptance-matrix.md)。
+
 Worker 本地调试前需要把 `worker/wrangler.toml` 中的 D1、R2 和 Durable Object 配置替换为实际资源：
 
 ```bash
