@@ -51,12 +51,12 @@ export interface ApiDomain {
   created_at: string
 }
 
-export interface RegistrationCode {
+interface RegistrationCode {
   code: string
   expiresAt: string
 }
 
-export interface PluginCommandResult {
+interface PluginCommandResult {
   id: string
   state: string
   accepted: boolean
@@ -74,7 +74,7 @@ export interface PluginHealthResult {
   bodySize: number
 }
 
-export interface DomainAssignmentResult {
+interface DomainAssignmentResult {
   hostname: string
   status: string
 }
@@ -99,7 +99,7 @@ export interface ApiAccessLog {
   created_at: string
 }
 
-export interface ApiAccessLogs {
+interface ApiAccessLogs {
   results: ApiAccessLog[]
   errorCount: number
   since: string
@@ -115,7 +115,7 @@ export interface ApiInvite {
   created_at: string
 }
 
-export interface InviteCreation {
+interface InviteCreation {
   id: string
   inviteUrl: string
   expiresAt: string

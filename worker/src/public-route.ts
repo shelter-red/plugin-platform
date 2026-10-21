@@ -1,6 +1,6 @@
 import type { PluginRoute } from './route-cache'
 
-export type PublicRouteResolution = { state: 'missing' } | { state: 'unavailable' | 'ready'; route: PluginRoute }
+type PublicRouteResolution = { state: 'missing' } | { state: 'unavailable' | 'ready'; route: PluginRoute }
 
 export function resolvePublicRoute(route: PluginRoute | null): PublicRouteResolution {
   if (!route) return { state: 'missing' }

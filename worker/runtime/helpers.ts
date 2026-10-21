@@ -4,9 +4,9 @@ import type { ControlFrame, Env, PluginManifest } from '../src/types'
 
 export const testEnv = env as unknown as Env
 export const CONTROL_TOKEN = 'runtime-control-token'
-export const SERVER_ID = 'server-runtime'
-export const PLUGIN_INSTANCE_ID = 'plugin-runtime'
-export const PLUGIN_ID = 'sample.runtime'
+const SERVER_ID = 'server-runtime'
+const PLUGIN_INSTANCE_ID = 'plugin-runtime'
+const PLUGIN_ID = 'sample.runtime'
 
 export const manifest: PluginManifest = {
   id: PLUGIN_ID,
@@ -59,7 +59,7 @@ export async function seedServer(options: { pluginState?: string; domainStatus?:
   return hostname
 }
 
-export async function waitForServerStatus(expected: string): Promise<void> {
+async function waitForServerStatus(expected: string): Promise<void> {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     const row = await testEnv.DB.prepare('SELECT status FROM servers WHERE id = ?').bind(SERVER_ID).first<{ status: string }>()
     if (row?.status === expected) return
@@ -84,7 +84,7 @@ type FrameWaiter = {
   close: () => void
 }
 
-export function frameChannel(socket: WebSocket): FrameWaiter {
+function frameChannel(socket: WebSocket): FrameWaiter {
   const queued: ControlFrame[] = []
   const waiters: Array<{ resolve: (frame: ControlFrame) => void; reject: (error: Error) => void }> = []
   const listener = (event: MessageEvent) => {

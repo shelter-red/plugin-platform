@@ -3,9 +3,9 @@ import { getPublic, makeTarget, type Target } from './public-client'
 import { startRealServer, type RealServer } from './real-stack-server'
 import type { StackApi } from './stack-api'
 
-export type Api = StackApi
+type Api = StackApi
 
-export type PublicPlugin = { server: RealServer; pluginId: string; target: Target }
+type PublicPlugin = { server: RealServer; pluginId: string; target: Target }
 
 /** 用一次性注册码拉起真实 C++ 服务器，加载并启用 sample.plugin，分配域名后等到公开入口返回 200。 */
 export async function preparePublicPlugin(baseURL: string, api: Api): Promise<PublicPlugin> {

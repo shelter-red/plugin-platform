@@ -4,7 +4,7 @@ import WebSocket from 'ws'
 
 export type Target = { hostname: string; host: string; port: number }
 
-export type PublicResponse = { status: number; headers: http.IncomingHttpHeaders; body: string }
+type PublicResponse = { status: number; headers: http.IncomingHttpHeaders; body: string }
 
 export function makeTarget(base: string, hostname: string): Target {
   const url = new URL(base)

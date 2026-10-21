@@ -1,6 +1,6 @@
 import type { ControlFrame, PluginManifest } from './types'
 
-export const PROTOCOL_VERSION = 1 as const
+const PROTOCOL_VERSION = 1 as const
 export const MAX_CONTROL_FRAME_BYTES = 64 * 1024
 export const SUPPORTED_PLUGIN_ABI_VERSIONS = ['2', '3'] as const
 

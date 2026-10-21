@@ -1,4 +1,4 @@
-export type PublicRequestMode = 'http' | 'sse' | 'file' | 'websocket'
+type PublicRequestMode = 'http' | 'sse' | 'file' | 'websocket'
 
 type RequestCapabilities = {
   http: boolean

@@ -2,7 +2,7 @@ import type { AuthenticatedUser, Env } from './types'
 
 const SESSION_COOKIE = 'plugmesh_session'
 
-export function getCookie(request: Request, name: string): string | null {
+function getCookie(request: Request, name: string): string | null {
   const cookieHeader = request.headers.get('Cookie') ?? ''
   for (const part of cookieHeader.split(';')) {
     const [key, ...value] = part.trim().split('=')
