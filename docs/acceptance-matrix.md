@@ -120,7 +120,7 @@ PLUGMESH_MULTI_ISOLATE_A_URL=http://127.0.0.1:18888 \
 
 ## 生产发布阻塞项
 
-1. 创建真实 D1、R2 和 Durable Object 资源，替换占位 D1 ID，执行 migrations。
+1. 创建真实 D1、R2 和 Durable Object 资源，替换占位 D1 ID，执行 migrations。本地已用全新 `--persist-to` 目录（`/tmp/plugmesh-fresh-data-*`）重放全部 6 个 migrations，再执行 `docs/local-e2e.md` 的管理端 seed SQL，随后用该库启动独立 `wrangler dev`（端口 18990）验证空库初始化：`/api/health` 200、`/api/me` 返回 seed 的 `super_admin`、`/api/servers` 只含 seed 的离线服务器、控制台根路径 200、seed 域名因服务器离线返回 503 维护页（2026-10-21）。真实 D1 创建与占位 ID 替换仍未进行。
 2. 配置 `console` 与插件通配域名、DNS 和 Worker routes，并验证证书与 Host 路由。
 3. 配置 GitHub OAuth、Cloudflare OAuth、`SESSION_SECRET` 和超级管理员白名单，执行真实登录与授权。
 4. 配置真实 SMTP，验证邀请、测试邮件、维护通知、重试和退信处理。
