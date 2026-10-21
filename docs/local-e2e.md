@@ -215,6 +215,26 @@ WebSocket：40 条连接同时驻留并逐条回显，关闭后 activeConnection
 
 `sample.plugin` 的 SSE 处理器写完一帧就结束，无法让连接驻留，因此 SSE 只验证并发建立与首帧到达；连接驻留上限由 WebSocket 场景覆盖。这仍是单机 miniflare，不代表已部署 Cloudflare 的多 isolate、跨地域调度或真实网络抖动。
 
+## 桥接能力自动验收
+
+`npm run stack:streams` 用 `tests/streams-stack.spec.ts` 在同一真实栈上自动断言 SSE、公开 WebSocket 和文件流三条链路，替代此前的手工 curl 与脚本核对：
+
+```bash
+PLUGMESH_REAL_STACK_URL=http://127.0.0.1:18888 \
+PLUGMESH_REAL_STACK_TOKEN=e2e-session-token \
+npm run stack:streams
+```
+
+用例同样先用一次性注册码拉起真实 `plugmesh-server`、加载并启用 `sample.plugin`、分配唯一域名并等到公开入口 200，然后断言：
+
+- SSE 请求返回 200 且 `content-type` 含 `text/event-stream`，首帧为 `data: sample-plugin`；
+- 公开 WebSocket 经 Worker → Durable Object → C++ → 插件回显 `hello-ws`，关闭后 `activeConnections` 归零；
+- 带 `x-plugmesh-file-stream: true` 的请求返回 200，`content-type: application/octet-stream`，正文恰好 18 字节 `sample-file-stream`；
+- 文件流结束后 `/api/usage/local` 的 `r2Objects`/`r2Bytes` 回到 0（用例开始前同样要求为 0，避免把历史残留当作通过）；
+- `/api/access-logs` 记录了该域名的 `/file` 200 请求。
+
+2026-10-21 实测：`1 passed (1.1s)`；结束后 `r2Objects=0`、`r2Bytes=0`、`activeConnections=0`。边界同上：单机 miniflare 单 isolate，未验证真实公网长连接。
+
 ## 配额耗尽与维护模式验证
 
 `npm run stack:maintenance` 用 `tests/maintenance-stack.spec.ts` 在同一真实栈上验证「总配额耗尽 → 全局维护模式」：

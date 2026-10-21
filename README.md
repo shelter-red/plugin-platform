@@ -43,6 +43,7 @@ npm run native-ui:build
 npm run build
 npm run ui:smoke
 npm run native-ui:smoke
+npm run stack:streams       # SSE / WebSocket / 文件流桥接，需先启动 docs/local-e2e.md 中的本地真实栈
 npm run stack:load
 npm run stack:maintenance   # 需先启动 docs/local-e2e.md 中的本地真实栈
 PLUGMESH_E2E_CONTAINER=plugmesh-e2e npm run stack:restart

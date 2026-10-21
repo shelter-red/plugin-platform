@@ -4,42 +4,50 @@ import WebSocket from 'ws'
 
 export type Target = { hostname: string; host: string; port: number }
 
-type PublicResponse = { status: number; headers: http.IncomingHttpHeaders; body: string }
+type PublicResponse = { status: number; headers: http.IncomingHttpHeaders; bytes: Buffer; body: string }
 
 export function makeTarget(base: string, hostname: string): Target {
   const url = new URL(base)
   return { hostname: url.hostname, host: hostname, port: Number(url.port || 80) }
 }
 
-function publicRequest(target: Target, options: { method?: string; accept?: string; path?: string } = {}) {
+function publicRequest(target: Target, options: { method?: string; path?: string; headers?: http.OutgoingHttpHeaders } = {}) {
   return http.request({
     hostname: target.hostname,
     port: target.port,
     path: options.path ?? '/',
     method: options.method ?? 'GET',
-    headers: { host: target.host, ...(options.accept ? { accept: options.accept } : {}) },
+    headers: { host: target.host, ...(options.headers ?? {}) },
   })
 }
 
-export function getPublic(target: Target): Promise<PublicResponse> {
+function readPublic(target: Target, options?: Parameters<typeof publicRequest>[1]): Promise<PublicResponse> {
   return new Promise((resolve, reject) => {
-    const request = publicRequest(target)
+    const request = publicRequest(target, options)
     request.on('response', (response) => {
       const chunks: Buffer[] = []
       response.on('data', (chunk: Buffer) => chunks.push(chunk))
-      response.on('end', () => resolve({
-        status: response.statusCode ?? 0,
-        headers: response.headers,
-        body: Buffer.concat(chunks).toString('utf8'),
-      }))
+      response.on('end', () => {
+        const bytes = Buffer.concat(chunks)
+        resolve({ status: response.statusCode ?? 0, headers: response.headers, bytes, body: bytes.toString('utf8') })
+      })
     })
     request.on('error', reject)
     request.end()
   })
 }
 
+export function getPublic(target: Target): Promise<PublicResponse> {
+  return readPublic(target)
+}
+
+/** 带 `x-plugmesh-file-stream: true` 的公开请求，用于验证经 R2 中转的文件流路径。 */
+export function getFileStream(target: Target, path = '/'): Promise<PublicResponse> {
+  return readPublic(target, { path, headers: { 'x-plugmesh-file-stream': 'true' } })
+}
+
 export async function openStream(target: Target) {
-  const request = publicRequest(target, { accept: 'text/event-stream' })
+  const request = publicRequest(target, { headers: { accept: 'text/event-stream' } })
   const responsePromise = once(request, 'response') as Promise<[http.IncomingMessage]>
   request.end()
   const [response] = await responsePromise
@@ -48,8 +56,9 @@ export async function openStream(target: Target) {
     once(response, 'data') as Promise<[Buffer]>,
     new Promise<never>((_, reject) => setTimeout(() => reject(new Error('SSE 首个数据块超时')), 10_000)),
   ])
-  if (!firstChunk[0].toString('utf8').startsWith('data: ')) throw new Error(`SSE 数据块格式异常：${firstChunk[0].toString('utf8').slice(0, 40)}`)
-  return { request, response }
+  const first = firstChunk[0].toString('utf8')
+  if (!first.startsWith('data: ')) throw new Error(`SSE 数据块格式异常：${first.slice(0, 40)}`)
+  return { request, response, first }
 }
 
 export function openEcho(target: Target) {
