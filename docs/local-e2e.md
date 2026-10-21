@@ -19,11 +19,12 @@ docker run -d --name plugmesh-e2e \
   -v /etc/ssl/certs:/etc/ssl/certs:ro \
   -w /app node:22-bookworm-slim \
   sh -c "npx wrangler d1 migrations apply plugmesh --config worker/wrangler.toml --local --persist-to /data && \
-         npx wrangler dev --config worker/wrangler.toml --ip 0.0.0.0 --port 18888 --persist-to /data"
+         npx wrangler dev --config worker/wrangler.toml --ip 0.0.0.0 --port 18888 --persist-to /data --var SESSION_SECRET:e2e-session-secret"
 ```
 
 - `--user "$(id -u):$(id -g)" -e HOME=/tmp`：容器进程与宿主使用同一 UID，且把 `HOME` 指向可写的 `/tmp`；否则 `wrangler` 写 `worker/.wrangler/tmp` 会因权限不足报 `EACCES`。
 - `/etc/ssl/certs` 只读挂载：workerd 拉取远端资源时需要容器内可用的 CA 证书，缺少时会报证书校验失败。
+- `--var SESSION_SECRET:e2e-session-secret`：本地验收用固定密钥填充部署时必配的 `SESSION_SECRET`。缺少它时 `/api/usage/cloudflare`、Cloudflare 凭据和 SMTP 设置接口都会直接返回 503，管理端只能看到“用量读取失败”，无法验证“官方数据尚未连接”这类正常态；该值只用于本地 miniflare，不要用于任何真实环境。
 - `/tmp/plugmesh-e2e-data` 是本地 D1/R2 的持久目录，可换成其它路径；换目录后需重新执行迁移和下文的管理端 seed。
 
 migrations 只需执行一次，之后重启容器可去掉前半段。`wrangler dev` 默认端口 8787 可能被占用，因此显式使用 18888。
@@ -87,10 +88,11 @@ PLUGMESH_REAL_STACK_URL=http://127.0.0.1:18888 npm run ui:real-stack
 - 第三条用例用一次性注册码启动真实 `plugmesh-server`，在管理端加载并启用 `sample.plugin`、分配以 `console-` 开头的唯一域名，再从该域名请求插件得到 `200` 和 `ok`。
 - 第四条用例在真实栈上复核仪表盘“最近错误和连接异常”：对只声明 `http`/`websocket` 能力的 `lifecycle.plugin` 域名发起文件流请求，得到 `501` 并确认 `/api/access-logs` 中写入 `plugin capability unavailable`，总览错误面板展示该入口与 `501` 徽标；停掉后服务器状态转为 `offline`，总览出现该服务器与“离线”徽标；服务器详情弹窗在真实数据下显示“离线”状态、“服务器离线”插件状态以及该 501 错误，访问日志页展示同一行并可用「导出日志」下载含该记录的 CSV。
 - 第五条用例在管理端「维护与配额」面板点击开关进入维护，断言公开入口返回 503 维护页、总览徽标为「平台维护中」，再点击恢复后未知域名回到 404，并确认审计日志页出现「更新平台设置」；用例结束时会把维护开关复位为关闭。
+- 第六条用例打开「用量与配额」：先通过真实 `POST /api/blobs` 上传 5 字节对象，确认 `/api/usage/local` 的请求计数 +1、`r2Objects=1`，页面「平台请求计数」显示该真实计数与「24 小时窗口」、R2 卡片显示「1 个对象」，而「Worker 请求」在官方未连接时显示 `—` 与「官方数据尚未连接」，数据源行分别为「未配置」和「更新于 …」；随后读取一次性 blob，`r2Objects`/`r2Bytes` 归零，刷新后 R2 卡片回到「0 个对象」。
 
 第三、四条用例要求已构建 `native-server/build/plugmesh-server`、`native-server/build/plugins` 与 `native-ui/dist`。它自行完成注册、启动和退出清理：每次运行生成新的服务器名与域名前缀，结束后向子进程发送 `SIGTERM` 并删除临时凭据目录，因此可以在同一份 D1 上重复执行（历史服务器与域名记录会累积，不影响断言）。
 
-期望结果：`5 passed`。它验证的是管理端到真实 Worker/D1 与真实 C++ 服务器的链路，不依赖已部署 Cloudflare。
+期望结果：`6 passed`。它验证的是管理端到真实 Worker/D1 与真实 C++ 服务器的链路，不依赖已部署 Cloudflare。
 
 ## 注册并启动本地服务器
 

@@ -239,6 +239,67 @@ test('管理端维护开关切换真实平台状态并写入审计', async ({ pa
   }
 })
 
+test('管理端用量与配额页展示真实本地计数与官方未连接状态', async ({ page }) => {
+  const { call } = createStackApi(page.request, sessionToken)
+  const official = (await (await call('/api/usage/cloudflare')).json()) as { configured: boolean }
+  expect(official.configured, '真实栈应处于 Cloudflare 官方数据未连接状态').toBe(false)
+
+  const before = (await (await call('/api/usage/local')).json()) as { requestCount: number }
+  // POST /api/blobs 会先占用一次请求配额并写入真实 R2 用量，用于验证页面计数不是伪造值。
+  const upload = await page.request.post('/api/blobs', {
+    headers: { 'content-type': 'application/octet-stream', 'content-length': '5' },
+    data: Buffer.from('hello'),
+  })
+  expect(upload.status()).toBe(201)
+  const { url: blobUrl } = (await upload.json()) as { url: string }
+
+  let counted = before.requestCount
+  try {
+    await expect.poll(async () => {
+      const local = (await (await call('/api/usage/local')).json()) as { requestCount: number; r2Objects: number }
+      counted = local.requestCount
+      return local.requestCount === before.requestCount + 1 && local.r2Objects >= 1
+    }, { timeout: 15_000 }).toBe(true)
+
+    await page.goto('/')
+    await page.getByRole('button', { name: '用量与配额', exact: true }).click()
+    await expect(page.getByRole('heading', { name: '用量与配额', level: 1 })).toBeVisible()
+    await expect(page.getByText('用量读取失败')).toHaveCount(0)
+
+    const cards = page.locator('.resource-card')
+    await expect(cards.filter({ hasText: 'Worker 请求' })).toContainText('—')
+    await expect(page.getByText('官方数据尚未连接')).toBeVisible()
+
+    const platformCard = cards.filter({ hasText: '平台请求计数' })
+    await expect(platformCard).toContainText(counted.toLocaleString('zh-CN'))
+    await expect(platformCard).toContainText('24 小时窗口')
+
+    const r2Card = cards.filter({ hasText: 'R2 存储' })
+    await expect(r2Card).toContainText('1 个对象')
+    await expect(cards.filter({ hasText: '活跃连接' })).toContainText('WebSocket / SSE')
+
+    const sources = page.locator('.source-row')
+    await expect(sources.filter({ hasText: 'Cloudflare Analytics API' })).toContainText('未配置')
+    await expect(sources.filter({ hasText: '本地计数' })).toContainText('更新于')
+    await expect(sources.filter({ hasText: '本地计数' })).toContainText('窗口始于')
+
+    const consumed = await page.request.get(blobUrl)
+    expect(consumed.status()).toBe(200)
+    expect(await consumed.text()).toBe('hello')
+    await expect.poll(async () => {
+      const local = (await (await call('/api/usage/local')).json()) as { r2Bytes: number; r2Objects: number }
+      return local.r2Objects === 0 && local.r2Bytes === 0
+    }, { timeout: 15_000 }).toBe(true)
+
+    await page.reload()
+    await page.getByRole('button', { name: '用量与配额', exact: true }).click()
+    await expect(page.locator('.resource-card').filter({ hasText: 'R2 存储' })).toContainText('0 个对象')
+  } finally {
+    // 断言失败时也要消费临时对象，避免把 R2 用量留在共享真实栈里。
+    await page.request.get(blobUrl).catch(() => undefined)
+  }
+})
+
 function getPublic(workerUrl: string, hostname: string) {
   return new Promise<{ status: number; body: string }>((resolve, reject) => {
     const target = new URL(workerUrl)
