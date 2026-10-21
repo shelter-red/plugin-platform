@@ -65,6 +65,8 @@ export interface PluginCommandResult {
   bodySize?: number
 }
 
+export type PluginAction = 'load' | 'unload' | 'enable' | 'disable' | 'reload' | 'health'
+
 export interface PluginHealthResult {
   id: string
   ok: boolean
@@ -269,7 +271,7 @@ export async function revokeInvite(inviteId: string): Promise<void> {
   if (!response.ok) throw await apiError(response, `invite revoke failed: ${response.status}`)
 }
 
-export async function commandPlugin(pluginInstanceId: string, action: 'load' | 'unload' | 'enable' | 'disable' | 'reload' | 'health'): Promise<PluginCommandResult> {
+export async function commandPlugin(pluginInstanceId: string, action: PluginAction): Promise<PluginCommandResult> {
   const apiBase = import.meta.env.VITE_API_BASE ?? ''
   const response = await fetch(`${apiBase}/api/plugins/${encodeURIComponent(pluginInstanceId)}/${action}`, { method: 'POST', credentials: 'include' })
   if (!response.ok) throw await apiError(response, `plugin command failed: ${response.status}`)
