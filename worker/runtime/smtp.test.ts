@@ -126,3 +126,22 @@ test('配额触发维护模式时向管理员发送通知并记录失败重试',
   socket.close(1000, 'test complete')
   setPlatformSettingsCache(defaultPlatformSettings)
 })
+
+test('SMTP 不可达时邀请仍然创建并记录邮件失败审计', { timeout: 30_000 }, async () => {
+  await api('/api/settings/smtp', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify(settings) })
+  const created = await api('/api/invites', ADMIN_TOKEN, { method: 'POST', body: JSON.stringify({ email: 'invitee@example.com' }) })
+  expect(created.status).toBe(201)
+  const body = await created.json() as { id: string; inviteUrl: string; emailSent: boolean | null }
+  expect(body.emailSent).toBe(false)
+  expect(body.inviteUrl).toContain('/auth/github/start?invite=')
+
+  const invite = await testEnv.DB.prepare('SELECT status, email FROM invites WHERE id = ?').bind(body.id).first<{ status: string; email: string }>()
+  expect(invite?.status).toBe('pending')
+  expect(invite?.email).toBe('invitee@example.com')
+  const audit = await testEnv.DB.prepare("SELECT action, detail_json FROM audit_log WHERE action IN ('invite.email.failed', 'invite.created') ORDER BY rowid").all<{ action: string; detail_json: string }>()
+  expect(audit.results.map((row) => row.action)).toEqual(['invite.email.failed', 'invite.created'])
+  const failed = JSON.parse(audit.results[0]!.detail_json) as { attempts: number; to: string }
+  expect(failed.attempts).toBe(3)
+  expect(failed.to).toBe('invitee@example.com')
+  expect(audit.results.some((row) => row.detail_json.includes(PASSWORD))).toBe(false)
+})

@@ -15,7 +15,7 @@
 | 验收项 | 状态 | 证据与边界 |
 | --- | --- | --- |
 | GitHub OAuth 登录、邀请过期、身份匹配、并发领取和权限隔离 | 模块已验证 | `github-auth`、`github-oauth`、`invite-claim`、`api-permission` smoke；未连接真实 GitHub OAuth App。 |
-| Cloudflare OAuth 回调、管理员权限、state、凭据加密、刷新和撤销 | 模块已验证 | `cloudflare-oauth` 与 `cloudflare-oauth-route` smoke；未连接真实 Cloudflare OAuth client。 |
+| Cloudflare OAuth 回调、管理员权限、state、凭据加密、刷新和撤销 | 部分/模块已验证 | `cloudflare-oauth` 与 `cloudflare-oauth-route` smoke 覆盖回调、state 校验和路由；`worker:runtime-test` 用真实 D1 验证 `/api/settings/cloudflare`：access token 与 account ID 加密落库且密文不含明文、读取只返回脱敏账号 `0123...cdef` 不回显 token、成员 403、缺少 token 400、删除后 `configured=false`，审计动作 `cloudflare.credentials.updated`/`revoked` 不含 token。未连接真实 Cloudflare OAuth client，也未用落库凭据发起真实 API 查询或刷新。 |
 | 通配 Host 路由、管理 API 优先级、未知域名和离线维护页 | 本地已验证 | `public-route`、`public-proxy` smoke，覆盖插件 Host、未知域名、API 路径和桥接离线响应。另以真实 `wrangler dev` + 本地 C++ 服务器 + 示例插件联调：`Host: e2e.plugins.example.com` 的 `GET /`、带 query 的 GET 和 POST 均转达插件并返回 200，未知插件 Host 返回 404 `Plugin domain not found`，控制台 Host 仍返回 SPA HTML。联调首次暴露静态资源层会截获插件域名根路径，现由 `[assets] run_worker_first = true` 保证请求先经 Worker 路由；仍是本地 miniflare/workerd，不是已部署 Cloudflare。 |
 | 一次性注册码原子消费 | 本地已验证 | `worker:runtime-test` 对真实 D1 并发三次提交同一注册码，仅一次 201、两次 401，并核对服务端只新增一条记录；`registration-race` smoke 覆盖并发消费逻辑。 |
 | 控制连接注册、心跳、断线、重连和旧断线竞态 | 本地已验证 | `worker:runtime-test` 通过 workerd 中的真实 Durable Object 验证心跳置为在线、控制连接断开后插件转 `server_offline`、域名转 `offline` 且公开入口返回维护页；`durable-object-lifecycle` smoke 覆盖 manifest 注册与断线/重连交错；C++ `control-client` smoke 覆盖连接重试。本地真实栈重启验证：停止 `plugmesh-server` 后公开入口立即返回 503 维护页、服务器转 `offline`，重新启动后自动重连、插件恢复 `enabled`、域名恢复 `online` 且请求返回 200（步骤见 `docs/local-e2e.md`）。真实多地域网络未验证。 |
@@ -27,7 +27,7 @@
 | R2 上传、一次性读取、过期和删除 | 本地已验证 | `blob-stream` 与 `durable-object-stream` smoke 覆盖流式消费、一次性读取和删除；`blob-expiry` smoke 覆盖过期对象清理、24 小时陈旧对象清理、重试三次、删除失败后回滚占用和用量释放。`worker:runtime-test` 用 workerd + 本地 R2 验证：`POST /api/blobs` 必须以 `content-length` 声明长度（缺失返回 411，超 50 MiB 返回 413），上传后返回 `/blobs/<token>`，首次 GET 返回原始内容并删除对象、清空 `temp_objects`、归还 `r2_bytes`/`r2_objects`，重复 GET 返回 410；R2 配额为 0 时上传返回 503 且不残留对象；Durable Object 的定长流与缺长度回退两条文件流路径也会在读取后清理。真实 R2 一致性与费用仍未验证。 |
 | D1/KV 路由缓存读穿和配置写穿 | 部分实现 | Host 路由内存缓存和更新失效逻辑已接入；`route-cache` smoke 覆盖读穿、负缓存、主动失效、5 秒 TTL 和 256 条上限淘汰；`worker:runtime-test` 用真实 D1 验证 Host 路由解析与未启用插件的维护页。真实多 isolate 缓存传播未验证。按设计不引入 KV 业务缓存：KV 最小过期粒度为 60 秒且跨地域最终一致，域名撤销或转移后可能继续命中旧路由，当前用 5 秒 isolate 缓存加 D1 回源保证正确性。 |
 | 总配额触发全局维护模式 | 本地已验证 | `worker:runtime-test` 在真实 D1 上把请求配额设为 1：首个公开请求经 Durable Object 正常返回 200，第二个请求因配额耗尽返回 503 维护页并把 `platform_settings` 的 `maintenance` 置为 true，写入 `maintenance.email.skipped` 审计（原因 `request quota reached`），后续请求直接走维护页；官方 Analytics 阈值触发仍未在真实账号上验证。 |
-| SMTP 测试发送、维护通知、失败重试和审计 | 本地已验证 | `maintenance-email` smoke 注入发送器验证第三次成功、最终失败、审计和敏感字段不落日志。`worker:runtime-test` 用真实 D1 验证管理 API：SMTP 设置加密落库（密文不含密码与发件地址）、读取不回显密码、成员 403、非法端口 400、删除后 `configured=false`；测试发送经 `worker-mailer` 真实连接不可达服务器重试三次后返回 502 并写入脱敏 `smtp.test.failed` 审计；请求配额耗尽触发维护模式时向超级管理员发送通知，失败重试三次后记录 `maintenance.email.failed`。真实 SMTP 服务器成功投递、退信和外部联通仍未验证。 |
+| SMTP 测试发送、维护通知、失败重试和审计 | 本地已验证 | `maintenance-email` smoke 注入发送器验证第三次成功、最终失败、审计和敏感字段不落日志。`worker:runtime-test` 用真实 D1 验证管理 API：SMTP 设置加密落库（密文不含密码与发件地址）、读取不回显密码、成员 403、非法端口 400、删除后 `configured=false`；测试发送经 `worker-mailer` 真实连接不可达服务器重试三次后返回 502 并写入脱敏 `smtp.test.failed` 审计；请求配额耗尽触发维护模式时向超级管理员发送通知，失败重试三次后记录 `maintenance.email.failed`；SMTP 不可达时创建邀请仍成功落库为 `pending`，响应 `emailSent=false`，`invite.email.failed` 重试三次且审计不含密码。真实 SMTP 服务器成功投递、退信和外部联通仍未验证。 |
 | Cloudflare Analytics/GraphQL 缓存、权限错误和过期 | 模块已验证 | `cloudflare-usage` smoke；未使用真实账号 token 查询。 |
 | 30 天用量/访问日志和 180 天审计清理 | 本地已验证 | `scheduled-maintenance` smoke 覆盖保留时间边界；`worker:runtime-test` 在 workerd 中直接调用 scheduled 维护函数，用真实 D1 与本地 R2 验证：31 天前的访问日志、181 天前的审计删除而保留期内数据保留，过期邀请转 `expired`、过期会话 / OAuth state / Cloudflare OAuth state / 注册码删除，过期与 24 小时前已消费的临时对象连同 R2 对象删除并归还 `r2_bytes`/`r2_objects`，30 天前的用量快照清理并写入新快照。真实 Cron 触发时刻未验证。 |
 | Wrangler bundle 和资源绑定 | 本地已验证 | `wrangler deploy --dry-run` 通过；`wrangler-config` smoke 断言 `[assets]` 的 `directory`、`binding`、`not_found_handling` 和 `run_worker_first = true`，防止插件域名根路径被静态资源层截获。D1 ID 仍为占位符，没有生产部署。 |
@@ -77,7 +77,7 @@ PLUGMESH_REAL_STACK_URL=http://127.0.0.1:18888 npm run ui:real-stack
                                          3 passed（需先启动本地 wrangler dev 并写入验收数据；第三条用例自动注册并启动真实 C++ 服务器）
 npm run worker:typecheck
 npm run worker:smoke                     25 smoke checks passed
-npm run worker:runtime-test              30 passed（workerd + 真实 D1/Durable Object/R2 模拟）
+npm run worker:runtime-test              32 passed（workerd + 真实 D1/Durable Object/R2 模拟）
   # 本机 glibc 2.31，经 node:22-bookworm-slim 容器执行；glibc ≥ 2.35 可直接运行
 npx wrangler deploy --dry-run --config worker/wrangler.toml
 cmake --build native-server/build --parallel 2

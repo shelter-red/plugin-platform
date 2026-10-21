@@ -163,26 +163,3 @@ async function readPlatformSettings(env: Env): Promise<PlatformSettings> {
   }
 }
 
-export function countStream(stream: ReadableStream<Uint8Array>, counter: { bytes: number }, maxBytes: number): ReadableStream<Uint8Array> {
-  const reader = stream.getReader()
-  return new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      const result = await reader.read()
-      if (result.done) {
-        controller.close()
-        return
-      }
-      const chunk = result.value
-      counter.bytes += chunk.byteLength
-      if (counter.bytes > maxBytes) {
-        await reader.cancel('Request body is too large')
-        controller.error(new Error('Request body is too large'))
-        return
-      }
-      controller.enqueue(chunk)
-    },
-    cancel(reason) {
-      return reader.cancel(reason)
-    },
-  })
-}
