@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# 一键部署 Cloudflare Worker：构建管理端、补齐 D1/R2 资源、执行迁移、写入密钥并发布。
-# 只调用官方 wrangler 子命令，不重复实现 Cloudflare API。
+# 一键部署 Cloudflare Worker：构建管理端、补齐 D1/R2 资源、执行迁移、初始化基础设施密钥并发布。
+# OAuth、SMTP 等业务配置不通过环境变量注入，部署完成后在管理后台填写。
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -8,22 +8,33 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 CONFIG=worker/wrangler.toml
 DB_NAME=plugmesh
 BUCKET_NAME=plugmesh-blobs
+SETUP_TOKEN_FILE=.wrangler/plugmesh-setup-token
 DRY_RUN=0
 SKIP_BUILD=0
 
 usage() {
-  cat <<'EOF'
+  cat <<'USAGE'
 用法：npm run deploy:worker [-- 选项]
-  --dry-run     只构建并校验 bundle，不创建资源、不写密钥、不发布
+  --dry-run     只构建并校验 bundle，不访问云端、不写密钥、不发布
   --skip-build  复用已有 dist，不重新构建管理端
   -h, --help    显示本帮助
 
-环境变量：
-  CLOUDFLARE_API_TOKEN   非交互部署所需的 API Token（Workers / D1 / R2 编辑权限）
-  CLOUDFLARE_ACCOUNT_ID  账号多于一个时必填
-  SESSION_SECRET / GITHUB_CLIENT_SECRET / CLOUDFLARE_OAUTH_CLIENT_SECRET
-                         存在时自动写入同名 Worker Secret
-EOF
+基础配置（真实部署必填）：
+  CLOUDFLARE_API_TOKEN    Cloudflare API Token，需 Workers Scripts、D1、R2 编辑权限
+  CLOUDFLARE_ACCOUNT_ID   可选；账号多于一个时填写
+
+脚本自动处理：
+  - 创建或复用 D1 数据库 plugmesh，并回填 worker/wrangler.toml
+  - 创建或复用 R2 存储桶 plugmesh-blobs
+  - 应用全部 D1 migrations
+  - 首次缺失时生成 SESSION_SECRET（已有值绝不轮换）
+  - 首次缺失时生成 SETUP_TOKEN，并保存到 .wrangler/plugmesh-setup-token（0600）
+  - 发布 Worker
+
+高级覆盖（通常不需要）：
+  SESSION_SECRET   远端缺失时使用指定值；远端已有时不会覆盖
+  SETUP_TOKEN      显式重置一次性初始化令牌；会写入并更新本地令牌文件
+USAGE
 }
 
 for arg in "$@"; do
@@ -35,23 +46,61 @@ for arg in "$@"; do
   esac
 done
 
-wrangler() { ./node_modules/.bin/wrangler "$@"; }
+WRANGLER_BIN=${WRANGLER_BIN:-./node_modules/.bin/wrangler}
+wrangler() { "$WRANGLER_BIN" "$@"; }
 fail() { echo "部署失败：$*" >&2; exit 1; }
+random_secret() { node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64url"))'; }
 
-[[ -x node_modules/.bin/wrangler ]] || fail "未找到 wrangler，请先执行 npm install"
+[[ -x "$WRANGLER_BIN" ]] || fail "未找到 wrangler，请先执行 npm install"
+[[ -f "$CONFIG" ]] || fail "缺少 $CONFIG"
+
+read_worker_name() {
+  node -e 'const m = require("node:fs").readFileSync(process.argv[1], "utf8").match(/^name = "([^"]+)"/m); process.stdout.write(m ? m[1] : "")' "$CONFIG"
+}
 
 read_database_id() {
   node -e 'const m = require("node:fs").readFileSync(process.argv[1], "utf8").match(/^database_id = "([^"]*)"/m); process.stdout.write(m ? m[1] : "")' "$CONFIG"
 }
 
 write_database_id() {
-  node -e 'const fs = require("node:fs"); const id = process.argv[2]; fs.writeFileSync(process.argv[1], fs.readFileSync(process.argv[1], "utf8").replace(/^database_id = "[^"]*"$/m, `database_id = "${id}"`))' "$CONFIG" "$1"
+  node -e 'const fs = require("node:fs"); const id = process.argv[2]; const path = process.argv[1]; fs.writeFileSync(path, fs.readFileSync(path, "utf8").replace(/^database_id = "[^"]*"$/m, `database_id = "${id}"`))' "$CONFIG" "$1"
 }
 
 find_database_id() {
   local listed
-  listed=$(wrangler d1 list --json) || fail "无法读取 D1 列表，请先 npx wrangler login 或设置 CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID"
+  listed=$(wrangler d1 list --json) || fail "无法读取 D1 列表，请检查 CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID"
   printf '%s' "$listed" | node -e 'let raw = ""; process.stdin.on("data", (chunk) => raw += chunk).on("end", () => { const found = JSON.parse(raw).find((db) => db.name === process.argv[1]); process.stdout.write(found ? found.uuid : "") })' "$DB_NAME"
+}
+
+load_secret_names() {
+  local listed
+  listed=$(wrangler secret list --config "$CONFIG" --format json) || fail "无法读取 Worker Secret 列表"
+  SECRET_NAMES=$(printf '%s' "$listed" | node -e 'let raw = ""; process.stdin.on("data", (chunk) => raw += chunk).on("end", () => { const rows = JSON.parse(raw); process.stdout.write((Array.isArray(rows) ? rows : []).map((row) => row.name).filter(Boolean).join("\n")) })')
+}
+
+has_secret() {
+  printf '\n%s\n' "$SECRET_NAMES" | grep -Fxq "$1"
+}
+
+put_secret() {
+  local name=$1 value=$2
+  if ! printf '%s' "$value" | wrangler secret put "$name" --config "$CONFIG" >/dev/null; then
+    fail "写入 Worker Secret $name 失败"
+  fi
+}
+
+save_setup_token() {
+  umask 077
+  mkdir -p "$(dirname "$SETUP_TOKEN_FILE")"
+  chmod 700 "$(dirname "$SETUP_TOKEN_FILE")"
+  printf '%s\n' "$1" > "$SETUP_TOKEN_FILE.tmp"
+  chmod 600 "$SETUP_TOKEN_FILE.tmp"
+  mv "$SETUP_TOKEN_FILE.tmp" "$SETUP_TOKEN_FILE"
+}
+
+require_secret_length() {
+  local name=$1 value=$2
+  [[ ${#value} -ge 24 ]] || fail "$name 至少需要 24 个字符"
 }
 
 echo "==> 构建管理端静态资源"
@@ -68,12 +117,20 @@ if [[ $DRY_RUN -eq 1 ]]; then
   exit 0
 fi
 
+[[ -n "${CLOUDFLARE_API_TOKEN:-}" ]] || fail "缺少 CLOUDFLARE_API_TOKEN。真实部署只需这一项基础凭据，请先按 README 创建 API Token。"
+
+WORKER_NAME=$(read_worker_name)
+[[ -n "$WORKER_NAME" ]] || fail "无法从 $CONFIG 读取 Worker 名称"
+
+echo "==> 验证 Cloudflare 凭据"
+wrangler whoami >/dev/null || fail "Cloudflare 凭据无效，或账号不唯一；请检查 CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID"
+
 echo "==> 准备 D1 数据库 $DB_NAME"
 database_id=$(read_database_id)
 if [[ -z "$database_id" || "$database_id" == replace-with-* ]]; then
   database_id=$(find_database_id)
   if [[ -z "$database_id" ]]; then
-    wrangler d1 create "$DB_NAME"
+    wrangler d1 create "$DB_NAME" >/dev/null
     database_id=$(find_database_id)
   fi
   [[ -n "$database_id" ]] || fail "无法创建或复用 D1 数据库 $DB_NAME"
@@ -84,32 +141,62 @@ else
 fi
 
 echo "==> 准备 R2 存储桶 $BUCKET_NAME"
-if wrangler r2 bucket list | grep -q "$BUCKET_NAME"; then
+if wrangler r2 bucket list | grep -Eq "(^|[[:space:]])${BUCKET_NAME}([[:space:]]|$)"; then
   echo "    已存在，跳过创建"
 else
   wrangler r2 bucket create "$BUCKET_NAME"
 fi
 
-echo "==> 应用远端 D1 迁移"
+echo "==> 应用远端 D1 migrations"
 wrangler d1 migrations apply "$DB_NAME" --remote --config "$CONFIG"
 
-for secret in SESSION_SECRET GITHUB_CLIENT_SECRET CLOUDFLARE_OAUTH_CLIENT_SECRET; do
-  value="${!secret:-}"
-  if [[ -n "$value" ]]; then
-    echo "==> 写入 Worker Secret $secret"
-    printf '%s' "$value" | wrangler secret put "$secret" --config "$CONFIG"
-  fi
-done
-
-echo "==> 发布 Worker"
+echo "==> 发布 Worker $WORKER_NAME"
 wrangler deploy --config "$CONFIG"
 
-cat <<'EOF'
+echo "==> 检查基础设施 Secret"
+load_secret_names
 
-部署完成。后续只需在 Cloudflare 控制台或 CI 中一次性配置：
-  - 路由：console.example.com/*（管理端、管理 API、OAuth 回调）
-  - 路由：*.plugins.example.com/*（插件公开入口）
-  - 变量：GITHUB_CLIENT_ID / GITHUB_REDIRECT_URI / GITHUB_ALLOWLIST /
-          CLOUDFLARE_OAUTH_CLIENT_ID / CLOUDFLARE_OAUTH_REDIRECT_URI
-  - Secret：SESSION_SECRET、GITHUB_CLIENT_SECRET、CLOUDFLARE_OAUTH_CLIENT_SECRET（可在部署时用环境变量传入自动写入）
-EOF
+if has_secret SESSION_SECRET; then
+  echo "    SESSION_SECRET 已存在，保持原值（不会轮换）"
+else
+  session_secret="${SESSION_SECRET:-$(random_secret)}"
+  require_secret_length SESSION_SECRET "$session_secret"
+  put_secret SESSION_SECRET "$session_secret"
+  echo "    已生成并写入 SESSION_SECRET"
+fi
+
+if [[ -n "${SETUP_TOKEN:-}" ]]; then
+  require_secret_length SETUP_TOKEN "$SETUP_TOKEN"
+  put_secret SETUP_TOKEN "$SETUP_TOKEN"
+  save_setup_token "$SETUP_TOKEN"
+  echo "    已按显式 SETUP_TOKEN 重置初始化令牌"
+elif has_secret SETUP_TOKEN; then
+  if [[ -f "$SETUP_TOKEN_FILE" ]]; then
+    echo "    SETUP_TOKEN 已存在；本地令牌文件：$SETUP_TOKEN_FILE"
+  else
+    echo "    警告：远端已有 SETUP_TOKEN，但本地令牌文件不存在，为避免破坏初始化流程不会覆盖。" >&2
+    echo "    如已确认需要重置：SETUP_TOKEN='新令牌（至少 24 字符）' npm run deploy:worker" >&2
+  fi
+else
+  setup_token=$(random_secret)
+  put_secret SETUP_TOKEN "$setup_token"
+  save_setup_token "$setup_token"
+  echo "    已生成 SETUP_TOKEN，并保存到 $SETUP_TOKEN_FILE（权限 0600）"
+fi
+
+cat <<'NEXT_STEPS'
+
+部署完成。基础 Cloudflare 资源和 Worker Secret 已就绪。
+
+下一步：
+  1. 配置 Worker 路由和 DNS：
+     - console.example.com/*
+     - *.plugins.example.com/*
+  2. 打开 https://console.example.com/setup
+  3. 本地首次部署的初始化令牌位于：.wrangler/plugmesh-setup-token
+     GitHub Actions 首次部署会把它写入对应运行记录的 Job Summary。
+  4. 在初始化页填写 GitHub OAuth App 的 Client ID、Client Secret、回调地址和管理员白名单。
+  5. 完成 GitHub 登录后，在管理后台配置 Cloudflare OAuth、SMTP、配额等业务设置。
+
+不会通过部署环境变量写入 GitHub / Cloudflare OAuth 或 SMTP 凭据；这些均在后台配置并加密保存。
+NEXT_STEPS
