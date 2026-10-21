@@ -1,6 +1,3 @@
-export type ServerStatus = 'online' | 'offline' | 'revoked'
-export type PluginState = 'discovered' | 'loaded' | 'enabled' | 'disabled' | 'unloaded' | 'failed' | 'server_offline'
-
 export interface PlatformQuotas {
   requests: number
   activeConnections: number
