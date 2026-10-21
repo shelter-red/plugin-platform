@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { echoOnce, getPublic, openEcho, upgradeStatus } from './public-client'
 import { preparePublicPlugin } from './real-stack-plugin'
+import { createStackApi } from './stack-api'
 
 const baseURL = process.env.PLUGMESH_REAL_STACK_URL
 const sessionToken = process.env.PLUGMESH_REAL_STACK_TOKEN ?? 'real-stack-session-token'
@@ -9,13 +10,7 @@ test.skip(!baseURL, '需要先启动本地真实栈并设置 PLUGMESH_REAL_STACK
 
 test('请求配额耗尽后进入维护模式并拒绝新的长连接', async ({ request }) => {
   test.setTimeout(300_000)
-  const cookie = `plugmesh_session=${sessionToken}`
-  const call = (path: string, init: RequestInit = {}) => request.fetch(path, { ...init, headers: { cookie, ...(init.headers ?? {}) } })
-  const api = async (path: string, init: RequestInit = {}) => {
-    const response = await call(path, init)
-    if (!response.ok()) throw new Error(`${init.method ?? 'GET'} ${path} 失败：${response.status()} ${await response.text()}`)
-    return response
-  }
+  const { api, call } = createStackApi(request, sessionToken)
 
   const baseline = (await (await api('/api/settings/platform')).json()) as { maintenance: boolean; quotas: Record<string, number> }
   expect(baseline.maintenance, '维护模式用例要求平台初始不在维护中').toBe(false)

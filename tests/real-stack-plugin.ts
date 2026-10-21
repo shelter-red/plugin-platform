@@ -1,8 +1,9 @@
-import { expect, type APIResponse } from '@playwright/test'
+import { expect } from '@playwright/test'
 import { getPublic, makeTarget, type Target } from './public-client'
 import { startRealServer, type RealServer } from './real-stack-server'
+import type { StackApi } from './stack-api'
 
-export type Api = (path: string, init?: RequestInit) => Promise<APIResponse>
+export type Api = StackApi
 
 export type PublicPlugin = { server: RealServer; pluginId: string; target: Target }
 

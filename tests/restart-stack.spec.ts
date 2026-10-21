@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
 import { getPublic } from './public-client'
 import { preparePublicPlugin } from './real-stack-plugin'
+import { createStackApi } from './stack-api'
 
 const baseURL = process.env.PLUGMESH_REAL_STACK_URL
 const sessionToken = process.env.PLUGMESH_REAL_STACK_TOKEN ?? 'real-stack-session-token'
@@ -11,12 +12,7 @@ test.skip(!baseURL || !container, '需要本地真实栈并设置 PLUGMESH_REAL_
 
 test('Worker 重启后路由缓存从 D1 冷回源并恢复插件公开入口', async ({ request }) => {
   test.setTimeout(300_000)
-  const cookie = `plugmesh_session=${sessionToken}`
-  const api = async (path: string, init: RequestInit = {}) => {
-    const response = await request.fetch(path, { ...init, headers: { cookie, ...(init.headers ?? {}) } })
-    if (!response.ok()) throw new Error(`${init.method ?? 'GET'} ${path} 失败：${response.status()} ${await response.text()}`)
-    return response
-  }
+  const { api } = createStackApi(request, sessionToken)
 
   const { server, target } = await preparePublicPlugin(baseURL!, api)
   try {

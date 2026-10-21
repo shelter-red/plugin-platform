@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
-import { echoOnce, getPublic, makeTarget, openEcho, openStream } from './public-client'
+import { echoOnce, getPublic, openEcho, openStream } from './public-client'
 import { preparePublicPlugin } from './real-stack-plugin'
+import { createStackApi } from './stack-api'
 
 const baseURL = process.env.PLUGMESH_REAL_STACK_URL
 const sessionToken = process.env.PLUGMESH_REAL_STACK_TOKEN ?? 'real-stack-session-token'
@@ -36,12 +37,7 @@ function percentile(samples: number[], ratio: number) {
 
 test('公开入口在数百并发下的 HTTP、SSE 和 WebSocket 表现', async ({ request }) => {
   test.setTimeout(600_000)
-  const cookie = `plugmesh_session=${sessionToken}`
-  const api = async (path: string, init: RequestInit = {}) => {
-    const response = await request.fetch(path, { ...init, headers: { cookie, ...(init.headers ?? {}) } })
-    if (!response.ok()) throw new Error(`${init.method ?? 'GET'} ${path} 失败：${response.status()} ${await response.text()}`)
-    return response
-  }
+  const { api } = createStackApi(request, sessionToken)
 
   const { server, target } = await preparePublicPlugin(baseURL!, api)
   try {
