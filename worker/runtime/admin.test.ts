@@ -106,7 +106,10 @@ test('管理 API 生成的注册码只能兑换一次并绑定到当前用户', 
 
 test('域名分配校验前缀、插件状态、服务器在线与健康检查', { timeout: 30_000 }, async () => {
   await seedServer()
+  await seedAdmin()
   await seedMemberSession()
+  const configured = await api('/api/settings/platform', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify({ pluginDomainSuffix: 'plugins.example.net' }) })
+  expect(configured.status).toBe(200)
   await testEnv.DB.prepare('DELETE FROM domains WHERE id = ?').bind('domain-runtime').run()
 
   const assign = (prefix: string, pluginInstanceId = 'plugin-runtime') => api('/api/domains', MEMBER_TOKEN, { method: 'POST', body: JSON.stringify({ prefix, pluginInstanceId }) })
@@ -133,7 +136,7 @@ test('域名分配校验前缀、插件状态、服务器在线与健康检查',
   sendFrame(socket, 'plugin.result', { ok: true, status: 200 }, healthyFrame.requestId)
   const assigned = await healthy
   expect(assigned.status).toBe(201)
-  expect(await assigned.json()).toMatchObject({ hostname: 'ok-prefix.plugins.example.com', status: 'online' })
+  expect(await assigned.json()).toMatchObject({ hostname: 'ok-prefix.plugins.example.net', status: 'online' })
 
   const duplicate = assign('ok-prefix')
   const duplicateFrame = await channel.next()
@@ -156,16 +159,21 @@ test('管理 API 保存配额并让维护模式阻止注册码与域名分配', 
 
   const updated = await api('/api/settings/platform', ADMIN_TOKEN, {
     method: 'PUT',
-    body: JSON.stringify({ quotas: { requests: 250, activeConnections: -5 } }),
+    body: JSON.stringify({ pluginDomainSuffix: 'Plugins.Example.NET', quotas: { requests: 250, activeConnections: -5 } }),
   })
   expect(updated.status).toBe(200)
   const settings = await updated.json() as typeof defaultPlatformSettings
   expect(settings.maintenance).toBe(false)
+  expect(settings.pluginDomainSuffix).toBe('.plugins.example.net')
   expect(settings.quotas.requests).toBe(250)
   expect(settings.quotas.activeConnections).toBe(defaultPlatformSettings.quotas.activeConnections)
 
   const stored = await testEnv.DB.prepare('SELECT value_json FROM platform_settings WHERE key = ?').bind('platform').first<{ value_json: string }>()
+  expect(JSON.parse(stored?.value_json ?? '{}').pluginDomainSuffix).toBe('.plugins.example.net')
   expect(JSON.parse(stored?.value_json ?? '{}').quotas.requests).toBe(250)
+
+  const invalidSuffix = await api('/api/settings/platform', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify({ pluginDomainSuffix: 'not a domain' }) })
+  expect(invalidSuffix.status).toBe(400)
 
   const maintenance = await api('/api/settings/platform', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify({ maintenance: true }) })
   expect((await maintenance.json() as typeof defaultPlatformSettings).maintenance).toBe(true)

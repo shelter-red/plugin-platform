@@ -79,7 +79,8 @@ async function fetchPublic(hostname: string, init?: RequestInit): Promise<Respon
   return worker.fetch(request, env, ctx)
 }
 
-setPlatformSettingsCache(defaultPlatformSettings)
+const testSettings = { ...defaultPlatformSettings, pluginDomainSuffix: '.plugins.example.test' }
+setPlatformSettingsCache(testSettings)
 let response = await fetchPublic('missing.plugins.example.test')
 assert.equal(response.status, 404)
 assert.equal(await response.text(), 'Plugin domain not found')
@@ -90,13 +91,13 @@ assert.equal(response.status, 503)
 assert.match(await response.text(), /插件暂时不可用/)
 assert.equal(bridgeRequests.length, 0)
 
-setPlatformSettingsCache({ ...defaultPlatformSettings, maintenance: true })
+setPlatformSettingsCache({ ...testSettings, maintenance: true })
 response = await fetchPublic(readyRoute.hostname)
 assert.equal(response.status, 503)
 assert.match(await response.text(), /平台维护中/)
 assert.equal(bridgeRequests.length, 0)
 
-setPlatformSettingsCache(defaultPlatformSettings)
+setPlatformSettingsCache(testSettings)
 response = await fetchPublic(readyRoute.hostname, { method: 'GET' })
 assert.equal(response.status, 201)
 assert.equal(await response.text(), 'proxied')

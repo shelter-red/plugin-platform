@@ -2,8 +2,11 @@ import type { Env, PlatformQuotas, PlatformSettings } from './types'
 import { decryptSecret } from './secrets'
 import { parseSmtpSettings, sendMaintenanceEmail, type SmtpSettings } from './email'
 
+export const defaultPluginDomainSuffix = '.plugins.example.com'
+
 export const defaultPlatformSettings: PlatformSettings = {
   maintenance: false,
+  pluginDomainSuffix: defaultPluginDomainSuffix,
   quotas: {
     requests: 100000,
     activeConnections: 100,
@@ -89,6 +92,15 @@ export function setPlatformSettingsCache(settings: PlatformSettings): void {
   settingsCache = { value: settings, expiresAt: Date.now() + settingsCacheTtlMs }
 }
 
+export function normalizePluginDomainSuffix(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const domain = value.trim().toLowerCase().replace(/^\.+/, '')
+  if (!domain || domain.length > 253) return null
+  const labels = domain.split('.')
+  if (labels.length < 2 || labels.some((label) => !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label))) return null
+  return `.${domain}`
+}
+
 export async function reserveRequest(env: Env, quotas: PlatformQuotas): Promise<boolean> {
   await ensureUsageRow(env)
   const now = new Date()
@@ -150,19 +162,28 @@ async function ensurePlatformSettingsRow(env: Env): Promise<void> {
 }
 
 async function readPlatformSettings(env: Env): Promise<PlatformSettings> {
+  const fallback = environmentPlatformSettings(env)
   const row = await env.DB.prepare('SELECT value_json FROM platform_settings WHERE key = ?').bind('platform').first<{ value_json: string }>()
-  if (!row) return defaultPlatformSettings
+  if (!row) return fallback
   try {
     const value = JSON.parse(row.value_json) as Partial<PlatformSettings>
     return {
       maintenance: Boolean(value.maintenance),
+      pluginDomainSuffix: normalizePluginDomainSuffix(value.pluginDomainSuffix) ?? fallback.pluginDomainSuffix,
       quotas: {
         ...defaultPlatformSettings.quotas,
         ...(value.quotas ?? {}),
       },
     }
   } catch {
-    return defaultPlatformSettings
+    return fallback
+  }
+}
+
+function environmentPlatformSettings(env: Env): PlatformSettings {
+  return {
+    ...defaultPlatformSettings,
+    pluginDomainSuffix: normalizePluginDomainSuffix(env.PLUGIN_DOMAIN_SUFFIX) ?? defaultPluginDomainSuffix,
   }
 }
 

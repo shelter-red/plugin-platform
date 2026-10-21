@@ -10,6 +10,7 @@ export interface PlatformQuotas {
 
 export interface PlatformSettings {
   maintenance: boolean
+  pluginDomainSuffix: string
   quotas: PlatformQuotas
 }
 

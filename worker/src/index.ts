@@ -5,7 +5,7 @@ import type { AuthenticatedUser, Env } from './types'
 import { decryptSecret, encryptSecret } from './secrets'
 import { isEmail, parseSmtpSettings, publicSmtpSettings, sendInviteEmail, sendSmtpTest, type SmtpSettings } from './email'
 import { discoverCloudflareAccountId, exchangeCloudflareCode, readCloudflareCredential, refreshCloudflareCredential, revokeCloudflareToken, type CloudflareCredential } from './cloudflare-oauth'
-import { activateMaintenance, cloudflareQuotaReason, defaultPlatformSettings, getPlatformSettings, isMaintenanceMode, releaseR2Usage, reserveR2Usage, reserveRequest, setPlatformSettingsCache } from './usage'
+import { activateMaintenance, cloudflareQuotaReason, defaultPlatformSettings, getPlatformSettings, isMaintenanceMode, normalizePluginDomainSuffix, releaseR2Usage, reserveR2Usage, reserveRequest, setPlatformSettingsCache } from './usage'
 import { findPluginRoute, invalidatePluginRoute } from './route-cache'
 import { selectPublicRequestMode } from './request-mode'
 import { resolvePublicRoute } from './public-route'
@@ -19,7 +19,7 @@ const json = (value: unknown, status = 200) => new Response(JSON.stringify(value
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url)
-    if (isPluginHostname(url.hostname, env)) return proxyPublicHost(request, env, url, ctx)
+    if (await isPluginHostname(url.hostname, env)) return proxyPublicHost(request, env, url, ctx)
     if (url.pathname === '/api/health') return json({ ok: true, service: 'plugmesh-worker', protocolVersion: 1 })
     if (url.pathname === '/setup') return setupApi(request, env, url)
     if (url.pathname === '/auth/github/start') return startGithubAuth(env, url)
@@ -549,7 +549,7 @@ async function assignDomain(request: Request, env: Env, user: AuthenticatedUser)
   const plugin = await env.DB.prepare('SELECT id, server_id, state FROM plugin_instances WHERE id = ? AND user_id = ?').bind(body.pluginInstanceId, user.id).first<{ id: string; server_id: string; state: string }>()
   if (!plugin) return json({ error: 'Plugin instance not found' }, 404)
   if (plugin.state !== 'enabled') return json({ error: 'Plugin must be enabled before assigning a domain' }, 409)
-  const suffix = pluginDomainSuffix(env)
+  const suffix = await pluginDomainSuffix(env)
   const hostname = `${prefix}${suffix}`
   const server = await env.DB.prepare('SELECT status FROM servers WHERE id = ? AND user_id = ?').bind(plugin.server_id, user.id).first<{ status: string }>()
   if (!server || server.status !== 'online') return json({ error: 'Plugin server is offline' }, 409)
@@ -633,7 +633,7 @@ export async function createServerRegistration(env: Env, code: string | undefine
 }
 
 async function proxyPublicHost(request: Request, env: Env, url: URL, ctx: ExecutionContext): Promise<Response> {
-  const suffix = pluginDomainSuffix(env)
+  const suffix = await pluginDomainSuffix(env)
   if (!url.hostname.endsWith(suffix) || url.hostname.length <= suffix.length) return env.ASSETS ? env.ASSETS.fetch(request) : new Response('Plugmesh console route', { status: 404 })
   const prefix = url.hostname.slice(0, -suffix.length)
   if (!/^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$/.test(prefix)) return new Response('Plugmesh console route', { status: 404 })
@@ -680,9 +680,14 @@ async function platformSettingsApi(request: Request, env: Env, user: Authenticat
   const settings = await getPlatformSettings(env)
   if (request.method === 'GET') return json(settings)
   if (request.method !== 'PUT') return json({ error: 'Method not allowed' }, 405)
-  const body = await request.json().catch(() => null) as { maintenance?: boolean; quotas?: Partial<typeof defaultPlatformSettings.quotas> } | null
+  const body = await request.json().catch(() => null) as { maintenance?: boolean; pluginDomainSuffix?: string; quotas?: Partial<typeof defaultPlatformSettings.quotas> } | null
+  const pluginDomainSuffix = body?.pluginDomainSuffix === undefined
+    ? settings.pluginDomainSuffix
+    : normalizePluginDomainSuffix(body.pluginDomainSuffix)
+  if (!pluginDomainSuffix) return json({ error: 'Invalid plugin domain suffix' }, 400)
   const next = {
     maintenance: Boolean(body?.maintenance ?? settings.maintenance),
+    pluginDomainSuffix,
     quotas: {
       requests: parsePositiveQuota(body?.quotas?.requests, settings.quotas.requests),
       activeConnections: parsePositiveQuota(body?.quotas?.activeConnections, settings.quotas.activeConnections),
@@ -1001,14 +1006,12 @@ function maintenanceResponse(title = '平台维护中', detail = '平台当前�
   return new Response(`<!doctype html><title>${title}</title><main style="font-family:system-ui;padding:48px"><h1>${title}</h1><p>${detail}</p></main>`, { status: 503, headers: { 'content-type': 'text/html; charset=utf-8', 'retry-after': '300' } })
 }
 
-function pluginDomainSuffix(env: Env): string {
-  const configured = (env.PLUGIN_DOMAIN_SUFFIX ?? '.plugins.example.com').trim().toLowerCase()
-  const suffix = configured.startsWith('.') ? configured : `.${configured}`
-  return /^\.[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/.test(suffix) && !suffix.includes('..') ? suffix : '.plugins.example.com'
+async function pluginDomainSuffix(env: Env): Promise<string> {
+  return (await getPlatformSettings(env)).pluginDomainSuffix
 }
 
-function isPluginHostname(hostname: string, env: Env): boolean {
-  const suffix = pluginDomainSuffix(env)
+async function isPluginHostname(hostname: string, env: Env): Promise<boolean> {
+  const suffix = await pluginDomainSuffix(env)
   return hostname.endsWith(suffix) && hostname.length > suffix.length
 }
 
