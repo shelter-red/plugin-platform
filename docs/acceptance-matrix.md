@@ -103,6 +103,11 @@ PLUGMESH_REAL_STACK_URL=http://127.0.0.1:18888 npm run stack:maintenance
                                          1 passed（请求配额耗尽 → 503 维护页、拒绝新 WebSocket、保留已建连接、审计与解除）
 PLUGMESH_REAL_STACK_URL=http://127.0.0.1:18888 PLUGMESH_E2E_CONTAINER=plugmesh-e2e npm run stack:restart
                                          1 passed（容器重启后 isolate 缓存清空 → 回源 D1、服务器自动重连）
+PLUGMESH_MULTI_ISOLATE_A_URL=http://127.0.0.1:18888 \
+  PLUGMESH_MULTI_ISOLATE_B_URL=http://127.0.0.1:18889 \
+  PLUGMESH_D1_SQLITE=/tmp/plugmesh-load-data2/v3/d1/miniflare-D1DatabaseObject/<hash>.sqlite \
+  npm run stack:multi-isolate
+                                         1 passed（两个 wrangler dev 共用同一 D1：A 命中 404 负缓存、B 立即回源 503、5 秒 TTL 后 A 收敛）
 ```
 
 这些结果不代表真实 Cloudflare、GitHub、公网 SMTP（STARTTLS/SMTPS 与退信）、Windows 或生产网络已联通。
