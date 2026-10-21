@@ -139,6 +139,15 @@ export interface LocalUsage {
   r2Bytes: number
   r2Objects: number
   updatedAt: string | null
+  snapshots: UsageSnapshot[]
+}
+
+export interface UsageSnapshot {
+  captured_at: string
+  request_count: number
+  active_connections: number
+  r2_bytes: number
+  r2_objects: number
 }
 
 export interface PlatformSettings {
@@ -306,9 +315,9 @@ export async function fetchCloudflareUsage(): Promise<CloudflareUsage> {
   return response.json() as Promise<CloudflareUsage>
 }
 
-export async function fetchLocalUsage(): Promise<LocalUsage> {
+export async function fetchLocalUsage(range: '24h' | '7d' | '30d' = '7d'): Promise<LocalUsage> {
   const apiBase = import.meta.env.VITE_API_BASE ?? ''
-  const response = await fetch(`${apiBase}/api/usage/local`, { credentials: 'include' })
+  const response = await fetch(`${apiBase}/api/usage/local?range=${range}`, { credentials: 'include' })
   if (!response.ok) throw await apiError(response, `local usage request failed: ${response.status}`)
   return response.json() as Promise<LocalUsage>
 }

@@ -38,7 +38,7 @@ import {
   Zap,
 } from 'lucide-react'
 import './styles.css'
-import { assignDomain, checkPluginHealth, commandPlugin, createInvite, createRegistrationCode, fetchAccessLogs, fetchAudit, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchInvites, fetchLocalUsage, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchPluginDetails, fetchServerDetails, fetchServers, fetchSmtpSettings, revokeCloudflareSettings, revokeInvite, syncServer, type ApiAccessLog, type ApiAudit, type ApiDomain, type ApiInvite, type ApiOverview, type ApiPlugin, type ApiPluginDetail, type ApiServer, type ApiServerDetail, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type PlatformSettings, type PluginAction, type PluginHealthResult, type SmtpSettings, sendSmtpTest, updatePlatformSettings, updateSmtpSettings } from './api'
+import { assignDomain, checkPluginHealth, commandPlugin, createInvite, createRegistrationCode, fetchAccessLogs, fetchAudit, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchInvites, fetchLocalUsage, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchPluginDetails, fetchServerDetails, fetchServers, fetchSmtpSettings, revokeCloudflareSettings, revokeInvite, syncServer, type ApiAccessLog, type ApiAudit, type ApiDomain, type ApiInvite, type ApiOverview, type ApiPlugin, type ApiPluginDetail, type ApiServer, type ApiServerDetail, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type PlatformSettings, type PluginAction, type PluginHealthResult, type SmtpSettings, type UsageSnapshot, sendSmtpTest, updatePlatformSettings, updateSmtpSettings } from './api'
 
 type Page = 'overview' | 'servers' | 'plugins' | 'domains' | 'usage' | 'logs' | 'audit' | 'settings'
 type Theme = 'dark' | 'light' | 'system'
@@ -242,8 +242,12 @@ function App() {
       setUsage(null)
       setUsageError(error instanceof Error ? error.message : 'Cloudflare 用量暂时无法读取')
     }).finally(() => setUsageLoading(false))
-    fetchLocalUsage().then(setLocalUsage).catch(() => setLocalUsage(null))
   }, [authEnabled])
+
+  useEffect(() => {
+    if (!authEnabled && !import.meta.env.VITE_API_BASE) return
+    fetchLocalUsage(range).then(setLocalUsage).catch(() => setLocalUsage(null))
+  }, [authEnabled, range])
 
   useEffect(() => {
     window.localStorage.setItem('plugmesh-theme', theme)
@@ -264,11 +268,12 @@ function App() {
   const refreshData = async (notify = true) => {
     setDataLoading(true)
     try {
-      const [nextOverview, nextServers, nextPlugins, nextDomains] = await Promise.all([fetchOverview(), fetchServers(), fetchPlugins(), fetchDomains()])
+      const [nextOverview, nextServers, nextPlugins, nextDomains, nextLocalUsage] = await Promise.all([fetchOverview(), fetchServers(), fetchPlugins(), fetchDomains(), fetchLocalUsage(range)])
       setOverview(nextOverview)
       setServers(nextServers)
       setPlugins(nextPlugins)
       setDomains(nextDomains)
+      setLocalUsage(nextLocalUsage)
       setApiLive(true)
       setDataError(null)
       if (notify) showToast('平台数据已刷新')
@@ -455,7 +460,7 @@ function Overview({ overview, localUsage, settings, audits, range, setRange, onN
       <Metric label="当前连接" value={activeConnections} suffix="" note={localUsage ? '平台本地计数' : '暂无本地连接计数'} icon={Zap} tone="amber" onClick={() => onNavigate('usage')} />
     </section>
     <section className="content-grid two-thirds">
-      <div className="panel chart-panel"><div className="panel-header"><div><h2>请求趋势</h2><p>接入真实用量数据后显示</p></div><div className="segmented">{(['24h', '7d', '30d'] as const).map((item) => <button className={range === item ? 'selected' : ''} key={item} onClick={() => setRange(item)}>{item}</button>)}</div></div><div className="empty-chart chart-empty-state"><Activity size={20} /><strong>暂无请求趋势数据</strong><span>当前 Worker 尚未返回趋势统计。</span></div></div>
+      <div className="panel chart-panel"><div className="panel-header"><div><h2>请求趋势</h2><p>平台本地请求计数快照</p></div><div className="segmented">{(['24h', '7d', '30d'] as const).map((item) => <button className={range === item ? 'selected' : ''} key={item} onClick={() => setRange(item)}>{item}</button>)}</div></div><RequestTrend range={range} snapshots={localUsage?.snapshots ?? []} /></div>
       <div className="panel"><div className="panel-header"><div><h2>资源使用</h2><p>平台本地计数，官方 Analytics 详见用量页</p></div><IconButton label="查看用量详情" onClick={() => onNavigate('usage')}><ArrowUpRight size={15} /></IconButton></div><div className="resource-list"><Resource label="平台请求" value={requestCount} limit={requestLimit} icon={Cloud} /><Resource label="R2 中转容量" value={r2Value} limit={r2Limit} icon={HardDrive} /><Resource label="D1 数据库" value="—" limit="未接入" icon={Database} /><Resource label="Durable Object" value={activeConnections} limit={connectionLimit} icon={Activity} /></div><button className="text-link" onClick={() => onNavigate('usage')}>查看全部配额 <ArrowUpRight size={14} /></button></div>
     </section>
     <section className="content-grid two-thirds bottom-grid"><div className="panel"><div className="panel-header"><div><h2>最近活动</h2><p>最新平台事件与配置变化</p></div><button className="text-link" onClick={() => onNavigate('audit')}>查看审计日志 <ArrowUpRight size={14} /></button></div>{audits.length > 0 ? <div className="activity-list">{audits.slice(0, 3).map((item) => <div className="activity-item" key={item.id}><div className="activity-mark success"><Check size={13} /></div><div className="activity-copy"><strong>{auditActionLabel(item.action)}</strong><span>{auditDetail(item)}</span></div><time>{new Date(item.created_at).toLocaleString('zh-CN')}</time></div>)}</div> : <div className="empty-panel"><div className="empty-illustration"><Activity size={20} /></div><h3>暂无活动记录</h3><p>Worker 返回审计事件后会显示在这里。</p></div>}</div><div className="panel quick-panel"><div className="panel-header"><div><h2>快速开始</h2><p>完成平台接入需要三步</p></div></div><QuickStep number="01" title="绑定插件服务器" detail="安装本地服务器并输入注册码" onClick={() => onNavigate('servers')} /><QuickStep number="02" title="加载第一个插件" detail="同步 manifest 并完成健康检查" onClick={() => onNavigate('plugins')} /><QuickStep number="03" title="分配公开域名" detail="为插件选择唯一的子域名前缀" onClick={() => onNavigate('domains')} /></div></section>
@@ -463,6 +468,26 @@ function Overview({ overview, localUsage, settings, audits, range, setRange, onN
 }
 
 function Metric({ label, value, suffix, note, icon: Icon, tone, onClick }: { label: string; value: string; suffix: string; note: string; icon: typeof Server; tone: string; onClick: () => void }) { return <button className="metric-card" onClick={onClick}><div className={`metric-icon ${tone}`}><Icon size={17} /></div><div className="metric-label">{label}<ArrowUpRight size={13} /></div><div className="metric-number">{value}<small>{suffix}</small></div><div className="metric-note"><span className="status-dot green" />{note}</div></button> }
+
+function RequestTrend({ range, snapshots }: { range: '24h' | '7d' | '30d'; snapshots: UsageSnapshot[] }) {
+  const sampled = sampleUsageSnapshots(snapshots)
+  if (sampled.length === 0) return <div className="empty-chart chart-empty-state"><Activity size={20} /><strong>暂无请求趋势数据</strong><span>Worker 记录首个用量快照后会显示在这里。</span></div>
+  const maximum = Math.max(...sampled.map((snapshot) => snapshot.request_count), 1)
+  const first = sampled[0]
+  const last = sampled[sampled.length - 1]
+  return <div className="empty-chart" role="img" aria-label={`${range} 平台请求计数趋势`}><div className="chart-grid-lines"><span /><span /><span /><span /></div><div className="chart-bars">{sampled.map((snapshot) => <div className="bar-wrap" key={snapshot.captured_at}><div className="chart-bar accent" style={{ height: `${Math.max(6, snapshot.request_count / maximum * 100)}%` }} title={`${formatTrendTime(snapshot.captured_at)}：${snapshot.request_count.toLocaleString('zh-CN')} 次`} /></div>)}</div><div className="chart-axis"><span>{formatTrendTime(first.captured_at)}</span><span>{formatTrendTime(last.captured_at)}</span></div><div className="chart-footnote"><span><span className="legend-dot" />平台请求计数</span><span>{range} · {last.request_count.toLocaleString('zh-CN')} 次</span></div></div>
+}
+
+function sampleUsageSnapshots(snapshots: UsageSnapshot[], limit = 24): UsageSnapshot[] {
+  if (snapshots.length <= limit) return snapshots
+  const bucketSize = Math.ceil(snapshots.length / limit)
+  return Array.from({ length: Math.ceil(snapshots.length / bucketSize) }, (_, index) => snapshots[Math.min((index + 1) * bucketSize - 1, snapshots.length - 1)])
+}
+
+function formatTrendTime(value: string): string {
+  return new Date(value).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
 function Resource({ label, value, limit, icon: Icon }: { label: string; value: string; limit: string; icon: typeof Cloud }) { return <div className="resource"><div className="resource-top"><div className="resource-label"><Icon size={15} />{label}</div><strong>{value}</strong></div><div className="progress"><span style={{ width: 0 }} /></div><div className="resource-bottom"><span>当前用量</span><span>{limit}</span></div></div> }
 function QuickStep({ number, title, detail, done, onClick }: { number: string; title: string; detail: string; done?: boolean; onClick: () => void }) { return <button className="quick-step" onClick={onClick}><span className={`step-number ${done ? 'done' : ''}`}>{done ? <Check size={13} /> : number}</span><span className="step-copy"><strong>{title}</strong><small>{detail}</small></span><ArrowUpRight size={14} /></button> }
 
