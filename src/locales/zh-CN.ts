@@ -190,6 +190,7 @@ export default {
   },
   domains: {
     clipboardUnsupported: '当前浏览器不支持复制',
+    copy: '复制 {{hostname}}',
     copied: '公开域名已复制',
     copyFailed: '公开域名复制失败',
     title: '公开入口',

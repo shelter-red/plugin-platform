@@ -13,6 +13,8 @@ test.skip(!baseURL, '需要先启动本地真实栈并设置 PLUGMESH_REAL_STACK
 
 test.beforeEach(async ({ context }) => {
   await context.addCookies([{ name: 'plugmesh_session', value: sessionToken, url: baseURL! }])
+  // 邀请链接与公开域名都有「复制」按钮，Playwright 需显式授权才能读回剪贴板校验。
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: baseURL! })
 })
 
 test('管理端读取真实 Worker 数据并展示服务器、插件和域名', async ({ page }) => {
@@ -33,10 +35,8 @@ test('管理端读取真实 Worker 数据并展示服务器、插件和域名', 
   await expect(page.getByText('real.plugins.example.com')).toBeVisible()
 })
 
-test('管理端邀请与注册码操作落到真实 D1', async ({ page, context }) => {
+test('管理端邀请与注册码操作落到真实 D1', async ({ page }) => {
   const { call } = createStackApi(page.request, sessionToken)
-  // 「复制链接」写入系统剪贴板，Playwright 需要显式授权才能读回校验。
-  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: baseURL! })
 
   await page.goto('/')
   await page.getByRole('button', { name: '系统设置', exact: true }).click()
@@ -190,6 +190,15 @@ test('管理端总览展示真实 5xx 访问日志与连接异常', async ({ pag
     const prefix = `overview-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 6)}`
     const { hostname } = (await (await api('/api/domains', { method: 'POST', data: { pluginInstanceId: lifecycle!.id, prefix } })).json()) as { hostname: string }
     expect(hostname).toBe(`${prefix}.plugins.example.com`)
+
+    // 公开域名行的复制按钮必须写入真实剪贴板，而不是只弹 Toast。
+    await page.goto('/')
+    await page.getByRole('button', { name: '公开域名', exact: true }).click()
+    const domainRow = page.locator('.domain-row').filter({ hasText: hostname })
+    await expect(domainRow).toContainText('在线')
+    await domainRow.getByRole('button', { name: `复制 ${hostname}` }).click()
+    await expect(page.getByText('公开域名已复制')).toBeVisible()
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(hostname)
 
     // lifecycle.plugin 未声明 fileStream 能力，文件流请求应被 Worker 以 501 拒绝并写入访问日志。
     expect((await getFileStream(makeTarget(baseURL!, hostname))).status).toBe(501)

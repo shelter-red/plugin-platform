@@ -190,6 +190,7 @@ export default {
   },
   domains: {
     clipboardUnsupported: 'This browser does not support copying',
+    copy: 'Copy {{hostname}}',
     copied: 'Public domain copied',
     copyFailed: 'Could not copy the public domain',
     title: 'Public entry points',
