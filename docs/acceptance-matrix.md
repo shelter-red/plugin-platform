@@ -21,7 +21,7 @@
 | 控制连接注册、心跳、断线、重连和旧断线竞态 | 本地已验证 | `worker:runtime-test` 通过 workerd 中的真实 Durable Object 验证心跳置为在线、控制连接断开后插件转 `server_offline`、域名转 `offline` 且公开入口返回维护页；`durable-object-lifecycle` smoke 覆盖 manifest 注册与断线/重连交错；C++ `control-client` smoke 覆盖连接重试。本地真实栈重启验证：停止 `plugmesh-server` 后公开入口立即返回 503 维护页、服务器转 `offline`，重新启动后自动重连、插件恢复 `enabled`、域名恢复 `online` 且请求返回 200（步骤见 `docs/local-e2e.md`）。真实多地域网络未验证。 |
 | 密钥轮换和绑定撤销 | 本地已验证 | `worker:runtime-test` 在 workerd 的真实 Durable Object 上执行 `server.rotate`/`server.revoke`：新 token 哈希落库、旧 token 被 401 拒绝、新 token 可重连、撤销后插件转 `server_offline`、域名转 `offline`、连接以 1000 关闭；`server-binding` smoke 另外覆盖重复撤销与撤销后轮换被拒。C++ 侧持久化和本地 UI 操作已有覆盖，本地真实栈端到端轮换与撤销见 `docs/local-e2e.md`。 |
 | Durable Object 请求映射和并发隔离 | 本地已验证 | `worker:runtime-test` 在 workerd 中为同一服务器建立真实控制连接，并发 16 个公开 HTTP 请求并乱序回帧，验证响应按 `requestId` 一一对应；同时建立两条公开 WebSocket，验证 `connectionId` 隔离。未验证休眠恢复和多 isolate 场景。 |
-| HTTP 方法、状态、响应头、Cookie 和二进制请求/响应 | 本地已验证 | `public-proxy`、`response-validation`、C++ `control-client` smoke。 |
+| HTTP 方法、状态、响应头、Cookie 和二进制请求/响应 | 本地已验证 | `public-proxy`、`response-validation`、C++ `control-client` smoke；`worker:runtime-test` 在真实 Durable Object 链路上验证 POST 方法、查询串、自定义请求头与 `cookie` 原样转发，7 字节二进制请求体逐字节一致，插件返回 206、`content-type`、单个 `set-cookie` 与 4 字节二进制响应也逐字节透传。协议头是字符串映射，插件无法一次返回多个同名 `Set-Cookie`，此限制未在真实浏览器中测试。 |
 | SSE、公开 WebSocket 和文件流桥接 | 本地已验证 | 真实 `wrangler dev` + C++ 服务器联调中，`accept: text/event-stream` 请求收到 `data: sample-plugin`；公开 WebSocket 经 Worker→Durable Object→C++→插件回显 `hello-ws`；`x-plugmesh-file-stream: true` 返回 18 字节 `sample-file-stream`，结束后 `r2Objects`/`r2Bytes` 归零（步骤见 `docs/local-e2e.md`）。 Worker 流式 smoke 与 C++ WebSocket 生命周期测试覆盖协议路径；`worker:runtime-test` 在 workerd 中验证 SSE 分块经真实 Durable Object 送达并在结束后释放活跃连接，1MB+ 文件在声明 `content-length` 时经真实 R2 定长流中转、缺少长度时回退一次性上传，且两种路径都会在读取后删除对象并归还用量。真实公网长连接未验证。 |
 | 请求超时、帧大小、响应大小和活跃连接上限 | 本地已验证 | Durable Object 中有硬限制和超时；配额 smoke 覆盖计数边界。`worker:runtime-test` 在 workerd 中验证：超过 32 KiB 的公开请求体返回 413 并写入访问日志；64 个并发公开请求乱序回帧后各自拿到正确响应且活跃连接归零；活跃连接上限设为 2 时第三个公开 WebSocket 返回 503 并进入维护模式，关闭一个连接后额度释放且恢复维护开关后可重新连接；超过 16 MiB 的插件响应返回 502 `Plugin response is too large` 并释放缓冲；R2 配额为 0 时大文件流转返回 503 且删除已上传对象、用量归零。尚未在已部署环境做数百并发的持续压力测试。 |
 | R2 上传、一次性读取、过期和删除 | 本地已验证 | `blob-stream` 与 `durable-object-stream` smoke 覆盖流式消费、一次性读取和删除；`blob-expiry` smoke 覆盖过期对象清理、24 小时陈旧对象清理、重试三次、删除失败后回滚占用和用量释放。`worker:runtime-test` 用 workerd + 本地 R2 验证：`POST /api/blobs` 必须以 `content-length` 声明长度（缺失返回 411，超 50 MiB 返回 413），上传后返回 `/blobs/<token>`，首次 GET 返回原始内容并删除对象、清空 `temp_objects`、归还 `r2_bytes`/`r2_objects`，重复 GET 返回 410；R2 配额为 0 时上传返回 503 且不残留对象；Durable Object 的定长流与缺长度回退两条文件流路径也会在读取后清理。真实 R2 一致性与费用仍未验证。 |
@@ -77,7 +77,7 @@ PLUGMESH_REAL_STACK_URL=http://127.0.0.1:18888 npm run ui:real-stack
                                          3 passed（需先启动本地 wrangler dev 并写入验收数据；第三条用例自动注册并启动真实 C++ 服务器）
 npm run worker:typecheck
 npm run worker:smoke                     25 smoke checks passed
-npm run worker:runtime-test              41 passed（workerd + 真实 D1/Durable Object/R2 模拟）
+npm run worker:runtime-test              42 passed（workerd + 真实 D1/Durable Object/R2 模拟）
   # 本机 glibc 2.31，经 node:22-bookworm-slim 容器执行；glibc ≥ 2.35 可直接运行
 npx wrangler deploy --dry-run --config worker/wrangler.toml
 cmake --build native-server/build --parallel 2

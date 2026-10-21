@@ -27,6 +27,35 @@ test('真实 Durable Object 转发 HTTP 方法、请求头、响应头与状态�
   socket.close(1000, 'test complete')
 })
 
+test('真实 Durable Object 转发 Cookie 与二进制请求/响应', { timeout: 20_000 }, async () => {
+  const hostname = await seedServer()
+  const { socket, channel } = await openControl()
+  const requestBytes = new Uint8Array([0, 1, 2, 127, 128, 254, 255])
+  const pending = channel.next()
+  const responsePromise = publicRequest(hostname, '/binary', {
+    method: 'POST',
+    headers: { cookie: 'session=abc; theme=dark', 'content-type': 'application/octet-stream' },
+    body: requestBytes,
+  })
+  const frame = await pending
+  expect(frame.type).toBe('request.open')
+  expect((frame.payload?.headers as Record<string, string>).cookie).toBe('session=abc; theme=dark')
+  expect(Uint8Array.from(decodeBody(frame.payload), (char) => char.charCodeAt(0))).toEqual(requestBytes)
+
+  const responseBytes = new Uint8Array([255, 254, 0, 42])
+  const requestId = frame.requestId
+  sendFrame(socket, 'request.open', { status: 206, headers: { 'content-type': 'application/octet-stream', 'set-cookie': 'session=rotated; Path=/; HttpOnly; SameSite=Lax' } }, requestId)
+  sendFrame(socket, 'request.chunk', { data: btoa(String.fromCharCode(...responseBytes)), encoding: 'base64' }, requestId)
+  sendFrame(socket, 'request.close', {}, requestId)
+
+  const response = await responsePromise
+  expect(response.status).toBe(206)
+  expect(response.headers.get('content-type')).toBe('application/octet-stream')
+  expect(response.headers.get('set-cookie')).toBe('session=rotated; Path=/; HttpOnly; SameSite=Lax')
+  expect(new Uint8Array(await response.arrayBuffer())).toEqual(responseBytes)
+  socket.close(1000, 'test complete')
+})
+
 test('真实 Durable Object 并发请求按 requestId 隔离并支持乱序响应', { timeout: 20_000 }, async () => {
   const hostname = await seedServer()
   const { socket, channel } = await openControl()
