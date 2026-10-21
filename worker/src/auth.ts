@@ -29,6 +29,13 @@ export function isAllowlisted(env: Env, identity: { login: string; emails: strin
   return configured.includes(identity.login.toLowerCase()) || identity.emails.some((email) => configured.includes(email.toLowerCase()))
 }
 
+export async function claimInvite(env: Env, tokenHash: string, identity: { login: string; emails: string[] }): Promise<boolean> {
+  const invite = await env.DB.prepare('SELECT id, email, github_login FROM invites WHERE token_hash = ? AND status = ? AND expires_at > ?').bind(tokenHash, 'pending', new Date().toISOString()).first<{ id: string; email: string | null; github_login: string | null }>()
+  if (!invite || (invite.email && !identity.emails.some((email) => email.toLowerCase() === invite.email?.toLowerCase())) || (invite.github_login && invite.github_login.toLowerCase() !== identity.login.toLowerCase())) return false
+  const claimed = await env.DB.prepare('UPDATE invites SET status = ?, used_at = ? WHERE id = ? AND status = ? AND expires_at > ?').bind('used', new Date().toISOString(), invite.id, 'pending', new Date().toISOString()).run()
+  return (claimed.meta.changes ?? 0) === 1
+}
+
 export async function upsertGithubUser(env: Env, identity: { emails: string[]; displayName: string; githubId: string }, role: AuthenticatedUser['role']): Promise<string> {
   const candidateId = crypto.randomUUID()
   await env.DB.prepare(`

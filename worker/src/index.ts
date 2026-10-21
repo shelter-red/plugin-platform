@@ -1,6 +1,6 @@
 import { PluginBridge } from './durable-object'
 import { hashControlToken } from './security'
-import { createSession, digest, exchangeGithubCode, getCurrentUser, isAllowlisted, redirectWithError, sessionCookie, clearSessionCookie, upsertGithubUser } from './auth'
+import { claimInvite, createSession, digest, exchangeGithubCode, getCurrentUser, isAllowlisted, redirectWithError, sessionCookie, clearSessionCookie, upsertGithubUser } from './auth'
 import type { AuthenticatedUser, Env } from './types'
 import { decryptSecret, encryptSecret } from './secrets'
 import { isEmail, parseSmtpSettings, publicSmtpSettings, sendInviteEmail, sendSmtpTest, type SmtpSettings } from './email'
@@ -286,14 +286,12 @@ async function finishGithubAuth(request: Request, env: Env, url: URL): Promise<R
   if (!identity) return redirectWithError(request, '无法读取 GitHub 身份')
   const allowlisted = isAllowlisted(env, { login: identity.login, emails: identity.emails })
   const existing = await env.DB.prepare('SELECT id FROM users WHERE github_id = ?').bind(identity.githubId).first<{ id: string }>()
-  let invite: { id: string; email: string | null; github_login: string | null } | null = null
+  let inviteAccepted = false
   if (oauthState.invite_token_hash) {
-    invite = await env.DB.prepare('SELECT id, email, github_login FROM invites WHERE token_hash = ? AND status = ? AND expires_at > ?').bind(oauthState.invite_token_hash, 'pending', new Date().toISOString()).first()
-    if (!invite || (invite.email && !identity.emails.some((email) => email.toLowerCase() === invite?.email?.toLowerCase())) || (invite.github_login && invite.github_login.toLowerCase() !== identity.login.toLowerCase())) return redirectWithError(request, '邀请身份不匹配或已失效')
-    const claimedInvite = await env.DB.prepare('UPDATE invites SET status = ?, used_at = ? WHERE id = ? AND status = ? AND expires_at > ?').bind('used', now, invite.id, 'pending', now).run()
-    if ((claimedInvite.meta.changes ?? 0) !== 1) return redirectWithError(request, '邀请身份不匹配或已失效')
+    inviteAccepted = await claimInvite(env, oauthState.invite_token_hash, identity)
+    if (!inviteAccepted) return redirectWithError(request, '邀请身份不匹配或已失效')
   }
-  if (!allowlisted && !invite && !existing) return redirectWithError(request, '该 GitHub 身份未被邀请')
+  if (!allowlisted && !inviteAccepted && !existing) return redirectWithError(request, '该 GitHub 身份未被邀请')
   const role = allowlisted ? 'super_admin' : 'member'
   const userId = await upsertGithubUser(env, identity, role)
   const token = await createSession(env, userId)

@@ -16,6 +16,7 @@
     "worker:local-usage-smoke": "esbuild worker/local-usage.smoke.ts --bundle --platform=node --format=esm --external:cloudflare:sockets --outfile=/tmp/plugmesh-local-usage-smoke.mjs && node /tmp/plugmesh-local-usage-smoke.mjs",
     "worker:server-sync-smoke": "esbuild worker/server-sync.smoke.ts --bundle --platform=node --format=esm --external:cloudflare:sockets --outfile=/tmp/plugmesh-server-sync-smoke.mjs && node /tmp/plugmesh-server-sync-smoke.mjs",
     "worker:github-auth-smoke": "node --experimental-strip-types worker/github-auth.smoke.ts",
+    "worker:invite-claim-smoke": "node --experimental-strip-types worker/invite-claim.smoke.ts",
     "worker:registration-race-smoke": "esbuild worker/registration-race.smoke.ts --bundle --platform=node --format=esm --external:cloudflare:sockets --outfile=/tmp/plugmesh-registration-race-smoke.mjs && node /tmp/plugmesh-registration-race-smoke.mjs",
     "worker:durable-object-stream-smoke": "esbuild worker/durable-object-stream.smoke.ts --bundle --platform=node --format=esm --external:cloudflare:sockets --outfile=/tmp/plugmesh-durable-object-stream-smoke.mjs && node /tmp/plugmesh-durable-object-stream-smoke.mjs",
     "preview": "vite preview",
