@@ -24,7 +24,7 @@ docker run -d --name plugmesh-e2e \
 
 - `--user "$(id -u):$(id -g)" -e HOME=/tmp`：容器进程与宿主使用同一 UID，且把 `HOME` 指向可写的 `/tmp`；否则 `wrangler` 写 `worker/.wrangler/tmp` 会因权限不足报 `EACCES`。
 - `/etc/ssl/certs` 只读挂载：workerd 拉取远端资源时需要容器内可用的 CA 证书，缺少时会报证书校验失败。
-- `--var SESSION_SECRET:e2e-session-secret`：本地验收用固定密钥填充部署时必配的 `SESSION_SECRET`。缺少它时 `/api/usage/cloudflare`、Cloudflare 凭据和 SMTP 设置接口都会直接返回 503，管理端只能看到“用量读取失败”，无法验证“官方数据尚未连接”这类正常态；该值只用于本地 miniflare，不要用于任何真实环境。
+- `--var SESSION_SECRET:e2e-session-secret`：本地验收显式传入固定测试密钥。真实部署由 `npm run deploy` 在远端缺失时自动生成，无需人工配置；本地 `wrangler dev` 不会执行部署脚本，因此仍需显式传入。缺少它时 `/api/usage/cloudflare`、Cloudflare 凭据和 SMTP 设置接口都会直接返回 503，管理端只能看到“用量读取失败”，无法验证“官方数据尚未连接”这类正常态；该值只用于本地 miniflare，不要用于任何真实环境。
 - `/tmp/plugmesh-e2e-data` 是本地 D1/R2 的持久目录，可换成其它路径；换目录后需重新执行迁移和下文的管理端 seed。
 
 migrations 只需执行一次，之后重启容器可去掉前半段。`wrangler dev` 默认端口 8787 可能被占用，因此显式使用 18888。
