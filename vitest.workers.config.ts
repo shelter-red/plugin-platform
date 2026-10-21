@@ -9,7 +9,7 @@ const root = path.dirname(fileURLToPath(import.meta.url))
 export default defineConfig(async () => ({
   plugins: [
     cloudflareTest({
-      wrangler: { configPath: './worker/wrangler.toml' },
+      wrangler: { configPath: './wrangler.toml' },
       miniflare: {
         outboundService: outboundStub,
         bindings: {

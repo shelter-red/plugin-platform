@@ -7,7 +7,7 @@ trap 'rm -rf "$TMP"' EXIT
 
 mkdir -p "$TMP/scripts" "$TMP/worker" "$TMP/state"
 cp "$ROOT/scripts/deploy-worker.sh" "$TMP/scripts/"
-cp "$ROOT/worker/wrangler.toml" "$TMP/worker/"
+cp "$ROOT/wrangler.toml" "$TMP/wrangler.toml"
 
 cat > "$TMP/fake-wrangler" <<'FAKE'
 #!/usr/bin/env bash
@@ -63,8 +63,8 @@ setup_token=$(cat "$TMP/state/secret_SETUP_TOKEN")
 [[ $(stat -c %a "$TMP/.wrangler/plugmesh-setup-token") == 600 ]]
 [[ "$first_output" != *"$session_secret"* ]]
 [[ "$first_output" != *"$setup_token"* ]]
-grep -q 'test-database-id' "$TMP/worker/wrangler.toml"
-[[ $(grep -c '^database_id = ' "$TMP/worker/wrangler.toml") -eq 1 ]]
+grep -q 'test-database-id' "$TMP/wrangler.toml"
+[[ $(grep -c '^database_id = ' "$TMP/wrangler.toml") -eq 1 ]]
 ! grep -Eq 'GITHUB|CLOUDFLARE_OAUTH|SMTP' "$TMP/state/puts.log"
 printf 'ok：首次部署生成基础设施密钥，且不输出明文\n'
 
@@ -97,8 +97,8 @@ cloud_output=$(cd "$TMP" && \
   WRANGLER_BIN="$TMP/fake-wrangler" \
   FAKE_STATE="$TMP/state-cloud" \
   ./scripts/deploy-worker.sh)
-grep -Fxq 'd1 migrations apply DB --remote --config worker/wrangler.toml' "$TMP/state-cloud/commands.log"
-grep -Fxq 'deploy --config worker/wrangler.toml' "$TMP/state-cloud/commands.log"
+grep -Fxq 'd1 migrations apply DB --remote --config wrangler.toml' "$TMP/state-cloud/commands.log"
+grep -Fxq 'deploy --config wrangler.toml' "$TMP/state-cloud/commands.log"
 ! grep -Eq '^(whoami|d1 create|r2 bucket)' "$TMP/state-cloud/commands.log"
 grep -Fxq 'SESSION_SECRET' "$TMP/state-cloud/puts.log"
 grep -Fxq 'SETUP_TOKEN' "$TMP/state-cloud/puts.log"

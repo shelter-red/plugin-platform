@@ -18,8 +18,8 @@ docker run -d --name plugmesh-e2e \
   -v /tmp/plugmesh-e2e-data:/data \
   -v /etc/ssl/certs:/etc/ssl/certs:ro \
   -w /app node:22-bookworm-slim \
-  sh -c "npx wrangler d1 migrations apply plugmesh --config worker/wrangler.toml --local --persist-to /data && \
-         npx wrangler dev --config worker/wrangler.toml --ip 0.0.0.0 --port 18888 --persist-to /data --var SESSION_SECRET:e2e-session-secret"
+  sh -c "npx wrangler d1 migrations apply plugmesh --config wrangler.toml --local --persist-to /data && \
+         npx wrangler dev --config wrangler.toml --ip 0.0.0.0 --port 18888 --persist-to /data --var SESSION_SECRET:e2e-session-secret"
 ```
 
 - `--user "$(id -u):$(id -g)" -e HOME=/tmp`：容器进程与宿主使用同一 UID，且把 `HOME` 指向可写的 `/tmp`；否则 `wrangler` 写 `worker/.wrangler/tmp` 会因权限不足报 `EACCES`。
@@ -313,7 +313,7 @@ docker run -d --name plugmesh-e2e-b \
   -v /tmp/plugmesh-load-data2:/data \
   -v /etc/ssl/certs:/etc/ssl/certs:ro \
   -w /app node:22-bookworm-slim \
-  sh -c "npx wrangler dev --config worker/wrangler.toml --ip 0.0.0.0 --port 18889 --persist-to /data"
+  sh -c "npx wrangler dev --config wrangler.toml --ip 0.0.0.0 --port 18889 --persist-to /data"
 ```
 
 两个进程各自持有独立 workerd isolate，但读写同一份 D1 SQLite 文件。本地 D1 文件路径：

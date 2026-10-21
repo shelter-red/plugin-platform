@@ -40,7 +40,7 @@
     "preview": "vite preview",
     "worker:typecheck": "tsc -p worker/tsconfig.json",
     "worker:runtime-test": "vitest run --config vitest.workers.config.ts",
-    "worker:dev": "wrangler dev --config worker/wrangler.toml",
+    "worker:dev": "wrangler dev --config wrangler.toml",
     "deploy:worker": "bash scripts/deploy-worker.sh",
     "deploy:worker:test": "bash scripts/deploy-worker.test.sh",
     "native-ui:smoke:wine": "bash native-ui/run-wine-smoke.sh",

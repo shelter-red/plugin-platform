@@ -5,7 +5,7 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-CONFIG=worker/wrangler.toml
+CONFIG=wrangler.toml
 DB_NAME=plugmesh
 BUCKET_NAME=plugmesh-blobs
 SETUP_TOKEN_FILE=.wrangler/plugmesh-setup-token
@@ -30,7 +30,7 @@ usage() {
   CLOUDFLARE_ACCOUNT_ID   可选；账号多于一个时填写
 
 脚本自动处理：
-  - 创建或复用 D1 数据库 plugmesh，并回填 worker/wrangler.toml
+  - 创建或复用 D1 数据库 plugmesh，并回填 wrangler.toml
   - 创建或复用 R2 存储桶 plugmesh-blobs
   - 应用全部 D1 migrations
   - 首次缺失时生成 SESSION_SECRET（已有值绝不轮换）

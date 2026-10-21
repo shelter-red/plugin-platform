@@ -1,10 +1,10 @@
 name = "plugmesh-worker"
-main = "src/index.ts"
+main = "worker/src/index.ts"
 compatibility_date = "2026-10-20"
 compatibility_flags = ["nodejs_compat"]
 
 [assets]
-directory = "../dist"
+directory = "./dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
 # Worker 必须先处理请求，否则静态资源层会在插件域名根路径直接返回控制台 SPA。
@@ -16,8 +16,8 @@ crons = ["*/15 * * * *"]
 [[d1_databases]]
 binding = "DB"
 database_name = "plugmesh"
-# Cloudflare Deploy Button 会自动创建并回填 database_id；npm run deploy 也会自动补齐。
-migrations_dir = "migrations"
+# Deploy Button / Workers Builds 会自动创建并回填 database_id；npm run deploy 也会自动补齐。
+migrations_dir = "worker/migrations"
 
 [[durable_objects.bindings]]
 name = "PLUGIN_BRIDGE"
