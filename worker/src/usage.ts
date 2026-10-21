@@ -1,6 +1,6 @@
 import type { Env, PlatformQuotas, PlatformSettings } from './types'
 import { decryptSecret } from './secrets'
-import { parseSmtpSettings, sendMaintenanceEmail } from './email'
+import { parseSmtpSettings, sendMaintenanceEmail, type SmtpSettings } from './email'
 
 export const defaultPlatformSettings: PlatformSettings = {
   maintenance: false,
@@ -18,6 +18,7 @@ export const defaultPlatformSettings: PlatformSettings = {
 const usageKey = 'global'
 const settingsCacheTtlMs = 30_000
 let settingsCache: { value: PlatformSettings; expiresAt: number } | null = null
+type MaintenanceEmailSender = (settings: SmtpSettings, to: string, reason: string) => Promise<void>
 
 export async function getPlatformSettings(env: Env): Promise<PlatformSettings> {
   if (settingsCache && settingsCache.expiresAt > Date.now()) return settingsCache.value
@@ -30,7 +31,7 @@ export async function isMaintenanceMode(env: Env): Promise<boolean> {
   return (await getPlatformSettings(env)).maintenance
 }
 
-export async function activateMaintenance(env: Env, reason = 'platform quota reached'): Promise<void> {
+export async function activateMaintenance(env: Env, reason = 'platform quota reached', sendEmail: MaintenanceEmailSender = sendMaintenanceEmail): Promise<void> {
   await ensurePlatformSettingsRow(env)
   const updated = await env.DB.prepare("UPDATE platform_settings SET value_json = json_set(value_json, '$.maintenance', true), updated_at = ? WHERE key = ? AND COALESCE(json_extract(value_json, '$.maintenance'), 0) != 1").bind(new Date().toISOString(), 'platform').run()
   if ((updated.meta.changes ?? 0) !== 1) {
@@ -39,10 +40,10 @@ export async function activateMaintenance(env: Env, reason = 'platform quota rea
   }
   const next = await readPlatformSettings(env)
   setPlatformSettingsCache(next)
-  await notifyMaintenance(env, reason)
+  await notifyMaintenance(env, reason, sendEmail)
 }
 
-async function notifyMaintenance(env: Env, reason: string): Promise<void> {
+async function notifyMaintenance(env: Env, reason: string, sendEmail: MaintenanceEmailSender): Promise<void> {
   if (!env.SESSION_SECRET) return
   const stored = await env.DB.prepare('SELECT ciphertext, iv FROM smtp_settings WHERE id = ?').bind('primary').first<{ ciphertext: string; iv: string }>()
   const administrators = await env.DB.prepare('SELECT id, email FROM users WHERE role = ? AND email IS NOT NULL').bind('super_admin').all<{ id: string; email: string }>()
@@ -63,13 +64,14 @@ async function notifyMaintenance(env: Env, reason: string): Promise<void> {
   for (const administrator of administrators.results) {
     let sent = false
     let attempts = 0
-    for (attempts = 1; attempts <= 3; attempts += 1) {
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      attempts = attempt
       try {
-        await sendMaintenanceEmail(settings, administrator.email, reason)
+        await sendEmail(settings, administrator.email, reason)
         sent = true
         break
       } catch {
-        if (attempts < 3) await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** (attempts - 1)))
+        if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** (attempt - 1)))
       }
     }
     await recordMaintenanceNotice(env, sent ? 'maintenance.email.sent' : 'maintenance.email.failed', { reason, administratorId: administrator.id, attempts })

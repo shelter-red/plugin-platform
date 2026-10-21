@@ -27,7 +27,7 @@
 | R2 上传、一次性读取、过期和删除 | 部分实现 | `blob-stream` 与 `durable-object-stream` smoke 覆盖流式消费、一次性读取和删除；过期清理只有实现代码，真实 R2 一致性、失败重试和费用未验证。 |
 | D1/KV 路由缓存读穿和配置写穿 | 部分实现 | Host 路由内存缓存和更新失效逻辑已接入；真实多 isolate 缓存传播未验证，当前实现没有独立 KV 业务缓存。 |
 | 总配额触发全局维护模式 | 模块已验证 | 本地计数和官方 Analytics 阈值逻辑已实现；未在真实账号用量上触发。 |
-| SMTP 测试发送、维护通知、失败重试和审计 | 已实现未联调 | `worker-mailer` 调用、三次退避重试和审计代码存在；smoke 仅覆盖配置加密与敏感字段不回显，未替换发送器验证失败重试，也未向真实 SMTP 服务发送。 |
+| SMTP 测试发送、维护通知、失败重试和审计 | 模块已验证 | `maintenance-email` smoke 注入发送器验证第三次成功、最终失败、审计和敏感字段不落日志；`worker-mailer` 真实传输和外部 SMTP 仍未联调。 |
 | Cloudflare Analytics/GraphQL 缓存、权限错误和过期 | 模块已验证 | `cloudflare-usage` smoke；未使用真实账号 token 查询。 |
 | 30 天用量/访问日志和 180 天审计清理 | 已实现未联调 | Cron 清理和快照代码存在；没有定时任务 smoke，真实 Cron 调度未验证。 |
 | Wrangler bundle 和资源绑定 | 本地已验证 | `wrangler deploy --dry-run` 通过；D1 ID 仍为占位符，没有生产部署。 |
@@ -74,7 +74,7 @@ npm run build
 npm run ui:smoke                         2 passed
 npm run native-ui:smoke                  1 passed
 npm run worker:typecheck
-npm run worker:smoke                     19 smoke checks passed
+npm run worker:smoke                     20 smoke checks passed
 npx wrangler deploy --dry-run --config worker/wrangler.toml
 cmake --build native-server/build --parallel 2
 ctest --output-on-failure                 8/8 passed
