@@ -13,6 +13,8 @@ export type PluginRoute = {
   server_status: string
 }
 
+// 路由只缓存到 isolate 内存：KV 最小过期粒度是 60 秒且跨地域最终一致，
+// 域名撤销或转移后可能继续命中旧路由，因此不引入 KV 业务缓存。
 const routeCacheTtlMs = 5_000
 const routeCacheMaxEntries = 256
 const routeCache = new Map<string, { value: PluginRoute | null; expiresAt: number }>()
