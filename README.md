@@ -41,6 +41,8 @@ npm run native-ui:build
 npm run build
 npm run worker:typecheck
 npm run worker:github-auth-smoke
+npm run worker:cloudflare-oauth-smoke
+npm run worker:public-proxy-smoke
 npm run worker:registration-race-smoke
 npm run worker:durable-object-stream-smoke
 cmake -S native-server -B native-server/build
@@ -51,8 +53,28 @@ cmake --build native-server/build --target test
 Worker 本地调试前需要把 `worker/wrangler.toml` 中的 D1、R2 和 Durable Object 配置替换为实际资源：
 
 ```bash
+npx wrangler d1 create plugmesh
+npx wrangler r2 bucket create plugmesh-blobs
+# 将 d1 create 返回的 database_id 写入 worker/wrangler.toml
 npm run worker:dev
 ```
+
+部署前还需要在 Cloudflare 控制台或 CI 中配置以下 Worker 路由，并将示例域名替换为平台实际域名：
+
+- `console.example.com/*`：管理端、管理 API 和 OAuth 回调。
+- `*.plugins.example.com/*`：插件公开入口。
+
+`worker/wrangler.toml` 中的 `database_id = "replace-with-d1-database-id"` 是故意保留的占位符；未替换前不要执行生产部署。部署前可先运行 `npx wrangler deploy --dry-run --config worker/wrangler.toml` 检查 bundle 和绑定配置。
+
+GitHub OAuth 至少需要配置以下变量，回调地址必须与 GitHub OAuth App 完全一致：
+
+- `GITHUB_CLIENT_ID`
+- `GITHUB_CLIENT_SECRET`
+- `GITHUB_REDIRECT_URI`
+- `GITHUB_ALLOWLIST`（超级管理员 GitHub 用户名或邮箱，逗号分隔）
+- `SESSION_SECRET`
+
+客户端 ID、回调地址和白名单可以作为 Worker 变量；客户端密钥和 `SESSION_SECRET` 应使用 `wrangler secret put` 写入，不要提交到仓库。Cloudflare OAuth 的变量见下节，SMTP 密码通过管理端密文保存，不作为仓库变量提交。
 
 Cloudflare OAuth 使用官方 Authorization Code 流程。创建 OAuth client 时使用服务端客户端认证，回调地址必须与 `CLOUDFLARE_OAUTH_REDIRECT_URI` 完全一致；Worker 需要配置以下变量：
 
@@ -67,6 +89,8 @@ Cloudflare OAuth 使用官方 Authorization Code 流程。创建 OAuth client �
 ## 当前边界
 
 当前提交建立了可编译的 MVP 基础，但还没有把生产凭据放入仓库。C++ 服务器已支持独立 sidecar `manifest.json` 校验、ABI v2/v3 插件生命周期、健康检查、文件流、出站控制连接、SSE 流和公开 WebSocket base64 二进制桥接；Worker 侧已具备 GitHub OAuth、Cloudflare OAuth、邀请会话、HTTP/SSE/文件流式响应、公开 WebSocket 桥接、R2 一次性对象、Cloudflare Analytics 查询和基于 `worker-mailer` 的 SMTP 测试发送能力；管理端已具备对应的 Cloudflare 和 SMTP 配置入口。平台本地用量快照按 Cron 保存 30 天，用于管理端请求趋势展示。这些功能仍需在真实 Cloudflare 资源、OAuth client 和本地服务器之间完成端到端联调。
+
+上述 `worker:*:smoke` 使用本地 mock D1、Durable Object 和 OAuth 端点，只验证协议、权限边界和敏感字段处理，不代表真实 Cloudflare、GitHub OAuth、SMTP 或浏览器端到端已联通。
 
 ## 目录
 
