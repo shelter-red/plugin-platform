@@ -35,6 +35,7 @@
     "worker:blob-expiry-smoke": "esbuild worker/blob-expiry.smoke.ts --bundle --platform=node --format=esm --external:cloudflare:sockets --outfile=/tmp/plugmesh-blob-expiry-smoke.mjs && node /tmp/plugmesh-blob-expiry-smoke.mjs",
     "worker:smoke": "npm run worker:response-validation-smoke && npm run worker:request-mode-smoke && npm run worker:manifest-smoke && npm run worker:wrangler-config-smoke && npm run worker:plugin-restore-smoke && npm run worker:public-route-smoke && npm run worker:route-cache-smoke && npm run worker:public-proxy-smoke && npm run worker:api-permission-smoke && npm run worker:cloudflare-usage-smoke && npm run worker:local-usage-smoke && npm run worker:maintenance-email-smoke && npm run worker:scheduled-maintenance-smoke && npm run worker:server-sync-smoke && npm run worker:github-auth-smoke && npm run worker:github-oauth-smoke && npm run worker:invite-claim-smoke && npm run worker:cloudflare-oauth-smoke && npm run worker:cloudflare-oauth-route-smoke && npm run worker:registration-race-smoke && npm run worker:server-binding-smoke && npm run worker:durable-object-lifecycle-smoke && npm run worker:durable-object-stream-smoke && npm run worker:blob-stream-smoke && npm run worker:blob-expiry-smoke",
     "ui:smoke": "playwright test --config playwright.config.ts",
+    "ui:real-stack": "playwright test --config playwright.real-stack.config.ts",
     "preview": "vite preview",
     "worker:typecheck": "tsc -p worker/tsconfig.json",
     "worker:runtime-test": "vitest run --config vitest.workers.config.ts",
