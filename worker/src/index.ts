@@ -1,6 +1,6 @@
 import { PluginBridge } from './durable-object'
 import { hashControlToken } from './security'
-import { claimInvite, createSession, digest, exchangeGithubCode, getCurrentUser, isAllowlisted, redirectWithError, sessionCookie, clearSessionCookie, upsertGithubUser } from './auth'
+import { acceptInvite, createSession, digest, exchangeGithubCode, getCurrentUser, isAllowlisted, redirectWithError, sessionCookie, clearSessionCookie, upsertGithubUser } from './auth'
 import type { AuthenticatedUser, Env } from './types'
 import { decryptSecret, encryptSecret } from './secrets'
 import { isEmail, parseSmtpSettings, publicSmtpSettings, sendInviteEmail, sendSmtpTest, type SmtpSettings } from './email'
@@ -341,14 +341,16 @@ async function finishGithubAuth(request: Request, env: Env, url: URL): Promise<R
   if (!identity) return redirectWithError(request, '无法读取 GitHub 身份')
   const allowlisted = await isAllowlisted(env, { login: identity.login, emails: identity.emails })
   const existing = await env.DB.prepare('SELECT id FROM users WHERE github_id = ?').bind(identity.githubId).first<{ id: string }>()
-  let inviteAccepted = false
-  if (oauthState.invite_token_hash) {
-    inviteAccepted = await claimInvite(env, oauthState.invite_token_hash, identity)
-    if (!inviteAccepted) return redirectWithError(request, '邀请身份不匹配或已失效')
-  }
-  if (!allowlisted && !inviteAccepted && !existing) return redirectWithError(request, '该 GitHub 身份未被邀请')
   const role = allowlisted ? 'super_admin' : 'member'
-  const userId = await upsertGithubUser(env, identity, role)
+  let userId: string
+  if (oauthState.invite_token_hash) {
+    const invitedUserId = await acceptInvite(env, oauthState.invite_token_hash, identity, role)
+    if (!invitedUserId) return redirectWithError(request, '邀请身份不匹配或已失效')
+    userId = invitedUserId
+  } else {
+    if (!allowlisted && !existing) return redirectWithError(request, '该 GitHub 身份未被邀请')
+    userId = await upsertGithubUser(env, identity, role)
+  }
   const token = await createSession(env, userId)
   return new Response(null, { status: 302, headers: { location: '/', 'set-cookie': sessionCookie(token, url.protocol === 'https:') } })
 }

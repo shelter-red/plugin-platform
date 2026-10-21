@@ -15,6 +15,7 @@ const database = {
   prepare(sql: string) {
     let values: unknown[] = []
     const query = {
+      sql,
       bind: (...nextValues: unknown[]) => {
         values = nextValues
         return query
@@ -60,6 +61,11 @@ const database = {
       },
     }
     return query
+  },
+  async batch(statements: Array<{ run: () => Promise<{ meta: { changes: number } }> }>) {
+    const results = []
+    for (const statement of statements) results.push(await statement.run())
+    return results
   },
 }
 

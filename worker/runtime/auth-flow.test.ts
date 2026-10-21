@@ -1,5 +1,5 @@
 import { beforeEach, expect, test } from 'vitest'
-import { claimInvite, digest, exchangeGithubCode, upsertGithubUser } from '../src/auth'
+import { acceptInvite, digest, exchangeGithubCode, upsertGithubUser } from '../src/auth'
 import type { Env } from '../src/types'
 import { resetDatabase, testEnv } from './helpers'
 
@@ -79,28 +79,64 @@ test('GitHub 换取身份在令牌、用户、邮箱异常时返回 null', async
 
 test('邀请只允许匹配身份、未过期且只能领取一次', async () => {
   const token = await insertInvite('invite-match', { email: 'Invitee@Example.com', login: 'Octocat' })
-  expect(await claimInvite(testEnv, await digest(token), { login: 'octocat', emails: ['other@example.com'] })).toBe(false)
-  expect(await claimInvite(testEnv, await digest(token), { login: 'someone', emails: ['invitee@example.com'] })).toBe(false)
+  const mismatchedEmail = { githubId: 'invite-user', login: 'octocat', emails: ['other@example.com'], displayName: 'Invitee' }
+  const mismatchedLogin = { githubId: 'invite-user', login: 'someone', emails: ['invitee@example.com'], displayName: 'Invitee' }
+  expect(await acceptInvite(testEnv, await digest(token), mismatchedEmail, 'member')).toBeNull()
+  expect(await acceptInvite(testEnv, await digest(token), mismatchedLogin, 'member')).toBeNull()
 
   const pending = await testEnv.DB.prepare('SELECT status FROM invites WHERE id = ?').bind('invite-match').first<{ status: string }>()
   expect(pending?.status).toBe('pending')
 
-  expect(await claimInvite(testEnv, await digest(token), { login: 'OctoCat', emails: ['INVITEE@example.com'] })).toBe(true)
+  const identity = { githubId: 'invite-user', login: 'OctoCat', emails: ['INVITEE@example.com'], displayName: 'Invitee' }
+  const userId = await acceptInvite(testEnv, await digest(token), identity, 'member')
+  expect(userId).toEqual(expect.any(String))
+  const user = await testEnv.DB.prepare('SELECT github_id, email, display_name, role FROM users WHERE id = ?').bind(userId).first<Record<string, string>>()
+  expect(user).toEqual({ github_id: 'invite-user', email: 'INVITEE@example.com', display_name: 'Invitee', role: 'member' })
   const used = await testEnv.DB.prepare('SELECT status, used_at FROM invites WHERE id = ?').bind('invite-match').first<{ status: string; used_at: string | null }>()
   expect(used?.status).toBe('used')
   expect(used?.used_at).toBeTruthy()
-  expect(await claimInvite(testEnv, await digest(token), { login: 'octocat', emails: ['invitee@example.com'] })).toBe(false)
+  expect(await acceptInvite(testEnv, await digest(token), identity, 'member')).toBeNull()
+})
+
+test('同一邀请并发接受时只创建一个用户', async () => {
+  const token = await insertInvite('invite-concurrent', { email: 'concurrent@example.com', login: 'concurrent-user' })
+  const identity = { githubId: 'concurrent-user-id', login: 'concurrent-user', emails: ['concurrent@example.com'], displayName: 'Concurrent User' }
+  const results = await Promise.all([
+    acceptInvite(testEnv, await digest(token), identity, 'member'),
+    acceptInvite(testEnv, await digest(token), identity, 'member'),
+  ])
+  expect(results.filter(Boolean)).toHaveLength(1)
+  expect(results.filter((value) => value === null)).toHaveLength(1)
+  const users = await testEnv.DB.prepare('SELECT COUNT(*) AS count FROM users WHERE github_id = ?').bind(identity.githubId).first<{ count: number }>()
+  expect(users?.count).toBe(1)
+  const invite = await testEnv.DB.prepare('SELECT status FROM invites WHERE id = ?').bind('invite-concurrent').first<{ status: string }>()
+  expect(invite?.status).toBe('used')
 })
 
 test('过期邀请、已撤销邀请和未知令牌无法领取', async () => {
   const expired = await insertInvite('invite-expired', { expiresAt: new Date(Date.now() - 60_000).toISOString() })
   const revoked = await insertInvite('invite-revoked', { status: 'revoked' })
-  const identity = { login: 'octocat', emails: ['octocat@example.com'] }
-  expect(await claimInvite(testEnv, await digest(expired), identity)).toBe(false)
-  expect(await claimInvite(testEnv, await digest(revoked), identity)).toBe(false)
-  expect(await claimInvite(testEnv, await digest('missing-token'), identity)).toBe(false)
+  const identity = { githubId: 'expired-user', login: 'octocat', emails: ['octocat@example.com'], displayName: 'Octocat' }
+  expect(await acceptInvite(testEnv, await digest(expired), identity, 'member')).toBeNull()
+  expect(await acceptInvite(testEnv, await digest(revoked), identity, 'member')).toBeNull()
+  expect(await acceptInvite(testEnv, await digest('missing-token'), identity, 'member')).toBeNull()
   const rows = await testEnv.DB.prepare("SELECT id, status FROM invites ORDER BY id").all<{ id: string; status: string }>()
   expect(rows.results).toEqual([{ id: 'invite-expired', status: 'pending' }, { id: 'invite-revoked', status: 'revoked' }])
+})
+
+test('邀请消费与用户创建原子化，用户写入失败时邀请仍可重试', async () => {
+  const token = await insertInvite('invite-atomic', { email: 'atomic@example.com', login: 'atomic-user' })
+  await expect(acceptInvite(testEnv, await digest(token), {
+    githubId: 'atomic-user-id',
+    login: 'atomic-user',
+    emails: ['atomic@example.com'],
+    displayName: null as unknown as string,
+  }, 'member')).rejects.toThrow()
+
+  const invite = await testEnv.DB.prepare('SELECT status, used_at FROM invites WHERE id = ?').bind('invite-atomic').first<{ status: string; used_at: string | null }>()
+  expect(invite).toEqual({ status: 'pending', used_at: null })
+  const users = await testEnv.DB.prepare('SELECT COUNT(*) AS count FROM users').first<{ count: number }>()
+  expect(users?.count).toBe(0)
 })
 
 test('GitHub 用户按 github_id 去重并更新资料与角色', async () => {

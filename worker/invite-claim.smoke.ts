@@ -1,34 +1,62 @@
 import { strict as assert } from 'node:assert'
-import { claimInvite } from './src/auth.ts'
+import { acceptInvite } from './src/auth.ts'
 import type { Env } from './src/types.ts'
 
 let status = 'pending'
+const users = new Map<string, Record<string, unknown>>()
+
+type Statement = { sql: string; values: unknown[] }
 const database = {
   prepare(sql: string) {
     const query = {
-      bind: (..._values: unknown[]) => query,
-      first: async <T>() => sql.includes('FROM invites') && status === 'pending' ? { id: 'invite-1', email: 'alice@example.test', github_login: 'alice' } as T : null,
-      run: async () => {
-        if (!sql.includes('UPDATE invites') || status !== 'pending') return { meta: { changes: 0 } }
-        status = 'used'
-        return { meta: { changes: 1 } }
+      sql,
+      values: [] as unknown[],
+      bind(...values: unknown[]) {
+        query.values = values
+        return query
+      },
+      async first<T>() {
+        if (sql.includes('FROM invites')) {
+          return status === 'pending' ? { id: 'invite-1', email: 'alice@example.test', github_login: 'alice' } as T : null
+        }
+        if (sql.includes('FROM users')) {
+          const githubId = query.values[0]
+          const user = [...users.values()].find((candidate) => candidate.github_id === githubId)
+          return user ? { id: user.id } as T : null
+        }
+        throw new Error(`unexpected first query: ${sql}`)
       },
     }
     return query
   },
+  async batch(statements: Statement[]) {
+    if (status !== 'pending') return statements.map(() => ({ meta: { changes: 0 } }))
+    const insert = statements.find((statement) => statement.sql.includes('INSERT INTO users'))
+    const update = statements.find((statement) => statement.sql.includes('UPDATE invites'))
+    assert.ok(insert)
+    assert.ok(update)
+    const [candidateId, githubId, email, displayName, role, createdAt] = insert.values
+    users.set(String(githubId), { id: candidateId, github_id: githubId, email, display_name: displayName, role, created_at: createdAt })
+    status = 'used'
+    return [{ meta: { changes: 1 } }, { meta: { changes: 1 } }]
+  },
 }
 const env = { DB: database } as unknown as Env
+const identity = { githubId: 'github-alice', login: 'alice', emails: ['alice@example.test'], displayName: 'Alice' }
 
-assert.equal(await claimInvite(env, 'invite-hash', { login: 'alice', emails: ['alice@example.test'] }), true)
+const userId = await acceptInvite(env, 'invite-hash', identity, 'member')
+assert.equal(userId, users.get('github-alice')?.id)
 assert.equal(status, 'used')
 status = 'pending'
-assert.equal(await claimInvite(env, 'invite-hash', { login: 'alice', emails: ['other@example.test'] }), false)
+users.clear()
+assert.equal(await acceptInvite(env, 'invite-hash', { ...identity, emails: ['other@example.test'] }, 'member'), null)
 assert.equal(status, 'pending')
-status = 'pending'
+
 const [first, second] = await Promise.all([
-  claimInvite(env, 'invite-hash', { login: 'alice', emails: ['alice@example.test'] }),
-  claimInvite(env, 'invite-hash', { login: 'alice', emails: ['alice@example.test'] }),
+  acceptInvite(env, 'invite-hash', identity, 'member'),
+  acceptInvite(env, 'invite-hash', identity, 'member'),
 ])
-assert.deepEqual([first, second].sort(), [false, true])
+assert.equal([first, second].filter(Boolean).length, 1)
+assert.equal(users.size, 1)
 assert.equal(status, 'used')
 console.log('invite claim smoke test passed')

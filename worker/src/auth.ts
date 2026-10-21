@@ -31,11 +31,26 @@ export async function isAllowlisted(env: Env, identity: { login: string; emails:
   return configured.includes(identity.login.toLowerCase()) || identity.emails.some((email) => configured.includes(email.toLowerCase()))
 }
 
-export async function claimInvite(env: Env, tokenHash: string, identity: { login: string; emails: string[] }): Promise<boolean> {
-  const invite = await env.DB.prepare('SELECT id, email, github_login FROM invites WHERE token_hash = ? AND status = ? AND expires_at > ?').bind(tokenHash, 'pending', new Date().toISOString()).first<{ id: string; email: string | null; github_login: string | null }>()
-  if (!invite || (invite.email && !identity.emails.some((email) => email.toLowerCase() === invite.email?.toLowerCase())) || (invite.github_login && invite.github_login.toLowerCase() !== identity.login.toLowerCase())) return false
-  const claimed = await env.DB.prepare('UPDATE invites SET status = ?, used_at = ? WHERE id = ? AND status = ? AND expires_at > ?').bind('used', new Date().toISOString(), invite.id, 'pending', new Date().toISOString()).run()
-  return (claimed.meta.changes ?? 0) === 1
+export async function acceptInvite(env: Env, tokenHash: string, identity: { login: string; emails: string[]; displayName: string; githubId: string }, role: AuthenticatedUser['role']): Promise<string | null> {
+  const now = new Date().toISOString()
+  const invite = await env.DB.prepare('SELECT id, email, github_login FROM invites WHERE token_hash = ? AND status = ? AND expires_at > ?').bind(tokenHash, 'pending', now).first<{ id: string; email: string | null; github_login: string | null }>()
+  if (!invite || (invite.email && !identity.emails.some((email) => email.toLowerCase() === invite.email?.toLowerCase())) || (invite.github_login && invite.github_login.toLowerCase() !== identity.login.toLowerCase())) return null
+
+  const candidateId = crypto.randomUUID()
+  const results = await env.DB.batch([
+    env.DB.prepare(`
+      INSERT INTO users (id, github_id, email, display_name, role, created_at)
+      SELECT ?, ?, ?, ?, ?, ?
+      FROM invites
+      WHERE id = ? AND token_hash = ? AND status = ? AND expires_at > ?
+      ON CONFLICT(github_id) DO UPDATE SET email = excluded.email, display_name = excluded.display_name, role = excluded.role
+    `).bind(candidateId, identity.githubId, identity.emails[0], identity.displayName, role, now, invite.id, tokenHash, 'pending', now),
+    env.DB.prepare('UPDATE invites SET status = ?, used_at = ? WHERE id = ? AND token_hash = ? AND status = ? AND expires_at > ?').bind('used', now, invite.id, tokenHash, 'pending', now),
+  ])
+  if ((results[1]?.meta.changes ?? 0) !== 1) return null
+  const user = await env.DB.prepare('SELECT id FROM users WHERE github_id = ?').bind(identity.githubId).first<{ id: string }>()
+  if (!user) throw new Error('Invited GitHub user could not be saved')
+  return user.id
 }
 
 export async function upsertGithubUser(env: Env, identity: { emails: string[]; displayName: string; githubId: string }, role: AuthenticatedUser['role']): Promise<string> {
