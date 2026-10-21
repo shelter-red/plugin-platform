@@ -505,9 +505,9 @@ async function commandPlugin(request: Request, env: Env, user: AuthenticatedUser
     invalidatePluginRoute(plugin.domain_hostname)
     return response
   }
-  const result = await response.json().catch(() => null) as { state?: string; ok?: boolean; status?: number; bodySize?: number } | null
+  const result = await response.json().catch(() => null) as { state?: string; status?: number; bodySize?: number } | null
   if (action === 'health') {
-    if (result?.ok !== true || typeof result.status !== 'number' || result.status < 200 || result.status >= 400) {
+    if (typeof result?.status !== 'number' || result.status < 200 || result.status >= 400) {
       await env.DB.prepare('UPDATE domains SET status = ? WHERE plugin_instance_id = ?').bind('offline', plugin.id).run()
       invalidatePluginRoute(plugin.domain_hostname)
       return json({ error: 'Plugin health check failed', status: result?.status ?? null }, 409)

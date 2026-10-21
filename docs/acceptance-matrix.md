@@ -16,13 +16,13 @@
 | --- | --- | --- |
 | GitHub OAuth 登录、邀请过期、身份匹配、并发领取和权限隔离 | 模块已验证 | `github-auth`、`github-oauth`、`invite-claim`、`api-permission` smoke；未连接真实 GitHub OAuth App。 |
 | Cloudflare OAuth 回调、管理员权限、state、凭据加密、刷新和撤销 | 模块已验证 | `cloudflare-oauth` 与 `cloudflare-oauth-route` smoke；未连接真实 Cloudflare OAuth client。 |
-| 通配 Host 路由、管理 API 优先级、未知域名和离线维护页 | 本地已验证 | `public-route`、`public-proxy` smoke，覆盖插件 Host、未知域名、API 路径和桥接离线响应。 |
+| 通配 Host 路由、管理 API 优先级、未知域名和离线维护页 | 本地已验证 | `public-route`、`public-proxy` smoke，覆盖插件 Host、未知域名、API 路径和桥接离线响应。另以真实 `wrangler dev` + 本地 C++ 服务器 + 示例插件联调：`Host: e2e.plugins.example.com` 的 `GET /`、带 query 的 GET 和 POST 均转达插件并返回 200，未知插件 Host 返回 404 `Plugin domain not found`，控制台 Host 仍返回 SPA HTML。联调首次暴露静态资源层会截获插件域名根路径，现由 `[assets] run_worker_first = true` 保证请求先经 Worker 路由；仍是本地 miniflare/workerd，不是已部署 Cloudflare。 |
 | 一次性注册码原子消费 | 本地已验证 | `worker:runtime-test` 对真实 D1 并发三次提交同一注册码，仅一次 201、两次 401，并核对服务端只新增一条记录；`registration-race` smoke 覆盖并发消费逻辑。 |
 | 控制连接注册、心跳、断线、重连和旧断线竞态 | 本地已验证 | `worker:runtime-test` 通过 workerd 中的真实 Durable Object 验证心跳置为在线、控制连接断开后插件转 `server_offline`、域名转 `offline` 且公开入口返回维护页；`durable-object-lifecycle` smoke 覆盖 manifest 注册与断线/重连交错；C++ `control-client` smoke 覆盖连接重试。真实多地域网络未验证。 |
 | 密钥轮换和绑定撤销 | 本地已验证 | `worker:runtime-test` 在 workerd 的真实 Durable Object 上执行 `server.rotate`/`server.revoke`：新 token 哈希落库、旧 token 被 401 拒绝、新 token 可重连、撤销后插件转 `server_offline`、域名转 `offline`、连接以 1000 关闭；`server-binding` smoke 另外覆盖重复撤销与撤销后轮换被拒。C++ 侧持久化和本地 UI 操作已有覆盖，真实本地服务器端到端轮换未验证。 |
 | Durable Object 请求映射和并发隔离 | 本地已验证 | `worker:runtime-test` 在 workerd 中为同一服务器建立真实控制连接，并发 16 个公开 HTTP 请求并乱序回帧，验证响应按 `requestId` 一一对应；同时建立两条公开 WebSocket，验证 `connectionId` 隔离。未验证休眠恢复和多 isolate 场景。 |
 | HTTP 方法、状态、响应头、Cookie 和二进制请求/响应 | 本地已验证 | `public-proxy`、`response-validation`、C++ `control-client` smoke。 |
-| SSE、公开 WebSocket 和文件流桥接 | 本地已验证 | Worker 流式 smoke 与 C++ WebSocket 生命周期测试覆盖协议路径；`worker:runtime-test` 在 workerd 中验证 SSE 分块经真实 Durable Object 送达并在结束后释放活跃连接，1MB+ 文件在声明 `content-length` 时经真实 R2 定长流中转、缺少长度时回退一次性上传，且两种路径都会在读取后删除对象并归还用量。真实公网长连接未验证。 |
+| SSE、公开 WebSocket 和文件流桥接 | 本地已验证 | 真实 `wrangler dev` + C++ 服务器联调中，`accept: text/event-stream` 请求收到 `data: sample-plugin`。 Worker 流式 smoke 与 C++ WebSocket 生命周期测试覆盖协议路径；`worker:runtime-test` 在 workerd 中验证 SSE 分块经真实 Durable Object 送达并在结束后释放活跃连接，1MB+ 文件在声明 `content-length` 时经真实 R2 定长流中转、缺少长度时回退一次性上传，且两种路径都会在读取后删除对象并归还用量。真实公网长连接未验证。 |
 | 请求超时、帧大小、响应大小和活跃连接上限 | 模块已验证 | Durable Object 中有硬限制和超时；配额 smoke 覆盖计数边界，`worker:runtime-test` 验证超过 32 KiB 的公开请求体返回 413 并写入访问日志、SSE 结束后活跃连接数归零；尚未做持续压力测试。 |
 | R2 上传、一次性读取、过期和删除 | 部分实现 | `blob-stream` 与 `durable-object-stream` smoke 覆盖流式消费、一次性读取和删除；`blob-expiry` smoke 覆盖过期对象清理、24 小时陈旧对象清理、重试三次、删除失败后回滚占用和用量释放；`worker:runtime-test` 用本地 R2 模拟验证大文件上传、读取后对象删除、`temp_objects` 清空与用量归零。真实 R2 一致性与费用仍未验证。 |
 | D1/KV 路由缓存读穿和配置写穿 | 部分实现 | Host 路由内存缓存和更新失效逻辑已接入；`route-cache` smoke 覆盖读穿、负缓存、主动失效、5 秒 TTL 和 256 条上限淘汰；`worker:runtime-test` 用真实 D1 验证 Host 路由解析与未启用插件的维护页。真实多 isolate 缓存传播未验证，当前实现没有独立 KV 业务缓存。 |
@@ -30,7 +30,7 @@
 | SMTP 测试发送、维护通知、失败重试和审计 | 模块已验证 | `maintenance-email` smoke 注入发送器验证第三次成功、最终失败、审计和敏感字段不落日志；`worker-mailer` 真实传输和外部 SMTP 仍未联调。 |
 | Cloudflare Analytics/GraphQL 缓存、权限错误和过期 | 模块已验证 | `cloudflare-usage` smoke；未使用真实账号 token 查询。 |
 | 30 天用量/访问日志和 180 天审计清理 | 模块已验证 | `scheduled-maintenance` smoke 验证保留时间边界及邀请、会话、OAuth state、注册码清理；真实 Cron 调度未验证。 |
-| Wrangler bundle 和资源绑定 | 本地已验证 | `wrangler deploy --dry-run` 通过；D1 ID 仍为占位符，没有生产部署。 |
+| Wrangler bundle 和资源绑定 | 本地已验证 | `wrangler deploy --dry-run` 通过；`wrangler-config` smoke 断言 `[assets]` 的 `directory`、`binding`、`not_found_handling` 和 `run_worker_first = true`，防止插件域名根路径被静态资源层截获。D1 ID 仍为占位符，没有生产部署。 |
 
 ## C++ 本地服务器
 
@@ -74,8 +74,8 @@ npm run build
 npm run ui:smoke                         14 passed（preview 6 + worker-mock 8）
 npm run native-ui:smoke                  3 passed
 npm run worker:typecheck
-npm run worker:smoke                     24 smoke checks passed
-npm run worker:runtime-test              13 passed（workerd + 真实 D1/Durable Object/R2 模拟）
+npm run worker:smoke                     25 smoke checks passed
+npm run worker:runtime-test              14 passed（workerd + 真实 D1/Durable Object/R2 模拟）
   # 本机 glibc 2.31，经 node:22-bookworm-slim 容器执行；glibc ≥ 2.35 可直接运行
 npx wrangler deploy --dry-run --config worker/wrangler.toml
 cmake --build native-server/build --parallel 2
@@ -91,6 +91,6 @@ ctest --output-on-failure                 10/10 passed
 3. 配置 GitHub OAuth、Cloudflare OAuth、`SESSION_SECRET` 和超级管理员白名单，执行真实登录与授权。
 4. 配置真实 SMTP，验证邀请、测试邮件、维护通知、重试和退信处理。
 5. 在 Windows 上构建并验证 DLL、Credential Manager、本地 UI 和重启恢复。
-6. 使用已部署 Worker、本地 C++ 服务器和示例插件完成 HTTP、SSE、WebSocket、文件流、轮换、撤销和离线维护端到端验收。
+6. 使用已部署 Worker、本地 C++ 服务器和示例插件完成 HTTP、SSE、WebSocket、文件流、轮换、撤销和离线维护端到端验收；本地 `wrangler dev` 联调已覆盖 HTTP、SSE、插件域名路由、健康检查和离线维护页。
 7. 对几百并发目标执行长连接、超时、R2 大文件和配额维护压力测试。
 8. 在 Windows 上验证插件宿主子进程、DLL 加载和管道协议；Linux 侧进程隔离已由 `plugin-manager-crash-smoke` 覆盖。

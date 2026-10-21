@@ -35,6 +35,7 @@ export async function resetDatabase(): Promise<void> {
     testEnv.DB.prepare('DELETE FROM temp_objects'),
     testEnv.DB.prepare('DELETE FROM platform_usage'),
     testEnv.DB.prepare('DELETE FROM platform_settings'),
+    testEnv.DB.prepare('DELETE FROM sessions'),
     testEnv.DB.prepare('DELETE FROM users'),
   ])
 }
