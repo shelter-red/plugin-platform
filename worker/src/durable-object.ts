@@ -3,6 +3,7 @@ import type { ControlFrame, Env } from './types'
 import { activateMaintenance, getPlatformSettings, releaseActiveConnection, releaseR2Usage, reserveActiveConnection, reserveR2Usage } from './usage'
 import { hashControlToken } from './security'
 import { parseResponseStatus, responseHeaders } from './response-validation'
+import { restorePluginState, type RestorablePluginState } from './plugin-restore'
 
 const MAX_PROXY_REQUEST_BODY_BYTES = 32 * 1024
 const MAX_PROXY_RESPONSE_BODY_BYTES = 16 * 1024 * 1024
@@ -660,22 +661,9 @@ export class PluginBridge {
       if (knownPluginIds.has(plugin.plugin_id)) continue
       await this.env.DB.prepare('UPDATE plugin_instances SET state = ?, desired_state = ?, updated_at = ? WHERE id = ?').bind('unloaded', 'unloaded', now, plugin.id).run()
     }
-    const desired = await this.env.DB.prepare('SELECT id, plugin_id, desired_state FROM plugin_instances WHERE server_id = ? AND desired_state IN (?, ?, ?)').bind(this.serverId, 'loaded', 'enabled', 'disabled').all<{ id: string; plugin_id: string; desired_state: string }>()
+    const desired = await this.env.DB.prepare('SELECT id, plugin_id, desired_state FROM plugin_instances WHERE server_id = ? AND desired_state IN (?, ?, ?)').bind(this.serverId, 'loaded', 'enabled', 'disabled').all<{ id: string; plugin_id: string; desired_state: RestorablePluginState }>()
     for (const plugin of desired.results) {
-      const action = plugin.desired_state === 'loaded' ? 'plugin.load' : plugin.desired_state === 'enabled' ? 'plugin.enable' : 'plugin.load'
-      const loaded = await this.sendPluginCommand(action, plugin.plugin_id)
-      if (!loaded.ok) {
-        await this.env.DB.prepare('UPDATE plugin_instances SET state = ?, updated_at = ? WHERE id = ?').bind('failed', new Date().toISOString(), plugin.id).run()
-        continue
-      }
-      if (plugin.desired_state === 'disabled') {
-        const disabled = await this.sendPluginCommand('plugin.disable', plugin.plugin_id)
-        if (!disabled.ok) {
-          await this.env.DB.prepare('UPDATE plugin_instances SET state = ?, updated_at = ? WHERE id = ?').bind('failed', new Date().toISOString(), plugin.id).run()
-          continue
-        }
-      }
-      const state = plugin.desired_state
+      const state = await restorePluginState(plugin.plugin_id, plugin.desired_state, (type, pluginId) => this.sendPluginCommand(type, pluginId))
       await this.env.DB.prepare('UPDATE plugin_instances SET state = ?, updated_at = ? WHERE id = ?').bind(state, new Date().toISOString(), plugin.id).run()
     }
     await this.env.DB.prepare("UPDATE domains SET status = CASE WHEN (SELECT state FROM plugin_instances WHERE plugin_instances.id = domains.plugin_instance_id) = 'enabled' THEN 'online' ELSE 'offline' END WHERE plugin_instance_id IN (SELECT id FROM plugin_instances WHERE server_id = ?)").bind(this.serverId).run()
