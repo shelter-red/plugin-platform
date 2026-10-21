@@ -5,7 +5,7 @@
 - `plugin_api.h` 定义兼容的 C ABI v2/v3：v2 通过 `plugmesh_plugin_get_api_v2` 导出 HTTP、WebSocket、SSE 和文件流能力，v3 额外提供公开 WebSocket 的建立与关闭回调。
 - `PluginLoader` 负责按平台加载 `.so` / `.dll`，校验 ABI 版本和必需入口。
 - `PluginManager` 负责扫描包含 `manifest.json` 的插件目录、校验 manifest 与 C ABI v2/v3 描述、编排加载/启停/重载、健康检查、文件流和 WebSocket 生命周期。
-- `ControlClient` 使用 WebSocket++、standalone Asio 和 nlohmann/json 建立 `wss` 出站连接，处理注册、心跳、插件命令、健康检查和 HTTP 请求帧；注册描述来自已校验的 manifest。
+- `ControlClient` 使用 WebSocket++、standalone Asio 和 nlohmann/json 建立出站控制连接；生产地址使用 `wss`，localhost 开发地址可使用 `ws`。控制连接处理注册、心跳、插件命令、健康检查和 HTTP 请求帧，注册描述来自已校验的 manifest。
 - `examples/sample_plugin.cpp`、`examples/lifecycle_plugin.cpp` 和对应 smoke 测试验证动态库导出、ABI 检查、基本生命周期以及 WebSocket 建立/关闭回调。
 
 启动配置可以由环境变量提供；当连接参数缺失且指定了凭据文件时，服务器会使用口令解密持久化凭据：

@@ -36,23 +36,28 @@ Json manifest(const PluginInfo& plugin) {
 
 }  // namespace
 
-ControlClient::ControlClient(ServerConfig config, PluginManager& plugins) : config_(std::move(config)), plugins_(plugins) {
+ControlClient::ControlClient(ServerConfig config, PluginManager& plugins) : config_(std::move(config)), plugins_(plugins), secure_(config_.worker_url.rfind("https://", 0) == 0) {
   plugins_.set_stream_opener([this](const char* stream_id, uint16_t status, const char* headers_json) { return open_stream(stream_id, status, headers_json); });
   plugins_.set_stream_writer([this](const char* stream_id, const uint8_t* data, uint64_t size, int finished) { return write_stream(stream_id, data, size, finished); });
-  client_.clear_access_channels(websocketpp::log::alevel::all);
-  client_.clear_error_channels(websocketpp::log::elevel::all);
-  client_.init_asio();
-  client_.set_tls_init_handler(&ControlClient::tls_init);
-  client_.set_socket_init_handler([this](websocketpp::connection_hdl handle, asio::ssl::stream<asio::ip::tcp::socket>& socket) {
-    const auto connection = client_.get_con_from_hdl(handle);
+  const auto configure = [this](auto& client) {
+    client.clear_access_channels(websocketpp::log::alevel::all);
+    client.clear_error_channels(websocketpp::log::elevel::all);
+    client.init_asio();
+    client.set_open_handler([this](websocketpp::connection_hdl handle) { on_open(handle); });
+    client.set_message_handler([this](websocketpp::connection_hdl, const auto& message) { on_message(message->get_payload(), message->get_opcode() == websocketpp::frame::opcode::text); });
+    client.set_close_handler([this](websocketpp::connection_hdl handle) { on_close(handle); });
+    client.set_fail_handler([this](websocketpp::connection_hdl handle) { on_fail(handle); });
+  };
+  if (secure_) configure(tls_client_);
+  else configure(plain_client_);
+  if (!secure_) return;
+  tls_client_.set_tls_init_handler(&ControlClient::tls_init);
+  tls_client_.set_socket_init_handler([this](websocketpp::connection_hdl handle, asio::ssl::stream<asio::ip::tcp::socket>& socket) {
+    const auto connection = tls_client_.get_con_from_hdl(handle);
     const auto host = connection->get_uri()->get_host();
     socket.set_verify_callback(asio::ssl::rfc2818_verification(host));
     if (!host.empty()) SSL_set_tlsext_host_name(socket.native_handle(), host.c_str());
   });
-  client_.set_open_handler([this](websocketpp::connection_hdl handle) { on_open(handle); });
-  client_.set_message_handler([this](websocketpp::connection_hdl handle, Message message) { on_message(handle, std::move(message)); });
-  client_.set_close_handler([this](websocketpp::connection_hdl handle) { on_close(handle); });
-  client_.set_fail_handler([this](websocketpp::connection_hdl handle) { on_fail(handle); });
 }
 
 ControlClient::~ControlClient() {
@@ -62,30 +67,37 @@ ControlClient::~ControlClient() {
 }
 
 bool ControlClient::run(std::string& error) {
-  websocketpp::lib::error_code code;
-  const auto connection = client_.get_connection(endpoint(), code);
-  if (code) {
-    error = code.message();
-    return false;
-  }
-  connection->append_header("Authorization", "Bearer " + config_.access_token);
-  client_.connect(connection);
-  client_.run();
+  const auto run_client = [this, &error](auto& client) {
+    websocketpp::lib::error_code code;
+    const auto connection = client.get_connection(endpoint(), code);
+    if (code) {
+      error = code.message();
+      return false;
+    }
+    connection->append_header("Authorization", "Bearer " + config_.access_token);
+    client.connect(connection);
+    client.run();
+    return true;
+  };
+  if (!(secure_ ? run_client(tls_client_) : run_client(plain_client_))) return false;
   if (!stopping_) error = "control connection stopped unexpectedly";
   return stopping_;
 }
 
 void ControlClient::stop() {
   if (stopping_.exchange(true)) return;
-  client_.get_io_service().post([this] {
+  auto& service = secure_ ? tls_client_.get_io_service() : plain_client_.get_io_service();
+  service.post([this] {
     if (heartbeat_timer_) heartbeat_timer_->cancel();
     if (reconnect_timer_) reconnect_timer_->cancel();
     if (opened_) {
       websocketpp::lib::error_code code;
-      client_.close(connection_, websocketpp::close::status::going_away, "client stopped", code);
+      if (secure_) tls_client_.close(connection_, websocketpp::close::status::going_away, "client stopped", code);
+      else plain_client_.close(connection_, websocketpp::close::status::going_away, "client stopped", code);
       opened_ = false;
     }
-    client_.stop();
+    if (secure_) tls_client_.stop();
+    else plain_client_.stop();
   });
 }
 
@@ -108,19 +120,24 @@ ControlClient::TlsContext ControlClient::tls_init(websocketpp::connection_hdl) {
 
 void ControlClient::connect() {
   if (stopping_) return;
-  websocketpp::lib::error_code code;
-  const auto connection = client_.get_connection(endpoint(), code);
-  if (code) {
+  const auto connect_client = [this](auto& client) {
+    websocketpp::lib::error_code code;
+    const auto connection = client.get_connection(endpoint(), code);
+    if (code) return false;
+    connection->append_header("Authorization", "Bearer " + config_.access_token);
+    client.connect(connection);
+    return true;
+  };
+  if (!(secure_ ? connect_client(tls_client_) : connect_client(plain_client_))) {
     schedule_reconnect();
     return;
   }
-  connection->append_header("Authorization", "Bearer " + config_.access_token);
-  client_.connect(connection);
 }
 
 void ControlClient::schedule_reconnect() {
   if (stopping_ || reconnect_timer_) return;
-  reconnect_timer_ = std::make_shared<websocketpp::lib::asio::steady_timer>(client_.get_io_service());
+  auto& service = secure_ ? tls_client_.get_io_service() : plain_client_.get_io_service();
+  reconnect_timer_ = std::make_shared<websocketpp::lib::asio::steady_timer>(service);
   reconnect_timer_->expires_after(std::chrono::seconds(5));
   reconnect_timer_->async_wait([this](const websocketpp::lib::error_code& code) {
     reconnect_timer_.reset();
@@ -130,7 +147,8 @@ void ControlClient::schedule_reconnect() {
 
 void ControlClient::schedule_heartbeat() {
   if (stopping_ || !opened_) return;
-  heartbeat_timer_ = std::make_shared<websocketpp::lib::asio::steady_timer>(client_.get_io_service());
+  auto& service = secure_ ? tls_client_.get_io_service() : plain_client_.get_io_service();
+  heartbeat_timer_ = std::make_shared<websocketpp::lib::asio::steady_timer>(service);
   heartbeat_timer_->expires_after(std::chrono::seconds(15));
   heartbeat_timer_->async_wait([this](const websocketpp::lib::error_code& code) {
     heartbeat_timer_.reset();
@@ -146,11 +164,11 @@ void ControlClient::on_open(websocketpp::connection_hdl handle) {
   if (reconnect_timer_) reconnect_timer_->cancel();
 }
 
-void ControlClient::on_message(websocketpp::connection_hdl, Message message) {
-  if (message->get_opcode() != websocketpp::frame::opcode::text) return;
+void ControlClient::on_message(const std::string& payload, bool is_text) {
+  if (!is_text) return;
   ControlFrame frame;
   std::string error;
-  if (!parse_control_frame(message->get_payload(), frame, error) || frame.server_id != config_.server_id) return;
+  if (!parse_control_frame(payload, frame, error) || frame.server_id != config_.server_id) return;
   handle_frame(frame);
 }
 
@@ -362,14 +380,16 @@ int ControlClient::write_stream(const char* stream_id, const uint8_t* data, uint
     const auto encoded = length == 0 ? std::string() : websocketpp::base64_encode(data + offset, static_cast<size_t>(length));
     auto frame = make_control_frame("stream.chunk", config_.server_id, { {"connectionId", connection_id}, {"streamId", connection_id}, {"data", encoded}, {"encoding", "base64"} });
     frame.request_id = connection_id;
-    client_.get_io_service().post([this, frame = std::move(frame)]() mutable { send_frame(std::move(frame)); });
+    auto& service = secure_ ? tls_client_.get_io_service() : plain_client_.get_io_service();
+    service.post([this, frame = std::move(frame)]() mutable { send_frame(std::move(frame)); });
     offset += length;
     if (size == 0) break;
   }
   if (finished) {
     auto close = make_control_frame("stream.close", config_.server_id, {{"connectionId", connection_id}, {"streamId", connection_id}});
     close.request_id = connection_id;
-    client_.get_io_service().post([this, close = std::move(close)]() mutable { send_frame(std::move(close)); });
+    auto& service = secure_ ? tls_client_.get_io_service() : plain_client_.get_io_service();
+    service.post([this, close = std::move(close)]() mutable { send_frame(std::move(close)); });
   }
   return 0;
 }
@@ -380,14 +400,17 @@ int ControlClient::open_stream(const char* stream_id, uint16_t status, const cha
   if (!headers.is_object()) headers = Json::object();
   auto frame = make_control_frame("request.open", config_.server_id, {{"status", status}, {"headers", headers}, {"fileStream", true}});
   frame.request_id = stream_id;
-  client_.get_io_service().post([this, frame = std::move(frame)]() mutable { send_frame(std::move(frame)); });
+  auto& service = secure_ ? tls_client_.get_io_service() : plain_client_.get_io_service();
+  service.post([this, frame = std::move(frame)]() mutable { send_frame(std::move(frame)); });
   return 0;
 }
 
 void ControlClient::send_frame(ControlFrame frame) {
   if (!opened_ || stopping_) return;
   websocketpp::lib::error_code code;
-  client_.send(connection_, serialize_control_frame(frame), websocketpp::frame::opcode::text, code);
+  const auto serialized = serialize_control_frame(frame);
+  if (secure_) tls_client_.send(connection_, serialized, websocketpp::frame::opcode::text, code);
+  else plain_client_.send(connection_, serialized, websocketpp::frame::opcode::text, code);
 }
 
 void ControlClient::send_error(const ControlFrame& request, const std::string& message) {
@@ -425,7 +448,8 @@ bool ControlClient::request_binding_action(const std::string& type, std::string&
     std::lock_guard lock(binding_action_mutex_);
     binding_actions_.emplace(request_id, BindingActionResult{});
   }
-  client_.get_io_service().post([this, frame = std::move(frame)]() mutable {
+  auto& service = secure_ ? tls_client_.get_io_service() : plain_client_.get_io_service();
+  service.post([this, frame = std::move(frame)]() mutable {
     if (opened_ && !stopping_) send_frame(std::move(frame));
   });
   std::unique_lock lock(binding_action_mutex_);
@@ -457,7 +481,8 @@ bool ControlClient::request_binding_action(const std::string& type, std::string&
 }
 
 void ControlClient::update_access_token(std::string access_token) {
-  client_.get_io_service().post([this, access_token = std::move(access_token)]() mutable { config_.access_token = std::move(access_token); });
+  auto& service = secure_ ? tls_client_.get_io_service() : plain_client_.get_io_service();
+  service.post([this, access_token = std::move(access_token)]() mutable { config_.access_token = std::move(access_token); });
 }
 
 std::string ControlClient::endpoint() const {

@@ -18,9 +18,6 @@ namespace plugmesh {
 
 class ControlClient {
  public:
-  using Client = websocketpp::client<websocketpp::config::asio_tls_client>;
-  using Message = Client::message_ptr;
-
   ControlClient(ServerConfig config, PluginManager& plugins);
   ControlClient(const ControlClient&) = delete;
   ControlClient& operator=(const ControlClient&) = delete;
@@ -33,6 +30,8 @@ class ControlClient {
   bool revoke_binding(std::string& error);
 
  private:
+  using TlsClient = websocketpp::client<websocketpp::config::asio_tls_client>;
+  using PlainClient = websocketpp::client<websocketpp::config::asio_client>;
   using TlsContext = websocketpp::lib::shared_ptr<websocketpp::lib::asio::ssl::context>;
 
   static TlsContext tls_init(websocketpp::connection_hdl);
@@ -40,7 +39,7 @@ class ControlClient {
   void schedule_reconnect();
   void schedule_heartbeat();
   void on_open(websocketpp::connection_hdl handle);
-  void on_message(websocketpp::connection_hdl handle, Message message);
+  void on_message(const std::string& payload, bool is_text);
   void on_close(websocketpp::connection_hdl handle);
   void on_fail(websocketpp::connection_hdl handle);
   void handle_frame(const ControlFrame& frame);
@@ -69,7 +68,9 @@ class ControlClient {
 
   ServerConfig config_;
   PluginManager& plugins_;
-  Client client_;
+  bool secure_;
+  TlsClient tls_client_;
+  PlainClient plain_client_;
   websocketpp::connection_hdl connection_;
   std::shared_ptr<websocketpp::lib::asio::steady_timer> heartbeat_timer_;
   std::shared_ptr<websocketpp::lib::asio::steady_timer> reconnect_timer_;

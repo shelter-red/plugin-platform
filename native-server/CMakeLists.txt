@@ -57,6 +57,9 @@ target_link_libraries(plugmesh-plugin-websocket-lifecycle-smoke PRIVATE plugmesh
 add_executable(plugmesh-control-protocol-smoke tests/control_protocol_smoke.cpp)
 target_link_libraries(plugmesh-control-protocol-smoke PRIVATE plugmesh_core)
 
+add_executable(plugmesh-control-client-smoke tests/control_client_smoke.cpp)
+target_link_libraries(plugmesh-control-client-smoke PRIVATE plugmesh_core)
+
 add_executable(plugmesh-credential-store-smoke tests/credential_store_smoke.cpp)
 target_link_libraries(plugmesh-credential-store-smoke PRIVATE plugmesh_core)
 
@@ -67,6 +70,7 @@ add_executable(plugmesh-local-http-server-smoke tests/local_http_server_smoke.cp
 target_link_libraries(plugmesh-local-http-server-smoke PRIVATE plugmesh_core)
 
 add_test(NAME plugmesh-control-protocol-smoke COMMAND plugmesh-control-protocol-smoke)
+add_test(NAME plugmesh-control-client-smoke COMMAND plugmesh-control-client-smoke)
 add_test(NAME plugmesh-credential-store-smoke COMMAND plugmesh-credential-store-smoke)
 add_test(NAME plugmesh-registration-client-smoke COMMAND plugmesh-registration-client-smoke)
 add_test(NAME plugmesh-plugin-loader-smoke COMMAND plugmesh-plugin-loader-smoke $<TARGET_FILE:plugmesh-sample>)
