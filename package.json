@@ -36,6 +36,7 @@
     "ui:smoke": "playwright test --config playwright.config.ts",
     "preview": "vite preview",
     "worker:typecheck": "tsc -p worker/tsconfig.json",
+    "worker:runtime-test": "vitest run --config vitest.workers.config.ts",
     "worker:dev": "wrangler dev --config worker/wrangler.toml"
   },
   "dependencies": {
@@ -47,11 +48,13 @@
     "worker-mailer": "^1.2.1"
   },
   "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.4.6",
     "@cloudflare/workers-types": "latest",
     "@playwright/test": "^1.55.1",
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "typescript": "latest",
+    "vitest": "^4.1.0",
     "wrangler": "latest"
   }
 }

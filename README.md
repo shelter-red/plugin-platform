@@ -45,6 +45,7 @@ npm run ui:smoke
 npm run native-ui:smoke
 npm run worker:typecheck
 npm run worker:smoke
+npm run worker:runtime-test
 cmake -S native-server -B native-server/build
 cmake --build native-server/build --parallel 2
 cmake --build native-server/build --target test
@@ -92,7 +93,13 @@ Cloudflare OAuth 使用官方 Authorization Code 流程。创建 OAuth client �
 
 当前提交建立了可编译的 MVP 基础，但还没有把生产凭据放入仓库。C++ 服务器已支持独立 sidecar `manifest.json` 校验、ABI v2/v3 插件生命周期、健康检查、文件流、出站控制连接、SSE 流和公开 WebSocket base64 二进制桥接；Worker 侧已具备 GitHub OAuth、Cloudflare OAuth、邀请会话、HTTP/SSE/文件流式响应、公开 WebSocket 桥接、R2 一次性对象、Cloudflare Analytics 查询和基于 `worker-mailer` 的 SMTP 测试发送能力；管理端已具备对应的 Cloudflare 和 SMTP 配置入口。平台本地用量快照按 Cron 保存 30 天，用于管理端请求趋势展示。这些功能仍需在真实 Cloudflare 资源、OAuth client 和本地服务器之间完成端到端联调。
 
-上述 `worker:*:smoke` 使用本地 mock D1、Durable Object 和 OAuth 端点，只验证协议、权限边界和敏感字段处理，不代表真实 Cloudflare、GitHub OAuth、SMTP 或浏览器端到端已联通。
+上述 `worker:*:smoke` 使用本地 mock D1、Durable Object 和 OAuth 端点，只验证协议、权限边界和敏感字段处理。`npm run worker:runtime-test` 使用官方 `@cloudflare/vitest-plugin` 在 workerd/Miniflare 中加载 `worker/wrangler.toml`、真实 D1 迁移和真实 Durable Object 类，覆盖 Host 路由、HTTP 转发、并发 requestId 隔离、公开 WebSocket connectionId 隔离、断线维护、注册码并发消费以及密钥轮换/撤销。它仍不代表真实 Cloudflare 账号、GitHub OAuth、SMTP 或多地域网络已联通。
+
+workerd 需要 glibc 2.35 或更高版本；在较旧的发行版（例如 Ubuntu 20.04）上可通过容器执行：
+
+```bash
+docker run --rm -v "$PWD:/app" -v /etc/ssl/certs:/etc/ssl/certs:ro -w /app node:22-bookworm-slim ./node_modules/.bin/vitest run --config vitest.workers.config.ts
+```
 
 ## 目录
 

@@ -17,15 +17,15 @@
 | GitHub OAuth 登录、邀请过期、身份匹配、并发领取和权限隔离 | 模块已验证 | `github-auth`、`github-oauth`、`invite-claim`、`api-permission` smoke；未连接真实 GitHub OAuth App。 |
 | Cloudflare OAuth 回调、管理员权限、state、凭据加密、刷新和撤销 | 模块已验证 | `cloudflare-oauth` 与 `cloudflare-oauth-route` smoke；未连接真实 Cloudflare OAuth client。 |
 | 通配 Host 路由、管理 API 优先级、未知域名和离线维护页 | 本地已验证 | `public-route`、`public-proxy` smoke，覆盖插件 Host、未知域名、API 路径和桥接离线响应。 |
-| 一次性注册码原子消费 | 模块已验证 | `registration-race` smoke 强制并发消费同一注册码。 |
-| 控制连接注册、心跳、断线、重连和旧断线竞态 | 模块已验证 | `durable-object-lifecycle` smoke 覆盖 manifest 注册以及断线/重连交错；C++ `control-client` smoke 覆盖连接重试。未连接真实 Durable Object。 |
-| 密钥轮换和绑定撤销 | 模块已验证 | `server-binding` smoke 驱动 Durable Object 的 `server.rotate`/`server.revoke`：新 token 哈希落库、旧 token 不再匹配、撤销后插件转 `server_offline`、域名转 `offline`、连接被关闭，重复撤销与撤销后轮换都被拒绝；C++ 侧持久化和本地 UI 操作已有覆盖。未连接真实 Durable Object 与本地服务器做端到端轮换。 |
-| Durable Object 请求映射和并发隔离 | 部分实现 | HTTP、命令、流和连接映射有模块 smoke；真实 Durable Object isolate 并发与休眠恢复未验证。 |
+| 一次性注册码原子消费 | 本地已验证 | `worker:runtime-test` 对真实 D1 并发三次提交同一注册码，仅一次 201、两次 401，并核对服务端只新增一条记录；`registration-race` smoke 覆盖并发消费逻辑。 |
+| 控制连接注册、心跳、断线、重连和旧断线竞态 | 本地已验证 | `worker:runtime-test` 通过 workerd 中的真实 Durable Object 验证心跳置为在线、控制连接断开后插件转 `server_offline`、域名转 `offline` 且公开入口返回维护页；`durable-object-lifecycle` smoke 覆盖 manifest 注册与断线/重连交错；C++ `control-client` smoke 覆盖连接重试。真实多地域网络未验证。 |
+| 密钥轮换和绑定撤销 | 本地已验证 | `worker:runtime-test` 在 workerd 的真实 Durable Object 上执行 `server.rotate`/`server.revoke`：新 token 哈希落库、旧 token 被 401 拒绝、新 token 可重连、撤销后插件转 `server_offline`、域名转 `offline`、连接以 1000 关闭；`server-binding` smoke 另外覆盖重复撤销与撤销后轮换被拒。C++ 侧持久化和本地 UI 操作已有覆盖，真实本地服务器端到端轮换未验证。 |
+| Durable Object 请求映射和并发隔离 | 本地已验证 | `worker:runtime-test` 在 workerd 中为同一服务器建立真实控制连接，并发 16 个公开 HTTP 请求并乱序回帧，验证响应按 `requestId` 一一对应；同时建立两条公开 WebSocket，验证 `connectionId` 隔离。未验证休眠恢复和多 isolate 场景。 |
 | HTTP 方法、状态、响应头、Cookie 和二进制请求/响应 | 本地已验证 | `public-proxy`、`response-validation`、C++ `control-client` smoke。 |
 | SSE、公开 WebSocket 和文件流桥接 | 本地已验证 | Worker 流式 smoke 与 C++ WebSocket 生命周期测试覆盖协议路径；真实公网长连接未验证。 |
 | 请求超时、帧大小、响应大小和活跃连接上限 | 模块已验证 | Durable Object 中有硬限制和超时；配额 smoke 覆盖计数边界，尚未做持续压力测试。 |
 | R2 上传、一次性读取、过期和删除 | 部分实现 | `blob-stream` 与 `durable-object-stream` smoke 覆盖流式消费、一次性读取和删除；`blob-expiry` smoke 覆盖过期对象清理、24 小时陈旧对象清理、重试三次、删除失败后回滚占用和用量释放。真实 R2 一致性与费用仍未验证。 |
-| D1/KV 路由缓存读穿和配置写穿 | 部分实现 | Host 路由内存缓存和更新失效逻辑已接入；`route-cache` smoke 覆盖读穿、负缓存、主动失效、5 秒 TTL 和 256 条上限淘汰。真实多 isolate 缓存传播未验证，当前实现没有独立 KV 业务缓存。 |
+| D1/KV 路由缓存读穿和配置写穿 | 部分实现 | Host 路由内存缓存和更新失效逻辑已接入；`route-cache` smoke 覆盖读穿、负缓存、主动失效、5 秒 TTL 和 256 条上限淘汰；`worker:runtime-test` 用真实 D1 验证 Host 路由解析与未启用插件的维护页。真实多 isolate 缓存传播未验证，当前实现没有独立 KV 业务缓存。 |
 | 总配额触发全局维护模式 | 模块已验证 | 本地计数和官方 Analytics 阈值逻辑已实现；未在真实账号用量上触发。 |
 | SMTP 测试发送、维护通知、失败重试和审计 | 模块已验证 | `maintenance-email` smoke 注入发送器验证第三次成功、最终失败、审计和敏感字段不落日志；`worker-mailer` 真实传输和外部 SMTP 仍未联调。 |
 | Cloudflare Analytics/GraphQL 缓存、权限错误和过期 | 模块已验证 | `cloudflare-usage` smoke；未使用真实账号 token 查询。 |
@@ -75,6 +75,8 @@ npm run ui:smoke                         10 passed（preview 6 + worker-mock 4�
 npm run native-ui:smoke                  3 passed
 npm run worker:typecheck
 npm run worker:smoke                     24 smoke checks passed
+npm run worker:runtime-test              9 passed（workerd + 真实 D1/Durable Object）
+  # 本机 glibc 2.31，经 node:22-bookworm-slim 容器执行；glibc ≥ 2.35 可直接运行
 npx wrangler deploy --dry-run --config worker/wrangler.toml
 cmake --build native-server/build --parallel 2
 ctest --output-on-failure                 8/8 passed
