@@ -7,6 +7,11 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+if (MINGW)
+  # 静态链接 MinGW 运行时，产物只依赖系统 DLL，部署时无需附带 libstdc++/libgcc/libwinpthread。
+  add_link_options(-static)
+endif()
+
 find_package(OpenSSL REQUIRED)
 find_package(Threads REQUIRED)
 

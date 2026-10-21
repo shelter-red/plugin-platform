@@ -37,17 +37,17 @@
 | 验收项 | 状态 | 证据与边界 |
 | --- | --- | --- |
 | Linux 构建、启动和 localhost UI | 本地已验证 | CMake 构建、CTest `10/10`、`native-ui:smoke` 通过。 |
-| Windows 构建与启动 | 部分实现 | 用 MinGW-w64 交叉编译出 `plugmesh-server.exe`、`plugmesh-plugin-host.exe`、本地 UI smoke 服务器、10 个 smoke 可执行文件和三个示例 `.dll`（PE32+），据此补齐 Windows 分支的链接库（`advapi32`/`ws2_32`/`mswsock`/`crypt32`），并对 MinGW 显式启用 websocketpp 的 C++11 线程宏（否则回退 `boost::thread`）。构建步骤见 `native-server/README.md`「Windows 构建」与 `native-server/cmake/mingw-w64-toolchain.cmake`。未在真实 Windows 上启动，Credential Manager 与实际运行仍未验证。 |
+| Windows 构建与启动 | 部分实现 | 用 MinGW-w64 交叉编译出 `plugmesh-server.exe`、`plugmesh-plugin-host.exe`、本地 UI smoke 服务器、10 个 smoke 可执行文件和三个示例 `.dll`（PE32+），据此补齐 Windows 分支的链接库（`advapi32`/`ws2_32`/`mswsock`/`crypt32`），并对 MinGW 显式启用 websocketpp 的 C++11 线程宏（否则回退 `boost::thread`）。构建步骤见 `native-server/README.md`「Windows 构建」与 `native-server/cmake/mingw-w64-toolchain.cmake`。产物静态链接 MinGW 运行时，只依赖系统 DLL。在 Wine 5.0（`wine64`）下 10 个 smoke 全部通过，`plugmesh-server.exe` 以 setup 模式启动、`/api/health` 返回 `systemCredentialsAvailable=true`，并正常提供本地 UI 的 `index.html` 与静态资源；未在真实 Windows 主机上启动。 |
 | 首次 UI 设置本地口令和一次性注册码绑定 | 本地已验证 | Native UI Playwright smoke 覆盖绑定表单、localhost 服务重启和新口令登录；注册码交换仍由本地 mock handler 承载，未连接已部署 Worker。 |
 | 长期密钥持久化和重启恢复 | 本地已验证 | Linux 加密文件保存/读取有 CTest；本地真实栈中加密凭据文件重启 `plugmesh-server` 后自动重连 Worker，插件状态和域名恢复，公开入口返回 200（`docs/local-e2e.md`）。Windows 凭据存储未验证。 |
-| Windows Credential Manager、macOS Keychain | 未验证 | 平台实现存在，当前 Linux 环境未执行。 |
+| Windows Credential Manager、macOS Keychain | 部分实现 | Windows 分支在 Wine 下经 `CredWriteA`/`CredReadA`/`CredDeleteA` 完成保存、读取和删除往返（`plugmesh-credential-store-smoke`），`plugmesh-server.exe` 启动时报告系统凭据可用；真实 Windows 账户与注册表凭据存储、macOS Keychain 仍未验证。 |
 | 加密凭据文件回退 | 本地已验证 | AES-256-GCM、PBKDF2 和文件权限由 `credential-store` CTest 覆盖。 |
 | 重新绑定、撤销和密钥轮换 | 本地已验证 | 本地 `wrangler dev` + 真实 `plugmesh-server` 控制台流程：轮换后凭据文件与 D1 token 哈希同时更新、连接保持、重启后自动重连；撤销后凭据文件删除、服务器转 `revoked`、插件转 `server_offline`、域名转 `offline` 且公开入口 503；在同一进程内通过本地 UI 重新绑定后取得新 serverId 并恢复 `online`（步骤见 `docs/local-e2e.md`）。联调中发现并修复了重新绑定成功后进程误判启动失败而退出的缺陷。边界：本地 miniflare，未在已部署 Worker 上验证。 |
 | 仅监听 localhost、本地会话口令和登录限速 | 本地已验证 | `local-http-server` CTest 与 Native UI Playwright smoke。 |
 | 无浏览器 CLI 注册入口 | 本地已验证 | `--register` 路径可构建，注册 client 有本地 WebSocket smoke；`npm run ui:real-stack` 第三条用例通过 `plugmesh-server --register <worker> <name> <credentialFile>` 连接本地 `wrangler dev` 兑换一次性注册码并取得 serverId，随后同一凭据文件启动服务器并完成插件加载与域名访问。未连接已部署 Worker。 |
 | manifest 校验和目录越界防护 | 本地已验证 | `plugin-manager`、`plugin-loader` CTest。 |
 | `.so` 动态加载和 C ABI v2/v3 | 本地已验证 | Linux 示例插件和 ABI/lifecycle CTest。 |
-| `.dll` 动态加载 | 未验证 | Windows 分支存在，示例插件已由 MinGW-w64 交叉编译为 `libplugmesh-*.dll` 并通过链接；`LoadLibraryW` 实际加载未在 Windows 上执行。 |
+| `.dll` 动态加载 | 部分实现 | 示例插件已交叉编译为 `libplugmesh-*.dll`，在 Wine 下由 `plugin-loader`、`plugin-host`、`plugin-manager`、崩溃隔离和 WebSocket 生命周期用例实际 `LoadLibrary` 加载并执行 ABI v2/v3 回调；真实 Windows 上的加载路径与错误码未验证。 |
 | 插件加载、卸载、启停、重载和健康检查 | 本地已验证 | `plugin-manager` CTest 和本地 UI 操作接口。 |
 | HTTP、SSE、文件流和 WebSocket 回调 | 本地已验证 | C++ manager/control client/WebSocket lifecycle 测试。 |
 | 协议错误和网络断线恢复 | 本地已验证 | 控制帧校验、nonce/时间窗以及 reconnect smoke。 |
@@ -85,7 +85,8 @@ npx wrangler deploy --dry-run --config worker/wrangler.toml
 cmake --build native-server/build --parallel 2
 cmake -S native-server -B /tmp/build-win -DCMAKE_TOOLCHAIN_FILE=native-server/cmake/mingw-w64-toolchain.cmake \
   -DOPENSSL_ROOT_DIR=/opt/mingw-openssl -DCMAKE_BUILD_TYPE=Release
-                                         13 个 PE32+ 可执行文件与三个示例 .dll 交叉编译通过（仅编译链接）
+                                         13 个 PE32+ 可执行文件与三个示例 .dll 交叉编译通过
+wine64 ./plugmesh-*-smoke.exe            10/10 passed（Wine 5.0，Windows 构建产物；非真实 Windows）
 ctest --output-on-failure                 10/10 passed
 ```
 

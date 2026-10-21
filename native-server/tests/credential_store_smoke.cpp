@@ -27,8 +27,12 @@ int main() {
     std::cerr << "save failed: " << error << '\n';
     return 4;
   }
-  std::ifstream raw(path);
-  const std::string encoded((std::istreambuf_iterator<char>(raw)), std::istreambuf_iterator<char>());
+  std::string encoded;
+  {
+    // Windows 不允许删除仍被打开的文件，读取后立即关闭。
+    std::ifstream raw(path);
+    encoded.assign(std::istreambuf_iterator<char>(raw), std::istreambuf_iterator<char>());
+  }
   if (encoded.find(expected.access_token) != std::string::npos) {
     std::cerr << "credential token is stored in plaintext\n";
     return 5;

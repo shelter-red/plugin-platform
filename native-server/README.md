@@ -93,6 +93,31 @@ cmake --build build-win -j"$(nproc)"
 
 产物为 `plugmesh-server.exe`、`plugmesh-plugin-host.exe`、本地 UI smoke 服务器、各 smoke 测试和示例插件 `libplugmesh-*.dll`。`CMAKE_BUILD_TYPE` 必须是 `Release`：未优化时 websocketpp/Asio 模板实例化会超过 MinGW COFF 单节大小上限。
 
-交叉编译只证明 Windows 分支能通过编译与链接；启动、Credential Manager 凭据读写和 `.dll` 实际加载仍需在 Windows 主机上执行。
+产物默认静态链接 MinGW 运行时，只依赖 `ADVAPI32`、`KERNEL32`、`MSWSOCK`、`WS2_32` 等系统 DLL，不需要附带 `libstdc++`/`libgcc`/`libwinpthread`。
+
+### 在 Wine 下运行冒烟用例
+
+没有 Windows 主机时可以用 `wine64` 运行交叉编译产物，检查启动、`.dll` 加载和 Credential Manager 调用路径：
+
+```bash
+export WINEPREFIX="$HOME/.wine-plugmesh"
+cd build-win
+wine64 plugmesh-credential-store-smoke.exe
+wine64 plugmesh-control-protocol-smoke.exe
+wine64 plugmesh-local-http-server-smoke.exe
+wine64 plugmesh-registration-client-smoke.exe
+wine64 plugmesh-plugin-loader-smoke.exe "$(winepath -w libplugmesh-sample.dll)"
+wine64 plugmesh-plugin-host-smoke.exe "$(winepath -w plugmesh-plugin-host.exe)" \
+  "$(winepath -w libplugmesh-sample.dll)" "$(winepath -w libplugmesh-crashing-sample.dll)"
+wine64 plugmesh-plugin-manager-smoke.exe "$(winepath -w plugmesh-plugin-host.exe)" "$(winepath -w plugins)"
+wine64 plugmesh-plugin-manager-crash-smoke.exe "$(winepath -w plugmesh-plugin-host.exe)" "$(winepath -w plugins)"
+wine64 plugmesh-plugin-websocket-lifecycle-smoke.exe "$(winepath -w plugmesh-plugin-host.exe)" "$(winepath -w plugins)"
+wine64 plugmesh-control-client-smoke.exe "$(winepath -w plugmesh-plugin-host.exe)" "$(winepath -w plugins)"
+PLUGMESH_LOCAL_PORT=8899 PLUGMESH_LOCAL_UI_DIRECTORY="$(winepath -w ../native-ui/dist)" \
+  wine64 plugmesh-server.exe &
+curl -s http://127.0.0.1:8899/api/health
+```
+
+崩溃隔离用例会让插件宿主故意触发空指针崩溃，Wine 会打印 `page fault` 日志，属于预期现象。Wine 不是 Windows：真实 Win32 API 行为、注册表凭据存储、服务账户和多用户场景仍需要在 Windows 主机上验证。
 
 网络传输层复用 `worker/src/protocol.ts` 的协议字段约定；当前已接入控制 WebSocket、HTTP 回调、SSE/文件流和公开 WebSocket 的 base64 二进制桥接。HTTP 请求体和响应块使用 `bodyEncoding`/`encoding: "base64"` 传输二进制数据；未编码的错误块保留为 UTF-8 文本。文件流响应通过 `fileStream: true` 标记，大于 1 MiB 时由 Worker 临时写入 R2 并在响应消费或 15 分钟超时后回收。服务器重连后会按管理端保存的期望状态恢复插件；启用态插件必须重新通过健康检查，公开域名才会恢复在线。域名首次分配前同样会执行健康检查。本地服务器日志环与 `/api/logs` 已接入；插件主动日志回传尚未定义独立控制帧。
