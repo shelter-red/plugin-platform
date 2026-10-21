@@ -84,6 +84,10 @@ npm run worker:typecheck
 npm run worker:smoke                     25 个 smoke 脚本全部通过
 npm run worker:runtime-test              51 passed（workerd + 真实 D1/Durable Object/R2 模拟）
   # 本机 glibc 2.31，经 node:22-bookworm-slim 容器执行；glibc ≥ 2.35 可直接运行
+  # 容器内没有系统 CA，必须只读挂载 /etc/ssl/certs，否则 15 个测试文件全部启动失败
+  docker run --rm -v "$PWD":/work -v /etc/ssl/certs:/etc/ssl/certs:ro \
+    -w /work -e CI=1 node:22-bookworm-slim \
+    npx vitest run --config vitest.workers.config.ts
 npx wrangler deploy --dry-run --config worker/wrangler.toml
 cmake --build native-server/build --parallel 2
 cmake -S native-server -B /tmp/build-win -DCMAKE_TOOLCHAIN_FILE=native-server/cmake/mingw-w64-toolchain.cmake \
