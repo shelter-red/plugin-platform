@@ -24,28 +24,36 @@ int main() {
 
   std::mutex mutex;
   std::condition_variable condition;
-  bool request_valid = false;
-  bool registration_received = false;
+  bool requests_valid = true;
+  int validated_connections = 0;
+  int registration_count = 0;
   server.set_validate_handler([&](websocketpp::connection_hdl handle) {
     const auto connection = server.get_con_from_hdl(handle);
     std::lock_guard lock(mutex);
-    request_valid = connection->get_resource() == "/control/connect?serverId=server-1" && connection->get_request_header("Authorization") == "Bearer control-token";
-    return request_valid;
+    const auto valid = connection->get_resource() == "/control/connect?serverId=server-1" && connection->get_request_header("Authorization") == "Bearer control-token";
+    requests_valid = requests_valid && valid;
+    ++validated_connections;
+    return valid;
   });
   server.set_open_handler([&](websocketpp::connection_hdl handle) {
     const auto hello = plugmesh::make_control_frame("hello", "server-1");
     websocketpp::lib::error_code error;
     server.send(handle, plugmesh::serialize_control_frame(hello), websocketpp::frame::opcode::text, error);
   });
-  server.set_message_handler([&](websocketpp::connection_hdl, Server::message_ptr message) {
+  server.set_message_handler([&](websocketpp::connection_hdl handle, Server::message_ptr message) {
     plugmesh::ControlFrame frame;
     std::string error;
     if (!plugmesh::parse_control_frame(message->get_payload(), frame, error) || frame.type != "server.register" || frame.server_id != "server-1" || !frame.payload.value("manifests", plugmesh::Json::array()).is_array()) return;
+    int current_registration_count = 0;
     {
       std::lock_guard lock(mutex);
-      registration_received = true;
+      current_registration_count = ++registration_count;
     }
     condition.notify_all();
+    if (current_registration_count == 1) {
+      websocketpp::lib::error_code close_error;
+      server.close(handle, websocketpp::close::status::going_away, "test reconnect", close_error);
+    }
   });
 
   server.listen(0);
@@ -73,17 +81,17 @@ int main() {
   bool completed = false;
   {
     std::unique_lock lock(mutex);
-    completed = condition.wait_for(lock, std::chrono::seconds(5), [&] { return registration_received; });
+    completed = condition.wait_for(lock, std::chrono::seconds(8), [&] { return registration_count >= 2; });
   }
   client.stop();
   if (client_thread.joinable()) client_thread.join();
   server.get_io_service().post([&] { server.stop(); });
   if (server_thread.joinable()) server_thread.join();
 
-  if (!completed || !request_valid || !registration_received || !client_result) {
-    std::cerr << "plain control client smoke failed: " << client_error << '\n';
+  if (!completed || !requests_valid || validated_connections < 2 || registration_count < 2 || !client_result) {
+    std::cerr << "plain control client reconnect smoke failed: " << client_error << '\n';
     return 1;
   }
-  std::cout << "plain control client smoke test passed\n";
+  std::cout << "plain control client reconnect smoke test passed\n";
   return 0;
 }
