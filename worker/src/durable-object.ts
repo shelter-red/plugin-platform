@@ -492,6 +492,7 @@ export class PluginBridge {
 
   private async finishFileResponse(requestId: string, pending: PendingResponse, payload: Record<string, unknown>) {
     let reserved = false
+    let tempObjectCreated = false
     try {
       await pending.fileWriteChain
       if (!pending.r2Upload) {
@@ -519,6 +520,7 @@ export class PluginBridge {
       const tempObjectId = crypto.randomUUID()
       const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString()
       await this.env.DB.prepare('INSERT INTO temp_objects (id, object_key, token_hash, content_type, size_bytes, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(tempObjectId, pending.r2Upload.key, await hashControlToken(crypto.randomUUID()), pending.responseHeaders?.get('content-type') ?? 'application/octet-stream', pending.bytes, expiresAt, new Date().toISOString()).run()
+      tempObjectCreated = true
       this.pending.delete(requestId)
       this.releasePendingConnection(pending)
       const headers = new Headers(pending.responseHeaders)
@@ -526,12 +528,21 @@ export class PluginBridge {
       pending.resolve(new Response(this.consumeR2Stream(object.body, pending.r2Upload.key, pending.bytes, tempObjectId), { status: pending.responseStatus ?? (typeof payload.status === 'number' ? payload.status : 200), headers }))
     } catch {
       if (pending.r2Upload) await pending.r2Upload.writer.abort('Plugin file stream failed').catch(() => undefined)
-      if (pending.r2Upload) await this.env.BLOB_BUCKET.delete(pending.r2Upload.key)
-      if (reserved) await releaseR2Usage(this.env, pending.bytes)
+      const deleted = pending.r2Upload ? await deleteR2ObjectWithRetry(this.env, pending.r2Upload.key) : true
+      if (reserved) {
+        if (deleted) await releaseR2Usage(this.env, pending.bytes)
+        else if (!tempObjectCreated) await this.trackUncollectedObject(pending.r2Upload?.key ?? '', pending.bytes)
+      }
       this.pending.delete(requestId)
       this.releasePendingConnection(pending)
       pending.resolve(new Response('Plugin file stream failed', { status: 502 }))
     }
+  }
+
+  private async trackUncollectedObject(objectKey: string, sizeBytes: number): Promise<void> {
+    if (!objectKey) return
+    const now = new Date().toISOString()
+    await this.env.DB.prepare('INSERT OR IGNORE INTO temp_objects (id, object_key, token_hash, content_type, size_bytes, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), objectKey, await hashControlToken(crypto.randomUUID()), 'application/octet-stream', sizeBytes, now, now).run().catch(() => undefined)
   }
 
   private consumeR2Stream(body: ReadableStream<Uint8Array>, key: string, bytes: number, tempObjectId: string): ReadableStream<Uint8Array> {
@@ -546,8 +557,8 @@ export class PluginBridge {
       const consumed = await this.env.DB.prepare('UPDATE temp_objects SET consumed_at = ? WHERE id = ? AND consumed_at IS NULL').bind(consumedAt, tempObjectId).run()
       if ((consumed.meta.changes ?? 0) !== 1) return
       if (await deleteR2ObjectWithRetry(this.env, key)) {
-        await this.env.DB.prepare('DELETE FROM temp_objects WHERE id = ? AND consumed_at = ?').bind(tempObjectId, consumedAt).run()
-        await releaseR2Usage(this.env, bytes)
+        const deleted = await this.env.DB.prepare('DELETE FROM temp_objects WHERE id = ? AND consumed_at = ?').bind(tempObjectId, consumedAt).run()
+        if ((deleted.meta.changes ?? 0) === 1) await releaseR2Usage(this.env, bytes)
         return
       }
       await this.env.DB.prepare('UPDATE temp_objects SET consumed_at = NULL, expires_at = ? WHERE id = ? AND consumed_at = ?').bind(new Date().toISOString(), tempObjectId, consumedAt).run()

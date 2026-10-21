@@ -155,8 +155,7 @@ async function consumeBlob(request: Request, env: Env, ctx: ExecutionContext, ur
   }
   if (!blob) {
     ctx.waitUntil((async () => {
-      await env.DB.prepare('DELETE FROM temp_objects WHERE id = ? AND consumed_at IS NOT NULL').bind(object.id).run()
-      await releaseR2Usage(env, object.size_bytes)
+      await deleteTempObjectAndRelease(env, object.id, object.size_bytes)
     })())
     return new Response('Resource not found', { status: 404 })
   }
@@ -174,18 +173,33 @@ async function cleanupExpiredBlobs(env: Env): Promise<void> {
       await env.DB.prepare('UPDATE temp_objects SET consumed_at = NULL WHERE id = ? AND consumed_at = ?').bind(object.id, now).run()
       continue
     }
-    await env.DB.prepare('DELETE FROM temp_objects WHERE id = ? AND consumed_at = ?').bind(object.id, now).run()
-    await releaseR2Usage(env, object.size_bytes)
+    await deleteTempObjectAndRelease(env, object.id, object.size_bytes, now)
   }
 }
 
 async function finalizeConsumedBlob(env: Env, id: string, objectKey: string, sizeBytes: number, consumedAt: string): Promise<void> {
   if (await deleteR2ObjectWithRetry(env, objectKey)) {
-    await env.DB.prepare('DELETE FROM temp_objects WHERE id = ? AND consumed_at = ?').bind(id, consumedAt).run()
-    await releaseR2Usage(env, sizeBytes)
+    await deleteTempObjectAndRelease(env, id, sizeBytes, consumedAt)
     return
   }
   await env.DB.prepare('UPDATE temp_objects SET consumed_at = NULL, expires_at = ? WHERE id = ? AND consumed_at = ?').bind(new Date().toISOString(), id, consumedAt).run()
+}
+
+async function cleanupStaleConsumedBlobs(env: Env): Promise<void> {
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+  const stale = await env.DB.prepare('SELECT id, object_key, size_bytes, consumed_at FROM temp_objects WHERE consumed_at IS NOT NULL AND consumed_at < ? LIMIT 100').bind(cutoff).all<{ id: string; object_key: string; size_bytes: number; consumed_at: string }>()
+  for (const object of stale.results) {
+    if (!await deleteR2ObjectWithRetry(env, object.object_key)) continue
+    await deleteTempObjectAndRelease(env, object.id, object.size_bytes, object.consumed_at)
+  }
+}
+
+async function deleteTempObjectAndRelease(env: Env, id: string, sizeBytes: number, consumedAt?: string): Promise<void> {
+  const statement = consumedAt
+    ? env.DB.prepare('DELETE FROM temp_objects WHERE id = ? AND consumed_at = ?').bind(id, consumedAt)
+    : env.DB.prepare('DELETE FROM temp_objects WHERE id = ? AND consumed_at IS NOT NULL').bind(id)
+  const deleted = await statement.run()
+  if ((deleted.meta.changes ?? 0) === 1) await releaseR2Usage(env, sizeBytes)
 }
 
 async function deleteR2ObjectWithRetry(env: Env, objectKey: string): Promise<boolean> {
@@ -212,6 +226,7 @@ async function runScheduledMaintenance(env: Env): Promise<void> {
   const auditSince = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000).toISOString()
   await Promise.all([
     cleanupExpiredBlobs(env),
+    cleanupStaleConsumedBlobs(env),
     env.DB.prepare('DELETE FROM request_logs WHERE created_at < ?').bind(accessSince).run(),
     env.DB.prepare('DELETE FROM audit_log WHERE created_at < ?').bind(auditSince).run(),
     env.DB.prepare('UPDATE invites SET status = ? WHERE status = ? AND expires_at <= ?').bind('expired', 'pending', nowIso).run(),
@@ -219,7 +234,6 @@ async function runScheduledMaintenance(env: Env): Promise<void> {
     env.DB.prepare('DELETE FROM oauth_states WHERE expires_at <= ?').bind(nowIso).run(),
     env.DB.prepare('DELETE FROM cloudflare_oauth_states WHERE expires_at <= ?').bind(nowIso).run(),
     env.DB.prepare('DELETE FROM registration_codes WHERE expires_at <= ?').bind(nowIso).run(),
-    env.DB.prepare('DELETE FROM temp_objects WHERE consumed_at IS NOT NULL AND consumed_at < ?').bind(new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString()).run(),
   ])
 }
 
