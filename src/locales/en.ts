@@ -281,6 +281,7 @@ export default {
     'cloudflare.credentials.updated': 'Updated Cloudflare credentials',
     'cloudflare.credentials.revoked': 'Revoked Cloudflare credentials',
     'invite.email.failed': 'Invite email failed',
+    'invite.revoked': 'Revoked platform invite',
     'maintenance.email.sent': 'Sent maintenance notification',
     'maintenance.email.failed': 'Maintenance notification failed',
     'maintenance.email.skipped': 'Skipped maintenance notification',
@@ -295,6 +296,7 @@ export default {
     'smtp.settings.updated': 'Updated SMTP settings',
     'smtp.settings.revoked': 'Revoked SMTP settings',
     'smtp.test.sent': 'Sent SMTP test email',
+    'smtp.test.failed': 'SMTP test email failed',
   },
   settings: {
     nav: { invites: 'Users & invites', smtp: 'Email SMTP', maintenance: 'Maintenance & quotas' },

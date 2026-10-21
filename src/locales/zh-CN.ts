@@ -281,6 +281,7 @@ export default {
     'cloudflare.credentials.updated': '更新 Cloudflare 凭据',
     'cloudflare.credentials.revoked': '撤销 Cloudflare 凭据',
     'invite.email.failed': '邀请邮件发送失败',
+    'invite.revoked': '撤销平台邀请',
     'maintenance.email.sent': '发送维护通知邮件',
     'maintenance.email.failed': '维护通知邮件发送失败',
     'maintenance.email.skipped': '跳过维护通知邮件',
@@ -295,6 +296,7 @@ export default {
     'smtp.settings.updated': '更新 SMTP 设置',
     'smtp.settings.revoked': '撤销 SMTP 设置',
     'smtp.test.sent': '发送 SMTP 测试邮件',
+    'smtp.test.failed': 'SMTP 测试邮件发送失败',
   },
   settings: {
     nav: { invites: '用户与邀请', smtp: '邮件 SMTP', maintenance: '维护与配额' },
