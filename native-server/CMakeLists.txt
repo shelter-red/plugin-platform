@@ -69,6 +69,9 @@ target_link_libraries(plugmesh-registration-client-smoke PRIVATE plugmesh_core)
 add_executable(plugmesh-local-http-server-smoke tests/local_http_server_smoke.cpp)
 target_link_libraries(plugmesh-local-http-server-smoke PRIVATE plugmesh_core)
 
+add_executable(plugmesh-local-ui-smoke-server tests/local_ui_smoke_server.cpp)
+target_link_libraries(plugmesh-local-ui-smoke-server PRIVATE plugmesh_core)
+
 add_test(NAME plugmesh-control-protocol-smoke COMMAND plugmesh-control-protocol-smoke)
 add_test(NAME plugmesh-control-client-smoke COMMAND plugmesh-control-client-smoke "${CMAKE_CURRENT_BINARY_DIR}/plugins")
 add_test(NAME plugmesh-credential-store-smoke COMMAND plugmesh-credential-store-smoke)

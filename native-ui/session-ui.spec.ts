@@ -1,8 +1,10 @@
 import { expect, test } from '@playwright/test'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 test('local UI session flow is responsive', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 })
-  await page.goto('http://127.0.0.1:18771/')
+  await page.goto('/')
 
   await expect(page.getByRole('heading', { name: '登录本地控制台' })).toBeVisible()
   await page.getByLabel('本地 UI 口令').fill('wrong-password')
@@ -14,7 +16,7 @@ test('local UI session flow is responsive', async ({ page }) => {
   await expect(page.getByRole('heading', { name: '插件服务器' })).toBeVisible()
   await expect(page.getByRole('heading', { name: '已发现插件' })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
-  await page.screenshot({ path: '/tmp/plugmesh-local-desktop.png', fullPage: true })
+  await page.screenshot({ path: join(tmpdir(), 'plugmesh-local-desktop.png'), fullPage: true })
 
   await page.getByRole('button', { name: '退出登录' }).click()
   await expect(page.getByRole('heading', { name: '登录本地控制台' })).toBeVisible()
@@ -23,5 +25,5 @@ test('local UI session flow is responsive', async ({ page }) => {
   await page.getByRole('button', { name: '登录' }).click()
   await expect(page.getByRole('heading', { name: '插件服务器' })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
-  await page.screenshot({ path: '/tmp/plugmesh-local-mobile.png', fullPage: true })
+  await page.screenshot({ path: join(tmpdir(), 'plugmesh-local-mobile.png'), fullPage: true })
 })

@@ -40,6 +40,7 @@ npm run native-ui:build
 ```bash
 npm run build
 npm run ui:smoke
+npm run native-ui:smoke
 npm run worker:typecheck
 npm run worker:smoke
 cmake -S native-server -B native-server/build
