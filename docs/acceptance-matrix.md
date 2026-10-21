@@ -91,6 +91,8 @@ cmake -S native-server -B /tmp/build-win -DCMAKE_TOOLCHAIN_FILE=native-server/cm
                                          13 个 PE32+ 可执行文件与三个示例 .dll 交叉编译通过
 wine64 ./plugmesh-*-smoke.exe            10/10 passed（Wine 5.0，Windows 构建产物；非真实 Windows）
 ctest --output-on-failure                 10/10 passed
+PLUGMESH_REAL_STACK_URL=http://127.0.0.1:18888 npm run stack:streams
+                                         1 passed（SSE 首帧 data: sample-plugin、WebSocket 回显 hello-ws、文件流 18 字节，R2 用量归零）
 PLUGMESH_REAL_STACK_URL=http://127.0.0.1:18888 npm run stack:load
                                          1 passed（3 轮 × 300 请求/并发 100、40 条 SSE、40 条 WebSocket 驻留）
 PLUGMESH_REAL_STACK_URL=http://127.0.0.1:18888 npm run stack:maintenance
