@@ -20,8 +20,12 @@ const localUsage = {
 type WorkerMock = {
   failData: boolean
   releaseLogs: () => void
+  servers: unknown[]
   plugins: unknown[]
   domains: unknown[]
+  audits: unknown[]
+  accessLogs: unknown[]
+  snapshots: unknown[]
   domainError: string | null
   registrationCodeRequests: number
   domainRequests: { pluginInstanceId: string; prefix: string }[]
@@ -34,8 +38,12 @@ async function mockWorker(page: Page): Promise<WorkerMock> {
   const state: WorkerMock = {
     failData: false,
     releaseLogs: () => releaseLogs(),
+    servers: [],
     plugins: [],
     domains: [],
+    audits: [],
+    accessLogs: [],
+    snapshots: [],
     domainError: null,
     registrationCodeRequests: 0,
     domainRequests: [],
@@ -65,9 +73,23 @@ async function handleApi(route: Route, state: WorkerMock, logsGate: Promise<void
     state.commandRequests.push(`${id}:${command[2]}`)
     return route.fulfill({ json: { id, state: command[2] === 'load' ? 'loaded' : 'enabled', accepted: true } })
   }
+  const serverDetail = pathname.match(/^\/api\/servers\/([^/]+)$/)
+  if (method === 'GET' && serverDetail) {
+    const id = decodeURIComponent(serverDetail[1])
+    const server = (state.servers as { id: string }[]).find((item) => item.id === id)
+    if (!server) return route.fulfill({ status: 404, json: { error: 'server not found' } })
+    return route.fulfill({ json: { server, plugins: state.plugins, recentErrors: state.accessLogs } })
+  }
+  const pluginDetail = pathname.match(/^\/api\/plugins\/([^/]+)$/)
+  if (method === 'GET' && pluginDetail) {
+    const id = decodeURIComponent(pluginDetail[1])
+    const plugin = (state.plugins as { id: string }[]).find((item) => item.id === id)
+    if (!plugin) return route.fulfill({ status: 404, json: { error: 'plugin not found' } })
+    return route.fulfill({ json: { plugin: { ...plugin, created_at: '2026-10-21T00:00:00.000Z', server_status: 'online', domain_id: 'domain-1', domain_status: 'online' }, recentErrors: [] } })
+  }
   if (pathname === '/api/access-logs') {
     await logsGate
-    return route.fulfill({ json: { results: [], errorCount: 0, since: '2026-09-21T00:00:00.000Z' } })
+    return route.fulfill({ json: { results: state.accessLogs, errorCount: 0, since: '2026-09-21T00:00:00.000Z' } })
   }
   if (state.failData && ['/api/servers', '/api/plugins', '/api/domains'].includes(pathname)) {
     return route.fulfill({ status: 500, json: { error: 'smoke failure' } })
@@ -76,8 +98,9 @@ async function handleApi(route: Route, state: WorkerMock, logsGate: Promise<void
     case '/api/overview':
       return route.fulfill({ json: overview })
     case '/api/servers':
+      return route.fulfill({ json: { results: state.servers } })
     case '/api/audit':
-      return route.fulfill({ json: { results: [] } })
+      return route.fulfill({ json: { results: state.audits } })
     case '/api/plugins':
       return route.fulfill({ json: { results: state.plugins } })
     case '/api/domains':
@@ -85,7 +108,7 @@ async function handleApi(route: Route, state: WorkerMock, logsGate: Promise<void
     case '/api/usage/cloudflare':
       return route.fulfill({ json: { configured: false } })
     case '/api/usage/local':
-      return route.fulfill({ json: localUsage })
+      return route.fulfill({ json: { ...localUsage, snapshots: state.snapshots } })
     case '/api/settings/platform':
       return route.fulfill({ json: platformSettings })
     case '/api/settings/cloudflare':
@@ -235,4 +258,54 @@ test('管理端从发现态插件提交加载命令', async ({ page }) => {
   await expect(dialog.getByText('加载命令已确认')).toBeVisible()
   await expect(dialog.getByText('插件当前状态：loaded')).toBeVisible()
   expect(worker.commandRequests).toEqual(['plugin-1:load'])
+})
+
+const onlineServer = { id: 'server-1', name: '本地开发服务器', status: 'online', last_seen_at: '2026-10-21T09:00:00.000Z', created_at: '2026-10-01T00:00:00.000Z' }
+const onlineDomain = { id: 'domain-1', hostname: 'demo.plugins.example.com', status: 'online', plugin_instance_id: 'plugin-1', plugin_name: '示例插件', created_at: '2026-10-02T00:00:00.000Z' }
+const auditEntry = { id: 'audit-1', action: 'plugin.load', detail_json: '{"plugin":"demo"}', created_at: '2026-10-21T08:00:00.000Z', actor_name: '管理员', actor_email: 'admin@example.com' }
+const accessLogEntry = { id: 'log-1', hostname: 'demo.plugins.example.com', method: 'GET', path: '/', status: 200, duration_ms: 18, error: null, created_at: '2026-10-21T08:30:00.000Z' }
+const trendSnapshots = [
+  { captured_at: '2026-10-19T00:00:00.000Z', request_count: 300, active_connections: 2, r2_bytes: 0, r2_objects: 0 },
+  { captured_at: '2026-10-20T00:00:00.000Z', request_count: 600, active_connections: 3, r2_bytes: 0, r2_objects: 0 },
+  { captured_at: '2026-10-21T00:00:00.000Z', request_count: 1200, active_connections: 4, r2_bytes: 2048, r2_objects: 2 },
+]
+
+test('管理端窄窗口下表格、图表和详情弹窗可用', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  const worker = await mockWorker(page)
+  worker.servers = [onlineServer]
+  worker.plugins = [enabledPlugin]
+  worker.domains = [onlineDomain]
+  worker.audits = [auditEntry]
+  worker.accessLogs = [accessLogEntry]
+  worker.snapshots = trendSnapshots
+  await page.goto('/')
+  worker.releaseLogs()
+
+  await expect(page.getByRole('img', { name: '7d 平台请求计数趋势' })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
+
+  const pages = [
+    { nav: '插件服务器', row: '本地开发服务器' },
+    { nav: '插件实例', row: '示例插件' },
+    { nav: '公开域名', row: 'demo.plugins.example.com' },
+    { nav: '访问日志', row: 'demo.plugins.example.com' },
+    { nav: '审计日志', row: '加载插件' },
+  ]
+  for (const entry of pages) {
+    await page.getByRole('button', { name: '打开导航' }).click()
+    await page.getByRole('button', { name: entry.nav, exact: true }).click()
+    await expect(page.getByText(entry.row).first()).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
+  }
+
+  await page.getByRole('button', { name: '打开导航' }).click()
+  await page.getByRole('button', { name: '插件实例', exact: true }).click()
+  await page.getByRole('button', { name: '查看 示例插件 详情' }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toBeVisible()
+  const box = await dialog.boundingBox()
+  expect(box!.width).toBeLessThanOrEqual(390)
+  await expect(dialog.getByText('暂无 500 以上访问错误。').first()).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
 })
