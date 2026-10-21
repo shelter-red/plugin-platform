@@ -120,14 +120,18 @@ int main(int argc, char** argv) {
         ++list_response_count;
         const auto manifests = frame.payload.value("manifests", plugmesh::Json::array());
         bool sample_found = false;
+        bool cancellable_found = false;
         if (manifests.is_array()) {
           for (const auto& manifest : manifests) {
             if (manifest.value("id", "") == "sample.plugin") {
               sample_found = manifest.value("state", "") == "enabled" && manifest.value("healthPath", "") == "/health";
             }
+            if (manifest.value("id", "") == "cancellable.plugin") {
+              cancellable_found = manifest.value("abiVersion", "") == "4";
+            }
           }
         }
-        list_payload_valid = frame.payload.value("action", "") == "list" && frame.payload.value("ok", false) && manifests.is_array() && manifests.size() == 3 && sample_found;
+        list_payload_valid = frame.payload.value("action", "") == "list" && frame.payload.value("ok", false) && manifests.is_array() && manifests.size() == 4 && sample_found && cancellable_found;
       }
       condition.notify_all();
       return;

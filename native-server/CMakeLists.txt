@@ -69,6 +69,11 @@ add_custom_command(TARGET plugmesh-crashing-sample POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/plugins/crashing.plugin"
   COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:plugmesh-crashing-sample>" "${CMAKE_CURRENT_BINARY_DIR}/plugins/crashing.plugin/$<TARGET_FILE_NAME:plugmesh-crashing-sample>"
 )
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/plugins/cancellable.plugin/manifest.json" CONTENT "{\n  \"id\": \"cancellable.plugin\",\n  \"name\": \"Cancellable Plugin\",\n  \"version\": \"0.1.0\",\n  \"abiVersion\": \"4\",\n  \"library\": \"$<TARGET_FILE_NAME:plugmesh-cancellable-sample>\",\n  \"capabilities\": {\"http\": true, \"websocket\": true, \"sse\": true, \"fileStream\": true},\n  \"permissions\": [],\n  \"healthPath\": \"/health\"\n}\n")
+add_custom_command(TARGET plugmesh-cancellable-sample POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/plugins/cancellable.plugin"
+  COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:plugmesh-cancellable-sample>" "${CMAKE_CURRENT_BINARY_DIR}/plugins/cancellable.plugin/$<TARGET_FILE_NAME:plugmesh-cancellable-sample>"
+)
 
 add_executable(plugmesh-plugin-host src/plugin_host_main.cpp)
 target_link_libraries(plugmesh-plugin-host PRIVATE plugmesh_core)
