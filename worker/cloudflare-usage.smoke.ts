@@ -33,6 +33,8 @@ const originalFetch = globalThis.fetch
 globalThis.fetch = async (_input, init) => {
   const body = JSON.parse(String(init?.body)) as { query?: string }
   if (body.query?.includes('ResourceUsage')) {
+    assert.match(body.query, /\$accountTag: String!/)
+    assert.doesNotMatch(body.query, /\$accountTag: string!/)
     return Response.json({ data: { viewer: { accounts: [{
       d1AnalyticsAdaptiveGroups: [{ sum: { readQueries: 10, writeQueries: 4, rowsRead: 20, rowsWritten: 5 } }],
       kvOperationsAdaptiveGroups: [
