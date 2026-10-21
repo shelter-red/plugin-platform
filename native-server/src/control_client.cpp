@@ -93,6 +93,41 @@ bool ControlClient::run(std::string& error) {
 
 void ControlClient::stop() {
   if (stopping_.exchange(true)) return;
+  std::vector<std::shared_ptr<SseWorker>> workers;
+  {
+    std::lock_guard lock(sse_workers_mutex_);
+    workers.reserve(sse_workers_.size());
+    for (const auto& [stream_id, worker] : sse_workers_) {
+      (void)stream_id;
+      worker->cancel_requested.store(true, std::memory_order_release);
+      try {
+        worker->gate->set_value();
+      } catch (const std::future_error&) {
+        // The request thread already passed the start gate.
+      }
+      workers.push_back(worker);
+    }
+  }
+  const auto cancel_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+  bool pending = !workers.empty();
+  while (pending && std::chrono::steady_clock::now() < cancel_deadline) {
+    pending = false;
+    for (const auto& worker : workers) {
+      if (worker->done.load(std::memory_order_acquire)) continue;
+      pending = true;
+      std::string ignored;
+      plugins_.cancel_sse(worker->plugin_id, worker->stream_id, "Control client stopped", ignored);
+    }
+    if (pending) std::this_thread::sleep_for(std::chrono::milliseconds(2));
+  }
+  {
+    std::lock_guard lock(sse_workers_mutex_);
+    for (auto& [stream_id, worker] : sse_workers_) {
+      (void)stream_id;
+      if (worker->thread.joinable()) worker->thread.join();
+    }
+    sse_workers_.clear();
+  }
   auto& service = secure_ ? tls_client_.get_io_service() : plain_client_.get_io_service();
   service.post([this] {
     if (heartbeat_timer_) heartbeat_timer_->cancel();
@@ -237,8 +272,9 @@ void ControlClient::handle_frame(const ControlFrame& frame) {
     handle_websocket_chunk(frame);
     return;
   }
-  if (frame.type == "stream.close" && frame.payload.contains("connectionId")) {
-    handle_websocket_close(frame);
+  if (frame.type == "stream.close") {
+    if (frame.payload.contains("connectionId")) handle_websocket_close(frame);
+    else if (frame.payload.contains("streamId")) handle_sse_cancel(frame);
   }
 }
 
@@ -329,22 +365,123 @@ void ControlClient::handle_http_request(const ControlFrame& frame) {
 }
 
 void ControlClient::handle_sse_request(const ControlFrame& frame) {
+  reap_completed_sse_workers();
   const auto id = plugin_id(frame);
   const auto stream_id = text(frame.payload, "streamId");
+  if (stream_id.empty()) {
+    send_request_error(frame, "invalid SSE stream");
+    return;
+  }
+  {
+    std::lock_guard lock(sse_workers_mutex_);
+    if (stopping_ || sse_workers_.find(stream_id) != sse_workers_.end()) {
+      send_request_error(frame, stopping_ ? "control client is stopping" : "SSE stream is already active: " + stream_id);
+      return;
+    }
+  }
+
   const auto method = text(frame.payload, "method");
   const auto path = text(frame.payload, "path");
   const auto headers = frame.payload.value("headers", Json::object()).dump();
   const auto encoded_body = text(frame.payload, "body");
   const auto body = text(frame.payload, "bodyEncoding") == "base64" ? websocketpp::base64_decode(encoded_body) : encoded_body;
-  plugmesh_http_request request{method.c_str(), path.c_str(), headers.c_str(), reinterpret_cast<const uint8_t*>(body.data()), body.size()};
-  std::string error;
-  if (stream_id.empty() || !plugins_.sse(id, stream_id, request, error)) {
-    send_request_error(frame, error.empty() ? "invalid SSE stream" : error);
+  auto worker = std::make_shared<SseWorker>();
+  worker->plugin_id = id;
+  worker->stream_id = stream_id;
+  auto gate = worker->gate->get_future().share();
+  worker->thread = std::thread([this, worker, gate, id, stream_id, method = std::move(method), path = std::move(path), headers = std::move(headers), body = std::move(body), request = frame]() mutable {
+    gate.wait();
+    if (worker->cancel_requested.load(std::memory_order_acquire) || stopping_) {
+      worker->done.store(true, std::memory_order_release);
+      return;
+    }
+    plugmesh_http_request plugin_request{method.c_str(), path.c_str(), headers.c_str(), reinterpret_cast<const uint8_t*>(body.data()), body.size()};
+    std::string error;
+    const bool ok = plugins_.sse(id, stream_id, plugin_request, error);
+    worker->done.store(true, std::memory_order_release);
+    if (!ok && !worker->cancel_requested.load(std::memory_order_acquire) && !stopping_) {
+      auto& service = secure_ ? tls_client_.get_io_service() : plain_client_.get_io_service();
+      service.post([this, request = std::move(request), error = std::move(error)]() mutable {
+        if (!stopping_) send_sse_error(request, error.empty() ? "plugin SSE request failed" : error);
+      });
+    }
+  });
+  bool registered = false;
+  {
+    std::lock_guard lock(sse_workers_mutex_);
+    if (stopping_ || sse_workers_.find(stream_id) != sse_workers_.end()) {
+      worker->cancel_requested.store(true, std::memory_order_release);
+    } else {
+      sse_workers_.emplace(stream_id, worker);
+      registered = true;
+    }
+  }
+  if (!registered) {
+    try {
+      worker->gate->set_value();
+    } catch (const std::future_error&) {
+      // stop() may release the gate while this handler is finishing.
+    }
+    if (worker->thread.joinable()) worker->thread.join();
     return;
   }
   auto opened = make_control_frame("request.open", config_.server_id, {{"status", 200}, {"headers", {{"content-type", "text/event-stream; charset=utf-8"}, {"cache-control", "no-cache"}}}}, id);
   opened.request_id = frame.request_id;
   send_frame(std::move(opened));
+  try {
+    worker->gate->set_value();
+  } catch (const std::future_error&) {
+    // stop() may release the gate while this handler is finishing.
+  }
+}
+
+void ControlClient::handle_sse_cancel(const ControlFrame& frame) {
+  const auto id = plugin_id(frame);
+  const auto stream_id = text(frame.payload, "streamId");
+  const auto reason = text(frame.payload, "reason");
+  if (stream_id.empty()) {
+    send_error(frame, "SSE stream id is empty");
+    return;
+  }
+  {
+    std::lock_guard lock(sse_workers_mutex_);
+    const auto iterator = sse_workers_.find(stream_id);
+    if (iterator == sse_workers_.end()) {
+      send_error(frame, "SSE stream is not active: " + stream_id);
+      return;
+    }
+    iterator->second->cancel_requested.store(true, std::memory_order_release);
+  }
+  std::string error;
+  if (!plugins_.cancel_sse(id, stream_id, reason, error)) send_error(frame, error.empty() ? "SSE cancellation failed" : error);
+}
+
+void ControlClient::send_sse_error(const ControlFrame& request, const std::string& message) {
+  const auto id = plugin_id(request);
+  auto chunk = make_control_frame("stream.chunk", config_.server_id, {{"data", Json{{"error", message}}.dump()}, {"encoding", "text"}}, id);
+  chunk.request_id = request.request_id;
+  send_frame(std::move(chunk));
+  auto closed = make_control_frame("stream.close", config_.server_id, {{"status", 502}, {"reason", "Plugin SSE request failed"}}, id);
+  closed.request_id = request.request_id;
+  send_frame(std::move(closed));
+}
+
+void ControlClient::reap_completed_sse_workers() {
+  std::vector<std::thread> completed;
+  {
+    std::lock_guard lock(sse_workers_mutex_);
+    for (auto iterator = sse_workers_.begin(); iterator != sse_workers_.end();) {
+      if (!iterator->second->done.load(std::memory_order_acquire)) {
+        ++iterator;
+        continue;
+      }
+      completed.push_back(std::move(iterator->second->thread));
+      iterator = sse_workers_.erase(iterator);
+    }
+  }
+  for (auto& thread : completed) {
+    if (thread.joinable()) thread.join();
+  }
 }
 
 void ControlClient::handle_websocket_open(const ControlFrame& frame) {

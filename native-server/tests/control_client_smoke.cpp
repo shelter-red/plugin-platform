@@ -43,9 +43,13 @@ int main(int argc, char** argv) {
   bool http_payload_valid = false;
   bool stream_payload_valid = false;
   bool file_payload_valid = false;
+  bool cancellable_stream_payload_valid = false;
+  bool cancellable_health_valid = false;
+  int cancellable_health_response_count = 0;
   std::vector<std::string> http_frames;
   std::vector<std::string> stream_frames;
   std::vector<std::string> file_frames;
+  std::vector<std::string> cancellable_frames;
   server.set_validate_handler([&](websocketpp::connection_hdl handle) {
     const auto connection = server.get_con_from_hdl(handle);
     std::lock_guard lock(mutex);
@@ -133,6 +137,10 @@ int main(int argc, char** argv) {
         }
         list_payload_valid = frame.payload.value("action", "") == "list" && frame.payload.value("ok", false) && manifests.is_array() && manifests.size() == 4 && sample_found && cancellable_found;
       }
+      if (frame.request_id == "cancel-health") {
+        ++cancellable_health_response_count;
+        cancellable_health_valid = frame.plugin_id == "cancellable.plugin" && frame.payload.value("action", "") == "health" && frame.payload.value("ok", false) && frame.payload.value("status", 0) == 200;
+      }
       condition.notify_all();
       return;
     }
@@ -170,14 +178,39 @@ int main(int argc, char** argv) {
       condition.notify_all();
       return;
     }
-    if (frame.request_id != "file-1" || (frame.type != "request.open" && frame.type != "stream.chunk" && frame.type != "stream.close")) return;
-    {
+    if (frame.request_id == "file-1" && (frame.type == "request.open" || frame.type == "stream.chunk" || frame.type == "stream.close")) {
       std::lock_guard lock(mutex);
       file_frames.push_back(frame.type);
       if (frame.type == "request.open") {
         file_payload_valid = frame.payload.value("status", 0) == 200 && frame.payload.value("fileStream", false);
       } else if (frame.type == "stream.chunk") {
         file_payload_valid = file_payload_valid && websocketpp::base64_decode(frame.payload.value("data", "")) == "sample-file-stream";
+      } else if (frame.type == "stream.close") {
+        auto request = plugmesh::make_control_frame("stream.open", "server-1", {{"streamId", "cancel-sse"}, {"method", "GET"}, {"path", "/cancel-events"}, {"headers", plugmesh::Json::object()}, {"body", ""}, {"bodyEncoding", "base64"}}, "cancellable.plugin");
+        request.request_id = "cancel-sse";
+        websocketpp::lib::error_code send_error;
+        server.send(handle, plugmesh::serialize_control_frame(request), websocketpp::frame::opcode::text, send_error);
+      }
+      condition.notify_all();
+      return;
+    }
+    if (frame.request_id != "cancel-sse" || (frame.type != "request.open" && frame.type != "stream.chunk" && frame.type != "stream.close")) return;
+    {
+      std::lock_guard lock(mutex);
+      cancellable_frames.push_back(frame.type);
+      if (frame.type == "request.open") {
+        cancellable_stream_payload_valid = frame.plugin_id == "cancellable.plugin" && frame.payload.value("status", 0) == 200 && frame.payload.value("headers", plugmesh::Json::object()).value("content-type", "") == "text/event-stream; charset=utf-8";
+        auto close = plugmesh::make_control_frame("stream.close", "server-1", {{"streamId", "cancel-sse"}, {"reason", "Client disconnected"}}, "cancellable.plugin");
+        close.request_id = "cancel-sse";
+        websocketpp::lib::error_code send_error;
+        server.send(handle, plugmesh::serialize_control_frame(close), websocketpp::frame::opcode::text, send_error);
+      } else if (frame.type == "stream.chunk") {
+        cancellable_stream_payload_valid = cancellable_stream_payload_valid && websocketpp::base64_decode(frame.payload.value("data", "")) == "data: cancelled\n\n";
+      } else if (frame.type == "stream.close") {
+        auto health = plugmesh::make_control_frame("plugin.health", "server-1", plugmesh::Json::object(), "cancellable.plugin");
+        health.request_id = "cancel-health";
+        websocketpp::lib::error_code send_error;
+        server.send(handle, plugmesh::serialize_control_frame(health), websocketpp::frame::opcode::text, send_error);
       }
     }
     condition.notify_all();
@@ -202,7 +235,7 @@ int main(int argc, char** argv) {
   plugmesh::PluginManager plugins;
   plugins.set_host_executable(argv[1]);
   std::string plugin_error;
-  if (!plugins.discover(argv[2], plugin_error) || !plugins.enable("sample.plugin", plugin_error)) {
+  if (!plugins.discover(argv[2], plugin_error) || !plugins.enable("sample.plugin", plugin_error) || !plugins.enable("cancellable.plugin", plugin_error)) {
     server.get_io_service().post([&] { server.stop(); });
     if (server_thread.joinable()) server_thread.join();
     std::cerr << "control test plugin setup failed: " << plugin_error << '\n';
@@ -216,14 +249,14 @@ int main(int argc, char** argv) {
   bool completed = false;
   {
     std::unique_lock lock(mutex);
-    completed = condition.wait_for(lock, std::chrono::seconds(8), [&] { return registration_count >= 3 && sync_result_checked && sync_context_count == 1 && sync_result_count == 0 && file_frames.size() >= 3 && file_frames.back() == "stream.close"; });
+    completed = condition.wait_for(lock, std::chrono::seconds(8), [&] { return registration_count >= 3 && sync_result_checked && sync_context_count == 1 && sync_result_count == 0 && file_frames.size() >= 3 && file_frames.back() == "stream.close" && cancellable_frames.size() >= 3 && cancellable_frames.back() == "stream.close" && cancellable_health_response_count == 1 && cancellable_health_valid; });
   }
   client.stop();
   if (client_thread.joinable()) client_thread.join();
   server.get_io_service().post([&] { server.stop(); });
   if (server_thread.joinable()) server_thread.join();
 
-  if (!completed || !requests_valid || validated_connections < 2 || registration_count < 3 || sync_context_count != 1 || !sync_result_checked || sync_result_count != 0 || health_response_count != 1 || stale_response_count != 0 || list_response_count != 1 || !list_payload_valid || !http_payload_valid || http_frames != std::vector<std::string>{"request.open", "request.chunk", "request.close"} || !stream_payload_valid || stream_frames != std::vector<std::string>{"request.open", "stream.chunk", "stream.close"} || !file_payload_valid || file_frames != std::vector<std::string>{"request.open", "stream.chunk", "stream.close"} || !client_result) {
+  if (!completed || !requests_valid || validated_connections < 2 || registration_count < 3 || sync_context_count != 1 || !sync_result_checked || sync_result_count != 0 || health_response_count != 1 || stale_response_count != 0 || list_response_count != 1 || !list_payload_valid || !http_payload_valid || http_frames != std::vector<std::string>{"request.open", "request.chunk", "request.close"} || !stream_payload_valid || stream_frames != std::vector<std::string>{"request.open", "stream.chunk", "stream.close"} || !file_payload_valid || file_frames != std::vector<std::string>{"request.open", "stream.chunk", "stream.close"} || !cancellable_stream_payload_valid || cancellable_frames != std::vector<std::string>{"request.open", "stream.chunk", "stream.close"} || cancellable_health_response_count != 1 || !cancellable_health_valid || !client_result) {
     std::cerr << "plain control client reconnect smoke failed: " << client_error
               << " completed=" << completed
               << " requests_valid=" << requests_valid
@@ -238,6 +271,8 @@ int main(int argc, char** argv) {
               << " http=" << http_payload_valid << '/' << http_frames.size()
               << " stream=" << stream_payload_valid << '/' << stream_frames.size()
               << " file=" << file_payload_valid << '/' << file_frames.size()
+              << " cancellable=" << cancellable_stream_payload_valid << '/' << cancellable_frames.size()
+              << " cancel_health=" << cancellable_health_valid << '/' << cancellable_health_response_count
               << " client=" << client_result << '\n';
     return 1;
   }

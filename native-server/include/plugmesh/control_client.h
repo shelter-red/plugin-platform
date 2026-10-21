@@ -6,10 +6,13 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <future>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
+#include <unordered_map>
 
 #include <websocketpp/client.hpp>
 #include <websocketpp/config/asio_client.hpp>
@@ -46,6 +49,9 @@ class ControlClient {
   void handle_plugin_command(const ControlFrame& frame);
   void handle_http_request(const ControlFrame& frame);
   void handle_sse_request(const ControlFrame& frame);
+  void handle_sse_cancel(const ControlFrame& frame);
+  void send_sse_error(const ControlFrame& request, const std::string& message);
+  void reap_completed_sse_workers();
   void handle_websocket_open(const ControlFrame& frame);
   void handle_websocket_chunk(const ControlFrame& frame);
   void handle_websocket_close(const ControlFrame& frame);
@@ -58,6 +64,15 @@ class ControlClient {
   bool request_binding_action(const std::string& type, std::string& access_token, std::string& error);
   void update_access_token(std::string access_token);
   std::string endpoint() const;
+
+  struct SseWorker {
+    std::thread thread;
+    std::shared_ptr<std::promise<void>> gate = std::make_shared<std::promise<void>>();
+    std::string plugin_id;
+    std::string stream_id;
+    std::atomic<bool> done{false};
+    std::atomic<bool> cancel_requested{false};
+  };
 
   struct BindingActionResult {
     bool ok = false;
@@ -80,6 +95,8 @@ class ControlClient {
   std::mutex binding_action_mutex_;
   std::condition_variable binding_action_cv_;
   std::map<std::string, BindingActionResult> binding_actions_;
+  std::mutex sse_workers_mutex_;
+  std::unordered_map<std::string, std::shared_ptr<SseWorker>> sse_workers_;
 };
 
 }  // namespace plugmesh
