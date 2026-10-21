@@ -268,12 +268,12 @@ function App() {
   const refreshData = async (notify = true) => {
     setDataLoading(true)
     try {
-      const [nextOverview, nextServers, nextPlugins, nextDomains, nextLocalUsage] = await Promise.all([fetchOverview(), fetchServers(), fetchPlugins(), fetchDomains(), fetchLocalUsage(range)])
+      const [nextOverview, nextServers, nextPlugins, nextDomains, nextLocalUsage] = await Promise.all([fetchOverview(), fetchServers(), fetchPlugins(), fetchDomains(), fetchLocalUsage(range).catch(() => null)])
       setOverview(nextOverview)
       setServers(nextServers)
       setPlugins(nextPlugins)
       setDomains(nextDomains)
-      setLocalUsage(nextLocalUsage)
+      if (nextLocalUsage) setLocalUsage(nextLocalUsage)
       setApiLive(true)
       setDataError(null)
       if (notify) showToast('平台数据已刷新')
