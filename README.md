@@ -44,6 +44,8 @@ npm run build
 npm run ui:smoke
 npm run native-ui:smoke
 npm run stack:load
+npm run stack:maintenance   # 需先启动 docs/local-e2e.md 中的本地真实栈
+PLUGMESH_E2E_CONTAINER=plugmesh-e2e npm run stack:restart
 npm run worker:typecheck
 npm run worker:smoke
 npm run worker:runtime-test
