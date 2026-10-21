@@ -104,6 +104,23 @@ test('管理 API 生成的注册码只能兑换一次并绑定到当前用户', 
   expect(server?.token_hash).toBe(await hashToken(binding.accessToken))
 })
 
+test('未知插件动作直接返回 404，不进入 Durable Object 命令队列', { timeout: 20_000 }, async () => {
+  await seedServer()
+  await seedMemberSession()
+  const { socket } = await openControl()
+
+  const response = await api('/api/plugins/plugin-runtime/explode', MEMBER_TOKEN, {
+    method: 'POST',
+    signal: AbortSignal.timeout(2_000),
+  })
+  expect(response.status).toBe(404)
+  expect(await response.json()).toEqual({ error: 'Not found' })
+
+  const audit = await testEnv.DB.prepare("SELECT COUNT(*) AS count FROM audit_log WHERE action LIKE 'plugin.%'").first<{ count: number }>()
+  expect(audit?.count).toBe(0)
+  socket.close(1000, 'test complete')
+})
+
 test('域名分配校验前缀、插件状态、服务器在线与健康检查', { timeout: 30_000 }, async () => {
   await seedServer()
   await seedAdmin()
