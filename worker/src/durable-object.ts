@@ -361,6 +361,7 @@ export class PluginBridge {
 
   private async handleServerBindingAction(frame: ControlFrame) {
     try {
+      const owner = await this.env.DB.prepare('SELECT user_id FROM servers WHERE id = ?').bind(this.serverId).first<{ user_id: string }>()
       if (frame.type === 'server.rotate') {
         const accessToken = crypto.randomUUID() + crypto.randomUUID()
         const updated = await this.env.DB.prepare('UPDATE servers SET token_hash = ?, status = ?, last_seen_at = ? WHERE id = ? AND status != ?').bind(await hashControlToken(accessToken), 'online', new Date().toISOString(), this.serverId, 'revoked').run()
@@ -368,6 +369,7 @@ export class PluginBridge {
           this.sendServerActionError(frame.requestId, 'Server binding is revoked or unavailable')
           return
         }
+        if (owner) await this.recordBindingAudit(owner.user_id, 'server.rotated')
         const result = makeFrame('server.result', this.serverId, { ok: true, action: 'rotate', accessToken })
         result.requestId = frame.requestId
         this.serverSocket?.send(JSON.stringify(result))
@@ -382,6 +384,7 @@ export class PluginBridge {
         this.sendServerActionError(frame.requestId, 'Server binding is already revoked or unavailable')
         return
       }
+      if (owner) await this.recordBindingAudit(owner.user_id, 'server.revoked')
       const result = makeFrame('server.result', this.serverId, { ok: true, action: 'revoke' })
       result.requestId = frame.requestId
       this.serverSocket?.send(JSON.stringify(result))
@@ -389,6 +392,12 @@ export class PluginBridge {
     } catch {
       this.sendServerActionError(frame.requestId, 'Server binding action failed')
     }
+  }
+
+  // 轮换与撤销会改变长期密钥和绑定关系，必须写入审计；详情只记服务器 ID，不落令牌。
+  private async recordBindingAudit(userId: string, action: 'server.rotated' | 'server.revoked') {
+    await this.env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)')
+      .bind(crypto.randomUUID(), userId, action, JSON.stringify({ serverId: this.serverId }), new Date().toISOString()).run()
   }
 
   private sendServerActionError(requestId: string, message: string) {

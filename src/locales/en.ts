@@ -275,6 +275,8 @@ export default {
   auditActions: {
     'invite.created': 'Created platform invite',
     'server.registration_code.created': 'Generated server registration code',
+    'server.rotated': 'Rotate server key',
+    'server.revoked': 'Revoke server binding',
     'server.registered': 'Plugin server registered',
     'server.manifest_sync.requested': 'Requested plugin manifest sync',
     'cloudflare.oauth.connected': 'Completed Cloudflare authorization',
