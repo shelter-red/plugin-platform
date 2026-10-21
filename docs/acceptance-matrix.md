@@ -122,7 +122,7 @@ PLUGMESH_MULTI_ISOLATE_A_URL=http://127.0.0.1:18888 \
 
 ## 生产发布阻塞项
 
-1. 使用生产 Cloudflare API Token 首次执行 `npm run deploy:worker`，创建或复用真实 D1/R2、应用 7 个 migrations、写入基础设施 Secret 并发布 Worker；尚未执行（当前环境无生产 Cloudflare 凭据）。本地已在全新 `--persist-to` 目录成功重放全部 7 个 migrations（0001–0007，2026-10-22）；此前还用全新本地 D1 启动独立 `wrangler dev`（端口 18990）验证空库初始化：`/api/health` 200、`/api/me` 返回 seed 的 `super_admin`、`/api/servers` 只含 seed 的离线服务器、控制台根路径 200、seed 域名因服务器离线返回 503 维护页。
+1. 使用生产 Cloudflare API Token 首次执行 `npm run deploy:worker`，创建或复用真实 D1/R2、应用 7 个 migrations、写入基础设施 Secret 并发布 Worker；尚未执行（当前环境无生产 Cloudflare 凭据）。本地已在全新 `--persist-to` 目录成功重放全部 7 个 migrations（0001–0007，2026-10-22）。迁移只创建表与索引，不写入用户、服务器或域名种子数据；全新库的首个超级管理员必须通过 `/setup` 配置 GitHub OAuth 后由真实登录创建，服务器和插件实例则通过注册码绑定与插件发现产生。`worker:runtime-test` 的 `setup.test.ts` 已覆盖空库 `/setup`、错误令牌拒绝、配置加密保存，以及首个白名单账号成为 `super_admin` 后初始化入口永久关闭。
 2. 自定义控制台域名和插件通配域名是可选增强：需要时按实际域名一次性配置 DNS、Worker routes 并验证证书，然后在后台保存插件域名后缀；默认 `workers.dev` 地址可先完成初始化和后台管理。
 3. 通过 `/setup` 配置 GitHub OAuth App 和首个超级管理员白名单，登录后在后台配置 Cloudflare OAuth，并执行真实 GitHub 登录/Cloudflare 授权。`SESSION_SECRET`、`SETUP_TOKEN` 由一键部署脚本首次自动生成且不应轮换，不再作为人工部署配置项。
 4. 在管理后台配置真实 SMTP，验证邀请、测试邮件、维护通知、重试和退信处理。
