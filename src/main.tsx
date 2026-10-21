@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { createRoot } from 'react-dom/client'
 import {
   Activity,
   AlertCircle,
@@ -832,3 +833,5 @@ function Modal({ type, plugins, onClose, onConfirm }: { type: 'server' | 'domain
 }
 
 export default App
+
+createRoot(document.getElementById('root')!).render(<App />)
