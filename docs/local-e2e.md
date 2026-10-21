@@ -292,7 +292,7 @@ npm run stack:multi-isolate
 ## 清理
 
 ```bash
-docker rm -f plugmesh-e2e
+docker rm -f plugmesh-e2e plugmesh-e2e-b
 pkill -f 'build/plugmesh[-]server'
 ```
 
