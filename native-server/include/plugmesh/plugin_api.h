@@ -9,6 +9,7 @@
 #endif
 
 #define PLUGMESH_PLUGIN_ABI_VERSION 2u
+#define PLUGMESH_PLUGIN_ABI_VERSION_V3 3u
 
 #ifdef __cplusplus
 extern "C" {
@@ -56,6 +57,14 @@ typedef struct plugmesh_plugin_api_v2 {
 } plugmesh_plugin_api_v2;
 
 typedef const plugmesh_plugin_api_v2* (*plugmesh_plugin_get_api_v2_fn)();
+
+typedef struct plugmesh_plugin_api_v3 {
+  plugmesh_plugin_api_v2 base;
+  int (*handle_websocket_open)(const char* connection_id, const char* path, const char* headers_json);
+  int (*handle_websocket_close)(const char* connection_id, uint16_t code, const char* reason);
+} plugmesh_plugin_api_v3;
+
+typedef const plugmesh_plugin_api_v3* (*plugmesh_plugin_get_api_v3_fn)();
 
 #ifdef __cplusplus
 }

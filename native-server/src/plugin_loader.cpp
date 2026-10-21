@@ -18,7 +18,8 @@ bool PluginLoader::load(const std::filesystem::path& library_path, std::string& 
     error = "LoadLibraryW failed";
     return false;
   }
-  auto entry = reinterpret_cast<plugmesh_plugin_get_api_v2_fn>(GetProcAddress(static_cast<HMODULE>(handle_), "plugmesh_plugin_get_api_v2"));
+  auto entry_v3 = reinterpret_cast<plugmesh_plugin_get_api_v3_fn>(GetProcAddress(static_cast<HMODULE>(handle_), "plugmesh_plugin_get_api_v3"));
+  auto entry_v2 = reinterpret_cast<plugmesh_plugin_get_api_v2_fn>(GetProcAddress(static_cast<HMODULE>(handle_), "plugmesh_plugin_get_api_v2"));
 #else
   handle_ = dlopen(library_path.c_str(), RTLD_NOW | RTLD_LOCAL);
   if (!handle_) {
@@ -26,14 +27,25 @@ bool PluginLoader::load(const std::filesystem::path& library_path, std::string& 
     error = detail ? detail : "dlopen failed";
     return false;
   }
-  auto entry = reinterpret_cast<plugmesh_plugin_get_api_v2_fn>(dlsym(handle_, "plugmesh_plugin_get_api_v2"));
+  auto entry_v3 = reinterpret_cast<plugmesh_plugin_get_api_v3_fn>(dlsym(handle_, "plugmesh_plugin_get_api_v3"));
+  auto entry_v2 = reinterpret_cast<plugmesh_plugin_get_api_v2_fn>(dlsym(handle_, "plugmesh_plugin_get_api_v2"));
 #endif
-  if (!entry) {
-    error = "plugmesh_plugin_get_api_v2 was not exported";
+  if (entry_v3) {
+    api_v3_ = entry_v3();
+    api_ = api_v3_ ? &api_v3_->base : nullptr;
+    if (!api_v3_ || api_->abi_version != PLUGMESH_PLUGIN_ABI_VERSION_V3 || !api_->start || !api_->stop || !api_->health || !api_v3_->handle_websocket_open || !api_v3_->handle_websocket_close) {
+      error = "plugin ABI v3 version or required entry points are invalid";
+      unload();
+      return false;
+    }
+    return true;
+  }
+  if (!entry_v2) {
+    error = "plugmesh_plugin_get_api_v2 or plugmesh_plugin_get_api_v3 was not exported";
     unload();
     return false;
   }
-  api_ = entry();
+  api_ = entry_v2();
   if (!api_ || api_->abi_version != PLUGMESH_PLUGIN_ABI_VERSION || !api_->start || !api_->stop || !api_->health) {
     error = "plugin ABI version or required entry points are invalid";
     unload();
@@ -44,6 +56,7 @@ bool PluginLoader::load(const std::filesystem::path& library_path, std::string& 
 
 void PluginLoader::unload() {
   api_ = nullptr;
+  api_v3_ = nullptr;
   if (!handle_) return;
 #ifdef _WIN32
   FreeLibrary(static_cast<HMODULE>(handle_));

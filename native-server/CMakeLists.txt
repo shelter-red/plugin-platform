@@ -28,10 +28,19 @@ target_link_libraries(plugmesh-server PRIVATE plugmesh_core)
 add_library(plugmesh-sample SHARED examples/sample_plugin.cpp)
 target_include_directories(plugmesh-sample PRIVATE include)
 
+add_library(plugmesh-lifecycle-sample SHARED examples/lifecycle_plugin.cpp)
+target_include_directories(plugmesh-lifecycle-sample PRIVATE include)
+
 file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/plugins/sample.plugin/manifest.json" CONTENT "{\n  \"id\": \"sample.plugin\",\n  \"name\": \"Sample Plugin\",\n  \"version\": \"0.1.0\",\n  \"abiVersion\": \"2\",\n  \"library\": \"$<TARGET_FILE_NAME:plugmesh-sample>\",\n  \"capabilities\": {\"http\": true, \"websocket\": true, \"sse\": true, \"fileStream\": true},\n  \"permissions\": [],\n  \"healthPath\": \"/health\"\n}\n")
 add_custom_command(TARGET plugmesh-sample POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/plugins/sample.plugin"
   COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:plugmesh-sample>" "${CMAKE_CURRENT_BINARY_DIR}/plugins/sample.plugin/$<TARGET_FILE_NAME:plugmesh-sample>"
+)
+
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/plugins/lifecycle.plugin/manifest.json" CONTENT "{\n  \"id\": \"lifecycle.plugin\",\n  \"name\": \"Lifecycle Plugin\",\n  \"version\": \"0.1.0\",\n  \"abiVersion\": \"3\",\n  \"library\": \"$<TARGET_FILE_NAME:plugmesh-lifecycle-sample>\",\n  \"capabilities\": {\"http\": true, \"websocket\": true, \"sse\": false, \"fileStream\": false},\n  \"permissions\": [],\n  \"healthPath\": \"/health\"\n}\n")
+add_custom_command(TARGET plugmesh-lifecycle-sample POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/plugins/lifecycle.plugin"
+  COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:plugmesh-lifecycle-sample>" "${CMAKE_CURRENT_BINARY_DIR}/plugins/lifecycle.plugin/$<TARGET_FILE_NAME:plugmesh-lifecycle-sample>"
 )
 
 add_executable(plugmesh-plugin-loader-smoke tests/plugin_loader_smoke.cpp)
@@ -39,6 +48,9 @@ target_link_libraries(plugmesh-plugin-loader-smoke PRIVATE plugmesh_core)
 
 add_executable(plugmesh-plugin-manager-smoke tests/plugin_manager_smoke.cpp)
 target_link_libraries(plugmesh-plugin-manager-smoke PRIVATE plugmesh_core)
+
+add_executable(plugmesh-plugin-websocket-lifecycle-smoke tests/plugin_websocket_lifecycle_smoke.cpp)
+target_link_libraries(plugmesh-plugin-websocket-lifecycle-smoke PRIVATE plugmesh_core)
 
 add_executable(plugmesh-control-protocol-smoke tests/control_protocol_smoke.cpp)
 target_link_libraries(plugmesh-control-protocol-smoke PRIVATE plugmesh_core)

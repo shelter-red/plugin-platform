@@ -179,13 +179,13 @@ export class PluginBridge {
         socket.close(1011, 'Plugin server unavailable')
       }
     })
-    socket.addEventListener('close', () => {
+    socket.addEventListener('close', (event) => {
       if (this.publicSockets.get(connectionId) !== socket) return
       this.publicSockets.delete(connectionId)
       if (this.reservedPublicConnections.delete(connectionId)) void releaseActiveConnection(this.env)
       if (this.serverSocket?.readyState === WebSocket.OPEN) {
         try {
-          this.serverSocket.send(JSON.stringify(makeFrame('stream.close', this.serverId, { connectionId }, pluginId)))
+          this.serverSocket.send(JSON.stringify(makeFrame('stream.close', this.serverId, { connectionId, code: event.code, reason: event.reason.slice(0, 123) }, pluginId)))
         } catch {
           // The server may disconnect between the readyState check and send.
         }
@@ -333,7 +333,10 @@ export class PluginBridge {
       const connectionId = typeof frame.payload?.connectionId === 'string' ? frame.payload.connectionId : frame.requestId
       const socket = this.publicSockets.get(connectionId)
       if (socket) {
-        socket.close(1000, 'Plugin stream closed')
+        const requestedCode = typeof frame.payload?.code === 'number' && Number.isInteger(frame.payload.code) ? frame.payload.code : 1000
+        const code = requestedCode >= 1000 && requestedCode <= 4999 ? requestedCode : 1000
+        const reason = typeof frame.payload?.reason === 'string' ? frame.payload.reason.slice(0, 123) : 'Plugin stream closed'
+        socket.close(code, reason)
         this.publicSockets.delete(connectionId)
         if (this.reservedPublicConnections.delete(connectionId)) void releaseActiveConnection(this.env)
       } else this.closeResponse(connectionId, frame.payload ?? {})

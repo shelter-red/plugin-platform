@@ -47,7 +47,9 @@ class ControlClient {
   void handle_plugin_command(const ControlFrame& frame);
   void handle_http_request(const ControlFrame& frame);
   void handle_sse_request(const ControlFrame& frame);
+  void handle_websocket_open(const ControlFrame& frame);
   void handle_websocket_chunk(const ControlFrame& frame);
+  void handle_websocket_close(const ControlFrame& frame);
   int write_stream(const char* stream_id, const uint8_t* data, uint64_t size, int finished);
   int open_stream(const char* stream_id, uint16_t status, const char* headers_json);
   void send_frame(ControlFrame frame);

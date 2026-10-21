@@ -207,8 +207,16 @@ void ControlClient::handle_frame(const ControlFrame& frame) {
     handle_sse_request(frame);
     return;
   }
+  if (frame.type == "stream.open" && frame.payload.contains("connectionId")) {
+    handle_websocket_open(frame);
+    return;
+  }
   if (frame.type == "stream.chunk") {
     handle_websocket_chunk(frame);
+    return;
+  }
+  if (frame.type == "stream.close" && frame.payload.contains("connectionId")) {
+    handle_websocket_close(frame);
   }
 }
 
@@ -306,6 +314,15 @@ void ControlClient::handle_sse_request(const ControlFrame& frame) {
   }
 }
 
+void ControlClient::handle_websocket_open(const ControlFrame& frame) {
+  const auto id = plugin_id(frame);
+  const auto connection_id = text(frame.payload, "connectionId");
+  const auto path = text(frame.payload, "path");
+  const auto headers = frame.payload.value("headers", Json::object()).dump();
+  std::string error;
+  if (connection_id.empty() || !plugins_.websocket_open(id, connection_id, path, headers, error)) send_error(frame, error.empty() ? "invalid WebSocket open request" : error);
+}
+
 void ControlClient::handle_websocket_chunk(const ControlFrame& frame) {
   const auto id = plugin_id(frame);
   const auto connection_id = text(frame.payload, "connectionId");
@@ -314,6 +331,25 @@ void ControlClient::handle_websocket_chunk(const ControlFrame& frame) {
   const auto decoded = encoding == "base64" ? websocketpp::base64_decode(data) : data;
   std::string error;
   if (!plugins_.websocket(id, connection_id, reinterpret_cast<const uint8_t*>(decoded.data()), decoded.size(), encoding != "base64", error)) send_error(frame, error);
+}
+
+void ControlClient::handle_websocket_close(const ControlFrame& frame) {
+  const auto id = plugin_id(frame);
+  const auto connection_id = text(frame.payload, "connectionId");
+  uint16_t code = 1000;
+  const auto code_iterator = frame.payload.find("code");
+  if (code_iterator != frame.payload.end() && (code_iterator->is_number_integer() || code_iterator->is_number_unsigned())) {
+    if (code_iterator->is_number_unsigned()) {
+      const auto numeric_code = code_iterator->get<uint64_t>();
+      if (numeric_code >= 1000 && numeric_code <= 4999) code = static_cast<uint16_t>(numeric_code);
+    } else {
+      const auto numeric_code = code_iterator->get<int64_t>();
+      if (numeric_code >= 1000 && numeric_code <= 4999) code = static_cast<uint16_t>(numeric_code);
+    }
+  }
+  const auto reason = text(frame.payload, "reason");
+  std::string error;
+  if (connection_id.empty() || !plugins_.websocket_close(id, connection_id, code, reason, error)) send_error(frame, error.empty() ? "invalid WebSocket close request" : error);
 }
 
 int ControlClient::write_stream(const char* stream_id, const uint8_t* data, uint64_t size, int finished) {

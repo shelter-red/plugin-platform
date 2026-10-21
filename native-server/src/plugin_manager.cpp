@@ -62,7 +62,7 @@ bool read_manifest(const std::filesystem::path& path, Manifest& manifest, std::s
   try {
     const auto value = nlohmann::json::parse(input);
     if (!value.is_object() || !read_string(value, "id", manifest.id, error) || !read_string(value, "name", manifest.name, error) || !read_string(value, "version", manifest.version, error) || !read_string(value, "abiVersion", manifest.abi_version, error) || !read_string(value, "library", manifest.library, error) || !read_string(value, "healthPath", manifest.health_path, error)) return false;
-    if (manifest.abi_version != std::to_string(PLUGMESH_PLUGIN_ABI_VERSION)) {
+    if (manifest.abi_version != std::to_string(PLUGMESH_PLUGIN_ABI_VERSION) && manifest.abi_version != std::to_string(PLUGMESH_PLUGIN_ABI_VERSION_V3)) {
       error = "unsupported manifest ABI version: " + manifest.abi_version;
       return false;
     }
@@ -208,7 +208,7 @@ bool PluginManager::load(const std::string& plugin_id, std::string& error) {
   auto loader = std::make_unique<PluginLoader>();
   if (!loader->load(plugin->library, error)) return set_failed(*plugin, error);
   const auto* api = loader->api();
-  if (!api->plugin_id || !api->plugin_name || !api->plugin_version || plugin->id != api->plugin_id || plugin->name != api->plugin_name || plugin->version != api->plugin_version || (plugin->http && !api->handle_http) || (plugin->websocket && !api->handle_websocket) || (plugin->sse && !api->handle_sse) || (plugin->file_stream && !api->handle_file)) {
+  if (plugin->abi_version != std::to_string(loader->abi_version()) || !api->plugin_id || !api->plugin_name || !api->plugin_version || plugin->id != api->plugin_id || plugin->name != api->plugin_name || plugin->version != api->plugin_version || (plugin->http && !api->handle_http) || (plugin->websocket && !api->handle_websocket) || (plugin->sse && !api->handle_sse) || (plugin->file_stream && !api->handle_file) || (loader->api_v3() && (!loader->api_v3()->handle_websocket_open || !loader->api_v3()->handle_websocket_close))) {
     error = "manifest does not match plugin ABI: " + plugin->id;
     return set_failed(*plugin, error);
   }
@@ -339,6 +339,23 @@ bool PluginManager::file_stream(const std::string& plugin_id, const std::string&
   return true;
 }
 
+bool PluginManager::websocket_open(const std::string& plugin_id, const std::string& connection_id, const std::string& path, const std::string& headers_json, std::string& error) const {
+  std::lock_guard lock(mutex_);
+  const auto* plugin = find(plugin_id);
+  const auto* runtime = loaded(plugin_id);
+  if (!plugin || !plugin->websocket || !runtime || !runtime->loader || plugin->state != PluginState::Enabled || !runtime->loader->api()->handle_websocket) {
+    error = "plugin WebSocket handler is unavailable: " + plugin_id;
+    return false;
+  }
+  const auto* api_v3 = runtime->loader->api_v3();
+  if (!api_v3) return true;
+  if (api_v3->handle_websocket_open(connection_id.c_str(), path.c_str(), headers_json.c_str()) != 0) {
+    error = "plugin WebSocket open handler failed: " + plugin_id;
+    return false;
+  }
+  return true;
+}
+
 bool PluginManager::websocket(const std::string& plugin_id, const std::string& connection_id, const uint8_t* data, uint64_t size, bool is_text, std::string& error) const {
   std::lock_guard lock(mutex_);
   const auto* plugin = find(plugin_id);
@@ -349,6 +366,23 @@ bool PluginManager::websocket(const std::string& plugin_id, const std::string& c
   }
   if (runtime->loader->api()->handle_websocket(connection_id.c_str(), data, size, is_text ? 1 : 0) != 0) {
     error = "plugin WebSocket handler failed: " + plugin_id;
+    return false;
+  }
+  return true;
+}
+
+bool PluginManager::websocket_close(const std::string& plugin_id, const std::string& connection_id, uint16_t code, const std::string& reason, std::string& error) const {
+  std::lock_guard lock(mutex_);
+  const auto* plugin = find(plugin_id);
+  const auto* runtime = loaded(plugin_id);
+  if (!plugin || !plugin->websocket || !runtime || !runtime->loader || plugin->state != PluginState::Enabled || !runtime->loader->api()->handle_websocket) {
+    error = "plugin WebSocket handler is unavailable: " + plugin_id;
+    return false;
+  }
+  const auto* api_v3 = runtime->loader->api_v3();
+  if (!api_v3) return true;
+  if (api_v3->handle_websocket_close(connection_id.c_str(), code, reason.c_str()) != 0) {
+    error = "plugin WebSocket close handler failed: " + plugin_id;
     return false;
   }
   return true;
