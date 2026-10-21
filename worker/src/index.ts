@@ -17,6 +17,7 @@ const json = (value: unknown, status = 200) => new Response(JSON.stringify(value
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url)
+    if (isPluginHostname(url.hostname, env)) return proxyPublicHost(request, env, url, ctx)
     if (url.pathname === '/api/health') return json({ ok: true, service: 'plugmesh-worker', protocolVersion: 1 })
     if (url.pathname === '/auth/github/start') return startGithubAuth(request, env, url)
     if (url.pathname === '/auth/github/callback') return finishGithubAuth(request, env, url)
@@ -934,5 +935,10 @@ function pluginDomainSuffix(env: Env): string {
   const configured = (env.PLUGIN_DOMAIN_SUFFIX ?? '.plugins.example.com').trim().toLowerCase()
   const suffix = configured.startsWith('.') ? configured : `.${configured}`
   return /^\.[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/.test(suffix) && !suffix.includes('..') ? suffix : '.plugins.example.com'
+}
+
+function isPluginHostname(hostname: string, env: Env): boolean {
+  const suffix = pluginDomainSuffix(env)
+  return hostname.endsWith(suffix) && hostname.length > suffix.length
 }
 

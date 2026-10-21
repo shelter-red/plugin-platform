@@ -73,7 +73,7 @@ const ctx = { waitUntil(value: Promise<unknown>) { waits.push(value) } } as unkn
 
 async function fetchPublic(hostname: string, init?: RequestInit): Promise<Response> {
   invalidatePluginRoute(hostname)
-  const request = new Request(`https://${hostname}/items?source=smoke`, init)
+  const request = new Request(`https://${hostname}/api/items?source=smoke`, init)
   return worker.fetch(request, env, ctx)
 }
 
@@ -101,7 +101,7 @@ assert.equal(await response.text(), 'proxied')
 assert.equal(response.headers.get('x-plugin-response'), 'ok')
 assert.equal(bridgeRequests.at(-1)?.headers.get('x-plugmesh-server-id'), 'server-ready')
 assert.equal(bridgeRequests.at(-1)?.headers.get('x-plugmesh-plugin-id'), 'demo.plugin')
-assert.equal(bridgeRequests.at(-1)?.headers.get('x-plugmesh-request-path'), '/items?source=smoke')
+assert.equal(bridgeRequests.at(-1)?.headers.get('x-plugmesh-request-path'), '/api/items?source=smoke')
 assert.equal(bridgeRequests.at(-1)?.headers.get('x-plugmesh-request-mode'), 'http')
 
 response = await fetchPublic('sse.plugins.example.test', { headers: { accept: 'text/event-stream' } })
@@ -118,6 +118,6 @@ assert.equal(bridgeRequests.length, bridgeCountBeforeUnsupported)
 
 await Promise.all(waits)
 assert.deepEqual(accessLogs.map((entry) => entry.status), [201, 200, 501])
-assert.deepEqual(accessLogs.map((entry) => entry.path), ['/items', '/items', '/items'])
+assert.deepEqual(accessLogs.map((entry) => entry.path), ['/api/items', '/api/items', '/api/items'])
 
 console.log('public proxy smoke test passed')
