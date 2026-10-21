@@ -115,6 +115,17 @@ test('管理端在真实 C++ 服务器上加载、启用插件并分配域名', 
     const publicResponse = await getPublic(baseURL!, hostname)
     expect(publicResponse.status).toBe(200)
     expect(publicResponse.body).toBe('ok')
+
+    await page.getByRole('button', { name: '插件实例', exact: true }).click()
+    await pluginRow.getByRole('button', { name: '查看 Sample Plugin 详情' }).click()
+    const lifecycleDialog = page.getByRole('dialog', { name: '插件实例详情' })
+    page.once('dialog', (dialog) => void dialog.accept())
+    await lifecycleDialog.getByRole('button', { name: '卸载', exact: true }).click()
+    await expect(page.getByText('Sample Plugin 已卸载')).toBeVisible()
+    await expect(lifecycleDialog.getByText('已卸载').first()).toBeVisible()
+
+    const suspended = await getPublic(baseURL!, hostname)
+    expect(suspended.status).toBe(503)
   } finally {
     await server.stop()
   }
