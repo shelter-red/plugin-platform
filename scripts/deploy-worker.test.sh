@@ -29,10 +29,24 @@ case "$*" in
   whoami)
     ;;
   'd1 list --json')
-    printf '[{"name":"plugmesh","uuid":"test-database-id"}]\n'
+    if [[ -f "$state/d1-empty" && ! -f "$state/d1-created" ]]; then
+      printf '[]\n'
+    else
+      printf '[{"name":"plugmesh","uuid":"test-database-id"}]\n'
+    fi
+    ;;
+  'd1 create plugmesh')
+    touch "$state/d1-created"
     ;;
   'r2 bucket list')
-    printf 'name\nplugmesh-blobs\n'
+    if [[ -f "$state/r2-empty" && ! -f "$state/r2-created" ]]; then
+      printf 'name\n'
+    else
+      printf 'name\nplugmesh-blobs\n'
+    fi
+    ;;
+  'r2 bucket create plugmesh-blobs')
+    touch "$state/r2-created"
     ;;
   'd1 migrations apply '*)
     ;;
@@ -53,15 +67,21 @@ esac
 FAKE
 chmod +x "$TMP/fake-wrangler"
 
-run_deploy() {
+run_deploy_with_state() {
+  local state=$1
+  shift
   (cd "$TMP" && \
     CLOUDFLARE_API_TOKEN=test-token \
     WRANGLER_BIN="$TMP/fake-wrangler" \
-    FAKE_STATE="$TMP/state" \
+    FAKE_STATE="$state" \
     PATH="$TMP/bin:$PATH" \
     NPM_LOG="$TMP/npm.log" \
     FAKE_ROOT="$TMP" \
     "$@" ./scripts/deploy-worker.sh --skip-build)
+}
+
+run_deploy() {
+  run_deploy_with_state "$TMP/state" "$@"
 }
 
 printf '[]\n' > "$TMP/state/secrets.json"
@@ -84,6 +104,22 @@ printf 'ok：首次部署生成基础设施密钥，且不输出明文\n'
 
 ! grep -Eq 'GITHUB_CLIENT|CLOUDFLARE_OAUTH_CLIENT|SMTP_|PLUGIN_DOMAIN_SUFFIX' "$ROOT/scripts/deploy-worker.sh"
 printf 'ok：部署脚本不读取 OAuth、SMTP 或插件域名后缀业务配置\n'
+
+mkdir -p "$TMP/state-local-fresh"
+cp "$ROOT/wrangler.toml" "$TMP/wrangler.toml"
+printf '[]\n' > "$TMP/state-local-fresh/secrets.json"
+touch "$TMP/state-local-fresh/d1-empty" "$TMP/state-local-fresh/r2-empty"
+fresh_output=$(run_deploy_with_state "$TMP/state-local-fresh" env)
+grep -Fxq 'd1 create plugmesh' "$TMP/state-local-fresh/commands.log"
+grep -Fxq 'r2 bucket create plugmesh-blobs' "$TMP/state-local-fresh/commands.log"
+grep -q 'test-database-id' "$TMP/wrangler.toml"
+migration_line=$(grep -nFx 'd1 migrations apply DB --remote --config wrangler.toml' "$TMP/state-local-fresh/commands.log" | cut -d: -f1)
+deploy_line=$(grep -nFx 'deploy --config wrangler.toml' "$TMP/state-local-fresh/commands.log" | cut -d: -f1)
+[[ $migration_line -lt $deploy_line ]]
+[[ $(grep -cFx 'deploy --config wrangler.toml' "$TMP/state-local-fresh/commands.log") -eq 1 ]]
+[[ "$fresh_output" == *'准备 D1 数据库 plugmesh'* ]]
+[[ "$fresh_output" == *'准备 R2 存储桶 plugmesh-blobs'* ]]
+printf 'ok：本地首次部署自动创建 D1/R2、回填 ID、迁移后发布\n'
 
 printf '[{"name":"SESSION_SECRET"},{"name":"SETUP_TOKEN"}]\n' > "$TMP/state/secrets.json"
 cp "$TMP/state/secret_SESSION_SECRET" "$TMP/session-before"
