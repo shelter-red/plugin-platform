@@ -1,8 +1,8 @@
 # Plugmesh 平台交接（HANDOFF）
 
-> 最后整理：2026-10-23 19:22（Asia/Shanghai）
+> 最后整理：2026-10-23 03:32（Asia/Shanghai）
 > 状态：**后端 Cloudflare Token/usage 契约已完成并通过验证；前端 Token 化和最终 UI/部署/构建任务仍未完成**
-> 记录基线：本次文档整理前的 HEAD 为 `92e3fcd docs: 记录交接文档的 Actions 验收结果`（`main` 与 `origin/main` 一致）
+> 记录基线：本次文档整理前的 HEAD 为 `c84ceb0 docs: 刷新交接台账与后端验收基线`（`main` 与 `origin/main` 一致）
 > 本文件提交后，以实际 `git log -1 --oneline --decorate` 为最新 HEAD，不要照抄本页基线。
 > 本文件是上下文压缩后的第一事实源。README、验收矩阵、旧注释、聊天摘要或历史方案与本文冲突时，以用户最新要求和实际代码为准；旧文档必须在实现后同步重写。
 
@@ -12,8 +12,8 @@
 - 分支：`main`
 - push：`git@github-plugin-platform:shelter-red/plugin-platform.git`
 - fetch：`https://github.com/shelter-red/plugin-platform.git`
-- 整理时 HEAD / `origin/main`：`92e3fcd`
-- 最近已验收 Actions：run `39837622904`（#50，`92e3fcd`），`completed/success`
+- 整理时 HEAD / `origin/main`：`c84ceb0`
+- 最近已验收 Actions：run `39839503567`（#51，`c84ceb0`），`completed/success`
 - 仓库内未发现 `AGENTS.md`，没有额外仓库级代理指令。
 - 当前工作区有 **26 个未提交路径**，不能整体 `git add .`，也不能当作最终版本直接推送。
 - 当前后端实测已经全绿：
@@ -160,9 +160,10 @@ git diff --check
 
 整理时记录：
 
-- HEAD / `origin/main`：`92e3fcd`
-- 最新 Actions：run `39837622904`（#50），`completed/success`
+- HEAD / `origin/main`：`c84ceb0`
+- 最新 Actions：run `39839503567`（#51，`c84ceb0`），`completed/success`
 - 上一批成功记录：
+  - `92e3fcd` run `39837622904`（#50）
   - `a9c85f0` run `39836893476`（#49）
   - `7a54cfc` run `39835890828`（#48）
   - `cc00faf` run `39834314392`（#47）
@@ -229,7 +230,7 @@ curl -fsSL 'https://api.github.com/repos/shelter-red/plugin-platform/actions/run
 | --- | --- | --- | --- |
 | U01 | “不是说全部重构成组件吗？登录页还是旧的？” | 登录页和全站有清晰组件边界；实际视觉验收 | 🟡 登录页、侧栏、账号、工作区已拆分；多主题/多视口最终视觉检查未完成。 |
 | U02 | 自行从会话历史读分支、提交、推送 | 每步有中文 Git 记录；不靠聊天猜仓库/分支 | 🟡 分支和远端已知；最新已推送 HEAD 成功；当前 26 个代码路径未提交，禁止误推。 |
-| U03 | 推送时 Actions 老是失败 | 本地完整 CI；推送后追 Actions；失败读日志/产物并修到成功 | 🟡 最近 HEAD #50 成功；后端 typecheck/runtime/smoke 已绿；前端未完成，不能进入最终推送验收。 |
+| U03 | 推送时 Actions 老是失败 | 本地完整 CI；推送后追 Actions；失败读日志/产物并修到成功 | 🟡 最近 HEAD #51 成功；后端 typecheck/runtime/smoke 已绿；前端未完成，不能进入最终推送验收。 |
 | U04 | 错误状态为什么靠 `/?auth_error=` | 真实 HTTP status + JSON；留在当前页；不用查询参数/Cookie/跳首页 | 🟡 Cloudflare OAuth 路由/Cookie/跳转已删除，Token API 用 HTTP；前端错误展示仍待 Token 化。 |
 | U05 | setup 失效为何单独返回 “Setup is not available” | `setupApi` 返回 `null` 时走普通非路由处理 | ✅ 已实现并有回归测试；后续不得破坏。 |
 | U06 | `D1_ERROR: no such table: workspaces` | 部署前应用 0008 和全部 migrations；pending migration 时失败 | 🟡 `scripts/deploy-worker.sh` 已先迁移后部署并校验 pending migration；仍需核对 Workers Builds 生产配置并验证接口。 |
@@ -659,7 +660,7 @@ npm run ui:smoke PASS
 
 ## 6. 当前测试证据与复现命令
 
-### 6.1 2026-10-23 19:20 实测
+### 6.1 最近一次后端实测（2026-10-23）
 
 ```text
 npm run worker:typecheck                         PASS
@@ -774,8 +775,9 @@ ctest --test-dir native-server/build --output-on-failure
 
 ## 9. 最近动作日志
 
-- 2026-10-23 19:22：重新核对工作区和 GitHub。整理时 HEAD/`origin/main` 为 `92e3fcd`，最新 run `39837622904`（#50）成功；实测 Worker typecheck、完整 runtime 20/20 89/89、两个 Cloudflare smoke 全绿，确认后端 Token/usage 契约已落地，前端仍为旧 OAuth/手填额度契约。本次重写 HANDOFF，刷新基线、26 个未提交路径、测试证据和剩余执行顺序。
-- 2026-10-23 19:20：完整 Worker runtime 在 `node:22-bookworm` 中通过，20/20 文件、89/89 用例；日志中的 workerd warning/uncaught 均未改变成功退出码。
+- 2026-10-23 03:32：把 HANDOFF 基线校正到当前已推送 HEAD `c84ceb0` 和最新成功 Actions run `39839503567`（#51）；再次确认工作区仍有 26 个代码路径未提交，前端 Token 化、用量 UI、部署确认、手动原生构建和帮助中心仍未完成。本次只更新交接台账，不夹带未完成代码。
+- 2026-10-23 03:22：重新核对工作区和 GitHub，HEAD/`origin/main` 为 `c84ceb0`；该文档提交的 Actions run `39839503567`（#51）最终 `completed/success`。最近一次后端实测 Worker typecheck、完整 runtime 20/20 89/89、两个 Cloudflare smoke 全绿，确认后端 Token/usage 契约已落地，前端仍为旧 OAuth/手填额度契约。
+- 2026-10-23 03:20：完整 Worker runtime 在 `node:22-bookworm` 中通过，20/20 文件、89/89 用例；日志中的 workerd warning/uncaught 均未改变成功退出码。
 - 2026-10-23：`worker:cloudflare-usage-smoke` 与 `worker:oauth-settings-smoke` 均通过；后端 smoke 已切换到 Token + subscriptions + 8 项 Free limits 契约。
 - 2026-10-23 03:09：HANDOFF 基线刷新提交 `a9c85f0` 的 Actions run `39836893476`（#49）为 `completed/success`；当时 22 个代码路径未提交。
 - 2026-10-23 03:03：`worker:typecheck` 曾因 27 个旧 `cloudflareQuotas` 类型错误失败，完整 runtime 为 82/84；这些阻塞已在本轮后端修复后消除。
