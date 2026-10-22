@@ -46,6 +46,8 @@ jobs:
         run: npm ci
       - name: UI 约定审计
         run: npm run ui:conventions
+      - name: 样式死代码审计
+        run: npm run ui:css-audit
       - name: Worker 类型检查
         run: npm run worker:typecheck
       - name: 构建管理端

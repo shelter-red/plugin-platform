@@ -54,7 +54,8 @@
     "stack:restart": "playwright test --config playwright.restart.config.ts",
     "stack:multi-isolate": "playwright test --config playwright.multi-isolate.config.ts",
     "stack:browser": "playwright test --config playwright.browser.config.ts",
-    "ui:conventions": "node scripts/ui-conventions.mjs"
+    "ui:conventions": "node scripts/ui-conventions.mjs",
+    "ui:css-audit": "node scripts/ui-css-audit.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^5.6.1",
