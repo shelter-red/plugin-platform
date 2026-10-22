@@ -1,6 +1,6 @@
 # Plugmesh 平台交接（HANDOFF）
 
-> 最后更新：2026-10-23（Asia/Shanghai）
+> 最后更新：2026-10-23 00:52（Asia/Shanghai）
 > 状态：**进行中，未完成**
 > 维护规则：每完成一个可验证步骤，先更新本文件，再提交一条可追溯的中文 Git 记录；未记录不得继续下一步。
 > 本文件是后续上下文的优先事实来源。若 README、验收矩阵或旧注释与本文冲突，以用户最新要求和实际代码为准；旧文档需要在实现完成后同步重写，不能把旧 OAuth 行为当成现状。
@@ -8,15 +8,18 @@
 ## 最近动作
 
 - 2026-10-23：核对分支、远端、未提交组件化文件和最近 Actions；建立本 HANDOFF。此步只整理事实与实施计划，未开始 Cloudflare Token / 原生构建实现。
+- 2026-10-23：整理用户从组件化、登录错误、setup、D1、Cloudflare OAuth/Token、额度监控、UI 文案到原生构建/帮助中心的全部反馈，补充“用户问题总账”，供压缩上下文后直接恢复工作。
+- 2026-10-23：`1e5fec7 docs: 记录平台迁移与组件化交接清单` 已推送；平台验收 run `39816813766` 为 `completed/success`。此前 `1e4fd10`、`fd80fa4` 的失败仍作为反例，后续每推一次必须重新查 Actions。
+- 当前工作区仍保留上一轮未提交的侧栏、账号、工作区组件拆分及额度文案/测试改动；本 HANDOFF 更新不会覆盖或回滚这些文件。
 
 ## 0. 先读这里：工作区与 Git 状态
 
 - 仓库：`/home/tc/work/plugin-platform`
 - 当前分支：`main`
-- 编写本文件时的 HEAD / `origin/main`：`12e7aae refactor(usage): 用量页拆成状态提示、额度分组、数据源与分布部件`
+- 当前 HEAD / `origin/main`：`1e5fec7 docs: 记录平台迁移与组件化交接清单`
 - fetch remote：`https://github.com/shelter-red/plugin-platform.git`
 - push remote：`git@github-plugin-platform:shelter-red/plugin-platform.git`
-- 2026-10-23 通过 GitHub API 查询时，`12e7aae` 的“平台验收”已成功；用户指出的 `1e4fd10`、`fd80fa4` 是更早的失败提交。**不要因此认为后续改动不会让 Actions 失败。**
+- 2026-10-23 通过 GitHub API 查询时，`1e5fec7` 的“平台验收”已成功（run `39816813766`）；用户指出的 `1e4fd10`、`fd80fa4` 是更早的失败提交。**不要因此认为后续改动不会让 Actions 失败。**
 - 当前环境没有安装 `gh`。可先用 GitHub API 查询 run；需要看日志时再安装/配置 GitHub CLI，或使用已认证的 GitHub API。
 - **工作区有上一轮组件化改动，严禁 `git reset --hard`、`git clean -fd`、`git checkout -- .` 或覆盖这些文件。** 修改前先看 `git status` 和 `git diff`。
 
@@ -52,6 +55,50 @@ M tests/console-worker.spec.ts
 ```
 
 建议先审阅、跑测试并把这一批组件化改动提交，再开始 Cloudflare 大改；不要把它们和 Token 迁移混成一个无法审查的巨型提交。
+
+提交这批未提交改动时要注意：
+
+- `src/locales/en.ts`、`src/locales/zh-CN.ts` 里仍有旧 Cloudflare OAuth 文案（如 `authorizationExpired`、`reauthorize`）。如果本次提交只做组件化，不要盲目把这部分旧文案当成最终实现；Token 迁移时删除或改写。
+- 当前 `UsageResourcesPanel` / `PlatformUsageSection` 改动只是额度展示的一部分，不能据此把“8 项 Cloudflare 免费额度、从 subscriptions 读取、所有项目显示百分比”标记为完成。
+- 当前 `tests/console-worker.spec.ts` 新增了 Cloudflare 限额断言，提交前要确认它们与随后 Token 响应结构一致，避免先固定错误接口再返工。
+
+## 0.1 用户问题总账（按会话反馈整理）
+
+状态图例：✅ 已实现并有验证证据；🟡 局部完成/待提交验证；⬜ 尚未开始或最终验收未通过。
+
+| ID | 用户反馈或目标 | 必须达到的效果 | 当前状态 |
+| --- | --- | --- | --- |
+| U01 | “不是说全部重构成组件吗？登录页还是旧的” | 登录页及全站页面有清晰组件边界；登录页不重复重写；实际看视觉结果 | 🟡 登录页已拆成 `LoginPage`/`AuthFrame`/`AuthBrand`/`AuthLoadingScreen`/`GithubMark`；侧栏、账号、工作区仍有未提交拆分。视觉检查未完成。 |
+| U02 | 自行从会话历史读分支、提交、推送 | 每步有中文 Git 记录；不靠聊天上下文猜分支 | 🟡 `main` 已跟踪远端；本 HANDOFF 需提交。后续每个代码步骤继续更新本文件再提交。 |
+| U03 | 推送时 Actions 老是失败 | 推送前跑完整本地 CI；推送后查 run；失败读日志/失败产物并修到成功 | 🟡 `1e5fec7` 当前成功；仍须对后续提交重复验收。`1e4fd10`、`fd80fa4` 是已知失败反例；CI 失败产物上传要求仍要保留。 |
+| U04 | 错误状态为什么是 `/?auth_error=` | 授权/配置错误使用真实 HTTP status + JSON；不靠 URL 查询参数；不跳首页 | 🟡 GitHub 登录错误路径已改为 HTTP 错误页；Cloudflare 设置/授权仍存在旧 OAuth 跳转，Token 迁移后必须全部改为当前设置面板展示。 |
+| U05 | setup 失效为何单独返回 “Setup is not available” | `setupApi` 返回 `null` 时与其他非路由请求一致，不发明特殊响应 | ✅ 已按普通非路由路径处理；保留回归测试，Cloudflare 改造不能破坏。 |
+| U06 | `D1_ERROR: no such table: workspaces` | 生产部署必须先应用 `0008_workspaces.sql` 及全部 migrations；pending migration 时构建失败 | 🟡 `scripts/deploy-worker.sh` 已包含 migration 检查；仍需核对 Workers Builds 实际 Deploy command 和生产接口，不能只修脚本。 |
+| U07 | `invalid_scope`，不允许 `workers-platform.read` | 删除 OAuth scope 流程，使用长期 API Token；Token 权限固定为 Account Settings Read / Account Analytics Read / Billing Read | ⬜ 代码仍是 OAuth exchange/refresh/revoke；这是当前最高优先级后端迁移。 |
+| U08 | Cloudflare 授权失败后为什么跳首页 | 错误留在系统设置页，显示 HTTP 状态、稳定错误码和可操作说明 | ⬜ 旧 `/auth/cloudflare/*`、Cookie auth-result、跳转逻辑尚未删除。 |
+| U09 | 用户创建 OAuth 不知道给什么权限；取消勾选权限就没了 | 权限不可编辑、固定只读展示；用户不需要猜 scope；创建链接直接去 Token 页面 | ⬜ 目标已明确，但最终实现尚未落地。Token 页面：`https://dash.cloudflare.com/profile/api-tokens`。 |
+| U10 | “未识别唯一账号”也是权限问题 | verify → accounts → subscriptions 全链路校验；账号不唯一/不可见返回 409 `account_missing`/`account_ambiguous`，不猜第一个账号 | ⬜ 新 Token 设置 API 中实现并测试。 |
+| U11 | 用量和配额为什么没有刷新按钮 | 用量页保留一个清晰的手动刷新入口；刷新不被自动加载禁用；按钮状态可观察 | ⬜ 当前存在多处刷新/重复入口，尚未完成最终清理。 |
+| U12 | OAuth 里没有 `offline_access` | 彻底移除 `offline_access`、OAuth refresh 和“过期/重新授权”文案 | ⬜ Token 迁移时删除。 |
+| U13 | `configured:false` 为什么还能查 `/api/usage/local`，且返回 200 | 分清接口语义：未配置 Cloudflare 时 `/api/usage/cloudflare` 立即 `{"configured":false,"cached":false}`，不读缓存、不发外部请求；本地统计 `/api/usage/local?range=7d` 仍应 200 | 🟡 目标已写入验收；Cloudflare 缓存顺序和未配置短路仍需代码及测试修复。 |
+| U14 | `response_type` 等字段放错位置；CF OAuth 没有 PKCE 选项 | 旧 OAuth UI 中 `response_type` 若短暂保留也只能属于 OAuth 配置、值为 `code`；最终 Token 方案应直接移除 response_type/grant_type/PKCE 等全部客户端字段 | ⬜ 最终以“所有 OAuth 客户端字段消失”为验收，避免继续维护错误表单。 |
+| U15 | `1e4fd10`、`fd80fa4` 两个提交 Actions 失败 | 每次修复后本地 CI、推送、Actions、失败产物全部闭环 | 🟡 当前 HEAD 已成功，但目标功能尚未完成；不能把历史一次成功当作后验证。 |
+| U16 | 图标没对齐；左上角“默认工作区”很矮挡住文字 | 统一图标尺寸、按钮高度、gap、行高和垂直居中；双主题/多视口实际检查 | 🟡 已有未提交侧栏/工作区拆分，需视觉验证后提交。 |
+| U17 | 配额少，D1 写入等所有有限制项目都要监控，显示次数和百分比 | Worker、D1 行读、D1 行写、KV 读/写/删/列表、DO 请求共 8 项；每项都有 used/limit/percentage | 🟡 部分静态基线/测试在未提交改动中出现；后台读取、响应 `limits`、8 项完整 UI 尚未完成。 |
+| U18 | 平台和监控分开；平台请求不限，CF 免费额度有限 | 平台请求只统计不设上限、不画上限百分比；Cloudflare 官方额度独立分组 | 🟡 文案/展示有部分调整；数据模型和最终 UI 尚未统一。 |
+| U19 | GitHub OAuth 没过期，为什么 CF OAuth 会过期；Token/API key 会不会过期；改成 Token | 不再暗示 OAuth 自然过期；改用 Cloudflare API Token（默认长期，可被撤销/策略限制）；界面、链接、错误文案同步改成 Token | ⬜ 前后端及文档全链路迁移尚未开始。 |
+| U20 | CF 免费额度为什么能在系统设置配置；应该从 CF 读取 | 删除 `cloudflareQuotas` 手填；调用 `GET /accounts/{account_id}/subscriptions`；只有明确 Free 才展示官方基线，否则“未读取” | ⬜ 当前仍存在设置字段、默认配额、旧测试和 UI；需整体删除。 |
+| U21 | 界面文案诡异、莫名卡片、同页多个按钮跳同一页面 | 通读中英文文案；清理重复说明、技术黑话、无信息量卡片和重复跳转；每个页面只保留必要主入口 | ⬜ 已知用量页至少三个刷新入口、概览卡片重复跳 `/usage`；尚需全站审计。 |
+| U22 | Actions 增加手动构建插件服务器：可选可执行文件/库文件、目标平台 | 新增仅 `workflow_dispatch` 的 workflow；构建真正共享库及可执行程序；目标平台/架构明确；artifact、SHA256、依赖说明完整；不与 tag release 冲突 | ⬜ 尚未新增。 |
+| U23 | 帮助中心说明二进制插件服务器/库文件怎么用 | 中英文帮助中心覆盖下载、SHA256、启动/注册、环境变量、插件目录/主机、库链接、OpenSSL 运行依赖、常见错误 | ⬜ 尚未新增；现有帮助仍偏旧 OAuth FAQ。 |
+
+### 0.2 当前不能误判为“已完成”的事项
+
+- 登录页“看起来旧”不代表组件化失败；先把组件结构、视觉和实际交互一起验收。
+- Cloudflare 代码能保存字段不等于 Token 迁移完成；只要还存在 OAuth client、scope、auth-result Cookie、refresh/revoke 或 `/auth/cloudflare/*`，就按未完成处理。
+- 静态免费额度常量不等于从 Cloudflare 读取；只有 subscriptions 明确确认 Free 套餐后才有资格展示官方基线。
+- `/api/usage/local` 返回 200 是预期行为，不代表 Cloudflare 未配置也能查询云端数据；两个接口必须分开验证。
+- 历史 Actions 成功不代表后续安全；每次推送后以最新 run 的状态和日志为准。
 
 ## 1. 用户最新要求（验收口径）
 
