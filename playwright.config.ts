@@ -6,7 +6,9 @@ const authUrl = 'http://127.0.0.1:4185'
 
 export default defineConfig({
   outputDir: '/tmp/plugmesh-playwright',
-  reporter: 'line',
+  // CI 上偶发的超时/竞态用 1 次重试兜底；同时保留 HTML 报告与 trace 便于定位。
+  retries: process.env.CI ? 1 : 0,
+  reporter: process.env.CI ? [['line'], ['html', { outputFolder: '/tmp/plugmesh-playwright-report', open: 'never' }]] : 'line',
   use: {
     trace: 'retain-on-failure',
   },

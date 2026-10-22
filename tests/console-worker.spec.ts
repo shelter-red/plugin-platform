@@ -365,16 +365,21 @@ test('用量页提供刷新按钮并提示读取官方数据所需权限', async
   await page.goto('/')
   await page.getByRole('menuitem', { name: '用量与配额', exact: true }).click()
   await expect(page.getByRole('heading', { name: '用量与配额', level: 1 })).toBeVisible()
+  // 刷新按钮在自动加载期间必须保持可点击，点击后要真的发出一次请求。
+  const clickRefresh = async () => {
+    const before = worker.usageRequests
+    await expect(page.getByRole('button', { name: '刷新用量' }).first()).toBeEnabled()
+    await page.getByRole('button', { name: '刷新用量' }).first().click()
+    await expect.poll(() => worker.usageRequests).toBeGreaterThan(before)
+  }
   const refresh = page.getByRole('button', { name: '刷新用量' }).first()
   await expect(refresh).toBeVisible()
-  const before = worker.usageRequests
-  await refresh.click()
+  await clickRefresh()
   await expect(page.locator('.ant-notification-notice').filter({ hasText: '用量数据已刷新' })).toBeVisible()
-  expect(worker.usageRequests).toBeGreaterThan(before)
 
   // 未配置 Cloudflare 时官方数据为空，但平台本地计数仍然有效：界面必须说明两者互不依赖。
   worker.usage = { configured: false, cached: false }
-  await page.getByRole('button', { name: '刷新用量' }).first().click()
+  await clickRefresh()
   const unconfigured = page.getByRole('alert').filter({ hasText: '官方数据尚未连接' })
   await expect(unconfigured).toBeVisible()
   await expect(unconfigured).toContainText('不需要 Cloudflare 授权')
@@ -382,7 +387,7 @@ test('用量页提供刷新按钮并提示读取官方数据所需权限', async
 
   // 没有 refresh_token 时 Cloudflare 授权会过期，界面应直接引导重新授权。
   worker.usage = { configured: true, accountIdConfigured: true, authorizationExpired: true, cached: false }
-  await page.getByRole('button', { name: '刷新用量' }).first().click()
+  await clickRefresh()
   const expired = page.getByRole('alert').filter({ hasText: 'Cloudflare 授权已过期' })
   await expect(expired).toBeVisible()
   await expect(expired).toContainText('Offline Access')
@@ -392,7 +397,7 @@ test('用量页提供刷新按钮并提示读取官方数据所需权限', async
   // 缺少 Account Settings Read 时官方用量为空，需要明确告诉管理员要补哪项权限。
   await page.getByRole('menuitem', { name: '用量与配额', exact: true }).click()
   worker.usage = { configured: true, accountIdConfigured: false }
-  await page.getByRole('button', { name: '刷新用量' }).first().click()
+  await clickRefresh()
   const alert = page.getByRole('alert').filter({ hasText: '已授权，但未识别到 Cloudflare 账号' })
   await expect(alert).toBeVisible()
   await expect(alert).toContainText('Account Settings Read')

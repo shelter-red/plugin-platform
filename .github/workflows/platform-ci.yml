@@ -30,6 +30,7 @@ jobs:
 
   web:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -50,6 +51,16 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: 管理端 UI smoke
         run: npm run ui:smoke
+      - name: 上传 UI smoke 失败产物
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            /tmp/plugmesh-playwright
+            /tmp/plugmesh-playwright-report
+          if-no-files-found: ignore
+          retention-days: 7
 
   # 原生验收只在 native-server 或本工作流变化时运行；凭据相关用例在缺少系统凭据时回退到加密凭据文件。
   linux-native:

@@ -7,7 +7,7 @@ import { translateError } from '../../errors'
 import { formatBytes, formatDateTime, formatNumber } from '../../lib/format'
 import { usagePercent } from '../../lib/usage'
 
-export function UsagePage({ settings, usage, localUsage, loading, error, onRefresh, onOpenCloudflareSettings }: { settings: PlatformSettings | null; usage: CloudflareUsage | null; localUsage: LocalUsage | null; loading: boolean; error: string | null; onRefresh: () => void; onOpenCloudflareSettings: () => void }) {
+export function UsagePage({ settings, usage, localUsage, loading, refreshing, error, onRefresh, onOpenCloudflareSettings }: { settings: PlatformSettings | null; usage: CloudflareUsage | null; localUsage: LocalUsage | null; loading: boolean; refreshing: boolean; error: string | null; onRefresh: () => void; onOpenCloudflareSettings: () => void }) {
   const { t } = useTranslation()
   const notRead = t('common.notRead')
   const period = usage?.period
@@ -40,18 +40,18 @@ export function UsagePage({ settings, usage, localUsage, loading, error, onRefre
   const requestWindowStartedAt = localUsage?.requestWindowStartedAt
   const configureAction = <Space size={4} wrap>
     <Button type="link" size="small" onClick={onOpenCloudflareSettings}>{t('usage.configure')} <ArrowUpRight size={14} /></Button>
-    <Button type="link" size="small" icon={<RefreshCw size={13} />} onClick={onRefresh} loading={loading}>{t('usage.refresh')}</Button>
+    <Button type="link" size="small" icon={<RefreshCw size={13} />} onClick={onRefresh} loading={refreshing}>{t('usage.refresh')}</Button>
   </Space>
   const accountMissing = usage?.configured === true && usage.accountIdConfigured === false
   const authorizationExpired = usage?.authorizationExpired === true
 
   return <div className="stack">
     {error
-      ? <Alert type="error" showIcon message={t('usage.loadFailed')} description={<div className="alert-body"><span>{translateError(error)}</span><span>{t('usage.permissionHint')}</span></div>} action={<Space size={4} wrap><Button type="link" size="small" onClick={onOpenCloudflareSettings}>{t('usage.checkConfig')} <ArrowUpRight size={14} /></Button><Button type="link" size="small" icon={<RefreshCw size={13} />} onClick={onRefresh} loading={loading}>{t('usage.refresh')}</Button></Space>} />
+      ? <Alert type="error" showIcon message={t('usage.loadFailed')} description={<div className="alert-body"><span>{translateError(error)}</span><span>{t('usage.permissionHint')}</span></div>} action={<Space size={4} wrap><Button type="link" size="small" onClick={onOpenCloudflareSettings}>{t('usage.checkConfig')} <ArrowUpRight size={14} /></Button><Button type="link" size="small" icon={<RefreshCw size={13} />} onClick={onRefresh} loading={refreshing}>{t('usage.refresh')}</Button></Space>} />
       : authorizationExpired
-        ? <Alert type="warning" showIcon icon={<ShieldAlert size={16} />} message={t('usage.authorizationExpired')} description={<div className="alert-body"><span>{t('usage.authorizationExpiredHint')}</span></div>} action={<Space size={4} wrap><Button type="link" size="small" onClick={onOpenCloudflareSettings}>{t('usage.reauthorize')} <ArrowUpRight size={14} /></Button><Button type="link" size="small" icon={<RefreshCw size={13} />} onClick={onRefresh} loading={loading}>{t('usage.refresh')}</Button></Space>} />
+        ? <Alert type="warning" showIcon icon={<ShieldAlert size={16} />} message={t('usage.authorizationExpired')} description={<div className="alert-body"><span>{t('usage.authorizationExpiredHint')}</span></div>} action={<Space size={4} wrap><Button type="link" size="small" onClick={onOpenCloudflareSettings}>{t('usage.reauthorize')} <ArrowUpRight size={14} /></Button><Button type="link" size="small" icon={<RefreshCw size={13} />} onClick={onRefresh} loading={refreshing}>{t('usage.refresh')}</Button></Space>} />
         : accountMissing
-          ? <Alert type="warning" showIcon icon={<ShieldAlert size={16} />} message={t('usage.accountMissing')} description={<div className="alert-body"><span>{t('usage.accountMissingHint')}</span><span>{t('usage.permissionHint')}</span></div>} action={<Space size={4} wrap><Button type="link" size="small" onClick={onOpenCloudflareSettings}>{t('usage.checkConfig')} <ArrowUpRight size={14} /></Button><Button type="link" size="small" icon={<RefreshCw size={13} />} onClick={onRefresh} loading={loading}>{t('usage.refresh')}</Button></Space>} />
+          ? <Alert type="warning" showIcon icon={<ShieldAlert size={16} />} message={t('usage.accountMissing')} description={<div className="alert-body"><span>{t('usage.accountMissingHint')}</span><span>{t('usage.permissionHint')}</span></div>} action={<Space size={4} wrap><Button type="link" size="small" onClick={onOpenCloudflareSettings}>{t('usage.checkConfig')} <ArrowUpRight size={14} /></Button><Button type="link" size="small" icon={<RefreshCw size={13} />} onClick={onRefresh} loading={refreshing}>{t('usage.refresh')}</Button></Space>} />
           : <Alert type={connected ? 'success' : 'info'} showIcon icon={<Cloud size={16} />} message={loading ? t('usage.loadingOfficial') : connected ? t('usage.connected') : t('usage.notConnected')} description={connected && period ? t('usage.period', { start: formatDateTime(period.start), end: formatDateTime(period.end) }) : <div className="alert-body"><span>{t('usage.periodHint')}</span><span>{t('usage.localIndependentHint')}</span></div>} action={configureAction} />}
     <div className="usage-grid">
       <ResourceCard title={t('usage.card.workerRequests')} current={requestValue} limit={requestLimit} unit={connected ? t('usage.card.officialPeriod') : ''} percent={workerPercent} icon={Cloud} />
@@ -63,7 +63,7 @@ export function UsagePage({ settings, usage, localUsage, loading, error, onRefre
       <ResourceCard title={t('usage.card.durableObjects')} current={durableObjects ? formatNumber(durableObjects.requests) : '—'} limit={durableObjectLimit} unit={durableObjects ? t('usage.card.storage', { size: formatBytes(durableObjects.storedBytes) ?? '—' }) : ''} percent={durableObjectPercent} icon={Activity} />
     </div>
     <Panel title={t('usage.sourcesTitle')} subtitle={t('usage.sourcesSubtitle')}>
-      <div className="source-row"><span className="source-name"><span className={`source-dot ${connected ? 'green' : 'pending'}`} />Cloudflare Analytics API</span><span className="muted">{connected ? `${usage?.cached ? t('usage.cached') : t('usage.latest')} · ${usageUpdatedAt ? formatDateTime(usageUpdatedAt) : t('usage.unknownTime')}` : t('usage.notConfigured')}</span><Space size={0}><Button type="link" size="small" icon={<RefreshCw size={13} />} onClick={onRefresh} loading={loading}>{t('usage.refresh')}</Button><Button type="link" size="small" onClick={onOpenCloudflareSettings}>{t('usage.configureSource')} <ArrowUpRight size={14} /></Button></Space></div>
+      <div className="source-row"><span className="source-name"><span className={`source-dot ${connected ? 'green' : 'pending'}`} />Cloudflare Analytics API</span><span className="muted">{connected ? `${usage?.cached ? t('usage.cached') : t('usage.latest')} · ${usageUpdatedAt ? formatDateTime(usageUpdatedAt) : t('usage.unknownTime')}` : t('usage.notConfigured')}</span><Space size={0}><Button type="link" size="small" icon={<RefreshCw size={13} />} onClick={onRefresh} loading={refreshing}>{t('usage.refresh')}</Button><Button type="link" size="small" onClick={onOpenCloudflareSettings}>{t('usage.configureSource')} <ArrowUpRight size={14} /></Button></Space></div>
       <div className="source-row"><span className="source-name"><span className={`source-dot ${hasLocalUsage ? 'green' : 'pending'}`} />{t('overview.note.localCount')}</span><span className="muted">{localUpdatedAt ? t('usage.updatedAt', { time: formatDateTime(localUpdatedAt) }) : t('usage.card.notConnected')}</span><span className="muted">{requestWindowStartedAt ? t('usage.windowStartedAt', { time: formatDateTime(requestWindowStartedAt) }) : t('usage.noData')}</span></div>
       <p className="field-hint">{t('usage.localIndependentHint')}</p>
     </Panel>

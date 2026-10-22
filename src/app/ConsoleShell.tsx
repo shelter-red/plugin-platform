@@ -97,6 +97,8 @@ export function ConsoleShell({ theme, setTheme, effectiveTheme, language }: Cons
   const [dataError, setDataError] = useState<string | null>(null)
   const [auditLoading, setAuditLoading] = useState(false)
   const [usageLoading, setUsageLoading] = useState(false)
+  // 自动加载与手动刷新分开：自动加载期间不禁用刷新按钮，否则用户（或测试）的点击会被静默吞掉。
+  const [usageRefreshing, setUsageRefreshing] = useState(false)
   const [auditError, setAuditError] = useState<string | null>(null)
   const [accessLogsError, setAccessLogsError] = useState<string | null>(null)
   const [usageError, setUsageError] = useState<string | null>(null)
@@ -342,7 +344,7 @@ export function ConsoleShell({ theme, setTheme, effectiveTheme, language }: Cons
   }
 
   const refreshUsage = async (announce = true) => {
-    setUsageLoading(true)
+    setUsageRefreshing(true)
     try {
       const [nextUsage, nextLocalUsage] = await Promise.all([fetchCloudflareUsage(), fetchLocalUsage(range).catch(() => null)])
       setUsage(nextUsage)
@@ -354,7 +356,7 @@ export function ConsoleShell({ theme, setTheme, effectiveTheme, language }: Cons
       setUsageError(errorMessage(error, 'toast.usageUnavailable'))
       notify('error', t('usage.refreshFailed'))
     } finally {
-      setUsageLoading(false)
+      setUsageRefreshing(false)
     }
   }
 
@@ -583,7 +585,7 @@ export function ConsoleShell({ theme, setTheme, effectiveTheme, language }: Cons
               </div>
               <div className="header-actions">
                 {page === 'overview' && <Button icon={<RefreshCw size={15} />} onClick={() => void refreshData()} disabled={dataLoading}>{t('shell.refresh')}</Button>}
-                {page === 'usage' && <Button icon={<RefreshCw size={15} />} onClick={() => void refreshUsage()} loading={usageLoading}>{t('usage.refresh')}</Button>}
+                {page === 'usage' && <Button icon={<RefreshCw size={15} />} onClick={() => void refreshUsage()} loading={usageRefreshing}>{t('usage.refresh')}</Button>}
                 {page === 'servers' && <Button type="primary" icon={<Plus size={16} />} onClick={() => setModal('server')} disabled={!canWrite} title={canWrite ? undefined : t('workspace.readOnlyHint')}>{t('shell.bindServer')}</Button>}
                 {page === 'domains' && <Button type="primary" icon={<Plus size={16} />} onClick={() => setModal('domain')} disabled={!canWrite} title={canWrite ? undefined : t('workspace.readOnlyHint')}>{t('shell.assignDomain')}</Button>}
                 {page === 'plugins' && <Button type="primary" icon={<Plus size={16} />} onClick={() => setModal('plugin')} disabled={!canWrite} title={canWrite ? undefined : t('workspace.readOnlyHint')}>{t('shell.loadPlugin')}</Button>}
@@ -595,7 +597,7 @@ export function ConsoleShell({ theme, setTheme, effectiveTheme, language }: Cons
             {page === 'servers' && <ServersPage servers={servers ?? []} loading={dataLoading} onRefresh={() => void refreshData()} onBind={() => setModal('server')} onDetail={(id) => void openDetail('server', id)} />}
             {page === 'plugins' && <PluginsPage plugins={plugins ?? []} loading={dataLoading} onSync={() => void syncManifests()} onLoad={() => setModal('plugin')} onDetail={(id) => void openDetail('plugin', id)} onHealth={(plugin) => void runHealthCheck(plugin)} />}
             {page === 'domains' && <DomainsPage domains={domains ?? []} loading={dataLoading} onAction={notify} onRefresh={() => void refreshData()} onAssign={() => setModal('domain')} />}
-            {page === 'usage' && <UsagePage settings={platformSettings} usage={usage} localUsage={localUsage} loading={usageLoading} error={usageError} onRefresh={() => void refreshUsage()} onOpenCloudflareSettings={() => openSettingsSection('cloudflare')} />}
+            {page === 'usage' && <UsagePage settings={platformSettings} usage={usage} localUsage={localUsage} loading={usageLoading} refreshing={usageRefreshing} error={usageError} onRefresh={() => void refreshUsage()} onOpenCloudflareSettings={() => openSettingsSection('cloudflare')} />}
             {page === 'logs' && <AccessLogsPage logs={accessLogs ?? []} loading={accessLogsLoading} error={accessLogsError} onExport={exportAccessLogs} />}
             {page === 'audit' && <AuditPage audits={audits ?? []} loading={auditLoading} error={auditError} onExport={exportAudit} />}
             {page === 'workspaces' && <WorkspacePage workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} onSwitch={switchWorkspace} onWorkspacesChange={reloadWorkspaces} onAction={notify} />}
