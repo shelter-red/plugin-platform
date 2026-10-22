@@ -12,6 +12,7 @@ export default defineConfig({
   projects: [
     { name: 'preview', testMatch: /console-ui\.spec\.ts/, use: { baseURL: previewUrl } },
     { name: 'a11y', testMatch: /console-a11y\.spec\.ts/, use: { baseURL: previewUrl } },
+    { name: 'screenshots', testMatch: /console-screenshots\.spec\.ts/, use: { baseURL: previewUrl } },
     { name: 'worker-mock', testMatch: /console-worker\.spec\.ts/, use: { baseURL: workerMockUrl } },
   ],
   webServer: [
