@@ -875,7 +875,12 @@
 #   if (_MSC_VER >= 1911 && _MSVC_LANG >= 201703)
 #    define ASIO_HAS_STD_INVOKE_RESULT 1
 #   endif // (_MSC_VER >= 1911 && _MSVC_LANG >= 201703)
-#  endif // defined(ASIO_MSVC)
+#  elif defined(__cplusplus) && (__cplusplus >= 201703L)
+// 本项目统一使用 C++20（见 CMakeLists.txt），所有支持的 GCC/Clang 都提供
+// std::invoke_result；而 libc++（macOS 的 AppleClang）在 C++20 下已经移除
+// std::result_of，不打开这个分支会直接编译失败。
+#   define ASIO_HAS_STD_INVOKE_RESULT 1
+#  endif // defined(ASIO_MSVC) / C++17 or later
 # endif // !defined(ASIO_DISABLE_STD_INVOKE_RESULT)
 #endif // !defined(ASIO_HAS_STD_INVOKE_RESULT)
 
