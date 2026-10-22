@@ -33,6 +33,10 @@ add_library(plugmesh_core STATIC
   src/server_config.cpp
 )
 target_compile_definitions(plugmesh_core PUBLIC ASIO_STANDALONE)
+# 内置 websocketpp 只用 __cplusplus 判断 C++11 能力，而 MSVC 默认把 __cplusplus
+# 报成 199711L，于是 random/type_traits 退回 boost 分支（仓库不随附 Boost），
+# Windows 构建直接报 C1083。项目固定 C++20，这里显式声明完整 C++11 STL 支持。
+target_compile_definitions(plugmesh_core PUBLIC _WEBSOCKETPP_CPP11_STL_)
 target_include_directories(plugmesh_core PUBLIC include)
 target_include_directories(plugmesh_core SYSTEM PUBLIC third_party/include)
 target_link_libraries(plugmesh_core PUBLIC OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
