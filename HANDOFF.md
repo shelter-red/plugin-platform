@@ -1,6 +1,6 @@
 # Plugmesh 平台交接（HANDOFF）
 
-> 最后更新：2026-10-23 01:54（Asia/Shanghai）
+> 最后更新：2026-10-23 02:02（Asia/Shanghai）
 > 状态：**进行中，未完成**
 > 维护规则：每完成一个可验证步骤，先更新本文件，再提交一条可追溯的中文 Git 记录；未记录不得继续下一步。
 > 本文件是后续上下文的优先事实来源。若 README、验收矩阵、旧注释或聊天摘要与本文冲突，以用户最新要求和实际代码为准；旧文档需在实现完成后同步重写，不能把旧 OAuth 行为当成目标。
@@ -17,13 +17,13 @@ git rev-parse HEAD origin/main
 git diff
 ```
 
-当前权威快照（2026-10-23 01:54）：
+当前权威快照（2026-10-23 02:02）：
 
 - 仓库：`/home/tc/work/plugin-platform`
 - 分支：`main`
 - 当前实际 HEAD：执行 `git log -1 --oneline`；本文档自身的提交会自然晚于“最近已验收提交”，不要照抄旧值。
 - 最近已验收 HEAD：`e3cdb05 docs: 确认 Cloudflare 订阅响应与免费套餐判定`；本次 HANDOFF 整理提交会紧随其后。恢复时以 `git log -1 --oneline` 和 `git rev-parse HEAD origin/main` 为准。push 使用 `git@github-plugin-platform:shelter-red/plugin-platform.git`，fetch 使用 `https://github.com/shelter-red/plugin-platform.git`。
-- 最近已验收提交：`e3cdb05`，平台验收 run `39826112664`（run #40）已为 `completed/success`；上一提交 `5373f87` 的 run `39825387738`（#39）也成功。
+- 最近已验收提交：`c32a587`，平台验收 run `39826901281`（run #41）已为 `completed/success`；上一提交 `e3cdb05` 的 run `39826112664`（#40）也成功。
 - `0a5075d` 的 run `39824622514`（#38）、`0325530` 的 run `39823921091`（#37）、`70f62e3` 的 run `39822695994`（#35）、`abf05ca` 的 run `39820685855`（#34）均成功。`0325530` 同 SHA 的并发 run `39823919519`（#36）被取消，属于重复触发，不是失败。
 - 已知失败反例（不能重复）：`fd80fa4` 的 run `39754896119`（#11）失败，web 的“管理端 UI smoke”失败；`1e4fd10` 的 run `39756824624`（#12）失败，web 的“管理端 UI smoke”失败，且该提交改动 workflow 后触发了 native 构建，linux/windows/macos 构建也失败。后续修复已由更晚提交覆盖，但历史失败不能从记录里删除。
 - 恢复后仍须在每次推送时重复“本地验证 → 推送 → Actions 闭环”，不能沿用历史成功；本文档提交自身的 Actions run 不写入本文件，避免自我引用循环，推送后直接查 GitHub。
@@ -38,13 +38,13 @@ git diff
   这些改动包含有用的 8 项额度展示和“平台请求不限”方向，但仍依赖旧的 `settings.cloudflareQuotas`、`authorizationExpired` 和 OAuth 接口，**不能原样提交**；应在 Token + subscriptions 实现时整合、改写或删除。
 - 登录页组件拆分已在 `775384e`，侧栏/账号/工作区进一步拆分已在 `abf05ca`；`HANDOFF.md` 本次整理是独立文档步骤。不要再重复拆分登录页/侧栏/账号/工作区，先做视觉与交互验收。
 - “默认工作区”过矮和按钮图标基线偏移已在 `1b39960` 修复：工作区/用户卡片改为内容自适应高度，图标容器改 flex 居中；当时用 18 张双主题三视口截图基线验证。后续仍要检查新增 UI 是否回归。
-- Cloudflare Token 迁移目前只完成了代码审计、官方权限与 subscriptions 响应核对、验收契约，**尚未创建 `worker/src/cloudflare-token.ts`，后端仍完全是 OAuth**。不要根据“已有 Token 字段”误判迁移已开始或已完成。
+- Cloudflare Token 迁移的基础模块已创建：`worker/src/cloudflare-token.ts` 已包含 verify、accounts 完整分页、账号唯一性校验、subscriptions/Free 判定、稳定错误类型、新密文格式和旧 OAuth 密文识别；但 API 路由、用量接口和前端**尚未接入**，后端运行流程仍会走旧 OAuth，不能误判为迁移完成。
 - **严禁用 `git reset --hard`、`git clean`、`git checkout -- .` 或任何批量覆盖操作处理这 5 个文件。**
 
 下一步（按顺序）：
 
 1. ✅ 已核对 Cloudflare 官方 subscriptions 文档（2026-10-23）：响应为 `{ result: Subscription[], errors, messages }`，每个订阅包含 `rate_plan.id`、`rate_plan.public_name`、`state`；端点接受 `Billing Read` / `Billing Write`。只有 `result` 中存在 `rate_plan.id === "free"` 时才可确认 Free，空结果或结构不符必须视为未确认。
-2. 新建 `worker/src/cloudflare-token.ts`：Token verify、accounts 完整分页、指定账号校验、subscriptions 读取、Free 判定、新凭据加密类型、旧 OAuth 密文识别、稳定错误类型。
+2. 🟡 `worker/src/cloudflare-token.ts` 基础模块与 runtime 边界测试已完成；下一步把设置/用量 API 切换到该模块，并删除旧 OAuth 路由。
 3. 重写 `cloudflareSettingsApi` / `cloudflareUsageApi`：保存前验证，未配置立即短路，先凭据后缓存，DELETE 不 revoke；删除 Cloudflare auth routes、auth-result API/Cookie、refresh/revoke。
 4. 把 `oauth-settings.ts` 收缩到只服务 GitHub；从 `PlatformSettings` / `platformSettingsApi` / `usage.ts` 删除可编辑 `cloudflareQuotas`。
 5. 先重写 Worker runtime tests、outbound stub 和 smoke，再改前端 Token 表单、usage limits 与 8 项次数/百分比。
@@ -55,6 +55,8 @@ git diff
 
 ## 最近动作
 
+- 2026-10-23：Cloudflare Token 基础模块完成并验证：`worker/src/cloudflare-token.ts` 实现固定只读权限常量、Token verify、accounts 完整分页、`account_missing`/`account_ambiguous`、subscriptions/Free 判定、真实 HTTP 稳定错误、API Token 密文存取和旧 OAuth 密文识别；`worker/runtime/cloudflare-token.test.ts` 8 项全部通过。宿主 GLIBC 2.31 无法启动当前 `workerd`，因此 runtime 测试通过 `node:22-bookworm` Docker 执行；`npm run worker:typecheck` 同时通过。本步骤尚未接线路由。
+- 2026-10-23：开始实施下一步“Cloudflare API Token 后端模块”：新增 `worker/src/cloudflare-token.ts`，先完成 Token verify、accounts 完整分页、账号唯一性校验、subscriptions/Free 判定、稳定错误类型、新密文格式与旧 OAuth 密文识别，并用 runtime 测试验证；本步骤不改 API 路由和前端。
 - 2026-10-23：核对分支、远端、工作区和 Actions；确认 `e3cdb05` 已推送，平台验收 run `39826112664`（#40）最终 `completed/success`；`5373f87` run `39825387738`、`0a5075d` run `39824622514`、`0325530` run `39823921091` 也成功。
 - 2026-10-23：复核历史失败 run：`fd80fa4` run `39754896119`（#11）与 `1e4fd10` run `39756824624`（#12）均为真实失败；后者因改动 workflow 触发 native jobs，web 与三平台原生构建均失败。后续提交已覆盖修复，但保留为每次推送必须核对 Actions 的教训。
 - 2026-10-23：核对 Cloudflare 官方 subscriptions 方法文档，确认响应结构、`rate_plan.id` 的 `free` 枚举、`rate_plan.public_name` 和 `Billing Read` 接受权限；可以开始实现 `worker/src/cloudflare-token.ts`。
@@ -129,6 +131,7 @@ git diff
 以下内容是恢复后可直接定位的当前事实，不是建议：
 
 - `worker/src/cloudflare-oauth.ts` 仍导出并使用 `exchangeCloudflareCode`、`refreshCloudflareCredential`、`discoverCloudflareAccountId`、`revokeCloudflareToken`、`readCloudflareCredential`。凭据结构仍是 `accessToken/refreshToken/tokenType/accountId/expiresAt`。
+- `worker/src/cloudflare-token.ts` 已新增并通过 8 项 runtime 测试，但 `worker/src/index.ts` 尚未导入它；当前设置/用量路由仍调用旧 OAuth 模块，旧 OAuth 密文也仍由旧读取器处理。
 - `discoverCloudflareAccountId` 当前只请求 `GET /client/v4/accounts?per_page=2`，没有分页遍历；即使继续临时使用 OAuth，也不能据此判断账号唯一性。
 - `worker/src/cloudflare-auth-result.ts` 当前通过一次性 Cookie `plugmesh_cf_auth` 传递授权成功/失败结果；Token 方案落地时必须整体删除，而不是改名继续用。
 - `worker/src/oauth-settings.ts` 当前混合 GitHub 与 Cloudflare OAuth，仍公开 `clientId`、`redirectUri`、`scope`、`scopeNames`、`responseType`、`grantType`、`tokenAuthMethod`；最终文件只能保留 GitHub 配置。
@@ -394,7 +397,7 @@ git diff
 
 ### 尚未完成
 
-- Cloudflare 后端仍是 OAuth exchange/refresh/revoke，仍会请求不存在/不合适的 OAuth scope。
+- Cloudflare Token 基础模块已完成，但后端 API 仍是 OAuth exchange/refresh/revoke，仍会请求不存在/不合适的 OAuth scope。
 - Cloudflare 设置页仍要求 OAuth Client ID/Secret、回调地址、协议字段和 scope。
 - `cloudflareQuotas` 仍存在 PlatformSettings、编辑表单、测试和本地统计 UI 中。
 - Cloudflare 未配置时 `cloudflareUsageApi` 仍可能先读缓存。
@@ -517,7 +520,7 @@ rg -n "offline_access|workers-platform\.read|response_type|grant_type|PKCE|cloud
 ## 5. 推荐实施顺序
 
 1. **保护现有工作区改动**：审阅并提交当前组件拆分；先跑一次 `npm run ui:conventions && npm run ui:css-audit && npm run build`。
-2. **后端 Token 迁移**：新 Cloudflare Token 客户端 + 设置/用量 API + 类型 + 迁移旧密文兼容。
+2. **后端 Token 迁移**：✅ Token 客户端基础模块完成；下一步接设置/用量 API、类型并移除旧 OAuth 运行路径。
 3. **后端测试**：先让 runtime tests 和 smoke 通过，确保未配置时不发外部请求。
 4. **前端 Token 表单**：删除 OAuth UI/Cookie/诊断，把错误放回当前设置面板。
 5. **额度只读化**：删除 `cloudflareQuotas`，用量响应带 limits，UI 显示 8 项次数/百分比。
@@ -559,6 +562,7 @@ ctest --test-dir native-server/build --output-on-failure
   4. `ci(native): 增加可执行文件与库文件手动构建`
   5. `docs(help): 补充二进制插件服务器与库文件部署说明`
 - 推送后不能只看“已 push”：必须查 workflow 到完成；失败就拉日志继续修。
+- 当前宿主 GLIBC 2.31 低于 `@cloudflare/workerd-linux-64` 要求；本地 runtime 测试使用 `docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/workspace" -w /workspace node:22-bookworm npx vitest run --config vitest.workers.config.ts ...`，不要因为 workerd 启动报 GLIBC 缺失而误判测试失败。
 - 当前无 `gh` 时，可用：
 
 ```bash
