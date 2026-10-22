@@ -122,12 +122,14 @@ assert.equal(fs.existsSync(path.join(root, '.dev.vars.example')), false, '不应
 const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8')
 for (const marker of [
   '[![Deploy to Cloudflare]',
+  'https://deploy.workers.cloudflare.com/?url=https://github.com/shelter-red/plugin-platform',
   '唯一部署必填项：Cloudflare 账号授权',
   '`npm run build`',
   '`npm run deploy`',
   '不要填写任何业务变量',
   'GitHub OAuth 回调地址由当前访问域名自动生成',
 ]) assert.ok(readme.includes(marker), `README 缺少最小部署约束：${marker}`)
+assert.ok(!readme.includes('OWNER/REPO'), 'README 仍包含未替换的仓库占位符')
 NODE
 printf 'ok：README 与 package.json 锁定 Cloudflare 授权即部署，且不声明额外输入项\n'
 

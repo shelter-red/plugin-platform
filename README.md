@@ -1,8 +1,8 @@
 # Plugmesh 插件聚合管理平台
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/OWNER/REPO)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/shelter-red/plugin-platform)
 
-> **一键部署：** 先把按钮链接中的 `OWNER/REPO` 换成公开仓库地址。部署页只需要 Cloudflare 账号授权；D1、R2、Durable Object、迁移、基础设施 Secret 和 Worker 发布全部自动完成。
+> **一键部署：** 点击上方按钮并授权 Cloudflare 账号即可。部署页不填写任何业务变量；D1、R2、Durable Object、迁移、基础设施 Secret 和 Worker 发布全部自动完成。
 
 这是 Cloudflare 插件聚合管理平台的 MVP 基础仓库，当前包含管理端界面、Worker 路由骨架、D1 初始模型、Durable Object 桥接边界，以及跨平台 C++ 插件服务器基础层。
 
@@ -79,7 +79,7 @@ cd native-server/build && ctest --output-on-failure
 
 ### 方式一：Cloudflare 部署按钮
 
-公开仓库后，把 README 顶部按钮中的 `OWNER/REPO` 替换成实际地址。点击按钮后：
+点击 README 顶部的 Deploy to Cloudflare 按钮并授权账号后：
 
 1. 授权 Cloudflare 账号；
 2. 确认 Workers Builds 预填的命令为 `npm run build` 和 `npm run deploy`；
