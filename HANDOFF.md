@@ -12,6 +12,8 @@
 - 2026-10-23：`1e5fec7 docs: 记录平台迁移与组件化交接清单` 已推送；平台验收 run `39816813766` 为 `completed/success`。此前 `1e4fd10`、`fd80fa4` 的失败仍作为反例，后续每推一次必须重新查 Actions。
 - 2026-10-23：`4cc1b72 docs: 整理会话遗留问题与验收总账` 已推送；平台验收 run `39817786882` 为 `completed/success`。本文件后续若只有文档更新，功能验收仍以最近一次包含代码的提交为准。
 - 当前工作区仍保留上一轮未提交的侧栏、账号、工作区组件拆分及额度文案/测试改动；本 HANDOFF 更新不会覆盖或回滚这些文件。
+- 2026-10-23：开始执行组件化收尾步骤。先只审阅、验证并提交侧栏/账号/工作区组件拆分；额度文案、locale 与 `tests/console-worker.spec.ts` 中混入的 Cloudflare 配额改动留给下一步单独处理，避免把未完成的 OAuth/额度接口假设固化进组件提交。
+- 2026-10-23：组件化收尾验证通过：`npm run ui:conventions`、`npm run ui:css-audit`、`npm run build`，以及账号页/工作区页两项 Playwright 用例均通过。下一步提交纯组件拆分，不夹带配额接口改动。
 
 ## 0. 先读这里：工作区与 Git 状态
 
@@ -26,7 +28,7 @@
 - 未认证 GitHub REST API 限额为每小时 60 次；2026-10-23 已因 15 秒高频轮询触发 403。后续轮询间隔至少 1 分钟，优先在预计完成后查询；额度耗尽时等 `X-RateLimit-Reset`，或用浏览器/`git` 侧信息，不要把 403 误判为 Actions 失败。
 - **工作区有上一轮组件化改动，严禁 `git reset --hard`、`git clean -fd`、`git checkout -- .` 或覆盖这些文件。** 修改前先看 `git status` 和 `git diff`。
 
-当前未提交改动：
+本轮开始时的未提交改动如下；组件相关文件随本步提交，剩余项继续保留到 Cloudflare 配额步骤：
 
 ```text
 M src/app/Sidebar.tsx
@@ -59,6 +61,12 @@ M tests/console-worker.spec.ts
 
 建议先审阅、跑测试并把这一批组件化改动提交，再开始 Cloudflare 大改；不要把它们和 Token 迁移混成一个无法审查的巨型提交。
 
+本次组件化收尾的提交边界：
+
+- 提交：`Sidebar` 拆分、`palette` 导入迁移、账号页拆分、工作区页拆分，以及对应 HANDOFF 记录。
+- 暂不提交：`UsageResourcesPanel`、`PlatformUsageSection`、locale 和配额测试改动；这些内容属于 Cloudflare 额度/旧 OAuth 清理，等接口与 Token 方案完成后统一验收。
+- 验证：`npm run ui:conventions`、`npm run ui:css-audit`、`npm run build`；若组件拆分改变交互路径，再跑相关 Playwright 用例。
+
 提交这批未提交改动时要注意：
 
 - `src/locales/en.ts`、`src/locales/zh-CN.ts` 里仍有旧 Cloudflare OAuth 文案（如 `authorizationExpired`、`reauthorize`）。如果本次提交只做组件化，不要盲目把这部分旧文案当成最终实现；Token 迁移时删除或改写。
@@ -71,7 +79,7 @@ M tests/console-worker.spec.ts
 
 | ID | 用户反馈或目标 | 必须达到的效果 | 当前状态 |
 | --- | --- | --- | --- |
-| U01 | “不是说全部重构成组件吗？登录页还是旧的” | 登录页及全站页面有清晰组件边界；登录页不重复重写；实际看视觉结果 | 🟡 登录页已拆成 `LoginPage`/`AuthFrame`/`AuthBrand`/`AuthLoadingScreen`/`GithubMark`；侧栏、账号、工作区仍有未提交拆分。视觉检查未完成。 |
+| U01 | “不是说全部重构成组件吗？登录页还是旧的” | 登录页及全站页面有清晰组件边界；登录页不重复重写；实际看视觉结果 | 🟡 登录页、侧栏、账号、工作区已完成组件拆分，构建与相关交互测试通过；多主题/多视口视觉检查仍未完成。 |
 | U02 | 自行从会话历史读分支、提交、推送 | 每步有中文 Git 记录；不靠聊天上下文猜分支 | 🟡 `main` 已跟踪远端；本 HANDOFF 需提交。后续每个代码步骤继续更新本文件再提交。 |
 | U03 | 推送时 Actions 老是失败 | 推送前跑完整本地 CI；推送后查 run；失败读日志/失败产物并修到成功 | 🟡 `1e5fec7` 当前成功；仍须对后续提交重复验收。`1e4fd10`、`fd80fa4` 是已知失败反例；CI 失败产物上传要求仍要保留。 |
 | U04 | 错误状态为什么是 `/?auth_error=` | 授权/配置错误使用真实 HTTP status + JSON；不靠 URL 查询参数；不跳首页 | 🟡 GitHub 登录错误路径已改为 HTTP 错误页；Cloudflare 设置/授权仍存在旧 OAuth 跳转，Token 迁移后必须全部改为当前设置面板展示。 |

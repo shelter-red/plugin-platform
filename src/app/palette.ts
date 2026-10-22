@@ -4,7 +4,7 @@ import type { CommandItem } from '../components/CommandPalette'
 import { settingsSections } from '../features/settings/settings-sections'
 import { auditActionLabel } from '../lib/audit'
 import type { Page } from './routes'
-import { sidebarNavGroups } from './Sidebar'
+import { sidebarNavGroups } from './sidebar-nav'
 
 /** 命令面板条目：导航 + 设置分区 + 当前工作区的服务器/插件/域名/日志/审计。 */
 export function buildCommandItems({ t, servers, plugins, domains, accessLogs, audits, onSelectPage, onOpenSettings }: {
