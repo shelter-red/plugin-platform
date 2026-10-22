@@ -74,6 +74,7 @@
     "worker-mailer": "^1.2.1"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
     "@cloudflare/vitest-plugin": "^1.4.6",
     "@cloudflare/workers-types": "latest",
     "@playwright/test": "^1.55.1",
