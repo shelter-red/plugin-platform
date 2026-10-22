@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Button, Input, Switch } from 'antd'
 import { Check, Cloud, FileText, KeyRound, ShieldCheck, Users } from 'lucide-react'
 import { ApiError, updatePlatformSettings, type ApiInvite, type CloudflareSettings, type OauthSettings, type PlatformSettings, type SmtpSettings, type Workspace } from '../../api'
 import type { Notify } from '../../components/ToastProvider'
+import { Panel } from '../../components/Panel'
 import { StatusBadge } from '../../components/StatusBadge'
 import { CloudflarePanel } from './CloudflarePanel'
 import type { CloudflareDiagnosis } from './cloudflare-auth'
@@ -19,6 +21,16 @@ export const settingsSections: { id: string; labelKey: string; icon: typeof Clou
 ]
 
 const scrollBehavior = (): ScrollBehavior => window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
+
+const QUOTA_FIELDS = [
+  ['requests', 'settings.quotas.requests'],
+  ['activeConnections', 'settings.quotas.connections'],
+  ['r2Bytes', 'settings.quotas.r2Bytes'],
+  ['r2Objects', 'settings.quotas.r2Objects'],
+  ['d1Queries', 'settings.quotas.d1'],
+  ['kvOperations', 'settings.quotas.kv'],
+  ['durableObjectRequests', 'settings.quotas.durableObjects'],
+] as const
 
 export function SettingsPage({ focusSection, settings, onSettingsChange, apiLive, isSuperAdmin, canManageInvites, activeWorkspaceId, workspaces, cloudflareSettings, onCloudflareChange, cloudflareDiagnosis, onDismissCloudflareDiagnosis, smtpSettings, onSmtpChange, oauthSettings, onOauthChange, invites, onInvitesChange, onAction }: { focusSection: { section: string; nonce: number } | null; settings: PlatformSettings | null; onSettingsChange: (settings: PlatformSettings) => void; apiLive: boolean; isSuperAdmin: boolean; canManageInvites: boolean; activeWorkspaceId: string | null; workspaces: Workspace[]; cloudflareSettings: CloudflareSettings | null; onCloudflareChange: (settings: CloudflareSettings) => void; cloudflareDiagnosis: CloudflareDiagnosis | null; onDismissCloudflareDiagnosis: () => void; smtpSettings: SmtpSettings | null; onSmtpChange: (settings: SmtpSettings) => void; oauthSettings: OauthSettings | null; onOauthChange: (settings: OauthSettings) => void; invites: ApiInvite[] | null; onInvitesChange: (invites: ApiInvite[]) => void; onAction: Notify }) {
   const { t } = useTranslation()
@@ -118,5 +130,33 @@ export function SettingsPage({ focusSection, settings, onSettingsChange, apiLive
     setActiveSection(section)
     document.getElementById(`settings-${section}`)?.scrollIntoView({ behavior: scrollBehavior(), block: 'start' })
   }
-  return <div className="settings-layout"><nav className="settings-nav" aria-label={t('pages.settings.title')}>{sectionNav.map(({ id, label, icon: Icon }) => <button key={id} className={activeSection === id ? 'selected' : ''} onClick={() => goToSection(id)} aria-current={activeSection === id ? 'page' : undefined}><Icon size={15} />{label}</button>)}</nav><div className="settings-content">{isSuperAdmin && <CloudflarePanel settings={cloudflareSettings} onSettingsChange={onCloudflareChange} oauth={oauthSettings} onOauthChange={onOauthChange} diagnosis={cloudflareDiagnosis} onDismissDiagnosis={onDismissCloudflareDiagnosis} apiLive={apiLive} onAction={onAction} />}{isSuperAdmin && <div id="settings-oauth"><OauthPanel settings={oauthSettings} onChange={onOauthChange} onAction={onAction} /></div>}{canManageInvites && <div id="settings-invites"><InvitePanel invites={invites} onChange={onInvitesChange} onAction={onAction} isSuperAdmin={isSuperAdmin} activeWorkspaceId={activeWorkspaceId} workspaces={workspaces} /></div>}{isSuperAdmin && <div id="settings-smtp"><SmtpPanel settings={smtpSettings} onChange={onSmtpChange} onAction={onAction} /></div>}{isSuperAdmin && <div id="settings-maintenance" className="panel settings-panel"><div className="settings-heading"><div className="settings-icon"><ShieldCheck size={18} /></div><div><h2>{t('settings.maintenance.title')}</h2><p>{settings ? t('settings.maintenance.description') : t('settings.maintenance.descriptionOffline')}</p></div><StatusBadge tone={maintenance ? 'warning' : settings ? 'success' : 'neutral'}>{maintenance ? t('settings.maintenance.on') : settings ? t('settings.maintenance.off') : t('settings.maintenance.unknown')}</StatusBadge></div><div className="maintenance-row"><div><strong>{settings ? (maintenance ? t('settings.maintenance.pause') : t('settings.maintenance.allow')) : t('settings.maintenance.unknownTitle')}</strong><span>{settings ? (maintenance ? t('settings.maintenance.pauseBody') : t('settings.maintenance.allowBody')) : t('settings.maintenance.unknownBody')}</span></div><button type="button" className={`toggle ${settings && !maintenance ? 'on' : ''}`} aria-label={t('settings.maintenance.title')} aria-pressed={Boolean(settings && !maintenance)} disabled={saving || !settings} onClick={toggleMaintenance}><span /></button></div><div className="quota-form domain-form"><div className="form-grid"><label>{t('settings.domainSuffix.label')}<input value={domainSuffix} onChange={(event) => setDomainSuffix(event.target.value)} placeholder="plugins.example.com" disabled={!settings || suffixSaving} /></label></div><div className="settings-actions quota-actions"><span className="form-hint">{t('settings.domainSuffix.hint')}</span><button className="button secondary" onClick={() => void saveDomainSuffix()} disabled={!settings || suffixSaving || quotaSaving}>{suffixSaving ? t('common.saving') : t('settings.domainSuffix.save')}<Check size={14} /></button></div></div><div className="quota-form"><div className="form-grid"><label>{t('settings.quotas.requests')}<input type="number" min="1" step="1" value={quotaForm.requests} onChange={(event) => updateQuota('requests', event.target.value)} disabled={!settings || quotaSaving} /></label><label>{t('settings.quotas.connections')}<input type="number" min="1" step="1" value={quotaForm.activeConnections} onChange={(event) => updateQuota('activeConnections', event.target.value)} disabled={!settings || quotaSaving} /></label><label>{t('settings.quotas.r2Bytes')}<input type="number" min="1" step="1" value={quotaForm.r2Bytes} onChange={(event) => updateQuota('r2Bytes', event.target.value)} disabled={!settings || quotaSaving} /></label><label>{t('settings.quotas.r2Objects')}<input type="number" min="1" step="1" value={quotaForm.r2Objects} onChange={(event) => updateQuota('r2Objects', event.target.value)} disabled={!settings || quotaSaving} /></label><label>{t('settings.quotas.d1')}<input type="number" min="1" step="1" value={quotaForm.d1Queries} onChange={(event) => updateQuota('d1Queries', event.target.value)} disabled={!settings || quotaSaving} /></label><label>{t('settings.quotas.kv')}<input type="number" min="1" step="1" value={quotaForm.kvOperations} onChange={(event) => updateQuota('kvOperations', event.target.value)} disabled={!settings || quotaSaving} /></label><label>{t('settings.quotas.durableObjects')}<input type="number" min="1" step="1" value={quotaForm.durableObjectRequests} onChange={(event) => updateQuota('durableObjectRequests', event.target.value)} disabled={!settings || quotaSaving} /></label></div><div className="settings-actions quota-actions"><span className="form-hint">{t('settings.quotas.hint')}</span><button className="button secondary" onClick={() => void saveQuotas()} disabled={!settings || quotaSaving || suffixSaving}>{quotaSaving ? t('common.saving') : t('settings.quotas.save')}<Check size={14} /></button></div></div></div>}</div></div>
+  return <div className="settings-layout">
+    <nav className="settings-nav" aria-label={t('pages.settings.title')}>{sectionNav.map(({ id, label, icon: Icon }) => <Button key={id} type="text" block className={activeSection === id ? 'selected' : ''} onClick={() => goToSection(id)} aria-current={activeSection === id ? 'page' : undefined} icon={<Icon size={15} />}>{label}</Button>)}</nav>
+    <div className="settings-content">
+      {isSuperAdmin && <CloudflarePanel settings={cloudflareSettings} onSettingsChange={onCloudflareChange} oauth={oauthSettings} onOauthChange={onOauthChange} diagnosis={cloudflareDiagnosis} onDismissDiagnosis={onDismissCloudflareDiagnosis} apiLive={apiLive} onAction={onAction} />}
+      {isSuperAdmin && <div id="settings-oauth"><OauthPanel settings={oauthSettings} onChange={onOauthChange} onAction={onAction} /></div>}
+      {canManageInvites && <div id="settings-invites"><InvitePanel invites={invites} onChange={onInvitesChange} onAction={onAction} isSuperAdmin={isSuperAdmin} activeWorkspaceId={activeWorkspaceId} workspaces={workspaces} /></div>}
+      {isSuperAdmin && <div id="settings-smtp"><SmtpPanel settings={smtpSettings} onChange={onSmtpChange} onAction={onAction} /></div>}
+      {isSuperAdmin && <Panel id="settings-maintenance" className="settings-panel" padded heading={
+        <div className="settings-heading">
+          <div className="settings-icon"><ShieldCheck size={18} /></div>
+          <div><h2>{t('settings.maintenance.title')}</h2><p>{settings ? t('settings.maintenance.description') : t('settings.maintenance.descriptionOffline')}</p></div>
+          <StatusBadge tone={maintenance ? 'warning' : settings ? 'success' : 'neutral'}>{maintenance ? t('settings.maintenance.on') : settings ? t('settings.maintenance.off') : t('settings.maintenance.unknown')}</StatusBadge>
+        </div>
+      }>
+        <div className="maintenance-row">
+          <div><strong>{settings ? (maintenance ? t('settings.maintenance.pause') : t('settings.maintenance.allow')) : t('settings.maintenance.unknownTitle')}</strong><span>{settings ? (maintenance ? t('settings.maintenance.pauseBody') : t('settings.maintenance.allowBody')) : t('settings.maintenance.unknownBody')}</span></div>
+          <Switch className="toggle" aria-label={t('settings.maintenance.title')} checked={Boolean(settings && !maintenance)} disabled={saving || !settings} loading={saving} onChange={() => void toggleMaintenance()} />
+        </div>
+        <div className="quota-form domain-form">
+          <div className="form-grid"><label>{t('settings.domainSuffix.label')}<Input value={domainSuffix} onChange={(event) => setDomainSuffix(event.target.value)} placeholder="plugins.example.com" disabled={!settings || suffixSaving} /></label></div>
+          <div className="settings-actions quota-actions"><span className="form-hint">{t('settings.domainSuffix.hint')}</span><Button onClick={() => void saveDomainSuffix()} loading={suffixSaving} disabled={!settings || quotaSaving}>{t('settings.domainSuffix.save')}<Check size={14} /></Button></div>
+        </div>
+        <div className="quota-form">
+          <div className="form-grid">{QUOTA_FIELDS.map(([key, labelKey]) => <label key={key}>{t(labelKey)}<Input type="number" min={1} step={1} value={quotaForm[key]} onChange={(event) => updateQuota(key, event.target.value)} disabled={!settings || quotaSaving} /></label>)}</div>
+          <div className="settings-actions quota-actions"><span className="form-hint">{t('settings.quotas.hint')}</span><Button onClick={() => void saveQuotas()} loading={quotaSaving} disabled={!settings || suffixSaving}>{t('settings.quotas.save')}<Check size={14} /></Button></div>
+        </div>
+      </Panel>}
+    </div>
+  </div>
 }
