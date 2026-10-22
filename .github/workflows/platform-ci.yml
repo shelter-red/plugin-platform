@@ -1,4 +1,4 @@
-name: 原生平台验收
+name: 平台验收
 
 on:
   push:
@@ -14,6 +14,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: 安装依赖
+        run: npm ci
+      - name: UI 约定审计
+        run: npm run ui:conventions
+      - name: Worker 类型检查
+        run: npm run worker:typecheck
+      - name: 构建管理端
+        run: npm run build
+      - name: Worker smoke
+        run: npm run worker:smoke
+      - name: 安装 Playwright 浏览器
+        run: npx playwright install --with-deps chromium
+      - name: 管理端 UI smoke
+        run: npm run ui:smoke
+
   linux-native:
     runs-on: ubuntu-latest
     steps:
