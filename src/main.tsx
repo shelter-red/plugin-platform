@@ -17,16 +17,12 @@ import {
   Cloud,
   Command,
   Copy,
-  Database,
-  Download,
   FileText,
   Gauge,
   Globe2,
-  HardDrive,
   KeyRound,
   LayoutDashboard,
   LogOut,
-  ListFilter,
   LockKeyhole,
   Menu,
   MoreHorizontal,
@@ -72,12 +68,14 @@ import { OverviewPage } from './features/overview/OverviewPage'
 import { ServersPage } from './features/servers/ServersPage'
 import { PluginsPage } from './features/plugins/PluginsPage'
 import { DomainsPage } from './features/domains/DomainsPage'
-import { auditActionLabel, auditDetail } from './lib/audit'
+import { UsagePage } from './features/usage/UsagePage'
+import { AccessLogsPage } from './features/logs/AccessLogsPage'
+import { AuditPage } from './features/audit/AuditPage'
+import { auditActionLabel } from './lib/audit'
 import { downloadCsv } from './lib/csv'
-import { formatBytes, formatDateTime, formatNumber } from './lib/format'
-import { usagePercent } from './lib/usage'
+import { formatDateTime } from './lib/format'
 import { AuthLoadingScreen, LoginPage } from './features/auth/AuthScreen'
-import { ApiError, assignDomain, checkPluginHealth, commandPlugin, createInvite, createRegistrationCode, fetchAccessLogs, fetchAudit, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchInvites, fetchLocalUsage, fetchOauthSettings, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchPluginDetails, fetchServerDetails, fetchServers, fetchSmtpSettings, revokeInvite, syncServer, type ApiAccessLog, type ApiAudit, type ApiDomain, type ApiInvite, type ApiOverview, type ApiPlugin, type ApiPluginDetail, type ApiServer, type ApiServerDetail, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type OauthSettings, type PlatformSettings, type PluginAction, type PluginHealthResult, type SmtpSettings, type UsageBreakdownEntry, type WorkspaceRole, updatePlatformSettings } from './api'
+import { ApiError, assignDomain, checkPluginHealth, commandPlugin, createInvite, createRegistrationCode, fetchAccessLogs, fetchAudit, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchInvites, fetchLocalUsage, fetchOauthSettings, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchPluginDetails, fetchServerDetails, fetchServers, fetchSmtpSettings, revokeInvite, syncServer, type ApiAccessLog, type ApiAudit, type ApiDomain, type ApiInvite, type ApiOverview, type ApiPlugin, type ApiPluginDetail, type ApiServer, type ApiServerDetail, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type OauthSettings, type PlatformSettings, type PluginAction, type PluginHealthResult, type SmtpSettings, type WorkspaceRole, updatePlatformSettings } from './api'
 
 type Theme = 'dark' | 'light' | 'system'
 type ModalInput = { prefix?: string; pluginInstanceId?: string }
@@ -571,9 +569,9 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
             {page === 'servers' && <ServersPage servers={servers ?? []} loading={dataLoading} onRefresh={() => void refreshData()} onBind={() => setModal('server')} onDetail={(id) => void openDetail('server', id)} />}
             {page === 'plugins' && <PluginsPage plugins={plugins ?? []} loading={dataLoading} onSync={() => void syncManifests()} onLoad={() => setModal('plugin')} onDetail={(id) => void openDetail('plugin', id)} onHealth={(plugin) => void runHealthCheck(plugin)} />}
             {page === 'domains' && <DomainsPage domains={domains ?? []} loading={dataLoading} onAction={notify} onRefresh={() => void refreshData()} onAssign={() => setModal('domain')} />}
-            {page === 'usage' && <Usage settings={platformSettings} usage={usage} localUsage={localUsage} loading={usageLoading} error={usageError} onNavigate={selectPage} />}
-            {page === 'logs' && <AccessLogs logs={accessLogs ?? []} loading={accessLogsLoading} error={accessLogsError} onExport={exportAccessLogs} />}
-            {page === 'audit' && <Audit audits={audits ?? []} loading={auditLoading} error={auditError} onExport={exportAudit} />}
+            {page === 'usage' && <UsagePage settings={platformSettings} usage={usage} localUsage={localUsage} loading={usageLoading} error={usageError} onNavigate={selectPage} />}
+            {page === 'logs' && <AccessLogsPage logs={accessLogs ?? []} loading={accessLogsLoading} error={accessLogsError} onExport={exportAccessLogs} />}
+            {page === 'audit' && <AuditPage audits={audits ?? []} loading={auditLoading} error={auditError} onExport={exportAudit} />}
             {page === 'workspaces' && <WorkspacePage workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} onSwitch={switchWorkspace} onWorkspacesChange={reloadWorkspaces} onAction={notify} />}
             {page === 'settings' && <SettingsPage focusSection={settingsFocus} settings={platformSettings} apiLive={apiLive} isSuperAdmin={isSuperAdmin} canManageInvites={isSuperAdmin || activeWorkspace?.role === 'owner'} activeWorkspaceId={activeWorkspaceId} workspaces={workspaces} onSettingsChange={setPlatformSettings} cloudflareSettings={cloudflareSettings} onCloudflareChange={setCloudflareSettings} cloudflareDiagnosis={cloudflareDiagnosis} onDismissCloudflareDiagnosis={() => setCloudflareDiagnosis(null)} smtpSettings={smtpSettings} onSmtpChange={setSmtpSettings} oauthSettings={oauthSettings} onOauthChange={setOauthSettings} invites={invites} onInvitesChange={setInvites} onAction={notify} />}
             {docPage && (docPage === 'account' ? <AccountPage user={authUser} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} /> : <DocPage page={docPage} />)}
@@ -585,76 +583,6 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} items={paletteItems} />}
     </div>
   )
-}
-
-function Usage({ settings, usage, localUsage, loading, error, onNavigate }: { settings: PlatformSettings | null; usage: CloudflareUsage | null; localUsage: LocalUsage | null; loading: boolean; error: string | null; onNavigate: (page: Page) => void }) {
-  const { t } = useTranslation()
-  const notRead = t('common.notRead')
-  const period = usage?.period
-  const requests = usage?.requests
-  const d1 = usage?.d1
-  const kv = usage?.kv
-  const durableObjects = usage?.durableObjects
-  const quotas = settings?.quotas
-  const hasLocalUsage = localUsage !== null
-  const requestValue = typeof requests === 'number' ? formatNumber(requests) : '—'
-  const localRequestValue = hasLocalUsage ? formatNumber(localUsage.requestCount) : '—'
-  const requestLimit = quotas ? formatNumber(quotas.requests) : notRead
-  const connectionLimit = quotas ? formatNumber(quotas.activeConnections) : notRead
-  const r2Limit = quotas ? formatBytes(quotas.r2Bytes) ?? notRead : notRead
-  const d1Limit = quotas ? formatNumber(quotas.d1Queries) : notRead
-  const kvLimit = quotas ? formatNumber(quotas.kvOperations) : notRead
-  const durableObjectLimit = quotas ? formatNumber(quotas.durableObjectRequests) : notRead
-  const connected = usage?.configured === true && typeof requests === 'number'
-  const d1Queries = d1 ? d1.readQueries + d1.writeQueries : null
-  const kvOperations = kv ? kv.read + kv.write + kv.delete + kv.list : null
-  const workerPercent = usagePercent(connected && typeof requests === 'number' ? requests : null, quotas?.requests)
-  const localRequestPercent = usagePercent(localUsage?.requestCount, quotas?.requests)
-  const r2Percent = usagePercent(localUsage?.r2Bytes, quotas?.r2Bytes)
-  const connectionPercent = usagePercent(localUsage?.activeConnections, quotas?.activeConnections)
-  const d1Percent = usagePercent(d1Queries, quotas?.d1Queries)
-  const kvPercent = usagePercent(kvOperations, quotas?.kvOperations)
-  const durableObjectPercent = usagePercent(durableObjects?.requests, quotas?.durableObjectRequests)
-  const usageUpdatedAt = usage?.updatedAt
-  const localUpdatedAt = localUsage?.updatedAt
-  const requestWindowStartedAt = localUsage?.requestWindowStartedAt
-
-  return <div className="stack">
-    {error && <div className="notice-bar compact"><div className="notice-icon"><AlertCircle size={16} /></div><div><strong>{t('usage.loadFailed')}</strong><span>{translateError(error)}</span></div><button onClick={() => onNavigate('settings')}>{t('usage.checkConfig')} <ArrowUpRight size={14} /></button></div>}
-    {!error && <div className="notice-bar compact"><div className="notice-icon"><Cloud size={16} /></div><div><strong>{loading ? t('usage.loadingOfficial') : connected ? t('usage.connected') : t('usage.notConnected')}</strong><span>{connected && period ? t('usage.period', { start: formatDateTime(period.start), end: formatDateTime(period.end) }) : t('usage.periodHint')}</span></div><button onClick={() => onNavigate('settings')}>{t('usage.configure')} <ArrowUpRight size={14} /></button></div>}
-    <div className="usage-grid">
-      <ResourceCard title={t('usage.card.workerRequests')} current={requestValue} limit={requestLimit} unit={connected ? t('usage.card.officialPeriod') : ''} percent={workerPercent} icon={Cloud} />
-      <ResourceCard title={t('usage.card.platformRequests')} current={localRequestValue} limit={requestLimit} unit={hasLocalUsage ? t('usage.card.window24h') : t('usage.card.notConnected')} percent={localRequestPercent} icon={Activity} />
-      <ResourceCard title={t('usage.card.r2')} current={hasLocalUsage ? formatBytes(localUsage.r2Bytes) ?? '—' : '—'} limit={r2Limit} unit={hasLocalUsage ? t('usage.card.objects', { count: localUsage.r2Objects }) : quotas ? t('usage.card.platformQuota') : ''} percent={r2Percent} icon={HardDrive} />
-      <ResourceCard title={t('usage.card.connections')} current={hasLocalUsage ? formatNumber(localUsage.activeConnections) : '—'} limit={connectionLimit} unit={hasLocalUsage ? t('usage.card.connectionsUnit') : t('usage.card.notConnected')} percent={connectionPercent} icon={Activity} />
-      <ResourceCard title={t('usage.card.d1')} current={d1Queries === null ? '—' : formatNumber(d1Queries)} limit={d1Limit} unit={d1 ? t('usage.card.rowsRead', { count: formatNumber(d1.rowsRead) }) : ''} percent={d1Percent} icon={Database} />
-      <ResourceCard title={t('usage.card.kv')} current={kvOperations === null ? '—' : formatNumber(kvOperations)} limit={kvLimit} unit={kv ? t('usage.card.kvReads', { count: formatNumber(kv.read) }) : ''} percent={kvPercent} icon={HardDrive} />
-      <ResourceCard title={t('usage.card.durableObjects')} current={durableObjects ? formatNumber(durableObjects.requests) : '—'} limit={durableObjectLimit} unit={durableObjects ? t('usage.card.storage', { size: formatBytes(durableObjects.storedBytes) ?? '—' }) : ''} percent={durableObjectPercent} icon={Activity} />
-    </div>
-    <div className="panel"><div className="panel-header"><div><h2>{t('usage.sourcesTitle')}</h2><p>{t('usage.sourcesSubtitle')}</p></div></div><div className="source-row"><span className="source-name"><span className={`source-dot ${connected ? 'green' : 'pending'}`} />Cloudflare Analytics API</span><span className="muted">{connected ? `${usage?.cached ? t('usage.cached') : t('usage.latest')} · ${usageUpdatedAt ? formatDateTime(usageUpdatedAt) : t('usage.unknownTime')}` : t('usage.notConfigured')}</span><button className="text-link" onClick={() => onNavigate('settings')}>{t('usage.configureSource')} <ArrowUpRight size={14} /></button></div><div className="source-row"><span className="source-name"><span className={`source-dot ${hasLocalUsage ? 'green' : 'pending'}`} />{t('overview.note.localCount')}</span><span className="muted">{localUpdatedAt ? t('usage.updatedAt', { time: formatDateTime(localUpdatedAt) }) : t('usage.card.notConnected')}</span><span className="muted">{requestWindowStartedAt ? t('usage.windowStartedAt', { time: formatDateTime(requestWindowStartedAt) }) : t('usage.noData')}</span></div></div>
-    <div className="panel breakdown-panel"><div className="panel-header"><div><h2>{t('usage.breakdown.title')}</h2><p>{t('usage.breakdown.subtitle')}</p></div></div><div className="breakdown-grid"><BreakdownColumn title={t('usage.breakdown.users')} rows={localUsage?.breakdown.users ?? []} /><BreakdownColumn title={t('usage.breakdown.plugins')} rows={localUsage?.breakdown.plugins ?? []} /><BreakdownColumn title={t('usage.breakdown.domains')} rows={localUsage?.breakdown.domains ?? []} /></div></div>
-  </div>
-}
-
-function BreakdownColumn({ title, rows }: { title: string; rows: UsageBreakdownEntry[] }) {
-  const { t } = useTranslation()
-  return <div className="breakdown-column"><h3>{title}</h3>{rows.length === 0 ? <p className="breakdown-empty">{t('usage.breakdown.empty')}</p> : rows.map((row) => <div className="breakdown-row" key={row.id}><span title={row.label}>{row.label}</span><strong>{formatNumber(row.requests)}</strong></div>)}</div>
-}
-
-function ResourceCard({ title, current, limit, unit, percent = 0, icon: Icon }: { title: string; current: string; limit: string; unit: string; percent?: number; icon: typeof Cloud }) {
-  const { t } = useTranslation()
-  return <div className="resource-card"><div className="resource-card-head"><div className="resource-card-icon"><Icon size={17} /></div><span>{title}</span></div><strong>{current}</strong><div className="resource-card-limit">{t('common.upperLimit', { limit })} <span>{unit}</span></div><div className="progress"><span style={{ width: `${percent}%` }} /></div></div>
-}
-
-function AccessLogs({ logs, loading, error, onExport }: { logs: ApiAccessLog[]; loading: boolean; error: string | null; onExport: () => void }) {
-  const { t } = useTranslation()
-  const errors = logs.filter((log) => log.status >= 500).length
-  return <div className="stack">{error && <div className="notice-bar compact"><div className="notice-icon"><AlertCircle size={16} /></div><div><strong>{t('logs.loadFailed')}</strong><span>{translateError(error)}</span></div></div>}<div className="filter-row"><div className="filter-summary"><Activity size={15} />{t('logs.last30Days')} <span className="divider" />{t('logs.errors', { count: errors })}</div><button className="button secondary small" onClick={onExport} disabled={loading || logs.length === 0}><Download size={14} />{t('logs.export')}</button></div>{loading ? <div className="empty-panel"><div className="empty-illustration"><RefreshCw size={20} /></div><h3>{t('logs.loadingTitle')}</h3><p>{t('logs.loadingBody')}</p></div> : logs.length === 0 ? <div className="empty-panel"><div className="empty-illustration"><Activity size={20} /></div><h3>{t('logs.emptyTitle')}</h3><p>{t('logs.emptyBody')}</p></div> : <div className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>{t('logs.columnHost')}</th><th>{t('logs.columnRequest')}</th><th>{t('logs.columnStatus')}</th><th>{t('logs.columnDuration')}</th><th>{t('logs.columnTime')}</th></tr></thead><tbody>{logs.map((log) => <tr key={log.id}><td><div className="cell-title"><div className="table-icon"><Globe2 size={15} /></div><div><strong>{log.hostname}</strong><small>{log.path}</small></div></div></td><td>{log.method}</td><td><StatusBadge tone={log.status >= 500 ? 'danger' : log.status >= 400 ? 'warning' : 'success'}>{log.status}{log.error ? ` · ${log.error}` : ''}</StatusBadge></td><td>{log.duration_ms} ms</td><td className="muted">{formatDateTime(log.created_at)}</td></tr>)}</tbody></table></div></div>}</div>
-}
-
-function Audit({ audits, loading, error, onExport }: { audits: ApiAudit[]; loading: boolean; error: string | null; onExport: () => void }) {
-  const { t } = useTranslation()
-  return <div className="stack">{error && <div className="notice-bar compact"><div className="notice-icon"><AlertCircle size={16} /></div><div><strong>{t('audit.loadFailed')}</strong><span>{translateError(error)}</span></div></div>}<div className="filter-row"><div className="filter-summary"><ListFilter size={15} />{t('audit.allEvents')} <span className="divider" />{t('audit.last180Days')}</div><button className="button secondary small" onClick={onExport} disabled={loading || audits.length === 0}><Download size={14} />{t('audit.export')}</button></div>{loading ? <div className="empty-panel"><div className="empty-illustration"><RefreshCw size={20} /></div><h3>{t('audit.loadingTitle')}</h3><p>{t('audit.loadingBody')}</p></div> : audits.length === 0 ? <div className="empty-panel"><div className="empty-illustration"><Activity size={20} /></div><h3>{t('audit.emptyTitle')}</h3><p>{t('audit.emptyBody')}</p></div> : <div className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>{t('audit.columnEvent')}</th><th>{t('audit.columnDetail')}</th><th>{t('audit.columnActor')}</th><th>{t('audit.columnTime')}</th></tr></thead><tbody>{audits.map((item) => <tr key={item.id}><td><div className="cell-title"><div className="audit-icon"><Activity size={14} /></div><strong>{auditActionLabel(item.action)}</strong></div></td><td>{auditDetail(item)}</td><td><span className="operator"><div className="mini-avatar">{(item.actor_name ?? t('common.system')).slice(0, 1)}</div><span>{item.actor_name ?? t('audit.systemEvent')}<small>{item.actor_email ?? t('audit.noIdentity')}</small></span></span></td><td className="muted">{formatDateTime(item.created_at)}</td></tr>)}</tbody></table></div></div>}</div>
 }
 
 function SettingsPage({ focusSection, settings, onSettingsChange, apiLive, isSuperAdmin, canManageInvites, activeWorkspaceId, workspaces, cloudflareSettings, onCloudflareChange, cloudflareDiagnosis, onDismissCloudflareDiagnosis, smtpSettings, onSmtpChange, oauthSettings, onOauthChange, invites, onInvitesChange, onAction }: { focusSection: { section: string; nonce: number } | null; settings: PlatformSettings | null; onSettingsChange: (settings: PlatformSettings) => void; apiLive: boolean; isSuperAdmin: boolean; canManageInvites: boolean; activeWorkspaceId: string | null; workspaces: Workspace[]; cloudflareSettings: CloudflareSettings | null; onCloudflareChange: (settings: CloudflareSettings) => void; cloudflareDiagnosis: CloudflareDiagnosis | null; onDismissCloudflareDiagnosis: () => void; smtpSettings: SmtpSettings | null; onSmtpChange: (settings: SmtpSettings) => void; oauthSettings: OauthSettings | null; onOauthChange: (settings: OauthSettings) => void; invites: ApiInvite[] | null; onInvitesChange: (invites: ApiInvite[]) => void; onAction: Notify }) {
