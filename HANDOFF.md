@@ -2,7 +2,7 @@
 
 > 最后整理：2026-10-23（Asia/Shanghai）
 >
-> 当前状态：**Cloudflare API Token 前端/后端与 8 项用量迁移已提交；完整本地 CI（含 86/86 UI smoke）已通过；基线 `c0bfde3` 已推送，Actions run `39850719037`（#53）completed/success。旧文档/文案已完成盘点但尚未修改；视觉验收、原生二进制/共享库手动构建和帮助中心仍是后续工作。任何之后的 docs-only HANDOFF 提交都要单独核对最新 Actions。**
+> 当前状态：**Cloudflare API Token 前端/后端与 8 项用量迁移已提交并通过本地完整 CI（含 86/86 UI smoke）；整理时 HEAD / `origin/main` 均为 `42d1870`，工作区干净，Actions run `39851368864`（#54）completed/success。旧文档/文案已完成盘点但尚未修改；视觉验收、原生二进制/共享库手动构建和帮助中心仍是后续工作。本文件再次校订后会单独形成 docs-only 提交，必须追踪新 HEAD 自己的最新 Actions。**
 >
 > 本文件是上下文压缩后的第一事实源。README、旧方案、旧测试、聊天摘要或历史提交说明与本文冲突时，以用户最新要求、当前代码和本文为准。恢复后先执行第 0 节的核验命令，再按第 8 节顺序继续。
 
@@ -13,16 +13,17 @@
 ```text
 仓库：/home/tc/work/plugin-platform
 分支：main
-最近已验证远端基线：c0bfde3 docs: 记录完整本地 CI 结果
-origin/main（本次 HANDOFF 更新前）：c0bfde3
-本地关系（本次 HANDOFF 更新前）：与 origin/main 相同；本次 docs-only 提交后会 ahead 1
+HEAD（整理时）：42d1870 docs: 记录推送与 Actions 验收结果
+origin/main（整理时）：42d1870（与 HEAD 相同）
+工作区（整理时）：干净
 fetch remote：https://github.com/shelter-red/plugin-platform.git
 push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 ```
 
-本次推送包含的本地提交（已到远端）：
+最近已推送提交（均已到远端）：
 
 ```text
+42d1870 docs: 记录推送与 Actions 验收结果
 c0bfde3 docs: 记录完整本地 CI 结果
 87e88dd docs: 校订交接恢复基线
 d1c9f3d docs: 补齐旧文档清理交接清单
@@ -37,12 +38,12 @@ a02871a docs: 更新 Token 与用量验收交接基线
 9882c76 fix(worker): 收口 Cloudflare API Token 与只读额度契约
 ```
 
-- 上述基线已 push；`c0bfde3` 对应 Actions run `39850719037`（#53），`completed/success`。
-- 本次 HANDOFF 更新若产生新的 docs-only 提交，必须追踪该提交自己的最新 run，不能拿 #53 代替。
-- 此前最新成功为 `579eb1f`，run `39840532476`（#52）。
+- `42d1870` 对应 Actions run `39851368864`（#54），`completed/success`；`c0bfde3` 对应 #53，run `39850719037`，同样成功。
+- 本次 HANDOFF 校订若形成新的 docs-only 提交，必须追踪该提交自己的最新 run，不能拿 #54 代替。
+- 更早最新成功依次为 `579eb1f` #52（run `39840532476`）和 `c84ceb0` #51（run `39839503567`）。
 - 仓库内未发现 `AGENTS.md`，无额外仓库级代理指令。
-- `850928e` 已提交 35 个前端/测试路径；`a02871a` 只更新 HANDOFF。当前工作区在本次盘点前干净；本 HANDOFF 更新会单独形成 docs-only 提交。
-- 恢复时始终以实际 `git log -1`、`git status` 和 `git rev-parse HEAD origin/main` 为准。
+- `850928e` 已提交 35 个前端/测试路径；`a02871a`、`d1c9f3d`、`87e88dd`、`c0bfde3`、`42d1870` 只更新交接文档。整理时工作区干净。
+- 恢复时始终以实际 `git fetch`、`git log -1`、`git status` 和 `git rev-parse HEAD origin/main` 为准。
 
 恢复时先运行：
 
@@ -58,7 +59,7 @@ find .. -name AGENTS.md -print
 
 ### 0.2 当前工作区
 
-`850928e` 已收口此前 35 个脏路径（21 个修改、10 个删除、4 个新增）；`a02871a` 只更新 HANDOFF。本文件更新前代码工作区干净；不要把历史脏路径清单当成当前状态。
+`850928e` 已收口此前 35 个脏路径（21 个修改、10 个删除、4 个新增）；后续 `a02871a`、`d1c9f3d`、`87e88dd`、`c0bfde3`、`42d1870` 均为文档提交。整理本文件前代码与文档工作区均干净；不要把历史脏路径清单当成当前状态。
 
 本次已提交的核心文件：
 
@@ -104,16 +105,24 @@ Cloudflare/用量定向 worker-mock 回归                 8 passed
 
 设置导航曾出现 2/3 偶发失败：滚到底的 shell 已高亮最后一项，但随后 `IntersectionObserver` 用旧可见集合覆盖。`850928e` 通过 `atBottom` 引用让滚到底兜底拥有最终决定权；未放宽或删除断言。
 
-尚未完成/不能宣称通过：
+已完成的验收：
 
 ```text
 npm run ci:local             PASS（2026-10-23，含 86/86 UI smoke）
-npm run deploy:worker:test   本轮前端提交后未重跑
-worker runtime Docker        最近修改后未重跑
-原生 CMake / ctest           新共享库与 workflow 尚未实现
+npm run deploy:worker:test   PASS（2026-10-23，本轮复核 10/10）
+worker runtime Docker        PASS（20/20 files，89/89 tests；Cloudflare Token 后端提交后）
+latest Actions               42d1870 / #54 / 39851368864 / completed/success
+```
+
+尚未完成/不能宣称通过：
+
+```text
+原生 CMake / ctest           新共享库 target 与手动 workflow 尚未实现
 真实 Cloudflare API          未联调
 真实 GitHub OAuth            未联调
 Workers Builds 控制台配置     未核对
+生产 D1 migration / 页面     未实机复核
+旧文档、帮助中心、隐私文案     仍待第 8.2 / 8.5 节清理
 ```
 
 ### 0.4 恢复后的第一动作
@@ -121,7 +130,8 @@ Workers Builds 控制台配置     未核对
 1. 执行 0.1 的 Git 核验，不凭记忆判断 HEAD 或工作区。
 2. 阅读第 1、2 节，确认用户硬约束，尤其不要恢复任何 Cloudflare OAuth 字段。
 3. 从第 8.2 节继续：先清理旧文档/文案，再做视觉验收，最后实现原生手动构建与帮助中心。
-4. 每次压缩恢复后都更新本文件，不把“计划”写成“已完成”。
+4. 本文件每次更新后单独提交；push 后追踪新 HEAD 的 Actions，不引用旧 run 作为新提交证据。
+5. 每次压缩恢复后都更新本文件，不把“计划”写成“已完成”。
 
 ## 1. 用户硬约束与最终产品决策
 
@@ -242,8 +252,8 @@ doRequests        100,000
 | ID | 用户反馈/目标 | 必须达到的效果 | 当前状态 |
 | --- | --- | --- | --- |
 | U01 | “不是说全部重构成组件吗？登录页还是旧的” | 清晰组件边界；登录页实际视觉验收 | 🟡 登录页/侧栏/账号/工作区已拆；最终截图验收未完成 |
-| U02 | “自己从会话历史里读 Git 分支，自行提交推送” | 每步有中文 Git 记录；不靠聊天猜 | 🟡 `main` 领先 10+ 个未推送提交；本地完整 CI 与 Actions 闭环仍未完成 |
-| U03 | “推送时注意 Actions，老是错误” | 本地完整 CI + push 后追踪到成功 | ✅ 本地 `npm run ci:local` 通过；`c0bfde3` #53 completed/success |
+| U02 | “自己从会话历史里读 Git 分支，自行提交推送” | 每步有中文 Git 记录；不靠聊天猜 | ✅ 已从 Git 历史恢复分支/提交；整理时 `main` 与 `origin/main` 同为 `42d1870`，工作区干净 |
+| U03 | “推送时注意 Actions，老是错误” | 本地完整 CI + push 后追踪到成功 | ✅ 本地 `npm run ci:local` 通过；`42d1870` #54 completed/success |
 | U04 | 为什么错误状态靠 `/?auth_error=` | 真实 HTTP + JSON，留在当前页 | 🟡 Cloudflare 跳转/auth-result 链路已删；GitHub 失败页已是 HTTP；仍需统一测试与旧文案清理 |
 | U05 | setup 失效为什么单独返回 `Setup is not available` | 返回 null 后走普通非路由行为 | ✅ 已实现并有测试 |
 | U06 | `D1_ERROR: no such table: workspaces` | 先应用全部 migrations 再部署 | 🟡 deploy 脚本已实现并测试；Workers Builds 控制台配置待核对 |
@@ -251,14 +261,14 @@ doRequests        100,000
 | U08 | 授权失败为什么跳首页 | 错误留系统设置页，显示 HTTP/status/code/message | 🟡 新 Token 表单已保留 HTTP 错误并在 `/settings` 显示；完整回归未补 |
 | U09 | 用户不知道 OAuth 给什么权限，取消后权限就没了 | 权限固定只读；创建 Token 直达链接 | 🟡 三项权限组件与链接已实现；仍缺完整交互测试和旧文档清理 |
 | U10 | “未识别唯一账号”也是权限问题 | verify → accounts 全分页 → subscriptions，不猜账号 | ✅ 后端和 runtime 测试覆盖 |
-| U11 | 用量/配额为什么没刷新按钮 | 一个清晰刷新入口，自动加载期间不禁用 | 🟡 `PageHeader` 唯一刷新入口和独立 `usageRefreshing` 已实现；专项测试未补 |
+| U11 | 用量/配额为什么没刷新按钮 | 一个清晰刷新入口，自动加载期间不禁用 | ✅ `PageHeader` 唯一刷新入口、独立 `usageRefreshing` 和点击后再次请求的回归测试均已通过 |
 | U12 | OAuth 根本没有 offline_access | 删除 offline_access/refresh/过期语义 | 🟡 后端/API/新 UI 已删；旧文档与少量旧文案仍待清 |
 | U13 | 未配置为何还能查 `/api/usage/local?range=7d` 且返回 200 | 区分 Cloudflare 与本地统计；未配置不读缓存/不发请求 | ✅ 路由与测试已覆盖 |
 | U14 | response_type 放错位置；CF OAuth 没有 PKCE | 最终 Token 方案中这些字段全部消失 | 🟡 新组件无这些字段；旧文档仍大量保留 |
-| U15 | `1e4fd10`、`fd80fa4` Actions 失败 | 失败修复、本地 CI、push、Actions、产物闭环 | 🟡 最新远端成功；本地改动未 push |
+| U15 | `1e4fd10`、`fd80fa4` Actions 失败 | 失败修复、本地 CI、push、Actions、产物闭环 | ✅ 当前 HEAD `42d1870` 对应 #54 已成功；后续仍按新提交逐次追踪 |
 | U16 | 图标没对齐；“默认工作区”很矮挡字 | 统一高度/gap/行高/居中；双主题多视口检查 | 🟡 已有高度修复；本轮新增 UI 未做最终截图验收 |
-| U17 | 额度少，D1 写入等都要监控且显示百分比 | 8 项 used/limit/percentage | 🟡 前后端代码已实现 8 项；专项 UI 回归测试未补 |
-| U18 | 平台和监控分开；平台请求不限 | 平台只统计；Cloudflare 官方额度独立 | 🟡 分组和“不限”已实现；最终视觉与测试未闭环 |
+| U17 | 额度少，D1 写入等都要监控且显示百分比 | 8 项 used/limit/percentage | ✅ 前后端已实现 8 项，含次数、上限、百分比；专项回归已通过 |
+| U18 | 平台和监控分开；平台请求不限 | 平台只统计；Cloudflare 官方额度独立 | 🟡 分组、“不限”和定向回归已实现；最终多视口视觉验收未完成 |
 | U19 | GitHub OAuth 没过期，CF 为什么过期；改 Token | 不再暗示 OAuth 过期；界面/链接/错误全部 Token 化 | 🟡 后端/API/新面板已 Token 化；README/docs/help/deploy 提示仍有旧 OAuth 文案 |
 | U20 | CF 免费额度为何在系统设置手填，应从 CF 读取 | 删除手填；读 subscriptions；未确认 Free 显示未读取 | 🟡 维护/用量 UI 已改；文档仍是旧流程 |
 | U21 | 文案诡异、莫名卡片、同页多个按钮跳同页 | 中英文审计；清重复说明/空卡片/重复跳转 | ⬜ 未完成 |
@@ -314,9 +324,9 @@ doRequests        100,000
 - `UsageStatusAlert.tsx` 已处理 `legacyCredential`、usage error、账号缺失和未配置状态。
 - `tests/console-worker.spec.ts` 已有 Cloudflare Token 403 当前页错误断言；`tests/console-real-stack.spec.ts` 已移除手填 Cloudflare 配额主流程。
 
-### 3.3 代码已完成但测试仍未补齐
+### 3.3 用量回归已完成（`850928e`）
 
-`tests/console-worker.spec.ts` 当前只有 mock 字段 `usageRequests`，还缺以下用量回归：
+`tests/console-worker.spec.ts` 已覆盖并通过以下 6 项：
 
 1. 自动加载期间 `usage-refresh` 可用，点击会真正再次请求 `/api/usage/cloudflare` 和 `/api/usage/local`。
 2. 用量页只有一个刷新入口。
@@ -325,29 +335,7 @@ doRequests        100,000
 5. `legacyCredential` 在当前用量页显示，不跳转首页。
 6. 401/403 错误在当前用量页显示 HTTP 状态/错误信息。
 
-测试 mock 建议：
-
-```ts
-plan: { id: 'free', name: 'Free', free: true, confirmed: true },
-limitSource: 'cloudflare_subscriptions_free_baseline',
-limits: {
-  workerRequests: 100_000,
-  d1RowsRead: 5_000_000,
-  d1RowsWritten: 100_000,
-  kvRead: 100_000,
-  kvWrite: 1_000,
-  kvDelete: 1_000,
-  kvList: 1_000,
-  doRequests: 100_000,
-}
-```
-
-另需修正 `tests/console-worker.spec.ts` 窄屏测试中的旧注释：
-
-```text
-当前旧注释：用量页的两组额度卡与设置页的 11 个阈值输入
-应改为：平台 3 项阈值输入
-```
+定向 worker-mock 回归 8/8、完整 UI smoke 86/86 通过；窄屏测试中“11 个阈值输入”旧注释已同步改为平台 3 项阈值。后续若修改用量契约，必须保留这些断言，不能删测试或放宽断言。
 
 ### 3.4 文档/文案仍大面积过期
 
@@ -532,7 +520,7 @@ npm run ui:conventions     PASS，89 TSX / 0 违规
 npm run ui:css-audit       PASS，476 规则 / 0 死代码
 ```
 
-这些证据不能替代最终完整验收，因为当前工作区在证据之后仍有未提交变更，且用量专项测试尚未补齐。
+`c0bfde3`/`87e88dd` 对应的完整 `npm run ci:local` 已通过；之后只有 HANDOFF 文档变更。该证据仍不能替代视觉验收、Worker runtime、部署核对和最终 native/CMake 验收。
 
 ### 6.2 Worker runtime（Docker）
 
@@ -605,13 +593,13 @@ curl -fsSL 'https://api.github.com/repos/shelter-red/plugin-platform/actions/run
 历史 Actions：
 
 ```text
-579eb1f  run 39840532476  #52  success  （最新已知远端成功）
+42d1870  run 39851368864  #54  success  （整理时最新远端成功）
+c0bfde3  run 39850719037  #53  success
+579eb1f  run 39840532476  #52  success
 c84ceb0  run 39839503567  #51  success
 92e3fcd  run 39837622904  #50  success
 a9c85f0  run 39836893476  #49  success
 7a54cfc  run 39835890828  #48  success
-cc00faf  run 39834314392  #47  success
-1a5e5c1  run 39833249358  #46  success
 ```
 
 历史失败反例：
@@ -706,12 +694,13 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - [x] 活跃 Cloudflare 流程不出现 Client ID/Secret、回调、scope 编辑、PKCE、`response_type`、`grant_type`。
 - [x] 固定权限为 Account Settings Read / Account Analytics Read / Billing Read，只读不可取消。
 - [x] “创建 Token”跳到 `https://dash.cloudflare.com/profile/api-tokens`。
-- [ ] Token 保存前完成 verify、账号发现、subscriptions 校验；失败用 HTTP 状态并在当前面板显示。
-- [ ] 旧 Cloudflare OAuth 路由、Cookie、refresh/revoke、state、smoke 和用户文案全部删除。
+- [x] Token 保存前完成 verify、账号发现、subscriptions 校验；失败用 HTTP 状态并在当前面板显示，runtime/UI 回归已有覆盖。
+- [x] 旧 Cloudflare OAuth 活跃路由、Cookie、refresh/revoke、state 和 smoke 已删除。
+- [ ] README/docs/help/privacy 等用户文案仍待清理。
 - [x] setup 返回 null 时没有 “Setup is not available” 特例。
 - [x] 未配置 `/api/usage/cloudflare` 返回 `{"configured":false,"cached":false}`，无外部请求、无旧缓存命中。
 - [x] `/api/usage/local?range=7d` 仍返回 200。
-- [ ] Cloudflare 免费额度只从 subscriptions 读取；只有确认 Free 才显示官方基线。
+- [x] Cloudflare 免费额度只从 subscriptions 读取；只有确认 Free 才显示官方基线，未确认时显示未读取。
 - [x] 8 项都显示次数和百分比，包含 D1 行写入、KV 删除、KV 列举。
 - [x] 平台统计与 Cloudflare 额度分组；平台请求不设上限。
 - [x] 设置页无手填 Cloudflare 免费额度，只剩平台 3 项阈值。
@@ -720,8 +709,10 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - [ ] 生产部署应用 0008 及全部 migrations，Workers Builds 实际入口为 `npm run deploy`。
 - [ ] 手动 Actions 可选可执行程序/库文件、目标平台，并上传 artifact + SHA256。
 - [ ] 帮助中心中英文都有二进制/共享库插件服务器完整说明。
-- [ ] `npm run ci:local`、Worker runtime、deploy test、native ctest 全部通过。
-- [ ] 推送后最新 Actions 完成且成功。
+- [x] `npm run ci:local`、Worker runtime、deploy test 已通过（deploy test 本轮 10/10）。
+- [ ] native ctest 待共享库/手动构建实现后执行。
+- [x] 整理时最新远端提交 `42d1870` 的 Actions #54 已成功。
+- [ ] 本次 HANDOFF 校订提交推送后的 Actions 待追踪到成功。
 
 ## 10. 已知风险与禁止事项
 
@@ -765,3 +756,7 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - 2026-10-23：在 HEAD `87e88dd` 实测 `npm run ci:local` 全绿：UI 约定、样式审计、Worker 类型检查、构建、全部 Worker smoke 与 86/86 UI smoke 通过；当前基线满足推送前 web CI 门槛。
 - 2026-10-23：提交 `c0bfde3`（`docs: 记录完整本地 CI 结果`）并 push 到 `origin/main`；Actions run `39850719037`（#53）completed/success。
 - 2026-10-23：HANDOFF 自身再做一次 docs-only 基线补记；恢复时先 `git fetch` 并核对本文件之后的 HEAD/Actions，不把 #53 误认为后续提交结果。
+- 2026-10-23：提交 `42d1870`（`docs: 记录推送与 Actions 验收结果`）并 push；Actions run `39851368864`（#54）completed/success。
+- 2026-10-23：本轮恢复核对 `HEAD == origin/main == 42d1870`、工作区干净、无 `AGENTS.md`；统一校订 HANDOFF 中过期的 #53、未推送、工作区仍有改动、用量专项测试未补等矛盾。
+- 2026-10-23：确认第 8.2 节仍只是“已盘点、未修改”：README、方案、验收矩阵、local-e2e、help、privacy、部署提示、setup、locale 和两处注释仍有过期 Cloudflare OAuth/手填额度描述。下一严格代码/文档动作仍从 8.2 开始。
+- 2026-10-23：本轮整理 HANDOFF 时重新执行 `npm run deploy:worker:test`，10/10 PASS；随后执行 `npm run ci:local`，UI 约定、CSS 审计、Worker 类型检查、构建、全部 Worker smoke 与 86/86 UI smoke 全绿。仅有 `HANDOFF.md` 待提交。
