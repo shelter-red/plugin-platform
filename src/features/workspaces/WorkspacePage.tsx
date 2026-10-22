@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button, Input, Select, Skeleton, Table, type TableProps } from 'antd'
+import { App, Button, Input, Select, Skeleton, Table, type TableProps } from 'antd'
 import { Building2, Check, Plus, Trash2, UserPlus, Users } from 'lucide-react'
 import {
   addWorkspaceMember,
@@ -31,6 +31,8 @@ export function WorkspacePage({ workspaces, activeWorkspaceId, onSwitch, onWorks
   onAction: Notify
 }) {
   const { t } = useTranslation()
+  // 危险操作统一走 AntD Modal.confirm，避免原生 window.confirm 破坏主题与键盘可达性。
+  const modalApi = App.useApp().modal
   const active = workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null
   const canManage = active?.role === 'owner'
   const [newWorkspaceName, setNewWorkspaceName] = useState('')
@@ -95,20 +97,28 @@ export function WorkspacePage({ workspaces, activeWorkspaceId, onSwitch, onWorks
     }
   }
 
-  const remove = async () => {
+  const remove = () => {
     if (!active) return
-    if (!window.confirm(t('workspace.deleteConfirm', { name: active.name }))) return
-    setBusy('delete')
-    try {
-      await deleteWorkspace(active.id)
-      await onWorkspacesChange()
-      onSwitch(DEFAULT_WORKSPACE_ID)
-      onAction('success', t('workspace.deleted'))
-    } catch (error) {
-      onAction('error', errorMessage(error, 'workspace.deleteFailed'))
-    } finally {
-      setBusy(null)
-    }
+    const workspace = active
+    modalApi.confirm({
+      title: t('workspace.delete'),
+      content: t('workspace.deleteConfirm', { name: workspace.name }),
+      okText: t('workspace.delete'),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        setBusy('delete')
+        try {
+          await deleteWorkspace(workspace.id)
+          await onWorkspacesChange()
+          onSwitch(DEFAULT_WORKSPACE_ID)
+          onAction('success', t('workspace.deleted'))
+        } catch (error) {
+          onAction('error', errorMessage(error, 'workspace.deleteFailed'))
+        } finally {
+          setBusy(null)
+        }
+      },
+    })
   }
 
   const addMember = async () => {
@@ -144,19 +154,27 @@ export function WorkspacePage({ workspaces, activeWorkspaceId, onSwitch, onWorks
     }
   }
 
-  const removeMember = async (member: WorkspaceMember) => {
+  const removeMember = (member: WorkspaceMember) => {
     if (!active) return
-    if (!window.confirm(t('workspace.removeConfirm', { name: member.display_name || member.email }))) return
-    setBusy(`remove-${member.user_id}`)
-    try {
-      await removeWorkspaceMember(active.id, member.user_id)
-      setMembers(await fetchWorkspaceMembers(active.id))
-      onAction('success', t('workspace.memberRemoved'))
-    } catch (error) {
-      onAction('error', errorMessage(error, 'workspace.removeFailed'))
-    } finally {
-      setBusy(null)
-    }
+    const workspaceId = active.id
+    modalApi.confirm({
+      title: t('workspace.remove'),
+      content: t('workspace.removeConfirm', { name: member.display_name || member.email }),
+      okText: t('workspace.remove'),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        setBusy(`remove-${member.user_id}`)
+        try {
+          await removeWorkspaceMember(workspaceId, member.user_id)
+          setMembers(await fetchWorkspaceMembers(workspaceId))
+          onAction('success', t('workspace.memberRemoved'))
+        } catch (error) {
+          onAction('error', errorMessage(error, 'workspace.removeFailed'))
+        } finally {
+          setBusy(null)
+        }
+      },
+    })
   }
 
   const memberColumns: TableProps<WorkspaceMember>['columns'] = [

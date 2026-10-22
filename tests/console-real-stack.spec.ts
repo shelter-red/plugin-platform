@@ -67,8 +67,9 @@ test('管理端邀请与注册码操作落到真实 D1', async ({ page }) => {
   await page.getByRole('button', { name: '创建邀请' }).click()
   await expect(page.getByText('邮箱或 GitHub 用户名至少填写一个，且格式必须有效')).toBeVisible()
 
-  page.once('dialog', (dialog) => dialog.accept())
   await inviteRow.getByRole('button', { name: '撤销邀请' }).click()
+  // 撤销邀请走 AntD Modal.confirm，而不是原生 window.confirm。
+  await page.getByRole('dialog').filter({ hasText: '撤销这个仍未使用的邀请' }).getByRole('button', { name: '撤销邀请', exact: true }).click()
   await expect(page.getByText('邀请已撤销')).toBeVisible()
   await expect(inviteRow).toContainText('已撤销')
   await expect(inviteRow.getByRole('button', { name: '撤销邀请' })).toHaveCount(0)
@@ -179,8 +180,9 @@ test('管理端在真实 C++ 服务器上加载、启停插件并分配域名', 
     await expect(page.getByText(/Sample Plugin 健康检查通过/)).toBeVisible()
     await expect.poll(async () => (await getPublic(baseURL!, hostname)).status, { timeout: 15_000 }).toBe(200)
 
-    page.once('dialog', (dialog) => void dialog.accept())
     await lifecycleDialog.getByRole('button', { name: '卸载', exact: true }).click()
+    // 卸载确认同样使用 AntD Modal.confirm。
+    await page.getByRole('dialog').filter({ hasText: '卸载插件' }).getByRole('button', { name: '卸载', exact: true }).click()
     await expect(page.getByText('Sample Plugin 已卸载')).toBeVisible()
     await expect(lifecycleDialog.getByText('已卸载').first()).toBeVisible()
 

@@ -1,4 +1,4 @@
-import { Button, Input } from 'antd'
+import { App, Button, Input } from 'antd'
 import { LogIn, Plus } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -15,6 +15,7 @@ const splitList = (value: string) => value.split(/[\s,;]+/).map((entry) => entry
 
 export function OauthPanel({ settings, onChange, onAction }: { settings: OauthSettings | null; onChange: (settings: OauthSettings) => void; onAction: Notify }) {
   const { t } = useTranslation()
+  const modalApi = App.useApp().modal
   const [github, setGithub] = useState({ clientId: '', clientSecret: '', allowlist: [] as string[] })
   const [saving, setSaving] = useState(false)
   const redirect = `${window.location.origin}/auth/github/callback`
@@ -38,17 +39,24 @@ export function OauthPanel({ settings, onChange, onAction }: { settings: OauthSe
     }
   }
 
-  const reset = async () => {
-    if (!window.confirm(t('settings.oauth.resetConfirm', { provider: t('settings.oauth.githubTitle') }))) return
-    setSaving(true)
-    try {
-      onChange(await revokeOauthSettings('github'))
-      onAction('success', t('settings.oauth.resetDone'))
-    } catch {
-      onAction('error', t('settings.oauth.resetFailed'))
-    } finally {
-      setSaving(false)
-    }
+  const reset = () => {
+    modalApi.confirm({
+      title: t('settings.oauth.reset'),
+      content: t('settings.oauth.resetConfirm', { provider: t('settings.oauth.githubTitle') }),
+      okText: t('settings.oauth.reset'),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        setSaving(true)
+        try {
+          onChange(await revokeOauthSettings('github'))
+          onAction('success', t('settings.oauth.resetDone'))
+        } catch {
+          onAction('error', t('settings.oauth.resetFailed'))
+        } finally {
+          setSaving(false)
+        }
+      },
+    })
   }
 
   return <Panel className="settings-panel" padded heading={

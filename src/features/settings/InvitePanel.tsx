@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button, Input, Select, Table, type TableProps } from 'antd'
+import { App, Button, Input, Select, Table, type TableProps } from 'antd'
 import { Copy, Plus, Users, X } from 'lucide-react'
 import { createInvite, fetchInvites, revokeInvite, type ApiInvite, type Workspace, type WorkspaceRole } from '../../api'
 import { EmptyState } from '../../components/EmptyState'
@@ -12,6 +12,7 @@ import { formatDateTime } from '../../lib/format'
 
 export function InvitePanel({ invites, onChange, onAction, isSuperAdmin, activeWorkspaceId, workspaces }: { invites: ApiInvite[] | null; onChange: (invites: ApiInvite[]) => void; onAction: Notify; isSuperAdmin: boolean; activeWorkspaceId: string | null; workspaces: Workspace[] }) {
   const { t } = useTranslation()
+  const modalApi = App.useApp().modal
   const [email, setEmail] = useState('')
   const [githubLogin, setGithubLogin] = useState('')
   const [expiresInHours, setExpiresInHours] = useState('72')
@@ -39,15 +40,22 @@ export function InvitePanel({ invites, onChange, onAction, isSuperAdmin, activeW
       setSaving(false)
     }
   }
-  const revoke = async (invite: ApiInvite) => {
-    if (!window.confirm(t('settings.invite.revokeConfirm'))) return
-    try {
-      await revokeInvite(invite.id)
-      await refresh()
-      onAction('success', t('settings.invite.revoked'))
-    } catch (error) {
-      onAction('error', errorMessage(error, 'settings.invite.revokeFailed'))
-    }
+  const revoke = (invite: ApiInvite) => {
+    modalApi.confirm({
+      title: t('settings.invite.revoke'),
+      content: t('settings.invite.revokeConfirm'),
+      okText: t('settings.invite.revoke'),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          await revokeInvite(invite.id)
+          await refresh()
+          onAction('success', t('settings.invite.revoked'))
+        } catch (error) {
+          onAction('error', errorMessage(error, 'settings.invite.revokeFailed'))
+        }
+      },
+    })
   }
   const copy = async () => {
     if (!latestUrl) return
