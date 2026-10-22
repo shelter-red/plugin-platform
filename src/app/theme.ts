@@ -16,6 +16,7 @@ export function createAppTheme(mode: AppThemeMode): ThemeConfig {
     token: {
       colorPrimary: brandColor[mode],
       colorInfo: brandColor[mode],
+      colorLink: dark ? '#34d399' : '#047857',
       colorBgBase: dark ? '#09090b' : '#f7f7f8',
       colorBgContainer: dark ? '#111113' : '#ffffff',
       colorBgElevated: dark ? '#151517' : '#ffffff',

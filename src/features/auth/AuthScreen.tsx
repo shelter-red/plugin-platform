@@ -45,7 +45,7 @@ export function AuthLoadingScreen({ mode }: { mode: AppThemeMode }) {
   return (
     <AuthShell mode={mode}>
       <Avatar className="auth-brand-mark auth-loading-mark" shape="square" size={44} icon={<Network size={20} strokeWidth={2.4} />} />
-      <Title level={2} className="auth-title">{t('auth.checkingTitle')}</Title>
+      <Title level={1} className="auth-title">{t('auth.checkingTitle')}</Title>
       <Paragraph type="secondary" className="auth-copy">{t('auth.checkingBody')}</Paragraph>
       <div className="auth-spinner" role="status" aria-live="polite">
         <Spin size="large" />
@@ -65,7 +65,7 @@ export function LoginPage({ mode }: { mode: AppThemeMode }) {
     <AuthShell mode={mode}>
       <BrandHeader />
       <Avatar className="auth-icon" shape="square" size={48} icon={<Code2 size={24} />} />
-      <Title level={2} className="auth-title">{invite ? t('auth.inviteTitle') : t('auth.loginTitle')}</Title>
+      <Title level={1} className="auth-title">{invite ? t('auth.inviteTitle') : t('auth.loginTitle')}</Title>
       <Paragraph type="secondary" className="auth-copy">{invite ? t('auth.inviteBody') : t('auth.loginBody')}</Paragraph>
       {authError && <Alert className="auth-alert" type="error" showIcon message={authError} />}
       <Button className="auth-submit" type="primary" size="large" block href={startUrl} icon={<GithubMark size={17} />}>{t('auth.github')}</Button>

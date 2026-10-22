@@ -12,7 +12,7 @@ button { border: 0; cursor: pointer; }
 .auth-brand { width: 100%; margin-bottom: 4px; text-align: left; }
 .auth-brand-mark.ant-avatar { border-radius: 9px; color: #fff; background: var(--primary-solid); box-shadow: 0 6px 18px rgba(16,185,129,.24); }
 .auth-brand-name.ant-typography { color: var(--text); font-size: 15px; line-height: 1.2; }
-.auth-brand-caption.ant-typography { font-size: 11px; line-height: 1.3; }
+.auth-brand-caption.ant-typography { color: var(--text-2); font-size: 11px; line-height: 1.3; }
 .auth-divider.ant-divider { margin: 18px 0 24px; border-color: var(--line); }
 .auth-icon.ant-avatar { margin: 0 auto 16px; border: 1px solid var(--line); border-radius: 12px; color: var(--primary); background: var(--primary-faint); }
 .auth-title.ant-typography { margin: 0 0 8px; color: var(--text); font-size: 22px; line-height: 1.3; }
@@ -259,7 +259,7 @@ table { width: 100%; border-collapse: collapse; font-size: 11px; } th { padding:
 .form-grid .ant-select { width: 100%; }
 .table-wrap .ant-select { min-width: 108px; }
 .empty-panel.ant-empty { margin: 0; }
-.empty-copy h3 { font-size: 13px; }
+.empty-copy h3 { margin: 0 0 6px; color: var(--text); font-size: 13px; }
 .empty-copy p { max-width: 430px; margin: 6px auto 15px; color: var(--text-3); font-size: 10px; line-height: 1.6; }
 .panel.ant-card, .resource-card.ant-card, .metric-card.ant-card { background: var(--surface); }
 .table-panel .ant-table { background: transparent; }
@@ -296,3 +296,8 @@ table { width: 100%; border-collapse: collapse; font-size: 11px; } th { padding:
 .alert-body { display: flex; flex-direction: column; gap: 4px; }
 .alert-body .ant-btn { align-self: flex-start; padding-inline: 0; height: auto; }
 .oauth-notice.ant-alert { margin-top: 16px; }
+
+/* 浅色主题下 AntD 链接按钮使用更深的品牌绿，满足 4.5:1 对比度。 */
+.theme-light .ant-btn-link.ant-btn-color-link.ant-btn-variant-link { color: var(--primary-solid) !important; }
+.theme-light .ant-btn-link.ant-btn-color-link.ant-btn-variant-link:hover { color: var(--primary-solid-hover) !important; }
+.theme-light .ant-alert .ant-btn-link.ant-btn-color-link.ant-btn-variant-link { color: #064e3b !important; }
