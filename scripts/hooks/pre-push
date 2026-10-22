@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# 启用：git config core.hooksPath scripts/hooks
+# 推送前只跑秒级静态审计（约定 + 样式死代码）。完整复现 CI 请跑 npm run ci:local。
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+npm run --silent ui:conventions
+npm run --silent ui:css-audit

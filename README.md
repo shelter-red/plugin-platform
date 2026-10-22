@@ -47,6 +47,7 @@ npm run native-ui:build
 验证命令：
 
 ```bash
+npm run ci:local            # 按 CI web job 顺序本地跑一遍；有 docker 时用同一 Playwright 镜像
 npm run build
 npm run ui:smoke
 npm run native-ui:smoke
@@ -63,7 +64,7 @@ cmake --build native-server/build --parallel 2
 cd native-server/build && ctest --output-on-failure
 ```
 
-`.github/workflows/platform-ci.yml` 的 `web` job 依次执行 `ui:conventions`、`worker:typecheck`、`build`、`worker:smoke` 和 `ui:smoke`；Linux、Windows 和 macOS 原生验收 job 只在 `native-server/**` 或该工作流本身变化时触发（`dorny/paths-filter`），统一以 `ctest --output-on-failure -V` 运行，失败时上传 `Testing/Temporary` 日志 artifact。CI 不再强制 `PLUGMESH_TEST_SYSTEM_CREDENTIALS=required`：runner 缺少系统凭据时，凭据用例回退到加密凭据文件路径，系统凭据存储的完整往返仍需在真实 Windows 主机和 macOS Keychain 上单独验证。
+`.github/workflows/platform-ci.yml` 的 `web` job 依次执行 `ui:conventions`、`ui:css-audit`、`worker:typecheck`、`build`、`worker:smoke` 和 `ui:smoke`（`npm run ci:local` 与这六步同序，推送前跑一遍即可得到同样的结论）；Linux、Windows 和 macOS 原生验收 job 只在 `native-server/**` 或该工作流本身变化时触发（`dorny/paths-filter`），统一以 `ctest --output-on-failure -V` 运行，失败时上传 `Testing/Temporary` 日志 artifact。CI 不再强制 `PLUGMESH_TEST_SYSTEM_CREDENTIALS=required`：runner 缺少系统凭据时，凭据用例回退到加密凭据文件路径，系统凭据存储的完整往返仍需在真实 Windows 主机和 macOS Keychain 上单独验证。
 
 完整的实现状态、验证证据和生产发布阻塞项见 [`docs/acceptance-matrix.md`](docs/acceptance-matrix.md)。
 
