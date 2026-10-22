@@ -2,7 +2,7 @@ name: 原生平台验收
 
 on:
   push:
-    branches: [master]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 

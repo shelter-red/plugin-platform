@@ -3,7 +3,7 @@ import { acceptInvite, digest, exchangeGithubCode, upsertGithubUser } from '../s
 import type { Env } from '../src/types'
 import { resetDatabase, testEnv } from './helpers'
 
-type Call = { url: string; method: string; authorization: string | null; body: unknown }
+type Call = { url: string; method: string; authorization: string | null; userAgent: string | null; body: unknown }
 
 function githubFetcher(calls: Call[], overrides: { token?: Response; user?: Response; emails?: Response } = {}): typeof fetch {
   return (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -12,6 +12,7 @@ function githubFetcher(calls: Call[], overrides: { token?: Response; user?: Resp
       url: request.url,
       method: request.method,
       authorization: request.headers.get('authorization'),
+      userAgent: request.headers.get('user-agent'),
       body: request.url.endsWith('/access_token') ? await request.json() : null,
     })
     if (request.url === 'https://github.com/login/oauth/access_token') return overrides.token ?? Response.json({ access_token: 'gh-access-token' })
@@ -25,7 +26,7 @@ function githubFetcher(calls: Call[], overrides: { token?: Response; user?: Resp
   }) as typeof fetch
 }
 
-const authEnv = (): Env => Object.assign(Object.create(testEnv) as Env, { GITHUB_CLIENT_ID: 'gh-client', GITHUB_CLIENT_SECRET: 'gh-secret' })
+const authEnv = (): Env => Object.assign(Object.create(testEnv) as Env, { GITHUB_CLIENT_ID: 'gh-client', GITHUB_CLIENT_SECRET: 'gh-secret', GITHUB_REDIRECT_URI: 'https://console.example.test/auth/github/callback' })
 
 async function insertInvite(id: string, options: { email?: string | null; login?: string | null; status?: string; expiresAt?: string } = {}): Promise<string> {
   const token = `invite-token-${id}`
@@ -47,33 +48,65 @@ beforeEach(async () => {
 
 test('GitHub 代码换取身份时只保留已验证邮箱并按主邮箱排序', async () => {
   const calls: Call[] = []
-  const identity = await exchangeGithubCode(authEnv(), 'oauth-code', githubFetcher(calls))
-  expect(identity).toEqual({
-    githubId: '42',
-    login: 'octocat',
-    displayName: 'octocat',
-    emails: ['primary@example.com', 'old@example.com'],
+  const result = await exchangeGithubCode(authEnv(), 'oauth-code', githubFetcher(calls))
+  expect(result).toEqual({
+    ok: true,
+    identity: {
+      githubId: '42',
+      login: 'octocat',
+      displayName: 'octocat',
+      emails: ['primary@example.com', 'old@example.com'],
+    },
   })
   expect(calls.map((call) => call.url)).toEqual([
     'https://github.com/login/oauth/access_token',
     'https://api.github.com/user',
     'https://api.github.com/user/emails',
   ])
-  expect(calls[0]).toMatchObject({ method: 'POST', authorization: null, body: { client_id: 'gh-client', client_secret: 'gh-secret', code: 'oauth-code' } })
+  expect(calls[0]).toMatchObject({
+    method: 'POST',
+    authorization: null,
+    body: {
+      client_id: 'gh-client',
+      client_secret: 'gh-secret',
+      code: 'oauth-code',
+      redirect_uri: 'https://console.example.test/auth/github/callback',
+    },
+  })
   expect(calls.slice(1).every((call) => call.authorization === 'Bearer gh-access-token')).toBe(true)
+  expect(calls.slice(1).every((call) => call.userAgent === 'plugmesh-platform')).toBe(true)
 })
 
-test('GitHub 换取身份在令牌、用户、邮箱异常时返回 null', async () => {
+test('GitHub 令牌交换复用它下发的 redirect_uri，避免回调地址校验失败', async () => {
+  const calls: Call[] = []
+  await exchangeGithubCode(authEnv(), 'oauth-code', githubFetcher(calls))
+  expect(calls[0]?.body).toMatchObject({ redirect_uri: 'https://console.example.test/auth/github/callback' })
+})
+
+test('GitHub 换取身份在令牌、用户、邮箱异常时返回可诊断原因', async () => {
   const env = authEnv()
-  expect(await exchangeGithubCode(env, 'code', githubFetcher([], { token: new Response('unauthorized', { status: 401 }) }))).toBeNull()
-  expect(await exchangeGithubCode(env, 'code', githubFetcher([], { token: Response.json({}) }))).toBeNull()
-  expect(await exchangeGithubCode(env, 'code', githubFetcher([], { user: new Response('boom', { status: 500 }) }))).toBeNull()
-  expect(await exchangeGithubCode(env, 'code', githubFetcher([], { user: Response.json({ login: 'octocat' }) }))).toBeNull()
-  expect(await exchangeGithubCode(env, 'code', githubFetcher([], { emails: Response.json([{ email: 'x@example.com', verified: false }]) }))).toBeNull()
+  expect(await exchangeGithubCode(env, 'code', githubFetcher([], { token: new Response('unauthorized', { status: 401 }) }))).toEqual({ ok: false, reason: 'token_exchange_failed', status: 401 })
+  expect(await exchangeGithubCode(env, 'code', githubFetcher([], { token: Response.json({}) }))).toEqual({ ok: false, reason: 'token_exchange_failed', status: 200 })
+  expect(await exchangeGithubCode(env, 'code', githubFetcher([], { token: Response.json({ error: 'bad_verification_code', error_description: 'The code passed is incorrect or expired.' }) }))).toEqual({
+    ok: false,
+    reason: 'token_exchange_failed',
+    status: 200,
+    detail: 'The code passed is incorrect or expired.',
+  })
+  expect(await exchangeGithubCode(env, 'code', githubFetcher([], { user: new Response('boom', { status: 500 }) }))).toEqual({ ok: false, reason: 'user_api_failed', status: 500 })
+  expect(await exchangeGithubCode(env, 'code', githubFetcher([], { user: Response.json({ login: 'octocat' }) }))).toEqual({ ok: false, reason: 'identity_incomplete' })
+  expect(await exchangeGithubCode(env, 'code', githubFetcher([], { emails: new Response('forbidden', { status: 403 }) }))).toEqual({ ok: false, reason: 'email_api_failed', status: 403 })
+  expect(await exchangeGithubCode(env, 'code', githubFetcher([], { emails: Response.json([{ email: 'x@example.com', verified: false }]) }))).toEqual({ ok: false, reason: 'no_verified_email' })
+  expect(await exchangeGithubCode(env, 'code', githubFetcher([], {
+    user: Response.json({ message: 'Request forbidden by administrative rules.' }, { status: 403 }),
+  }))).toEqual({ ok: false, reason: 'user_api_failed', status: 403, detail: 'Request forbidden by administrative rules.' })
+  expect(await exchangeGithubCode(env, 'code', githubFetcher([], {
+    emails: new Response('', { status: 403, headers: { 'x-ratelimit-remaining': '0' } }),
+  }))).toEqual({ ok: false, reason: 'email_api_failed', status: 403, detail: 'GitHub API 速率限制已用尽' })
 
   const calls: Call[] = []
   const unconfigured = Object.assign(Object.create(testEnv) as Env, { GITHUB_CLIENT_ID: '', GITHUB_CLIENT_SECRET: '' })
-  expect(await exchangeGithubCode(unconfigured, 'code', githubFetcher(calls))).toBeNull()
+  expect(await exchangeGithubCode(unconfigured, 'code', githubFetcher(calls))).toEqual({ ok: false, reason: 'not_configured' })
   expect(calls).toHaveLength(0)
 })
 

@@ -127,7 +127,8 @@ for (const marker of [
   '`npm run build`',
   '`npm run deploy`',
   '不要填写任何业务变量',
-  'GitHub OAuth 回调地址由当前访问域名自动生成',
+  '/setup` 页面会直接给出需要填进 GitHub OAuth App 的两个地址',
+  'Authorization callback URL',
 ]) assert.ok(readme.includes(marker), `README 缺少最小部署约束：${marker}`)
 assert.ok(!readme.includes('OWNER/REPO'), 'README 仍包含未替换的仓库占位符')
 NODE

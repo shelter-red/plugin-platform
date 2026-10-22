@@ -1,5 +1,5 @@
 import { digest } from './auth'
-import { parseGithubOAuthConfig, resolveOauthSettings, saveGithubOAuthSettings } from './oauth-settings'
+import { normalizeOauthRedirectUri, parseGithubOAuthConfig, resolveOauthSettings, saveGithubOAuthSettings } from './oauth-settings'
 import type { Env } from './types'
 
 const SECURITY_HEADERS = {
@@ -83,7 +83,8 @@ async function readForm(request: Request): Promise<Record<string, string>> {
 }
 
 function setupPage(url: URL, state: SetupState, values: SetupValues, error = '', status = 200): Response {
-  const callback = `${url.origin}/auth/github/callback`
+  const homepage = normalizeOauthRedirectUri(url.origin)
+  const callback = normalizeOauthRedirectUri(`${url.origin}/auth/github/callback`)
   const tokenField = state.tokenRequired
     ? `<label>部署令牌<input name="setupToken" type="password" autocomplete="off" required autofocus placeholder="查看 .wrangler/plugmesh-setup-token"></label>`
     : ''
@@ -115,6 +116,10 @@ function setupPage(url: URL, state: SetupState, values: SetupValues, error = '',
     .error { border:1px solid #7f1d1d; background:#450a0a; color:var(--danger); }
     code { color:#a7f3d0; }
     ol { margin:0 0 18px; padding-left:20px; color:var(--muted); }
+    .fields { display:grid; gap:8px; }
+    .fields div { display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+    .fields span { color:var(--muted); font-size:12px; letter-spacing:.02em; }
+    a { color:#6ee7b7; }
     li { margin:4px 0; }
   </style>
 </head>
@@ -126,15 +131,18 @@ function setupPage(url: URL, state: SetupState, values: SetupValues, error = '',
   ${configuredNotice}
   ${errorNotice}
   <ol>
-    <li>在 GitHub 创建 OAuth App，回调地址填写 <code>${escapeHtml(callback)}</code>。</li>
-    <li>填写 Client ID、Client Secret 和允许登录的管理员 GitHub 用户名或已验证邮箱。</li>
+    <li>打开 <a href="https://github.com/settings/applications/new" target="_blank" rel="noreferrer">GitHub → New OAuth App</a>（必须是 OAuth App，不是 GitHub App）。</li>
+    <li>按下方两个地址填写 Homepage URL 与 Authorization callback URL，然后填写 Client ID、Client Secret 和管理员白名单。</li>
     <li>保存后按提示完成 GitHub 授权；创建首个用户后本页面永久锁定。</li>
   </ol>
+  <div class="notice fields">
+    <div><span>Homepage URL</span><code>${escapeHtml(homepage)}</code></div>
+    <div><span>Authorization callback URL</span><code>${escapeHtml(callback)}</code></div>
+  </div>
   <form method="post" action="/setup" autocomplete="off">
     ${tokenField}
     <label>GitHub Client ID<input name="clientId" required value="${escapeHtml(values.clientId)}" placeholder="Iv1.xxxxxxxxxxxxxxxx"></label>
     <label>GitHub Client Secret<input name="clientSecret" type="password" autocomplete="new-password" required placeholder="仅加密保存，不会回显"></label>
-    <div class="notice">GitHub OAuth 回调地址由当前访问域名自动生成：<code>${escapeHtml(callback)}</code></div>
     <label>管理员白名单<input name="allowlist" required value="${escapeHtml(values.allowlist)}" placeholder="octocat, admin@example.com"><small>GitHub 用户名或已验证邮箱，逗号分隔。</small></label>
     <button type="submit">保存并登录 GitHub</button>
   </form>
@@ -165,7 +173,7 @@ export async function setupApi(request: Request, env: Env, url: URL): Promise<Re
   const github = parseGithubOAuthConfig({
     clientId: values.clientId,
     clientSecret: body.clientSecret,
-    redirectUri: `${url.origin}/auth/github/callback`,
+    redirectUri: normalizeOauthRedirectUri(`${url.origin}/auth/github/callback`),
     allowlist: values.allowlist,
   })
   if (!github || github.allowlist.length === 0) {

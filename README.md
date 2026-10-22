@@ -122,7 +122,7 @@ GitHub Actions 是可选的自维护仓库部署方式，使用同一个脚本�
 2. 在 GitHub 创建的 OAuth App 的 Client ID 和 Client Secret；
 3. 允许登录的管理员 GitHub 用户名或已验证邮箱。
 
-GitHub OAuth 回调地址由当前访问域名自动生成，无需手填。保存后完成 GitHub 授权，白名单中的首个账号会成为 `super_admin`。
+`/setup` 页面会直接给出需要填进 GitHub OAuth App 的两个地址：Homepage URL（站点根地址）和 Authorization callback URL（`/auth/github/callback`），无需手填。保存后完成 GitHub 授权，白名单中的首个账号会成为 `super_admin`。
 
 以下配置全部在登录后的管理后台完成，不需要重新部署：
 
@@ -133,6 +133,21 @@ GitHub OAuth 回调地址由当前访问域名自动生成，无需手填。保�
 | 配额、维护策略、插件域名后缀 | 系统设置 → 维护、域名与配额 |
 
 首个用户创建后 `/setup` 永久锁定。确认管理员可以正常登录后，可删除 Worker 的 `SETUP_TOKEN` Secret。`SESSION_SECRET` 必须保留，不能随意轮换，否则已有密文将无法解密。
+
+### 登录失败排查
+
+GitHub 授权回跳后，登录页会显示具体失败原因：
+
+| 提示 | 处理方式 |
+| --- | --- |
+| `GitHub 授权码换取令牌失败` | 核对 OAuth App 的 Client ID、Client Secret，以及 App 中填写的 Authorization callback URL 与 `/setup` 显示的地址完全一致；确认创建的是 **OAuth App** 而不是 GitHub App |
+| `读取 GitHub 邮箱失败` | 确认 OAuth App 拥有 `user:email` 权限，且 GitHub 账号已授权该权限 |
+| `读取 GitHub 用户信息失败（HTTP 403）` | GitHub 拒绝缺少 User-Agent 的请求或触发限流；确认 Worker 已更新到最新版本后重试，仍失败则查看提示中的 GitHub 原始信息 |
+| `该 GitHub 账号没有已验证的邮箱` | 先在 GitHub 设置中验证至少一个邮箱 |
+| `该 GitHub 身份未被邀请` | 把该 GitHub 用户名或已验证邮箱加入白名单，或使用有效邀请链接 |
+| `OAuth 状态已过期` | 回到登录页重新发起授权，不要在同一个回调地址上重复刷新 |
+
+回调地址格式为 `https://<你的域名>/auth/github/callback`，必须与 GitHub OAuth App 中登记的地址逐字符一致（协议、域名、路径都不能差）。除本地 `localhost` 外，GitHub 只接受 HTTPS 回调，系统保存时会把 `http://` 自动升级为 `https://`。
 
 ### 自定义域名与插件域名
 

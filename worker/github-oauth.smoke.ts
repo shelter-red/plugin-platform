@@ -78,11 +78,16 @@ const env = {
 } as unknown as Env
 
 const originalFetch = globalThis.fetch
-const requests: string[] = []
+type GithubRequest = { url: string; body: string; userAgent: string | null }
+const requests: GithubRequest[] = []
+let tokenError: string | null = null
 globalThis.fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : input.url
-  requests.push(url)
-  if (url.endsWith('/login/oauth/access_token')) return new Response(JSON.stringify({ access_token: 'github-access-token' }), { status: 200 })
+  requests.push({ url, body: typeof init?.body === 'string' ? init.body : '', userAgent: new Headers(init?.headers as HeadersInit | undefined).get('user-agent') })
+  if (url.endsWith('/login/oauth/access_token')) {
+    if (tokenError) return new Response(JSON.stringify({ error: 'bad_verification_code', error_description: tokenError }), { status: 200 })
+    return new Response(JSON.stringify({ access_token: 'github-access-token' }), { status: 200 })
+  }
   if (url.endsWith('/user')) return new Response(JSON.stringify({ id: Number(activeIdentity.githubId), login: activeIdentity.login, name: activeIdentity.displayName }), { status: 200 })
   if (url.endsWith('/user/emails')) return new Response(JSON.stringify([{ email: activeIdentity.email, primary: true, verified: true }]), { status: 200 })
   throw new Error(`unexpected GitHub request: ${url} ${String(init?.body ?? '')}`)
@@ -108,16 +113,29 @@ try {
   assert.equal(oauthStates.size, 0)
   assert.equal(users.get('42')?.role, 'super_admin')
   assert.equal(sessions.length, 1)
-  assert.deepEqual(requests, [
+  assert.deepEqual(requests.map((request) => request.url), [
     'https://github.com/login/oauth/access_token',
     'https://api.github.com/user',
     'https://api.github.com/user/emails',
   ])
+  assert.equal((JSON.parse(requests[0]!.body) as { redirect_uri?: string }).redirect_uri, env.GITHUB_REDIRECT_URI)
+  assert.equal(requests[1]!.userAgent, 'plugmesh-platform')
+  assert.equal(requests[2]!.userAgent, 'plugmesh-platform')
 
   const replay = await worker.fetch(new Request(`https://console.example.test/auth/github/callback?state=${encodeURIComponent(state)}&code=github-code`), env, {} as ExecutionContext)
   assert.equal(replay.status, 302)
   assert.match(new URL(replay.headers.get('location')!, 'https://console.example.test').searchParams.get('auth_error') ?? '', /状态已过期/)
   assert.equal(requests.length, 3)
+
+  tokenError = 'The code passed is incorrect or expired.'
+  const failedStart = await worker.fetch(new Request('https://console.example.test/auth/github/start'), env, {} as ExecutionContext)
+  const failedState = new URL(failedStart.headers.get('location')!, 'https://github.com').searchParams.get('state')!
+  const failed = await worker.fetch(new Request(`https://console.example.test/auth/github/callback?state=${encodeURIComponent(failedState)}&code=expired-code`), env, {} as ExecutionContext)
+  assert.equal(failed.status, 302)
+  const failedMessage = new URL(failed.headers.get('location')!, 'https://console.example.test').searchParams.get('auth_error') ?? ''
+  assert.match(failedMessage, /换取令牌失败/)
+  assert.match(failedMessage, /incorrect or expired/)
+  tokenError = null
 
   activeIdentity = { githubId: '43', login: 'bob', email: 'bob@example.test', displayName: 'Bob' }
   const rejectedStart = await worker.fetch(new Request('https://console.example.test/auth/github/start'), env, {} as ExecutionContext)

@@ -47,6 +47,16 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]'])
+
+/** GitHub 与 Cloudflare 的公网回调只接受 HTTPS，本地开发保留 HTTP。 */
+export function normalizeOauthRedirectUri(value: string): string {
+  if (!isHttpUrl(value)) return value
+  const url = new URL(value)
+  if (url.protocol === 'http:' && !LOCAL_HOSTS.has(url.hostname)) url.protocol = 'https:'
+  return url.toString()
+}
+
 export function parseAllowlist(value: unknown): string[] {
   const entries = Array.isArray(value) ? value : typeof value === 'string' ? value.split(/[\s,;]+/) : []
   return entries
@@ -62,7 +72,7 @@ export function parseGithubOAuthConfig(value: unknown, fallbackSecret = ''): Git
   const clientId = typeof record.clientId === 'string' ? record.clientId.trim() : ''
   const submittedSecret = typeof record.clientSecret === 'string' ? record.clientSecret.trim() : ''
   const clientSecret = submittedSecret || fallbackSecret
-  const redirectUri = typeof record.redirectUri === 'string' ? record.redirectUri.trim() : ''
+  const redirectUri = normalizeOauthRedirectUri(typeof record.redirectUri === 'string' ? record.redirectUri.trim() : '')
   if (!clientId || !clientSecret || !isHttpUrl(redirectUri)) return null
   return { clientId, clientSecret, redirectUri, allowlist: parseAllowlist(record.allowlist) }
 }
@@ -73,7 +83,7 @@ export function parseCloudflareOAuthConfig(value: unknown, fallbackSecret = ''):
   const clientId = typeof record.clientId === 'string' ? record.clientId.trim() : ''
   const submittedSecret = typeof record.clientSecret === 'string' ? record.clientSecret.trim() : ''
   const clientSecret = submittedSecret || fallbackSecret
-  const redirectUri = typeof record.redirectUri === 'string' ? record.redirectUri.trim() : ''
+  const redirectUri = normalizeOauthRedirectUri(typeof record.redirectUri === 'string' ? record.redirectUri.trim() : '')
   const scope = typeof record.scope === 'string' && record.scope.trim() ? record.scope.trim() : DEFAULT_CLOUDFLARE_SCOPE
   if (!clientId || !clientSecret || !isHttpUrl(redirectUri)) return null
   return { clientId, clientSecret, redirectUri, scope }
@@ -82,7 +92,7 @@ export function parseCloudflareOAuthConfig(value: unknown, fallbackSecret = ''):
 export function environmentGithubConfig(env: Env): GithubOAuthConfig | null {
   const clientId = env.GITHUB_CLIENT_ID?.trim() ?? ''
   const clientSecret = env.GITHUB_CLIENT_SECRET?.trim() ?? ''
-  const redirectUri = env.GITHUB_REDIRECT_URI?.trim() ?? ''
+  const redirectUri = normalizeOauthRedirectUri(env.GITHUB_REDIRECT_URI?.trim() ?? '')
   if (!clientId || !clientSecret || !isHttpUrl(redirectUri)) return null
   return { clientId, clientSecret, redirectUri, allowlist: parseAllowlist(env.GITHUB_ALLOWLIST) }
 }
@@ -90,7 +100,7 @@ export function environmentGithubConfig(env: Env): GithubOAuthConfig | null {
 export function environmentCloudflareConfig(env: Env): CloudflareOAuthConfig | null {
   const clientId = env.CLOUDFLARE_OAUTH_CLIENT_ID?.trim() ?? ''
   const clientSecret = env.CLOUDFLARE_OAUTH_CLIENT_SECRET?.trim() ?? ''
-  const redirectUri = env.CLOUDFLARE_OAUTH_REDIRECT_URI?.trim() ?? ''
+  const redirectUri = normalizeOauthRedirectUri(env.CLOUDFLARE_OAUTH_REDIRECT_URI?.trim() ?? '')
   if (!clientId || !clientSecret || !isHttpUrl(redirectUri)) return null
   return { clientId, clientSecret, redirectUri, scope: env.CLOUDFLARE_OAUTH_SCOPE?.trim() || DEFAULT_CLOUDFLARE_SCOPE }
 }

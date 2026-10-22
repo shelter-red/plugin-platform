@@ -79,28 +79,74 @@ export function redirectWithError(request: Request, message: string): Response {
   return Response.redirect(location.toString(), 302)
 }
 
-export async function exchangeGithubCode(env: Env, code: string, fetchImpl: typeof fetch = fetch): Promise<{ login: string; emails: string[]; displayName: string; githubId: string } | null> {
+export interface GithubIdentity {
+  login: string
+  emails: string[]
+  displayName: string
+  githubId: string
+}
+
+export type GithubAuthFailureReason =
+  | 'not_configured'
+  | 'token_exchange_failed'
+  | 'user_api_failed'
+  | 'email_api_failed'
+  | 'identity_incomplete'
+  | 'no_verified_email'
+
+export type GithubAuthResult =
+  | { ok: true; identity: GithubIdentity }
+  | { ok: false; reason: GithubAuthFailureReason; status?: number; detail?: string }
+
+function safeDetail(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const normalized = value.replace(/\s+/g, ' ').trim().slice(0, 120)
+  return normalized || undefined
+}
+
+// GitHub API 会对缺少 User-Agent 的请求直接返回 403，Workers 的 fetch 默认不携带。
+const GITHUB_USER_AGENT = 'plugmesh-platform'
+
+async function failureDetail(response: Response): Promise<string | undefined> {
+  const payload = await response.clone().json().catch(() => null) as { message?: string } | null
+  const message = safeDetail(payload?.message)
+  if (message) return message
+  if (response.headers.get('x-ratelimit-remaining') === '0') return 'GitHub API 速率限制已用尽'
+  return undefined
+}
+
+export async function exchangeGithubCode(env: Env, code: string, fetchImpl: typeof fetch = fetch): Promise<GithubAuthResult> {
   const { github } = await resolveOauthSettings(env)
-  if (!github) return null
+  if (!github) return { ok: false, reason: 'not_configured' }
   const tokenResponse = await fetchImpl('https://github.com/login/oauth/access_token', {
     method: 'POST',
     headers: { accept: 'application/json', 'content-type': 'application/json' },
-    body: JSON.stringify({ client_id: github.clientId, client_secret: github.clientSecret, code }),
+    body: JSON.stringify({ client_id: github.clientId, client_secret: github.clientSecret, code, redirect_uri: github.redirectUri }),
   })
-  if (!tokenResponse.ok) return null
-  const tokenPayload = await tokenResponse.json() as { access_token?: string }
-  if (!tokenPayload.access_token) return null
-  const headers = { accept: 'application/vnd.github+json', authorization: `Bearer ${tokenPayload.access_token}` }
+  if (!tokenResponse.ok) return { ok: false, reason: 'token_exchange_failed', status: tokenResponse.status }
+  const tokenPayload = await tokenResponse.json().catch(() => null) as { access_token?: string; error?: string; error_description?: string } | null
+  if (!tokenPayload?.access_token) {
+    const detail = safeDetail(tokenPayload?.error_description) ?? safeDetail(tokenPayload?.error)
+    return { ok: false, reason: 'token_exchange_failed', status: tokenResponse.status, detail }
+  }
+  const headers = {
+    accept: 'application/vnd.github+json',
+    authorization: `Bearer ${tokenPayload.access_token}`,
+    'user-agent': GITHUB_USER_AGENT,
+    'x-github-api-version': '2022-11-28',
+  }
   const [userResponse, emailResponse] = await Promise.all([fetchImpl('https://api.github.com/user', { headers }), fetchImpl('https://api.github.com/user/emails', { headers })])
-  if (!userResponse.ok || !emailResponse.ok) return null
-  const githubUser = await userResponse.json() as { id?: number; login?: string; name?: string }
-  const githubEmails = await emailResponse.json() as Array<{ email?: string; primary?: boolean; verified?: boolean }>
-  const emails = githubEmails
+  if (!userResponse.ok) return { ok: false, reason: 'user_api_failed', status: userResponse.status, detail: await failureDetail(userResponse) }
+  if (!emailResponse.ok) return { ok: false, reason: 'email_api_failed', status: emailResponse.status, detail: await failureDetail(emailResponse) }
+  const githubUser = await userResponse.json().catch(() => null) as { id?: number; login?: string; name?: string } | null
+  const githubEmails = await emailResponse.json().catch(() => null) as Array<{ email?: string; primary?: boolean; verified?: boolean }> | null
+  if (!githubUser?.id || !githubUser.login) return { ok: false, reason: 'identity_incomplete' }
+  const emails = (Array.isArray(githubEmails) ? githubEmails : [])
     .filter((item): item is { email: string; primary?: boolean; verified: true } => item.verified === true && typeof item.email === 'string' && item.email.length > 0)
     .sort((left, right) => Number(Boolean(right.primary)) - Number(Boolean(left.primary)))
     .map((item) => item.email)
-  if (!githubUser.id || !githubUser.login || emails.length === 0) return null
-  return { githubId: String(githubUser.id), login: githubUser.login, emails, displayName: githubUser.name || githubUser.login }
+  if (emails.length === 0) return { ok: false, reason: 'no_verified_email' }
+  return { ok: true, identity: { githubId: String(githubUser.id), login: githubUser.login, emails, displayName: githubUser.name || githubUser.login } }
 }
 
 export async function createSession(env: Env, userId: string): Promise<string> {

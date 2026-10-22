@@ -30,7 +30,9 @@ test('初始化页拒绝错误部署令牌且不保存 OAuth 配置', async () =
   const html = await page.text()
   expect(html).toContain('初始化 Plugmesh')
   expect(html).toContain('部署令牌')
-  expect(html).toContain('https://console.example.com/auth/github/callback')
+  expect(html).toContain('<span>Homepage URL</span><code>https://console.example.com/</code>')
+  expect(html).toContain('<span>Authorization callback URL</span><code>https://console.example.com/auth/github/callback</code>')
+  expect(html.match(/\/auth\/github\/callback/g)).toHaveLength(1)
   expect(html).not.toContain('name="redirectUri"')
   expect(html).not.toContain(SETUP_TOKEN)
 
