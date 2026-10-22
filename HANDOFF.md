@@ -1,10 +1,10 @@
 # Plugmesh 平台交接（HANDOFF）
 
-> 最后整理：2026-10-23 03:51（Asia/Shanghai）
+> 最后整理：2026-10-23 03:54（Asia/Shanghai）
 > 状态：**前端 Token 化进行中，当前 `npm run build` 失败，禁止推送；Cloudflare Token/usage 后端已本地提交并验收；用量 UI、文案/视觉、部署核对、手动原生构建和帮助中心仍未完成**
-> 整理前本地 HEAD：`1dbec9c docs: 重整 HANDOFF 恢复基线与未完成事项`；本次 HANDOFF 整理会作为独立文档提交，之后以 `git log -1` 为准
+> 核验前本地 HEAD：`4d43b32 docs: 固化压缩恢复交接台账`；本次核验的 HANDOFF 更新会作为独立文档提交，之后以 `git log -1` 为准
 > 远端基线：`origin/main = 579eb1f docs: 校正交接基线与最新 Actions 结果`
-> 本地关系：整理前领先 `origin/main` **2 个提交**（`9882c76` 后端 + `1dbec9c` 文档）；HANDOFF 整理提交后领先 **3 个提交**。当前还有 **6 个未提交功能草稿**，全部尚未 push，因此没有对应 Actions run
+> 本地关系：核验前领先 `origin/main` **3 个提交**（`9882c76` 后端 + `1dbec9c`、`4d43b32` 文档）；本次 HANDOFF 核验提交后领先 **4 个提交**。当前还有 **6 个未提交功能草稿**，全部尚未 push，因此没有对应 Actions run
 > 恢复时仍以实际 `git log -1 --oneline --decorate` 和 `git status --short` 为准。
 > 本文件是上下文压缩后的第一事实源。README、验收矩阵、旧注释、聊天摘要或历史方案与本文冲突时，以用户最新要求和实际代码为准；旧文档必须在实现后同步重写。
 
@@ -15,7 +15,7 @@
 - push：`git@github-plugin-platform:shelter-red/plugin-platform.git`
 - fetch：`https://github.com/shelter-red/plugin-platform.git`
 - 当前远端最新成功 Actions：run `39840532476`（#52，`579eb1f`），`completed/success`
-- 本地 HEAD `1dbec9c` 和它的父提交 `9882c76` **尚未 push**，所以不能声称它们的 Actions 已通过；后端 `9882c76` 只完成了本地 Worker typecheck、runtime 和 smoke 验收。
+- 本地 HEAD `4d43b32` 及其父提交 `1dbec9c`、`9882c76` **尚未 push**，所以不能声称它们的 Actions 已通过；后端 `9882c76` 只完成了本地 Worker typecheck、runtime 和 smoke 验收。
 - 仓库内未发现 `AGENTS.md`，没有额外仓库级代理指令。
 - 当前工作区有 **6 个未提交功能草稿**（本 HANDOFF 整理已单独提交，不混入这些草稿）：
   ```text
@@ -35,7 +35,7 @@
   - `npm run worker:cloudflare-usage-smoke`：**PASS**
   - `npm run worker:oauth-settings-smoke`：**PASS**
   - `git diff --check`：**PASS**
-- **2026-10-23 当前进度：`src/api.ts` 已开始 Token 化。** 已加入 Token 设置/usage limits/plan 类型和稳定的 `ApiError.code/status/message` 解析，已删除 `fetchCloudflareAuthResult()`、Cloudflare OAuth 类型和 `authorizationExpired`；但 `CloudflareQuotas` 与 `PlatformSettings.cloudflareQuotas` 仍作为迁移期兼容字段存在，消费方尚未清理。下一步必须重写 Cloudflare 面板和用量 UI，再删除旧组件/hooks；不得重新引入 Cloudflare OAuth，也不得把已提交后端的 Token 契约回退成旧前端依赖。
+- **2026-10-23 03:54 当前进度：`src/api.ts` 已开始 Token 化。** 已加入 Token 设置/usage limits/plan 类型和稳定的 `ApiError.code/status/message` 解析，已删除 `fetchCloudflareAuthResult()`、Cloudflare OAuth 类型和 `authorizationExpired`；但 `CloudflareQuotas` 与 `PlatformSettings.cloudflareQuotas` 仍作为迁移期兼容字段存在，消费方尚未清理。下一步必须重写 Cloudflare 面板和用量 UI，再删除旧组件/hooks；不得重新引入 Cloudflare OAuth，也不得把已提交后端的 Token 契约回退成旧前端依赖。
 
 ### 0.1 绝对硬约束
 
@@ -173,11 +173,11 @@ git diff --check
 
 本次整理时记录：
 
-- 整理前本地 HEAD：`1dbec9c docs: 重整 HANDOFF 恢复基线与未完成事项`；本 HANDOFF 负责的独立文档提交在其后，提交哈希以 `git log -1` 为准
+- 核验前本地 HEAD：`4d43b32 docs: 固化压缩恢复交接台账`；本次 HANDOFF 核验提交在其后，提交哈希以 `git log -1` 为准
 - `origin/main`：`579eb1f docs: 校正交接基线与最新 Actions 结果`
-- 领先远端：整理前 `2` 个本地提交（`9882c76` 后端、`1dbec9c` 文档）；本 HANDOFF 文档提交后为 `3` 个，均未 push
+- 领先远端：核验前 `3` 个本地提交（`9882c76` 后端、`1dbec9c` 与 `4d43b32` 文档）；本次 HANDOFF 核验提交后为 `4` 个，均未 push
 - 远端最新成功 Actions：run `39840532476`（#52，`579eb1f`），`completed/success`
-- 本地 HEAD `1dbec9c`：尚未 push，**没有 Actions 结果**
+- 本地 HEAD `4d43b32`：尚未 push，**没有 Actions 结果**
 - 该后端提交统计：22 个路径，834 insertions / 1146 deletions；包含 `HANDOFF.md` 的上一版更新
 - HANDOFF 文档提交后剩余的未提交功能草稿：
   ```text
@@ -229,7 +229,7 @@ curl -fsSL 'https://api.github.com/repos/shelter-red/plugin-platform/actions/run
 | ID | 用户反馈或目标 | 必须达到的效果 | 当前状态 |
 | --- | --- | --- | --- |
 | U01 | “不是说全部重构成组件吗？登录页还是旧的？” | 登录页和全站有清晰组件边界；实际视觉验收 | 🟡 登录页、侧栏、账号、工作区已拆分；多主题/多视口最终视觉检查未完成。 |
-| U02 | 自行从会话历史读分支、提交、推送 | 每步有中文 Git 记录；不靠聊天猜仓库/分支 | 🟡 `main` 在 HANDOFF 文档提交后领先 `origin/main` 3 个本地提交（`9882c76` 后端 + `1dbec9c` 历史文档 + 本次 HANDOFF 整理），均未 push；工作区仍有 6 个未提交功能草稿，禁止误推或整组提交。 |
+| U02 | 自行从会话历史读分支、提交、推送 | 每步有中文 Git 记录；不靠聊天猜仓库/分支 | 🟡 `main` 在本次 HANDOFF 核验提交后领先 `origin/main` 4 个本地提交（`9882c76` 后端 + `1dbec9c`、`4d43b32`、本次核验文档），均未 push；工作区仍有 6 个未提交功能草稿，禁止误推或整组提交。 |
 | U03 | 推送时 Actions 老是失败 | 本地完整 CI；推送后追 Actions；失败读日志/产物并修到成功 | 🟡 远端最新 #52（`579eb1f`）成功；本地两个提交尚未 push；当前 `npm run build` FAIL，必须修复并跑完整本地 CI 后才能 push。 |
 | U04 | 错误状态为什么靠 `/?auth_error=` | 真实 HTTP status + JSON；留在当前页；不用查询参数/Cookie/跳首页 | 🟡 Cloudflare OAuth 路由/Cookie/跳转已删除，Token API 用 HTTP；前端 `useConsoleData.ts` 仍在轮询旧 auth-result，必须删除。 |
 | U05 | setup 失效为何单独返回 “Setup is not available” | `setupApi` 返回 `null` 时走普通非路由处理 | ✅ 已实现并有回归测试；后续不得破坏。 |
@@ -251,7 +251,7 @@ curl -fsSL 'https://api.github.com/repos/shelter-red/plugin-platform/actions/run
 | U21 | 文案诡异、莫名卡片、同页多个按钮跳同一页面 | 通读中英文；清理技术黑话、重复说明、空卡片、重复跳转 | ⬜ 用量页多个刷新入口、概览重复 `/usage` 跳转仍需全站审计。 |
 | U22 | Actions 手动构建插件服务器：可执行/库、目标平台 | 仅 `workflow_dispatch`；真正共享库；artifact、SHA256、依赖说明 | ⬜ 尚未新增；当前 `plugmesh_core` 是 STATIC，不能改扩展名冒充共享库。 |
 | U23 | 帮助中心说明二进制/库文件服务器怎么用 | 中英文覆盖下载、SHA256、启动/注册、env、插件目录/主机、链接、OpenSSL、常见错误 | ⬜ 尚未完成；现有帮助仍偏旧 Cloudflare FAQ。 |
-| U24 | “都整理一下，写到磁盘 HANDOFF，避免压缩后忘记” | 所有用户要求、硬约束、当前代码事实、阻塞、下一步和验收命令必须可在磁盘恢复 | ✅ 2026-10-23 03:51 已刷新 Git/Actions 基线、6 个功能草稿、`src/api.ts` 部分 Token 化状态、当前 build FAIL 证据、后端已收口事实和 U01–U24；本整理作为独立 docs 提交，恢复时先读第 0 节。 |
+| U24 | “都整理一下，写到磁盘 HANDOFF，避免压缩后忘记” | 所有用户要求、硬约束、当前代码事实、阻塞、下一步和验收命令必须可在磁盘恢复 | ✅ 2026-10-23 03:54 已再次实测并刷新 Git/Actions 基线、6 个功能草稿、`src/api.ts` 部分 Token 化状态、当前 build FAIL 逐项证据、后端已收口事实和 U01–U24；本次核验作为独立 docs 提交，恢复时先读第 0 节。 |
 
 总账完整性：U01–U24 已覆盖组件化、登录页、HTTP 错误、setup、D1、Cloudflare OAuth/Token、固定权限、账号识别、刷新按钮、`configured:false`、`response_type`/PKCE、8 项额度与百分比、平台/Cloudflare 分组、额度来源、异常文案/重复卡片/重复跳转、图标对齐、Actions、原生手动构建、帮助中心和磁盘恢复。若用户新增反馈，继续追加 U25，不覆盖旧条目。
 
@@ -725,7 +725,7 @@ npm run deploy:worker:test
 npm run ci:local
 ```
 
-### 6.1.1 2026-10-23 03:48 当前前端构建实测
+### 6.1.1 2026-10-23 03:54 当前前端构建实测
 
 ```text
 npm run worker:typecheck    PASS
@@ -738,6 +738,7 @@ npm run build               FAIL
 ```text
 src/app/useConsoleData.ts
   TS2305: Module '../api' has no exported member 'fetchCloudflareAuthResult'
+  TS7006: auth-result 回调参数 result 隐式 any（随旧 auth-result 轮询一起删除）
 src/features/settings/CloudflareAuthorizeSection.tsx
 src/features/settings/CloudflareClientFields.tsx
 src/features/settings/CloudflareClientSection.tsx
@@ -822,6 +823,7 @@ ctest --test-dir native-server/build --output-on-failure
 
 ## 9. 最近动作日志
 
+- 2026-10-23 03:54：从当前工作区再次核验并更新 HANDOFF。确认 HEAD 为 `4d43b32`、`origin/main` 为 `579eb1f`、领先 3 个未推送提交、工作区仍有 6 个功能草稿；重新执行 `npm run build` 后仍 FAIL，逐项确认 `fetchCloudflareAuthResult`、旧 OAuth 组件/hooks、`cloudflareQuotas` 和 `authorizationExpired` 是唯一阻塞组，未发现新的独立错误类别。本次只修改 `HANDOFF.md`，不混入功能草稿，也不因构建失败而 push。
 - 2026-10-23 03:51：把本 HANDOFF 整理作为独立文档提交落地，显式只 stage `HANDOFF.md`，不混入 `src/api.ts`、UI/locale/test 草稿；提交后工作区应剩 6 个未提交功能草稿。因前端 Token 化未完成且 `npm run build` FAIL，本分支暂不 push，避免触发失败 Actions。
 - 2026-10-23 03:48：从会话历史重新核对用户全部反馈、当前 Git 与 Actions，确认 `1dbec9c` 为本地 HEAD、`origin/main` 为 `579eb1f`、本地领先 2 个未推送提交、工作区有 7 个未提交路径；新建的 `src/api.ts` Token 契约已落地但消费方未迁移，实测 `npm run build` FAIL、`npm run worker:typecheck` PASS、`git diff --check` PASS。本文件补充当前构建错误、未提交路径、U02/U03/U04/U07/U11/U12/U15/U17/U19/U20/U24 状态和禁止 push 条件。
 - 2026-10-23 03:45：重新读取工作区、Git 提交和 GitHub Actions，确认本地 HEAD 为 `9882c76`、`origin/main` 为 `579eb1f`、本地领先 1 个未推送提交；远端最新 #52 成功。工作区只剩 5 个前端草稿（旧契约与有效展示意图混合）。重写本文件第 0、1 节并校正 U02/U03/U15/U24、4.2、4.3 和本日志，恢复时以本文件为第一事实源。
