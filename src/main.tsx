@@ -14,13 +14,11 @@ import {
   Building2,
   Check,
   CircleHelp,
-  Cloud,
   Command,
   Copy,
   FileText,
   Gauge,
   Globe2,
-  KeyRound,
   LayoutDashboard,
   LogOut,
   LockKeyhole,
@@ -35,7 +33,6 @@ import {
   ShieldCheck,
   Sun,
   UserRound,
-  Users,
   X,
   Zap,
 } from 'lucide-react'
@@ -49,11 +46,8 @@ import '@fontsource/ibm-plex-mono/latin-600.css'
 import './styles.css'
 import './i18n'
 import { createAppTheme, type AppThemeMode } from './app/theme'
-import { useToast, type Notify } from './components/ToastProvider'
-import { CloudflarePanel } from './features/settings/CloudflarePanel'
-import { OauthPanel } from './features/settings/OauthPanel'
+import { useToast } from './components/ToastProvider'
 import { readCloudflareDiagnosis, type CloudflareDiagnosis } from './features/settings/cloudflare-auth'
-import { SmtpPanel } from './features/settings/SmtpPanel'
 import { errorMessage, translateError } from './errors'
 import { StatusBadge } from './components/StatusBadge'
 import { IconButton } from './components/IconButton'
@@ -71,11 +65,12 @@ import { DomainsPage } from './features/domains/DomainsPage'
 import { UsagePage } from './features/usage/UsagePage'
 import { AccessLogsPage } from './features/logs/AccessLogsPage'
 import { AuditPage } from './features/audit/AuditPage'
+import { SettingsPage, settingsSections } from './features/settings/SettingsPage'
 import { auditActionLabel } from './lib/audit'
 import { downloadCsv } from './lib/csv'
 import { formatDateTime } from './lib/format'
 import { AuthLoadingScreen, LoginPage } from './features/auth/AuthScreen'
-import { ApiError, assignDomain, checkPluginHealth, commandPlugin, createInvite, createRegistrationCode, fetchAccessLogs, fetchAudit, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchInvites, fetchLocalUsage, fetchOauthSettings, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchPluginDetails, fetchServerDetails, fetchServers, fetchSmtpSettings, revokeInvite, syncServer, type ApiAccessLog, type ApiAudit, type ApiDomain, type ApiInvite, type ApiOverview, type ApiPlugin, type ApiPluginDetail, type ApiServer, type ApiServerDetail, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type OauthSettings, type PlatformSettings, type PluginAction, type PluginHealthResult, type SmtpSettings, type WorkspaceRole, updatePlatformSettings } from './api'
+import { assignDomain, checkPluginHealth, commandPlugin, createRegistrationCode, fetchAccessLogs, fetchAudit, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchInvites, fetchLocalUsage, fetchOauthSettings, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchPluginDetails, fetchServerDetails, fetchServers, fetchSmtpSettings, syncServer, type ApiAccessLog, type ApiAudit, type ApiDomain, type ApiInvite, type ApiOverview, type ApiPlugin, type ApiPluginDetail, type ApiServer, type ApiServerDetail, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type OauthSettings, type PlatformSettings, type PluginAction, type PluginHealthResult, type SmtpSettings } from './api'
 
 type Theme = 'dark' | 'light' | 'system'
 type ModalInput = { prefix?: string; pluginInstanceId?: string }
@@ -103,15 +98,6 @@ const navGroups: { labelKey: string; items: { id: Page; icon: typeof LayoutDashb
   },
 ]
 
-const settingsSections: { id: string; labelKey: string; icon: typeof Cloud }[] = [
-  { id: 'cloudflare', labelKey: 'settings.nav.cloudflare', icon: Cloud },
-  { id: 'oauth', labelKey: 'settings.nav.oauth', icon: KeyRound },
-  { id: 'invites', labelKey: 'settings.nav.invites', icon: Users },
-  { id: 'smtp', labelKey: 'settings.nav.smtp', icon: FileText },
-  { id: 'maintenance', labelKey: 'settings.nav.maintenance', icon: ShieldCheck },
-]
-
-const scrollBehavior = (): ScrollBehavior => window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
 type ConsoleProps = {
   theme: Theme
   setTheme: (theme: Theme) => void
@@ -583,156 +569,6 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} items={paletteItems} />}
     </div>
   )
-}
-
-function SettingsPage({ focusSection, settings, onSettingsChange, apiLive, isSuperAdmin, canManageInvites, activeWorkspaceId, workspaces, cloudflareSettings, onCloudflareChange, cloudflareDiagnosis, onDismissCloudflareDiagnosis, smtpSettings, onSmtpChange, oauthSettings, onOauthChange, invites, onInvitesChange, onAction }: { focusSection: { section: string; nonce: number } | null; settings: PlatformSettings | null; onSettingsChange: (settings: PlatformSettings) => void; apiLive: boolean; isSuperAdmin: boolean; canManageInvites: boolean; activeWorkspaceId: string | null; workspaces: Workspace[]; cloudflareSettings: CloudflareSettings | null; onCloudflareChange: (settings: CloudflareSettings) => void; cloudflareDiagnosis: CloudflareDiagnosis | null; onDismissCloudflareDiagnosis: () => void; smtpSettings: SmtpSettings | null; onSmtpChange: (settings: SmtpSettings) => void; oauthSettings: OauthSettings | null; onOauthChange: (settings: OauthSettings) => void; invites: ApiInvite[] | null; onInvitesChange: (invites: ApiInvite[]) => void; onAction: Notify }) {
-  const { t } = useTranslation()
-  const [saving, setSaving] = useState(false)
-  const [quotaSaving, setQuotaSaving] = useState(false)
-  const [suffixSaving, setSuffixSaving] = useState(false)
-  const [quotaForm, setQuotaForm] = useState({ requests: '', activeConnections: '', r2Bytes: '', r2Objects: '', d1Queries: '', kvOperations: '', durableObjectRequests: '' })
-  const [domainSuffix, setDomainSuffix] = useState('')
-  const [activeSection, setActiveSection] = useState('cloudflare')
-  const maintenance = settings?.maintenance ?? false
-  const sectionNav = settingsSections.filter(({ id }) => (isSuperAdmin ? true : id === 'invites') && (id !== 'invites' || canManageInvites)).map(({ id, labelKey, icon }) => ({ id, label: t(labelKey), icon }))
-  useEffect(() => {
-    if (!focusSection) return
-    setActiveSection(focusSection.section)
-    document.getElementById(`settings-${focusSection.section}`)?.scrollIntoView({ behavior: scrollBehavior(), block: 'start' })
-  }, [focusSection])
-  useEffect(() => {
-    const scroller = document.querySelector('.page-scroll')
-    const sections = sectionNav.map(({ id }) => document.getElementById(`settings-${id}`)).filter((section): section is HTMLElement => section !== null)
-    if (!scroller || sections.length === 0) return
-    const visible = new Set<string>()
-    const observer = new IntersectionObserver((entries) => {
-      for (const entry of entries) {
-        if (entry.isIntersecting) visible.add(entry.target.id)
-        else visible.delete(entry.target.id)
-      }
-      const current = sections.find((section) => visible.has(section.id))
-      if (current) setActiveSection(current.id.replace('settings-', ''))
-    }, { root: scroller, rootMargin: '-72px 0px -55% 0px' })
-    sections.forEach((section) => observer.observe(section))
-    // 末尾区块通常不足视口高度，滚到底时直接高亮最后一项，避免高亮停在上一节。
-    const onScroll = () => {
-      if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 8) setActiveSection(sectionNav[sectionNav.length - 1].id)
-    }
-    scroller.addEventListener('scroll', onScroll)
-    return () => {
-      observer.disconnect()
-      scroller.removeEventListener('scroll', onScroll)
-    }
-    // 分区与滚动容器在设置页挂载时即固定，无需随渲染重建观察器。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-  useEffect(() => {
-    if (!settings) return
-    setQuotaForm({ requests: String(settings.quotas.requests), activeConnections: String(settings.quotas.activeConnections), r2Bytes: String(settings.quotas.r2Bytes), r2Objects: String(settings.quotas.r2Objects), d1Queries: String(settings.quotas.d1Queries), kvOperations: String(settings.quotas.kvOperations), durableObjectRequests: String(settings.quotas.durableObjectRequests) })
-    setDomainSuffix(settings.pluginDomainSuffix)
-  }, [settings])
-  const toggleMaintenance = async () => {
-    if (!settings) {
-      onAction('warning', t('settings.maintenance.notConnected'))
-      return
-    }
-    setSaving(true)
-    try {
-      onSettingsChange(await updatePlatformSettings({ ...settings, maintenance: !maintenance }))
-      onAction('success', !maintenance ? t('settings.maintenance.enter') : t('settings.maintenance.resume'))
-    } catch {
-      onAction('error', t('settings.maintenance.updateFailed'))
-    } finally {
-      setSaving(false)
-    }
-  }
-  const saveDomainSuffix = async () => {
-    if (!settings) return onAction('warning', t('settings.domainSuffix.notConnected'))
-    if (!domainSuffix.trim()) return onAction('warning', t('settings.domainSuffix.invalid'))
-    setSuffixSaving(true)
-    try {
-      const next = await updatePlatformSettings({ ...settings, pluginDomainSuffix: domainSuffix.trim() })
-      onSettingsChange(next)
-      setDomainSuffix(next.pluginDomainSuffix)
-      onAction('success', t('settings.domainSuffix.saved'))
-    } catch (error) {
-      onAction(error instanceof ApiError && error.status === 400 ? 'warning' : 'error', error instanceof ApiError && error.status === 400 ? t('settings.domainSuffix.invalid') : t('settings.domainSuffix.saveFailed'))
-    } finally {
-      setSuffixSaving(false)
-    }
-  }
-  const saveQuotas = async () => {
-    if (!settings) return onAction('warning', t('settings.quotas.notConnected'))
-    const quotas = Object.fromEntries(Object.entries(quotaForm).map(([key, value]) => [key, Number(value)])) as PlatformSettings['quotas']
-    if (Object.values(quotas).some((value) => !Number.isSafeInteger(value) || value <= 0)) {
-      onAction('warning', t('settings.quotas.invalid'))
-      return
-    }
-    setQuotaSaving(true)
-    try {
-      onSettingsChange(await updatePlatformSettings({ ...settings, quotas }))
-      onAction('success', t('settings.quotas.saved'))
-    } catch {
-      onAction('error', t('settings.quotas.saveFailed'))
-    } finally {
-      setQuotaSaving(false)
-    }
-  }
-  const updateQuota = (key: keyof typeof quotaForm, value: string) => setQuotaForm((current) => ({ ...current, [key]: value }))
-  const goToSection = (section: string) => {
-    setActiveSection(section)
-    document.getElementById(`settings-${section}`)?.scrollIntoView({ behavior: scrollBehavior(), block: 'start' })
-  }
-  return <div className="settings-layout"><nav className="settings-nav" aria-label={t('pages.settings.title')}>{sectionNav.map(({ id, label, icon: Icon }) => <button key={id} className={activeSection === id ? 'selected' : ''} onClick={() => goToSection(id)} aria-current={activeSection === id ? 'page' : undefined}><Icon size={15} />{label}</button>)}</nav><div className="settings-content">{isSuperAdmin && <CloudflarePanel settings={cloudflareSettings} onSettingsChange={onCloudflareChange} oauth={oauthSettings} onOauthChange={onOauthChange} diagnosis={cloudflareDiagnosis} onDismissDiagnosis={onDismissCloudflareDiagnosis} apiLive={apiLive} onAction={onAction} />}{isSuperAdmin && <div id="settings-oauth"><OauthPanel settings={oauthSettings} onChange={onOauthChange} onAction={onAction} /></div>}{canManageInvites && <div id="settings-invites"><InvitePanel invites={invites} onChange={onInvitesChange} onAction={onAction} isSuperAdmin={isSuperAdmin} activeWorkspaceId={activeWorkspaceId} workspaces={workspaces} /></div>}{isSuperAdmin && <div id="settings-smtp"><SmtpPanel settings={smtpSettings} onChange={onSmtpChange} onAction={onAction} /></div>}{isSuperAdmin && <div id="settings-maintenance" className="panel settings-panel"><div className="settings-heading"><div className="settings-icon"><ShieldCheck size={18} /></div><div><h2>{t('settings.maintenance.title')}</h2><p>{settings ? t('settings.maintenance.description') : t('settings.maintenance.descriptionOffline')}</p></div><StatusBadge tone={maintenance ? 'warning' : settings ? 'success' : 'neutral'}>{maintenance ? t('settings.maintenance.on') : settings ? t('settings.maintenance.off') : t('settings.maintenance.unknown')}</StatusBadge></div><div className="maintenance-row"><div><strong>{settings ? (maintenance ? t('settings.maintenance.pause') : t('settings.maintenance.allow')) : t('settings.maintenance.unknownTitle')}</strong><span>{settings ? (maintenance ? t('settings.maintenance.pauseBody') : t('settings.maintenance.allowBody')) : t('settings.maintenance.unknownBody')}</span></div><button type="button" className={`toggle ${settings && !maintenance ? 'on' : ''}`} aria-label={t('settings.maintenance.title')} aria-pressed={Boolean(settings && !maintenance)} disabled={saving || !settings} onClick={toggleMaintenance}><span /></button></div><div className="quota-form domain-form"><div className="form-grid"><label>{t('settings.domainSuffix.label')}<input value={domainSuffix} onChange={(event) => setDomainSuffix(event.target.value)} placeholder="plugins.example.com" disabled={!settings || suffixSaving} /></label></div><div className="settings-actions quota-actions"><span className="form-hint">{t('settings.domainSuffix.hint')}</span><button className="button secondary" onClick={() => void saveDomainSuffix()} disabled={!settings || suffixSaving || quotaSaving}>{suffixSaving ? t('common.saving') : t('settings.domainSuffix.save')}<Check size={14} /></button></div></div><div className="quota-form"><div className="form-grid"><label>{t('settings.quotas.requests')}<input type="number" min="1" step="1" value={quotaForm.requests} onChange={(event) => updateQuota('requests', event.target.value)} disabled={!settings || quotaSaving} /></label><label>{t('settings.quotas.connections')}<input type="number" min="1" step="1" value={quotaForm.activeConnections} onChange={(event) => updateQuota('activeConnections', event.target.value)} disabled={!settings || quotaSaving} /></label><label>{t('settings.quotas.r2Bytes')}<input type="number" min="1" step="1" value={quotaForm.r2Bytes} onChange={(event) => updateQuota('r2Bytes', event.target.value)} disabled={!settings || quotaSaving} /></label><label>{t('settings.quotas.r2Objects')}<input type="number" min="1" step="1" value={quotaForm.r2Objects} onChange={(event) => updateQuota('r2Objects', event.target.value)} disabled={!settings || quotaSaving} /></label><label>{t('settings.quotas.d1')}<input type="number" min="1" step="1" value={quotaForm.d1Queries} onChange={(event) => updateQuota('d1Queries', event.target.value)} disabled={!settings || quotaSaving} /></label><label>{t('settings.quotas.kv')}<input type="number" min="1" step="1" value={quotaForm.kvOperations} onChange={(event) => updateQuota('kvOperations', event.target.value)} disabled={!settings || quotaSaving} /></label><label>{t('settings.quotas.durableObjects')}<input type="number" min="1" step="1" value={quotaForm.durableObjectRequests} onChange={(event) => updateQuota('durableObjectRequests', event.target.value)} disabled={!settings || quotaSaving} /></label></div><div className="settings-actions quota-actions"><span className="form-hint">{t('settings.quotas.hint')}</span><button className="button secondary" onClick={() => void saveQuotas()} disabled={!settings || quotaSaving || suffixSaving}>{quotaSaving ? t('common.saving') : t('settings.quotas.save')}<Check size={14} /></button></div></div></div>}</div></div>
-}
-
-function InvitePanel({ invites, onChange, onAction, isSuperAdmin, activeWorkspaceId, workspaces }: { invites: ApiInvite[] | null; onChange: (invites: ApiInvite[]) => void; onAction: Notify; isSuperAdmin: boolean; activeWorkspaceId: string | null; workspaces: Workspace[] }) {
-  const { t } = useTranslation()
-  const [email, setEmail] = useState('')
-  const [githubLogin, setGithubLogin] = useState('')
-  const [expiresInHours, setExpiresInHours] = useState('72')
-  const [role, setRole] = useState<WorkspaceRole>('viewer')
-  const [saving, setSaving] = useState(false)
-  const [latestUrl, setLatestUrl] = useState<string | null>(null)
-
-  const refresh = async () => onChange(await fetchInvites())
-  const create = async () => {
-    if (!email.trim() && !githubLogin.trim()) {
-      onAction('warning', t('settings.invite.identityRequired'))
-      return
-    }
-    setSaving(true)
-    try {
-      const result = await createInvite({ email: email.trim() || undefined, githubLogin: githubLogin.trim() || undefined, expiresInHours: Number(expiresInHours) || 72, workspaceId: activeWorkspaceId ?? undefined, role })
-      setLatestUrl(result.inviteUrl)
-      setEmail('')
-      setGithubLogin('')
-      await refresh()
-      onAction(result.emailSent === false && email.trim() ? 'warning' : 'success', result.emailSent === false && email.trim() ? t('settings.invite.createdEmailFailed') : t('settings.invite.created'))
-    } catch (error) {
-      onAction('error', errorMessage(error, 'settings.invite.createFailed'))
-    } finally {
-      setSaving(false)
-    }
-  }
-  const revoke = async (invite: ApiInvite) => {
-    if (!window.confirm(t('settings.invite.revokeConfirm'))) return
-    try {
-      await revokeInvite(invite.id)
-      await refresh()
-      onAction('success', t('settings.invite.revoked'))
-    } catch (error) {
-      onAction('error', errorMessage(error, 'settings.invite.revokeFailed'))
-    }
-  }
-  const copy = async () => {
-    if (!latestUrl) return
-    await navigator.clipboard.writeText(latestUrl)
-    onAction('success', t('settings.invite.copied'))
-  }
-  const workspaceName = (id: string | undefined) => workspaces.find((workspace) => workspace.id === id)?.name ?? id ?? '—'
-  const roleOptions = (['owner', 'operator', 'viewer'] as WorkspaceRole[]).map((value) => ({ value, label: t(`workspace.roles.${value}`) }))
-  return <div className="panel settings-panel"><div className="settings-heading"><div className="settings-icon"><Users size={18} /></div><div><h2>{t('settings.invite.title')}</h2><p>{invites ? t('settings.invite.description') : t('settings.invite.descriptionUnavailable')}</p></div><StatusBadge tone={invites ? 'success' : 'neutral'}>{invites ? t('settings.invite.count', { count: invites.length }) : t('settings.invite.unknown')}</StatusBadge></div><div className="form-grid"><label>{t('settings.invite.email')}<input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="member@example.com" disabled={!invites || saving} /></label><label>{t('settings.invite.github')}<input value={githubLogin} onChange={(event) => setGithubLogin(event.target.value)} placeholder="github-login" disabled={!invites || saving} /></label><label>{t('settings.invite.role')}<Select aria-label={t('settings.invite.role')} value={role} onChange={(value: WorkspaceRole) => setRole(value)} disabled={!invites || saving} options={roleOptions} /></label><label>{t('settings.invite.expiresIn')}<input type="number" min="1" max="720" value={expiresInHours} onChange={(event) => setExpiresInHours(event.target.value)} disabled={!invites || saving} /></label></div><div className="settings-actions"><span className="form-hint">{t('settings.invite.workspaceHint', { name: workspaceName(activeWorkspaceId ?? undefined) })}</span><button className="button primary" onClick={() => void create()} disabled={!invites || saving}>{t('settings.invite.create')}<Plus size={14} /></button>{latestUrl && <><input className="invite-url" value={latestUrl} readOnly aria-label={t('settings.invite.newLink')} /><button className="button secondary" onClick={() => void copy()}><Copy size={14} />{t('settings.invite.copy')}</button></>}</div>{invites === null ? <div className="empty-panel"><div className="empty-illustration"><Users size={20} /></div><h3>{t('settings.invite.emptyTitle')}</h3><p>{t('settings.invite.emptyBody')}</p></div> : invites.length === 0 ? <div className="empty-panel"><div className="empty-illustration"><Users size={20} /></div><h3>{t('settings.invite.noInvitesTitle')}</h3><p>{t('settings.invite.noInvitesBody')}</p></div> : <div className="table-wrap"><table><thead><tr><th>{t('settings.invite.columnIdentity')}</th>{isSuperAdmin && <th>{t('settings.invite.columnWorkspace')}</th>}<th>{t('settings.invite.columnRole')}</th><th>{t('settings.invite.columnStatus')}</th><th>{t('settings.invite.columnExpires')}</th><th /></tr></thead><tbody>{invites.map((invite) => <tr key={invite.id}><td><div className="cell-title"><div className="table-icon"><Users size={15} /></div><div><strong>{invite.github_login || invite.email || t('settings.invite.noIdentity')}</strong><small>{invite.email || t('settings.invite.noEmail')}</small></div></div></td>{isSuperAdmin && <td>{workspaceName(invite.workspace_id)}</td>}<td>{invite.role ? t(`workspace.roles.${invite.role}`) : '—'}</td><td><StatusBadge tone={invite.status === 'pending' ? 'warning' : invite.status === 'used' ? 'success' : 'neutral'}>{t(`status.${invite.status}`, { defaultValue: invite.status })}</StatusBadge></td><td>{formatDateTime(invite.expires_at)}</td><td>{invite.status === 'pending' && <button className="row-action" onClick={() => void revoke(invite)} aria-label={t('settings.invite.revoke')} title={t('settings.invite.revoke')}><X size={15} /></button>}</td></tr>)}</tbody></table></div>}</div>
 }
 
 function DetailModal({ detail, data, loading, error, healthLoading, actionLoading, onClose, onOpenPlugin, onHealth, onAction }: { detail: { kind: 'server' | 'plugin'; id: string }; data: { kind: 'server'; value: ApiServerDetail } | { kind: 'plugin'; value: ApiPluginDetail } | null; loading: boolean; error: string | null; healthLoading: boolean; actionLoading: Exclude<PluginAction, 'health'> | null; onClose: () => void; onOpenPlugin: (id: string) => void; onHealth: (plugin: { id: string; name: string }) => void; onAction: (plugin: ApiPlugin, action: Exclude<PluginAction, 'health'>) => void }) {
