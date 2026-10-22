@@ -88,8 +88,9 @@ cd native-server/build && ctest --output-on-failure
 4. 脚本自动执行全部 migrations、生成基础设施 Secret 并发布 Worker；
 5. 首次生成的 `SETUP_TOKEN` 显示在本次构建日志的「初始化令牌」一行。
 
-不要填写任何业务变量，也不要把 Deploy command 改成 `npx wrangler deploy`，否则会跳过 migrations 和 Secret 初始化。
+不要填写任何业务变量。Deploy command 必须是 `npm run deploy`：改成 `npx wrangler deploy` 或平台默认的 `npx wrangler versions upload` 都只会发布代码，跳过 migrations 和 Secret 初始化，下一次 schema 变更后接口会直接报 `D1_ERROR: no such table`。
 
+部署脚本会在发布前校验远端 D1 已没有待应用 migration，发现遗留会直接让构建失败，而不是把缺表的新版本推上线。
 > 一键部署创建的仓库受 GitHub 安全限制，可能不包含本仓库的 Actions workflow。部署按钮和 GitHub Actions 是两条可选链路，不要同时配置。
 
 ### 方式二：本地一条命令
@@ -112,6 +113,15 @@ npm run deploy
 6. 发布 Worker，并把初始化令牌保存到 `.wrangler/plugmesh-setup-token`（权限 `0600`）。
 
 部署统一由 Cloudflare Workers Builds 触发（`WORKERS_CI=1` 时脚本自动进入托管模式），仓库不再保留 `deploy.yml` 部署工作流；本地或自有 CI 仍可直接执行 `npm run deploy`，只需配置 `CLOUDFLARE_API_TOKEN`，多账号环境再设置 `CLOUDFLARE_ACCOUNT_ID`。
+
+### 部署故障排查：接口报 `no such table`
+
+出现 `D1_ERROR: no such table: workspaces` 之类的错误，说明当前 Worker 版本已经发布、但远端 D1 还停在旧 schema（多数情况是 Deploy command 没走 `npm run deploy`）。先补齐迁移，再把 Deploy command 改成 `npm run deploy`：
+
+```bash
+npx wrangler d1 migrations list plugmesh --remote   # 列出待应用 migration
+npx wrangler d1 migrations apply plugmesh --remote  # 补齐后重新发布即可
+```
 
 ### 部署后只做一次业务初始化
 

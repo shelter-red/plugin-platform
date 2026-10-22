@@ -174,10 +174,19 @@ fi
 if [[ $PROVISION_ON_DEPLOY -eq 1 ]]; then
   echo "==> 首次发布 Worker $WORKER_NAME（触发 D1 / R2 自动创建并绑定）"
   wrangler deploy "${DEPLOY_ARGS[@]}"
+  # 平台创建的 D1 只在发布后才确定 UUID；解析回来写进配置，保证迁移和后续发布都指向同一个库。
+  database_id=$(find_database_id || true)
+  [[ -n "$database_id" ]] || fail "无法解析 --x-provision 绑定到的 D1 数据库 $DB_NAME，迁移无法执行"
+  write_database_id "$database_id"
+  echo "    已写入 ${CONFIG}：database_id = $database_id"
 fi
 
 echo "==> 应用远端 D1 migrations"
 wrangler d1 migrations apply DB --remote --config "$CONFIG"
+
+echo "==> 校验远端 D1 没有遗留 migration"
+pending_migrations=$(wrangler d1 migrations list DB --remote --config "$CONFIG" | grep -cE '\.sql' || true)
+[[ "$pending_migrations" == "0" ]] || fail "远端 D1 仍有 $pending_migrations 个待应用 migration，已终止发布；请检查 migrations apply 输出后重试"
 
 if [[ $PROVISION_ON_DEPLOY -eq 0 ]]; then
   echo "==> 发布 Worker $WORKER_NAME"

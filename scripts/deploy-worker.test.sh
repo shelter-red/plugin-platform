@@ -50,6 +50,13 @@ case "$*" in
     ;;
   'd1 migrations apply '*)
     ;;
+  'd1 migrations list '*)
+    if [[ -f "$state/pending-migration" ]]; then
+      printf 'Migrations to be applied:\n│ 0009_pending.sql │\n'
+    else
+      printf '✅ No migrations to apply!\n'
+    fi
+    ;;
   'deploy '*)
     ;;
   'secret list '*)
@@ -239,3 +246,24 @@ deploy_line=$(grep -nFx 'deploy --config wrangler.toml --x-provision' "$TMP/stat
 [[ $(grep -cFx 'deploy --config wrangler.toml --x-provision' "$TMP/state-cloud-existing/commands.log") -eq 1 ]]
 [[ "$existing_output" != *'首次发布 Worker'* ]]
 printf 'ok：Workers Builds 已有 D1 ID 时先迁移，再启用资源校验并发布\n'
+
+mkdir -p "$TMP/state-drift"
+cp "$ROOT/wrangler.toml" "$TMP/wrangler.toml"
+node -e 'const fs = require("node:fs"); const path = process.argv[1]; const text = fs.readFileSync(path, "utf8").replace(/^(database_name = "plugmesh"\n)/m, "$1database_id = \"existing-database-id\"\n"); fs.writeFileSync(path, text)' "$TMP/wrangler.toml"
+printf '[]\n' > "$TMP/state-drift/secrets.json"
+touch "$TMP/state-drift/pending-migration"
+if drift_output=$(cd "$TMP" && \
+  env -u CLOUDFLARE_API_TOKEN \
+  WORKERS_CI=1 \
+  WRANGLER_BIN="$TMP/fake-wrangler" \
+  FAKE_STATE="$TMP/state-drift" \
+  PATH="$TMP/bin:$PATH" \
+  NPM_LOG="$TMP/npm.log" \
+  FAKE_ROOT="$TMP" \
+  ./scripts/deploy-worker.sh 2>&1); then
+  echo '预期迁移遗留时部署失败，但脚本成功退出' >&2
+  exit 1
+fi
+[[ "$drift_output" == *'仍有 1 个待应用 migration'* ]]
+! grep -Fxq 'deploy --config wrangler.toml --x-provision' "$TMP/state-drift/commands.log"
+printf 'ok：远端 D1 迁移未全部应用时拒绝发布并提示原因\n'
