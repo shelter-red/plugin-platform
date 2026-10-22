@@ -3,7 +3,7 @@
 这是跨 Linux / Windows 的本地服务器基础层。当前阶段固定了两项运行时边界：
 
 - `plugin_api.h` 定义兼容的 C ABI v2/v3/v4：v2 通过 `plugmesh_plugin_get_api_v2` 导出 HTTP、WebSocket、SSE 和文件流能力，v3 额外提供公开 WebSocket 的建立与关闭回调，v4 在 v3 基础上增加 SSE 取消回调 `handle_sse_cancel`。
-- `PluginLoader` 负责按平台加载 `.so` / `.dll`，校验 ABI 版本和必需入口。
+- `PluginLoader` 负责按平台加载 `.so` / `.dylib` / `.dll`，校验 ABI 版本和必需入口。
 - `plugmesh-plugin-host` 是可执行宿主进程，按 `<library>` 参数加载单个插件动态库，并通过 stdin/stdout 的逐行 JSON 协议响应父进程请求。支持的操作为 `describe`、`start`、`stop`、`health`、`http`、`sse`、`sse.cancel`、`file`、`websocket.open`、`websocket.data`、`websocket.close` 和 `shutdown`；二进制数据统一使用 Base64。
 - `PluginManager` 负责扫描包含 `manifest.json` 的插件目录、校验 manifest 与 C ABI v2/v3/v4 描述、编排加载/启停/重载、健康检查、文件流、SSE 取消和 WebSocket 生命周期。每个已加载插件对应一个 `PluginHostClient` 子进程；插件发生访问违规等原生崩溃时只终止宿主进程，管理器把插件标记为 `failed` 并记录 `last_error`，服务器进程本身继续运行。
 - `ControlClient` 使用 WebSocket++、standalone Asio 和 nlohmann/json 建立出站控制连接；生产地址使用 `wss`，localhost 开发地址可使用 `ws`。控制连接处理注册、心跳、插件命令、健康检查和 HTTP 请求帧，注册描述来自已校验的 manifest。收到 `server.sync` 时，客户端通过 `server.register` 的 `syncRequestId` 关联本次同步，不在注册落库前提前返回成功。

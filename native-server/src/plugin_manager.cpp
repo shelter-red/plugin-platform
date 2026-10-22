@@ -6,9 +6,12 @@
 #include <algorithm>
 #include <cstdlib>
 #include <fstream>
+#include <vector>
 
 #ifdef _WIN32
 #include <windows.h>
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
 #endif
 
 namespace plugmesh {
@@ -18,6 +21,10 @@ namespace {
 bool is_library(const std::filesystem::path& path) {
 #ifdef _WIN32
   return path.extension() == ".dll";
+#elif defined(__APPLE__)
+  // macOS 的共享库扩展名是 .dylib；同时兼容沿用 .so 命名的构建产物。
+  const auto extension = path.extension();
+  return extension == ".dylib" || extension == ".so";
 #else
   return path.extension() == ".so";
 #endif
@@ -209,6 +216,16 @@ std::filesystem::path PluginManager::resolve_host_executable(std::string& error)
 #ifdef _WIN32
   wchar_t buffer[MAX_PATH];
   if (GetModuleFileNameW(nullptr, buffer, MAX_PATH) != 0) self = buffer;
+#elif defined(__APPLE__)
+  // macOS 没有 /proc，改用 dyld 提供的可执行文件路径：第一次调用传入空缓冲区，
+  // dyld 会把所需长度写回 size（同时返回 -1），第二次再取真实路径。
+  std::error_code path_error;
+  uint32_t size = 0;
+  _NSGetExecutablePath(nullptr, &size);
+  std::vector<char> executable_path(size > 0 ? size : 1);
+  if (_NSGetExecutablePath(executable_path.data(), &size) == 0) {
+    self = std::filesystem::weakly_canonical(executable_path.data(), path_error);
+  }
 #else
   std::error_code path_error;
   self = std::filesystem::read_symlink("/proc/self/exe", path_error);
