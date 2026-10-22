@@ -1,6 +1,6 @@
 # Plugmesh 平台交接（HANDOFF）
 
-> 最后更新：2026-10-23 18:35（Asia/Shanghai）
+> 最后更新：2026-10-23 02:38（Asia/Shanghai）
 > 状态：**进行中，当前工作区不可直接推送**
 > 维护规则：每完成一个可验证步骤，先更新本文件，再提交一条可追溯的中文 Git 记录；未记录不得继续下一步。
 > 本文件是压缩后优先读取的事实来源。若 README、验收矩阵、旧注释或聊天摘要与本文冲突，以用户最新要求和实际代码为准；旧文档必须在实现完成后同步重写。
@@ -9,8 +9,8 @@
 
 - 仓库：`/home/tc/work/plugin-platform`
 - 分支：`main`
-- 整理时 HEAD 与 `origin/main`：`eb414d0 docs: 更新压缩恢复快照与 Cloudflare 迁移阻塞点`
-- 最近已验收 Actions：run `39830753816`（#44），`completed/success`
+- 整理时 HEAD 与 `origin/main`：`f9ae7b8 docs: 重整交接台账并记录 Token 用量迁移进度`
+- 最近已验收 Actions：run `39832365360`，`completed/success`（`f9ae7b8`）；`39830753816`（`eb414d0`）也成功。
 - 当前环境没有 `AGENTS.md`；未发现额外仓库级代理指令。
 - 除本 `HANDOFF.md` 外，工作区有 **10 个未提交代码文件**，必须分组理解和处理：
   - UI/额度草稿 5 个：
@@ -80,7 +80,7 @@
 
 ### 0.2 下一步顺序（不得跳步）
 
-1. 提交并推送本 HANDOFF 文档；只显式暂存 `HANDOFF.md`。
+1. 本 HANDOFF 已提交并推送为 `f9ae7b8`，Actions `39832365360` 成功；后续每次状态变化先更新本文件，再推进代码。
 2. 彻底删除 Cloudflare OAuth：
    - 路由、回调、Cookie、refresh/revoke、state 清理、Env、smoke、测试全部删除或重写；
    - `oauth-settings.ts` 只保留 GitHub；
@@ -120,9 +120,10 @@ git diff --stat
 git diff --check
 ```
 
-当前权威快照（2026-10-23）：
+当前权威快照（2026-10-23 02:38，Asia/Shanghai）：
 
-- 整理时 HEAD：`eb414d0`，run `39830753816`（#44）成功。
+- 整理时 HEAD / `origin/main`：`f9ae7b8`，run `39832365360` 成功。
+- 上一提交：`eb414d0`，run `39830753816`（#44）成功。
 - 最近已验收功能提交：`a0539fb feat(cloudflare): 增加 API Token 校验与凭据基础模块`，run `39827872017`（#42）成功。
 - 此前已验收文档：`2a32bfe` run `39828876658`（#43）、`c32a587` run `39826901281`（#41）、`e3cdb05` run `39826112664`（#40）均成功。
 - push 地址：`git@github-plugin-platform:shelter-red/plugin-platform.git`
@@ -145,14 +146,14 @@ curl -fsSL 'https://api.github.com/repos/shelter-red/plugin-platform/actions/run
 
 未认证 GitHub REST 限额为每小时 60 次；曾因 15 秒高频轮询触发 403。轮询至少间隔约 1 分钟，额度耗尽时等待 `X-RateLimit-Reset`，不要把 403 误判成 Actions 失败。
 
-## 2. 用户问题总账（U01–U23）
+## 2. 用户问题总账（U01–U24）
 
 状态图例：✅ 已实现并有验证证据；🟡 局部完成；⬜ 尚未开始或最终验收未通过。
 
 | ID | 用户反馈或目标 | 必须达到的效果 | 当前状态 |
 | --- | --- | --- | --- |
 | U01 | “不是说全部重构成组件吗？登录页还是旧的？” | 登录页和全站有清晰组件边界；不重复重写；实际视觉验收 | 🟡 登录页、侧栏、账号、工作区已拆分；多主题/多视口最终视觉检查未完成。 |
-| U02 | 自行从会话历史读分支、提交、推送 | 每步有中文 Git 记录；不靠聊天猜仓库/分支 | 🟡 分支和远端已知；HEAD `eb414d0` 的 #44 成功；当前 10 个代码文件未提交，禁止误推。 |
+| U02 | 自行从会话历史读分支、提交、推送 | 每步有中文 Git 记录；不靠聊天猜仓库/分支 | 🟡 分支和远端已知；HEAD `f9ae7b8` 的 run `39832365360` 成功；当前 10 个代码文件未提交，禁止误推。 |
 | U03 | 推送时 Actions 老是失败 | 本地完整 CI；推送后追 Actions；失败读日志/产物并修到成功 | 🟡 最新已推送 HEAD 成功；当前完整 runtime 86/90，未全绿，禁止推代码。 |
 | U04 | 错误状态为什么靠 `/?auth_error=` | 真实 HTTP status + JSON；留在当前页；不用查询参数/Cookie/跳首页 | 🟡 GitHub 登录和 Token 设置已使用 HTTP；旧 Cloudflare OAuth 路由、Cookie、跳转仍待删除。 |
 | U05 | setup 失效为何单独返回 “Setup is not available” | `setupApi` 返回 `null` 时走普通非路由处理 | ✅ 已实现并有回归测试；后续改造不得破坏。 |
@@ -174,8 +175,9 @@ curl -fsSL 'https://api.github.com/repos/shelter-red/plugin-platform/actions/run
 | U21 | 文案诡异、莫名卡片、同页多个按钮跳同一页面 | 通读中英文；清理技术黑话、重复说明、空卡片、重复跳转 | ⬜ 已知用量页多个刷新入口、概览重复 `/usage` 跳转，需全站审计。 |
 | U22 | Actions 手动构建插件服务器：可执行/库、目标平台 | 仅 `workflow_dispatch`；真正共享库；artifact、SHA256、依赖说明 | ⬜ 尚未新增；当前 CMake 只有 STATIC core，不能改扩展名冒充共享库。 |
 | U23 | 帮助中心说明二进制/库文件服务器怎么用 | 中英文覆盖下载、SHA256、启动/注册、env、插件目录/主机、链接、OpenSSL、常见错误 | ⬜ 尚未完成；现有帮助仍偏旧 OAuth FAQ。 |
+| U24 | “都整理一下，写到磁盘 HANDOFF，避免压缩后忘记” | 所有用户要求、硬约束、当前代码事实、阻塞、下一步和验收命令必须可在磁盘恢复 | ✅ 本文件即权威台账；压缩恢复时先读第 0 节，再读 U01–U24 和对应执行清单。 |
 
-总账完整性：U01–U23 覆盖本会话中组件化、登录页、HTTP 错误、setup、D1、Cloudflare OAuth/Token、固定权限、账号识别、刷新按钮、`configured:false`、`response_type`/PKCE、8 项额度与百分比、平台/Cloudflare 分组、额度来源、异常文案/重复卡片/重复跳转、图标对齐、Actions、原生手动构建和帮助中心要求。若用户新增反馈，继续追加编号，不覆盖旧条目。
+总账完整性：U01–U24 覆盖本会话中组件化、登录页、HTTP 错误、setup、D1、Cloudflare OAuth/Token、固定权限、账号识别、刷新按钮、`configured:false`、`response_type`/PKCE、8 项额度与百分比、平台/Cloudflare 分组、额度来源、异常文案/重复卡片/重复跳转、图标对齐、Actions、原生手动构建、帮助中心和磁盘恢复要求。若用户新增反馈，继续追加编号，不覆盖旧条目。
 
 ## 3. Cloudflare Token 的固定契约
 
@@ -492,7 +494,7 @@ docs/local-e2e.md
 
 ## 6. 测试与验收
 
-### 6.1 当前证据（2026-10-23 18:35）
+### 6.1 当前证据（2026-10-23 02:38，Asia/Shanghai）
 
 ```text
 npm run worker:typecheck                         PASS
@@ -605,11 +607,12 @@ ctest --test-dir native-server/build --output-on-failure
 
 ## 9. 最近动作日志
 
-- 2026-10-23 18:35：重新核对当前代码与测试：`worker:typecheck` 通过；Token/settings/analytics 定向 20/20；完整 runtime 86/90，4 个失败全部是旧 OAuth refresh/过期用例。确认 `cloudflareUsageApi` 已改为先凭据后缓存、未配置和旧 OAuth 短路、Analytics 401/403 真实 HTTP。本次整理 HANDOFF，明确下一步是删除整个 Cloudflare OAuth 链路。
-- 2026-10-23 18:20：整理 HANDOFF 当前快照，并验证 Cloudflare Token 设置阶段；当时设置 + Token 定向 runtime 14/14 通过、`worker:typecheck` 通过；完整 runtime 为 85/89 通过，4 个失败全在旧 `analytics.test.ts`。该阻塞随后已由用量 Token 迁移解除。
+- 2026-10-23 02:38：按用户要求再次整理磁盘 HANDOFF，补齐 U24，刷新 HEAD/`origin/main` 为 `f9ae7b8`、最近 Actions 为 run `39832365360` 成功，并纠正文档时间戳。当前 10 个代码文件仍未提交；下一步仍是删除整个 Cloudflare OAuth 链路，确认完整 runtime 全绿后才推送代码。
+- 2026-10-23 02:32：重新核对当前代码与测试：`worker:typecheck` 通过；Token/settings/analytics 定向 20/20；完整 runtime 86/90，4 个失败全部是旧 OAuth refresh/过期用例。确认 `cloudflareUsageApi` 已改为先凭据后缓存、未配置和旧 OAuth 短路、Analytics 401/403 真实 HTTP。本次整理 HANDOFF，明确下一步是删除整个 Cloudflare OAuth 链路。
+- 2026-10-23 02:20：整理 HANDOFF 当前快照，并验证 Cloudflare Token 设置阶段；当时设置 + Token 定向 runtime 14/14 通过、`worker:typecheck` 通过；完整 runtime 为 85/89 通过，4 个失败全在旧 `analytics.test.ts`。该阻塞随后已由用量 Token 迁移解除。
 - 2026-10-23：完成 Cloudflare Token 设置 API：GET 固定权限和不回显 Token；PUT 全链路校验后加密保存并清缓存；DELETE 不调用 Cloudflare；旧 OAuth 密文识别；settings + token 测试 14/14 通过。
 - 2026-10-23：核对 Cloudflare 官方 subscriptions：响应为 `{ result: Subscription[], errors, messages }`，含 `rate_plan.id`、`rate_plan.public_name`、`state`；端点接受 `Billing Read`/`Billing Write`；只有实际 `rate_plan.id === "free"` 才能确认 Free。
 - 2026-10-23：核对 Cloudflare API Token 权限文档，确认 Account Settings Read、Account Analytics Read、Billing Read 真实存在。
 - 2026-10-23：确认 `eb414d0` 的 Actions run `39830753816`（#44）成功；`2a32bfe` #43、`a0539fb` #42、`c32a587` #41、`e3cdb05` #40 均成功。
-- 2026-10-23：用户反馈历史累计：组件化、登录页、`auth_error`、setup、D1 缺表、Cloudflare OAuth 权限与 refresh、账号识别、额度刷新/8 项百分比、平台与 Cloudflare 分离、Token 迁移、subs 读取额度、异常文案/重复 UI、图标对齐、Actions 稳定性、手动原生构建和帮助中心；已全部固化在 U01–U23。
+- 2026-10-23：用户反馈历史累计：组件化、登录页、`auth_error`、setup、D1 缺表、Cloudflare OAuth 权限与 refresh、账号识别、额度刷新/8 项百分比、平台与 Cloudflare 分离、Token 迁移、subs 读取额度、异常文案/重复 UI、图标对齐、Actions 稳定性、手动原生构建、帮助中心和磁盘恢复；已全部固化在 U01–U24。
 - 2026-10-23：`1e5fec7`、`4cc1b72`、`e4b8179`、`abf05ca` 等历史文档/组件化提交均已完成 Actions 闭环；历史失败 `fd80fa4` #11、`1e4fd10` #12 继续保留为警示。
