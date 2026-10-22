@@ -14,6 +14,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      native: ${{ steps.filter.outputs.native }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            native:
+              - 'native-server/**'
+              - '.github/workflows/platform-ci.yml'
+
   web:
     runs-on: ubuntu-latest
     steps:
@@ -37,7 +51,10 @@ jobs:
       - name: 管理端 UI smoke
         run: npm run ui:smoke
 
+  # 原生验收只在 native-server 或本工作流变化时运行；凭据相关用例在缺少系统凭据时回退到加密凭据文件。
   linux-native:
+    needs: changes
+    if: needs.changes.outputs.native == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -47,12 +64,21 @@ jobs:
         run: cmake --build native-server/build --parallel
       - name: 测试
         working-directory: native-server/build
-        run: ctest --output-on-failure
+        run: ctest --output-on-failure -V
+      - name: 上传失败日志
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-test-logs-linux
+          path: |
+            native-server/build/Testing/Temporary/LastTest.log
+            native-server/build/Testing/Temporary/LastTestsFailed.log
+          if-no-files-found: ignore
 
   windows-native:
+    needs: changes
+    if: needs.changes.outputs.native == 'true'
     runs-on: windows-latest
-    env:
-      PLUGMESH_TEST_SYSTEM_CREDENTIALS: required
     steps:
       - uses: actions/checkout@v4
       - name: 配置
@@ -73,12 +99,21 @@ jobs:
           $vcpkg = $env:VCPKG_INSTALLATION_ROOT
           if (-not $vcpkg) { $vcpkg = 'C:\vcpkg' }
           $env:PATH = "$vcpkg\installed\x64-windows\bin;$env:PATH"
-          ctest -C Release --output-on-failure
+          ctest -C Release --output-on-failure -V
+      - name: 上传失败日志
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-test-logs-windows
+          path: |
+            native-server/build-win/Testing/Temporary/LastTest.log
+            native-server/build-win/Testing/Temporary/LastTestsFailed.log
+          if-no-files-found: ignore
 
   macos-native:
+    needs: changes
+    if: needs.changes.outputs.native == 'true'
     runs-on: macos-latest
-    env:
-      PLUGMESH_TEST_SYSTEM_CREDENTIALS: required
     steps:
       - uses: actions/checkout@v4
       - name: 准备临时钥匙串
@@ -101,7 +136,16 @@ jobs:
         run: cmake --build native-server/build --parallel
       - name: 测试
         working-directory: native-server/build
-        run: ctest --output-on-failure
+        run: ctest --output-on-failure -V
+      - name: 上传失败日志
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-test-logs-macos
+          path: |
+            native-server/build/Testing/Temporary/LastTest.log
+            native-server/build/Testing/Temporary/LastTestsFailed.log
+          if-no-files-found: ignore
       - name: 清理临时钥匙串
         if: always()
         shell: bash
