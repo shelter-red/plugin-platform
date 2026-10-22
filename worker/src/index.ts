@@ -1,6 +1,6 @@
 import { PluginBridge } from './durable-object'
 import { hashControlToken } from './security'
-import { acceptInvite, createSession, digest, exchangeGithubCode, getCurrentUser, isAllowlisted, redirectWithError, sessionCookie, clearSessionCookie, upsertGithubUser } from './auth'
+import { acceptInvite, createSession, digest, exchangeGithubCode, getCurrentUser, isAllowlisted, redirectWithError, sessionCookie, clearSessionCookie, upsertGithubUser, type AuthErrorCode } from './auth'
 import type { GithubAuthResult } from './auth'
 import type { AuthenticatedUser, Env } from './types'
 import { decryptSecret, encryptSecret } from './secrets'
@@ -443,36 +443,27 @@ async function startGithubAuth(env: Env, url: URL): Promise<Response> {
   return Response.redirect(githubUrl.toString(), 302)
 }
 
-function githubAuthFailureMessage(result: Extract<GithubAuthResult, { ok: false }>): string {
-  const suffix = result.detail ? `（${result.detail}）` : result.status ? `（HTTP ${result.status}）` : ''
-  switch (result.reason) {
-    case 'not_configured':
-      return 'GitHub OAuth 未配置，请先在后台或初始化页面完成配置'
-    case 'token_exchange_failed':
-      return `GitHub 授权码换取令牌失败${suffix}，请检查 Client ID、Client Secret 与回调地址是否一致`
-    case 'user_api_failed':
-      return `读取 GitHub 用户信息失败${suffix}`
-    case 'email_api_failed':
-      return `读取 GitHub 邮箱失败${suffix}，请确认 OAuth App 已授权 user:email 权限`
-    case 'identity_incomplete':
-      return 'GitHub 返回的身份信息不完整，缺少用户 ID 或登录名'
-    case 'no_verified_email':
-      return '该 GitHub 账号没有已验证的邮箱，请先在 GitHub 完成邮箱验证'
-  }
+const githubAuthFailureCodes: Record<Extract<GithubAuthResult, { ok: false }>['reason'], AuthErrorCode> = {
+  not_configured: 'oauth_not_configured',
+  token_exchange_failed: 'token_exchange_failed',
+  user_api_failed: 'user_api_failed',
+  email_api_failed: 'email_api_failed',
+  identity_incomplete: 'identity_incomplete',
+  no_verified_email: 'email_unverified',
 }
 
 async function finishGithubAuth(request: Request, env: Env, url: URL): Promise<Response> {
   const state = url.searchParams.get('state')
   const code = url.searchParams.get('code')
-  if (!state || !code) return redirectWithError(request, 'OAuth 回调参数不完整')
+  if (!state || !code) return redirectWithError(request, 'callback_incomplete')
   const stateHash = await digest(state)
   const now = new Date().toISOString()
   const oauthState = await env.DB.prepare('SELECT state_hash, invite_token_hash FROM oauth_states WHERE state_hash = ? AND expires_at > ?').bind(stateHash, now).first<{ state_hash: string; invite_token_hash: string | null }>()
-  if (!oauthState) return redirectWithError(request, 'OAuth 状态已过期')
+  if (!oauthState) return redirectWithError(request, 'state_expired')
   const consumedState = await env.DB.prepare('DELETE FROM oauth_states WHERE state_hash = ? AND expires_at > ?').bind(oauthState.state_hash, now).run()
-  if ((consumedState.meta.changes ?? 0) !== 1) return redirectWithError(request, 'OAuth 状态已过期或已使用')
+  if ((consumedState.meta.changes ?? 0) !== 1) return redirectWithError(request, 'state_used')
   const authResult = await exchangeGithubCode(env, code)
-  if (!authResult.ok) return redirectWithError(request, githubAuthFailureMessage(authResult))
+  if (!authResult.ok) return redirectWithError(request, githubAuthFailureCodes[authResult.reason])
   const identity = authResult.identity
   const allowlisted = await isAllowlisted(env, { login: identity.login, emails: identity.emails })
   const existing = await env.DB.prepare('SELECT id FROM users WHERE github_id = ?').bind(identity.githubId).first<{ id: string }>()
@@ -480,10 +471,10 @@ async function finishGithubAuth(request: Request, env: Env, url: URL): Promise<R
   let userId: string
   if (oauthState.invite_token_hash) {
     const invitedUserId = await acceptInvite(env, oauthState.invite_token_hash, identity, role)
-    if (!invitedUserId) return redirectWithError(request, '邀请身份不匹配或已失效')
+    if (!invitedUserId) return redirectWithError(request, 'invite_mismatch')
     userId = invitedUserId
   } else {
-    if (!allowlisted && !existing) return redirectWithError(request, '该 GitHub 身份未被邀请')
+    if (!allowlisted && !existing) return redirectWithError(request, 'invite_required')
     userId = await upsertGithubUser(env, identity, role)
   }
   if (role === 'super_admin') await ensureSuperAdminWorkspace(env, userId)

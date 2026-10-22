@@ -124,7 +124,7 @@ try {
 
   const replay = await worker.fetch(new Request(`https://console.example.test/auth/github/callback?state=${encodeURIComponent(state)}&code=github-code`), env, {} as ExecutionContext)
   assert.equal(replay.status, 302)
-  assert.match(new URL(replay.headers.get('location')!, 'https://console.example.test').searchParams.get('auth_error') ?? '', /状态已过期/)
+  assert.equal(new URL(replay.headers.get('location')!, 'https://console.example.test').searchParams.get('auth_error'), 'state_expired')
   assert.equal(requests.length, 3)
 
   tokenError = 'The code passed is incorrect or expired.'
@@ -132,9 +132,7 @@ try {
   const failedState = new URL(failedStart.headers.get('location')!, 'https://github.com').searchParams.get('state')!
   const failed = await worker.fetch(new Request(`https://console.example.test/auth/github/callback?state=${encodeURIComponent(failedState)}&code=expired-code`), env, {} as ExecutionContext)
   assert.equal(failed.status, 302)
-  const failedMessage = new URL(failed.headers.get('location')!, 'https://console.example.test').searchParams.get('auth_error') ?? ''
-  assert.match(failedMessage, /换取令牌失败/)
-  assert.match(failedMessage, /incorrect or expired/)
+  assert.equal(new URL(failed.headers.get('location')!, 'https://console.example.test').searchParams.get('auth_error'), 'token_exchange_failed')
   tokenError = null
 
   activeIdentity = { githubId: '43', login: 'bob', email: 'bob@example.test', displayName: 'Bob' }
@@ -142,7 +140,7 @@ try {
   const rejectedState = new URL(rejectedStart.headers.get('location')!, 'https://github.com').searchParams.get('state')!
   const rejected = await worker.fetch(new Request(`https://console.example.test/auth/github/callback?state=${encodeURIComponent(rejectedState)}&code=github-code`), env, {} as ExecutionContext)
   assert.equal(rejected.status, 302)
-  assert.match(new URL(rejected.headers.get('location')!, 'https://console.example.test').searchParams.get('auth_error') ?? '', /未被邀请/)
+  assert.equal(new URL(rejected.headers.get('location')!, 'https://console.example.test').searchParams.get('auth_error'), 'invite_required')
   assert.equal(users.has('43'), false)
   assert.equal(sessions.length, 1)
 

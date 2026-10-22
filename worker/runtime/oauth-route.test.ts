@@ -58,11 +58,11 @@ test('未受邀身份被拒绝且 state 只能使用一次', async () => {
 
   const rejected = await callback(state, code)
   expect(rejected.status).toBe(302)
-  expect(new URL(rejected.headers.get('location') ?? '').searchParams.get('auth_error')).toBe('该 GitHub 身份未被邀请')
+  expect(new URL(rejected.headers.get('location') ?? '').searchParams.get('auth_error')).toBe('invite_required')
   expect((await testEnv.DB.prepare('SELECT COUNT(*) AS count FROM users').first<{ count: number }>())?.count).toBe(0)
 
   const replayed = await callback(state, code)
-  expect(new URL(replayed.headers.get('location') ?? '').searchParams.get('auth_error')).toBe('OAuth 状态已过期')
+  expect(new URL(replayed.headers.get('location') ?? '').searchParams.get('auth_error')).toBe('state_expired')
 })
 
 test('白名单 GitHub 登录直接成为超级管理员', async () => {

@@ -55,11 +55,17 @@ export function AuthLoadingScreen({ mode }: { mode: AppThemeMode }) {
   )
 }
 
+// 与 worker/src/auth.ts 的 authErrorCodes 保持一致：URL 只携带稳定错误码，文案由 i18n 渲染。
+const authErrorCodes = ['callback_incomplete', 'state_expired', 'state_used', 'oauth_not_configured', 'token_exchange_failed', 'user_api_failed', 'email_api_failed', 'identity_incomplete', 'email_unverified', 'invite_mismatch', 'invite_required'] as const
+type AuthErrorCode = (typeof authErrorCodes)[number]
+const isAuthErrorCode = (value: string): value is AuthErrorCode => (authErrorCodes as readonly string[]).includes(value)
+
 export function LoginPage({ mode }: { mode: AppThemeMode }) {
   const { t } = useTranslation()
   const params = new URLSearchParams(window.location.search)
   const invite = params.get('invite')
-  const authError = params.get('auth_error')
+  const authErrorCode = params.get('auth_error') ?? ''
+  const authMessage = isAuthErrorCode(authErrorCode) ? t(`auth.errors.${authErrorCode}`) : authErrorCode ? t('auth.errors.unknown') : null
   const startUrl = `/auth/github/start${invite ? `?invite=${encodeURIComponent(invite)}` : ''}`
   return (
     <AuthShell mode={mode}>
@@ -67,7 +73,7 @@ export function LoginPage({ mode }: { mode: AppThemeMode }) {
       <Avatar className="auth-icon" shape="square" size={48} icon={<Code2 size={24} />} />
       <Title level={1} className="auth-title">{invite ? t('auth.inviteTitle') : t('auth.loginTitle')}</Title>
       <Paragraph type="secondary" className="auth-copy">{invite ? t('auth.inviteBody') : t('auth.loginBody')}</Paragraph>
-      {authError && <Alert className="auth-alert" type="error" showIcon message={authError} />}
+      {authMessage && <Alert className="auth-alert" type="error" showIcon message={t('auth.errors.title')} description={authMessage} />}
       <Button className="auth-submit" type="primary" size="large" block href={startUrl} icon={<GithubMark size={17} />}>{t('auth.github')}</Button>
       <Text type="secondary" className="auth-note"><LockKeyhole size={13} aria-hidden="true" />{t('auth.note')}</Text>
     </AuthShell>

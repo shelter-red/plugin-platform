@@ -28,10 +28,17 @@ test('登录页展示邀请文案并保留 invite 参数', async ({ page }) => {
   await expect(page.getByText('平台会在登录后完成身份匹配')).toBeVisible()
 })
 
-test('登录页展示回调错误并保留 GitHub 入口', async ({ page }) => {
-  await page.goto(`/?auth_error=${encodeURIComponent('OAuth 状态已过期')}`)
-  await expect(page.getByRole('alert')).toContainText('OAuth 状态已过期')
+test('登录页按错误码渲染本地化提示并保留 GitHub 入口', async ({ page }) => {
+  await page.goto('/?auth_error=state_expired')
+  await expect(page.getByRole('alert')).toContainText('登录链接已过期')
   await expect(page.getByRole('link', { name: /使用 GitHub 登录/ })).toHaveAttribute('href', '/auth/github/start')
+})
+
+test('登录页对未知错误码显示通用提示而不是原样回显', async ({ page }) => {
+  await page.goto(`/?auth_error=${encodeURIComponent('<img src=x onerror=alert(1)>')}`)
+  const alert = page.getByRole('alert')
+  await expect(alert).toContainText('登录失败，请重试或联系管理员')
+  await expect(alert).not.toContainText('onerror')
 })
 
 test('登录页窄窗口不横向溢出', async ({ page }) => {
