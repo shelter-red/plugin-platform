@@ -484,9 +484,10 @@ test('管理端在后台保存 OAuth 配置到真实 D1 且不回显密钥', asy
   }
 })
 
-test('管理端保存 SMTP 配置到真实 D1 并验证测试发送失败路径', async ({ page }) => {
-  const { call } = createStackApi(page.request, sessionToken)
+test('管理端用未保存的表单值测试 SMTP，并校验空密码二次保存', async ({ page }) => {
+  const { call, api } = createStackApi(page.request, sessionToken)
   await call('/api/settings/smtp', { method: 'DELETE' })
+  const config = { host: '127.0.0.1', port: 1, secure: false, username: 'real-smtp-user', authType: 'plain', from: 'noreply@example.com', fromName: 'Plugmesh E2E' }
   try {
     await page.goto('/')
     await page.getByRole('button', { name: '系统设置', exact: true }).click()
@@ -494,21 +495,33 @@ test('管理端保存 SMTP 配置到真实 D1 并验证测试发送失败路径'
     const panel = page.locator('#settings-smtp')
     await expect(panel).toContainText('未配置')
 
-    await panel.getByLabel('SMTP Host').fill('127.0.0.1')
-    await panel.getByLabel('端口').fill('1')
-    await panel.getByLabel('用户名').fill('real-smtp-user')
+    // 未保存也能测试：端口 1 必然拒绝连接，失败后保留错误且不放开保存。
+    await panel.getByLabel('SMTP Host').fill(config.host)
+    await panel.getByLabel('端口').fill(String(config.port))
+    await panel.getByLabel('用户名').fill(config.username)
     await panel.getByLabel('密码 / 授权码').fill('real-smtp-secret')
-    await panel.getByLabel('发件邮箱').fill('noreply@example.com')
-    await panel.getByLabel('发件人名称').fill('Plugmesh E2E')
-    await panel.getByRole('button', { name: '保存 SMTP 配置' }).click()
-    await expect(page.getByText('SMTP 配置已保存')).toBeVisible()
-    await expect(panel).toContainText('已配置')
+    await panel.getByLabel('发件邮箱').fill(config.from)
+    await panel.getByLabel('发件人名称').fill(config.fromName)
+    await panel.getByLabel('测试收件邮箱').fill('ops@example.com')
+    await panel.getByRole('button', { name: '发送测试邮件' }).click()
+    await expect(page.getByText('测试邮件发送失败')).toBeVisible({ timeout: 20_000 })
+    await expect(panel.locator('.ant-alert')).toBeVisible()
+    await expect(panel.getByRole('button', { name: '保存 SMTP 配置' })).toBeDisabled()
 
+    const audits = (await (await call('/api/audit')).json()) as { results: Array<{ action: string; detail_json: string }> }
+    const failed = audits.results.filter((item) => item.action === 'smtp.test.failed')
+    expect(failed.length).toBeGreaterThan(0)
+    expect(failed[0].detail_json).not.toContain('real-smtp-secret')
+
+    // 首存写入密文；二次保存留空密码时沿用已存密钥。
+    const first = await api('/api/settings/smtp', { method: 'PUT', data: { ...config, password: 'real-smtp-secret' } })
+    expect(await first.json()).toMatchObject({ configured: true, host: '127.0.0.1', port: 1, username: 'real-smtp-user', from: 'noreply@example.com', fromName: 'Plugmesh E2E' })
+    const second = await api('/api/settings/smtp', { method: 'PUT', data: { ...config, password: '' } })
+    expect(await second.json()).toMatchObject({ configured: true, username: 'real-smtp-user' })
     const stored = (await (await call('/api/settings/smtp')).json()) as Record<string, unknown>
-    expect(stored).toMatchObject({ configured: true, host: '127.0.0.1', port: 1, username: 'real-smtp-user', from: 'noreply@example.com', fromName: 'Plugmesh E2E' })
     expect(stored).not.toHaveProperty('password')
 
-    // 密文与表单回填：重载后配置来自 D1，密码输入框保持为空。
+    // 重载后配置来自 D1，密码输入框保持为空。
     await page.reload()
     await page.getByRole('button', { name: '系统设置', exact: true }).click()
     await page.getByRole('button', { name: '邮件 SMTP' }).click()
@@ -516,16 +529,6 @@ test('管理端保存 SMTP 配置到真实 D1 并验证测试发送失败路径'
     await expect(panel.getByLabel('SMTP Host')).toHaveValue('127.0.0.1')
     await expect(panel.getByLabel('用户名')).toHaveValue('real-smtp-user')
     await expect(panel.getByLabel('密码 / 授权码')).toHaveValue('')
-
-    // 端口 1 必然拒绝连接：验证 UI 失败提示与审计脱敏，不依赖外部 SMTP。
-    await panel.getByPlaceholder('测试收件邮箱').fill('ops@example.com')
-    await panel.getByRole('button', { name: '发送测试邮件' }).click()
-    await expect(page.getByText('测试邮件发送失败')).toBeVisible({ timeout: 20_000 })
-
-    const audits = (await (await call('/api/audit')).json()) as { results: Array<{ action: string; detail_json: string }> }
-    const failed = audits.results.filter((item) => item.action === 'smtp.test.failed')
-    expect(failed.length).toBeGreaterThan(0)
-    expect(failed[0].detail_json).not.toContain('real-smtp-secret')
   } finally {
     await call('/api/settings/smtp', { method: 'DELETE' })
   }

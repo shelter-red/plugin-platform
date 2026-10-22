@@ -482,6 +482,10 @@ export default {
       sent: 'Test email sent',
       sendFailed: 'Could not send test email',
       notConnectedTest: 'The Worker API is not connected; no test email will be sent',
+      testFirst: 'Test the connection first; saving unlocks after a successful test.',
+      testRecipientRequired: 'Enter a test recipient before testing.',
+      passwordRequired: 'Enter the SMTP password or app code; saved secrets are never shown.',
+      fieldInvalid: '{{field}} is invalid; check it and try again.',
     },
   },
   detail: {

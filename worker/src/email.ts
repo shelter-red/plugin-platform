@@ -12,20 +12,39 @@ export interface SmtpSettings {
   replyTo?: string
 }
 
-export function parseSmtpSettings(value: unknown): SmtpSettings | null {
-  if (!value || typeof value !== 'object') return null
+export type SmtpSettingsField = 'host' | 'port' | 'authType' | 'username' | 'password' | 'from'
+
+export type SmtpSettingsValidation =
+  | { ok: true; settings: SmtpSettings }
+  | { ok: false; field: SmtpSettingsField; error: string }
+
+/**
+ * 校验 SMTP 表单。密码允许为空：空密码表示沿用已保存密钥，由调用方决定是否回退。
+ * 返回 field 便于前端把错误定位到具体输入框。
+ */
+export function validateSmtpSettings(value: unknown): SmtpSettingsValidation {
+  if (!value || typeof value !== 'object') return { ok: false, field: 'host', error: 'Invalid SMTP settings' }
   const input = value as Partial<SmtpSettings>
   const host = typeof input.host === 'string' ? input.host.trim() : ''
+  if (!/^[a-zA-Z0-9.-]+$/.test(host) || host.startsWith('.') || host.endsWith('.') || host.includes('..')) return { ok: false, field: 'host', error: 'SMTP host is invalid' }
   const port = typeof input.port === 'number' ? input.port : Number(input.port)
+  if (!Number.isInteger(port) || port < 1 || port > 65535 || port === 25) return { ok: false, field: 'port', error: 'SMTP port is invalid' }
   const authType = input.authType
+  if (authType !== 'plain' && authType !== 'login' && authType !== 'cram-md5') return { ok: false, field: 'authType', error: 'SMTP auth type is invalid' }
   const username = typeof input.username === 'string' ? input.username.trim() : ''
-  const password = typeof input.password === 'string' ? input.password : ''
+  if (!username) return { ok: false, field: 'username', error: 'SMTP username is required' }
   const from = typeof input.from === 'string' ? input.from.trim() : ''
-  if (!/^[a-zA-Z0-9.-]+$/.test(host) || host.startsWith('.') || host.endsWith('.') || host.includes('..')) return null
-  if (!Number.isInteger(port) || port < 1 || port > 65535 || port === 25) return null
-  if (authType !== 'plain' && authType !== 'login' && authType !== 'cram-md5') return null
-  if (!username || !password || !isEmail(from)) return null
-  return { host, port, secure: Boolean(input.secure), username, password, authType, from, ...(input.fromName?.trim() ? { fromName: input.fromName.trim() } : {}), ...(input.replyTo?.trim() ? { replyTo: input.replyTo.trim() } : {}) }
+  if (!isEmail(from)) return { ok: false, field: 'from', error: 'SMTP sender address is invalid' }
+  const password = typeof input.password === 'string' ? input.password : ''
+  return {
+    ok: true,
+    settings: { host, port, secure: Boolean(input.secure), username, password, authType, from, ...(input.fromName?.trim() ? { fromName: input.fromName.trim() } : {}), ...(input.replyTo?.trim() ? { replyTo: input.replyTo.trim() } : {}) },
+  }
+}
+
+export function parseSmtpSettings(value: unknown): SmtpSettings | null {
+  const result = validateSmtpSettings(value)
+  return result.ok && result.settings.password ? result.settings : null
 }
 
 export function publicSmtpSettings(settings: SmtpSettings, updatedAt: string) {

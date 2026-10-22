@@ -43,6 +43,9 @@ type WorkerMock = {
   commandRequests: string[]
   oauthUpdates: unknown[]
   platformUpdates: unknown[]
+  smtpUpdates: unknown[]
+  smtpTests: unknown[]
+  smtpTestError: { error: string; field?: string } | null
 }
 
 async function mockWorker(page: Page): Promise<WorkerMock> {
@@ -64,6 +67,9 @@ async function mockWorker(page: Page): Promise<WorkerMock> {
     commandRequests: [],
     oauthUpdates: [],
     platformUpdates: [],
+    smtpUpdates: [],
+    smtpTests: [],
+    smtpTestError: null,
   }
 
   await page.route('**/api/**', (route) => handleApi(route, state, logsGate))
@@ -114,6 +120,19 @@ async function handleApi(route: Route, state: WorkerMock, logsGate: Promise<void
       } })
     }
     return route.fulfill({ json: oauthSettings })
+  }
+  if (pathname === '/api/settings/smtp') {
+    if (method === 'PUT') {
+      const body = route.request().postDataJSON() as { host: string; port: number; secure: boolean; username: string; authType: string; from: string; fromName: string; replyTo: string }
+      state.smtpUpdates.push(body)
+      return route.fulfill({ json: { configured: true, host: body.host, port: body.port, secure: body.secure, username: body.username, authType: body.authType, from: body.from, fromName: body.fromName || null, replyTo: body.replyTo || null, updatedAt: '2026-10-21T00:00:00.000Z' } })
+    }
+    return route.fulfill({ json: { configured: false } })
+  }
+  if (pathname === '/api/settings/smtp/test' && method === 'POST') {
+    if (state.smtpTestError) return route.fulfill({ status: 400, json: state.smtpTestError })
+    state.smtpTests.push(route.request().postDataJSON())
+    return route.fulfill({ json: { sent: true, attempts: 1 } })
   }
   if (pathname === '/api/settings/platform' && method === 'PUT') {
     const body = route.request().postDataJSON() as typeof platformSettings
@@ -190,6 +209,56 @@ test('管理端在后台保存 OAuth 配置且不回显密钥', async ({ page })
   expect(worker.oauthUpdates).toEqual([{ github: { clientId: 'mock-github-client-new', clientSecret: 'mock-secret', redirectUri: 'http://127.0.0.1:4184/auth/github/callback', allowlist: 'admin' } }])
   await expect(panel.getByLabel('Client Secret').first()).toHaveValue('')
   await expect(panel).toContainText('后台配置')
+})
+
+test('管理端测试 SMTP 通过后才能保存并清空密码', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  const worker = await mockWorker(page)
+  await page.goto('/')
+  await page.getByRole('button', { name: '系统设置', exact: true }).click()
+  await page.getByRole('button', { name: '邮件 SMTP' }).click()
+  const panel = page.locator('#settings-smtp')
+
+  await panel.getByLabel('SMTP Host').fill('smtp.example.test')
+  await panel.getByLabel('用户名').fill('mailer')
+  await panel.getByLabel('密码 / 授权码').fill('mock-smtp-secret')
+  await panel.getByLabel('发件邮箱').fill('noreply@example.test')
+  const save = panel.getByRole('button', { name: '保存 SMTP 配置' })
+  await expect(save).toBeDisabled()
+  await expect(panel).toContainText('先测试连接')
+
+  await panel.getByLabel('测试收件邮箱').fill('ops@example.test')
+  await panel.getByRole('button', { name: '发送测试邮件' }).click()
+  await expect(page.locator('.ant-notification-notice').filter({ hasText: '测试邮件已发送' })).toBeVisible()
+  await expect(save).toBeEnabled()
+
+  await save.click()
+  await expect(page.locator('.ant-notification-notice').filter({ hasText: 'SMTP 配置已保存' })).toBeVisible()
+  expect(worker.smtpTests).toEqual([{ to: 'ops@example.test', settings: { host: 'smtp.example.test', port: 587, secure: false, username: 'mailer', password: 'mock-smtp-secret', authType: 'plain', from: 'noreply@example.test', fromName: '', replyTo: '' } }])
+  expect(worker.smtpUpdates).toEqual([{ host: 'smtp.example.test', port: 587, secure: false, username: 'mailer', password: 'mock-smtp-secret', authType: 'plain', from: 'noreply@example.test', fromName: '', replyTo: '' }])
+  await expect(panel.getByLabel('密码 / 授权码')).toHaveValue('')
+  await expect(panel).toContainText('已配置')
+})
+
+test('管理端 SMTP 测试失败保留错误且不能保存', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  const worker = await mockWorker(page)
+  worker.smtpTestError = { error: 'SMTP host is invalid', field: 'host' }
+  await page.goto('/')
+  await page.getByRole('button', { name: '系统设置', exact: true }).click()
+  await page.getByRole('button', { name: '邮件 SMTP' }).click()
+  const panel = page.locator('#settings-smtp')
+
+  await panel.getByLabel('SMTP Host').fill('bad host')
+  await panel.getByLabel('用户名').fill('mailer')
+  await panel.getByLabel('密码 / 授权码').fill('mock-smtp-secret')
+  await panel.getByLabel('发件邮箱').fill('noreply@example.test')
+  await panel.getByLabel('测试收件邮箱').fill('ops@example.test')
+  await panel.getByRole('button', { name: '发送测试邮件' }).click()
+
+  await expect(panel.locator('.ant-alert')).toContainText('SMTP Host 填写有误')
+  await expect(panel.getByRole('button', { name: '保存 SMTP 配置' })).toBeDisabled()
+  expect(worker.smtpUpdates).toHaveLength(0)
 })
 
 test('管理端在后台保存插件域名后缀', async ({ page }) => {

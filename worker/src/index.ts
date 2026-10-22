@@ -4,7 +4,7 @@ import { acceptInvite, createSession, digest, exchangeGithubCode, getCurrentUser
 import type { GithubAuthResult } from './auth'
 import type { AuthenticatedUser, Env } from './types'
 import { decryptSecret, encryptSecret } from './secrets'
-import { isEmail, parseSmtpSettings, publicSmtpSettings, sendInviteEmail, sendSmtpTest, type SmtpSettings } from './email'
+import { isEmail, parseSmtpSettings, publicSmtpSettings, sendInviteEmail, sendSmtpTest, validateSmtpSettings, type SmtpSettings } from './email'
 import { discoverCloudflareAccountId, exchangeCloudflareCode, readCloudflareCredential, refreshCloudflareCredential, revokeCloudflareToken, type CloudflareCredential } from './cloudflare-oauth'
 import { activateMaintenance, cloudflareQuotaReason, defaultPlatformSettings, getPlatformSettings, isMaintenanceMode, normalizePluginDomainSuffix, releaseR2Usage, reserveR2Usage, reserveRequest, setPlatformSettingsCache } from './usage'
 import { findPluginRoute, invalidatePluginRoute } from './route-cache'
@@ -772,6 +772,12 @@ async function loadSmtpSettings(env: Env): Promise<SmtpSettings | null> {
   }
 }
 
+/** 读取已保存的 SMTP 配置：解密失败抛出异常，内容无效返回 null。 */
+async function readStoredSmtpSettings(env: Env, stored: { ciphertext: string; iv: string } | null): Promise<SmtpSettings | null> {
+  if (!stored || !env.SESSION_SECRET) return null
+  return parseSmtpSettings(JSON.parse(await decryptSecret(env.SESSION_SECRET, stored.ciphertext, stored.iv)))
+}
+
 async function sendWithRetry(send: () => Promise<void>, maxAttempts = 3): Promise<number> {
   let lastError: unknown
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -810,8 +816,18 @@ export async function smtpSettingsApi(request: Request, env: Env, user: Authenti
   }
   if (request.method !== 'PUT') return json({ error: 'Method not allowed' }, 405)
   if (!env.SESSION_SECRET) return json({ error: 'SESSION_SECRET is not configured' }, 503)
-  const settings = parseSmtpSettings(await request.json().catch(() => null))
-  if (!settings) return json({ error: 'Invalid SMTP settings' }, 400)
+  const parsed = validateSmtpSettings(await request.json().catch(() => null))
+  if (!parsed.ok) return json({ error: parsed.error, field: parsed.field }, 400)
+  let password = parsed.settings.password
+  if (!password) {
+    try {
+      password = (await readStoredSmtpSettings(env, existing))?.password ?? ''
+    } catch {
+      return json({ error: 'SMTP credential decryption failed' }, 500)
+    }
+  }
+  if (!password) return json({ error: 'SMTP password is required', field: 'password' }, 400)
+  const settings: SmtpSettings = { ...parsed.settings, password }
   const sealed = await encryptSecret(env.SESSION_SECRET, JSON.stringify(settings))
   const updatedAt = new Date().toISOString()
   await env.DB.prepare('INSERT INTO smtp_settings (id, ciphertext, iv, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET ciphertext = excluded.ciphertext, iv = excluded.iv, updated_at = excluded.updated_at').bind('primary', sealed.ciphertext, sealed.iv, updatedAt).run()
@@ -819,21 +835,28 @@ export async function smtpSettingsApi(request: Request, env: Env, user: Authenti
   return json(publicSmtpSettings(settings, updatedAt))
 }
 
-async function smtpTestApi(request: Request, env: Env, user: AuthenticatedUser): Promise<Response> {
+export async function smtpTestApi(request: Request, env: Env, user: AuthenticatedUser): Promise<Response> {
   if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
   if (!env.SESSION_SECRET) return json({ error: 'SESSION_SECRET is not configured' }, 503)
-  const body = await request.json().catch(() => null) as { to?: string } | null
-  if (!body?.to || !isEmail(body.to)) return json({ error: 'A valid test recipient is required' }, 400)
+  const body = await request.json().catch(() => null) as { to?: string; settings?: unknown } | null
+  if (!body?.to || !isEmail(body.to)) return json({ error: 'A valid test recipient is required', field: 'to' }, 400)
   const stored = await env.DB.prepare('SELECT ciphertext, iv FROM smtp_settings WHERE id = ?').bind('primary').first<{ ciphertext: string; iv: string }>()
-  if (!stored) return json({ error: 'SMTP is not configured' }, 409)
-  let settings: SmtpSettings | null = null
+  let settings: SmtpSettings | null
   try {
-    settings = parseSmtpSettings(JSON.parse(await decryptSecret(env.SESSION_SECRET, stored.ciphertext, stored.iv)))
+    settings = await readStoredSmtpSettings(env, stored)
   } catch {
     return json({ error: 'SMTP credential decryption failed' }, 500)
   }
-  if (!settings) return json({ error: 'SMTP settings are invalid' }, 500)
+  // 表单可携带未保存的配置；空密码沿用已保存密钥，便于首次测试与二次保存。
+  if (body.settings !== undefined) {
+    const parsed = validateSmtpSettings(body.settings)
+    if (!parsed.ok) return json({ error: parsed.error, field: parsed.field }, 400)
+    const password = parsed.settings.password || settings?.password || ''
+    if (!password) return json({ error: 'SMTP password is required', field: 'password' }, 400)
+    settings = { ...parsed.settings, password }
+  }
+  if (!settings) return json({ error: stored ? 'SMTP settings are invalid' : 'SMTP is not configured' }, stored ? 500 : 409)
   const maxAttempts = 3
   let lastError = 'unknown SMTP error'
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {

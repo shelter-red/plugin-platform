@@ -21,7 +21,6 @@ import {
   Download,
   ExternalLink,
   FileText,
-  Mail,
   Gauge,
   Globe2,
   HardDrive,
@@ -48,8 +47,11 @@ import './i18n'
 import { createAppTheme, type AppThemeMode } from './app/theme'
 import { useToast, type Notify } from './components/ToastProvider'
 import { OauthPanel } from './features/settings/OauthPanel'
+import { SmtpPanel } from './features/settings/SmtpPanel'
+import { errorMessage, translateError } from './errors'
+import { StatusBadge } from './components/StatusBadge'
 import i18n, { storeLanguage, type Language } from './i18n'
-import { ApiError, assignDomain, checkPluginHealth, commandPlugin, createInvite, createRegistrationCode, fetchAccessLogs, fetchAudit, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchInvites, fetchLocalUsage, fetchOauthSettings, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchPluginDetails, fetchServerDetails, fetchServers, fetchSmtpSettings, revokeCloudflareSettings, revokeInvite, syncServer, type ApiAccessLog, type ApiAudit, type ApiDomain, type ApiInvite, type ApiOverview, type ApiPlugin, type ApiPluginDetail, type ApiServer, type ApiServerDetail, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type OauthSettings, type PlatformSettings, type PluginAction, type PluginHealthResult, type SmtpSettings, type UsageBreakdownEntry, type UsageSnapshot, sendSmtpTest, updatePlatformSettings, updateSmtpSettings } from './api'
+import { ApiError, assignDomain, checkPluginHealth, commandPlugin, createInvite, createRegistrationCode, fetchAccessLogs, fetchAudit, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchInvites, fetchLocalUsage, fetchOauthSettings, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchPluginDetails, fetchServerDetails, fetchServers, fetchSmtpSettings, revokeCloudflareSettings, revokeInvite, syncServer, type ApiAccessLog, type ApiAudit, type ApiDomain, type ApiInvite, type ApiOverview, type ApiPlugin, type ApiPluginDetail, type ApiServer, type ApiServerDetail, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type OauthSettings, type PlatformSettings, type PluginAction, type PluginHealthResult, type SmtpSettings, type UsageBreakdownEntry, type UsageSnapshot, updatePlatformSettings } from './api'
 
 type Page = 'overview' | 'servers' | 'plugins' | 'domains' | 'usage' | 'logs' | 'audit' | 'settings'
 type Theme = 'dark' | 'light' | 'system'
@@ -80,28 +82,6 @@ const navGroups: { labelKey: string; items: { id: Page; icon: typeof LayoutDashb
 const currentLocale = () => i18n.resolvedLanguage ?? 'zh-CN'
 const formatDateTime = (value: string) => new Date(value).toLocaleString(currentLocale())
 const formatNumber = (value: number) => value.toLocaleString(currentLocale())
-const translateError = (value: string) => i18n.exists(value) ? i18n.t(value) : value
-
-const httpErrorKey = (status: number) => {
-  if (status === 401) return 'toast.http.unauthorized'
-  if (status === 403) return 'toast.http.forbidden'
-  if (status === 404) return 'toast.http.notFound'
-  if (status === 409) return 'toast.http.conflict'
-  if (status === 429) return 'toast.http.rateLimited'
-  if (status >= 500) return 'toast.http.serverError'
-  return 'toast.http.failed'
-}
-
-// Worker 的错误文本是面向开发的英文；除非服务端已给出中文提示，否则统一换成按状态码本地化的文案。
-function errorMessage(error: unknown, fallbackKey: string): string {
-  if (error instanceof ApiError) {
-    if (/[\u4e00-\u9fa5]/.test(error.message)) return error.message
-    return i18n.t(httpErrorKey(error.status))
-  }
-  if (error instanceof Error && i18n.exists(error.message)) return i18n.t(error.message)
-  return i18n.t(fallbackKey)
-}
-
 function IconButton({ label, children, onClick }: { label: string; children: React.ReactNode; onClick?: () => void }) {
   return <button className="icon-button" aria-label={label} title={label} onClick={onClick}>{children}</button>
 }
@@ -125,10 +105,6 @@ function LoginPage() {
   const authError = new URLSearchParams(window.location.search).get('auth_error')
   const startUrl = `/auth/github/start${invite ? `?invite=${encodeURIComponent(invite)}` : ''}`
   return <div className="auth-screen"><div className="auth-card"><div className="auth-brand"><div className="brand-mark"><Network size={17} strokeWidth={2.4} /></div><div><strong>Plugmesh</strong><span>{t('brand.caption')}</span></div></div><div className="auth-icon"><Code2 size={22} /></div><h1>{invite ? t('auth.inviteTitle') : t('auth.loginTitle')}</h1><p>{invite ? t('auth.inviteBody') : t('auth.loginBody')}</p>{authError && <div className="auth-error"><AlertCircle size={14} />{authError}</div>}<a className="github-button" href={startUrl}><GithubMark size={16} />{t('auth.github')}<ArrowUpRight size={14} /></a><span className="auth-note"><LockKeyhole size={13} />{t('auth.note')}</span></div></div>
-}
-
-function StatusBadge({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: 'success' | 'warning' | 'danger' | 'neutral' }) {
-  return <span className={`status-badge ${tone}`}><span className="status-dot" />{children}</span>
 }
 
 function downloadCsv(filename: string, headers: string[], rows: Array<Array<string | number | null>>) {
@@ -811,33 +787,6 @@ function InvitePanel({ invites, onChange, onAction }: { invites: ApiInvite[] | n
     onAction('success', t('settings.invite.copied'))
   }
   return <div className="panel settings-panel"><div className="settings-heading"><div className="settings-icon"><Users size={18} /></div><div><h2>{t('settings.invite.title')}</h2><p>{invites ? t('settings.invite.description') : t('settings.invite.descriptionUnavailable')}</p></div><StatusBadge tone={invites ? 'success' : 'neutral'}>{invites ? t('settings.invite.count', { count: invites.length }) : t('settings.invite.unknown')}</StatusBadge></div><div className="form-grid"><label>{t('settings.invite.email')}<input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="member@example.com" disabled={!invites || saving} /></label><label>{t('settings.invite.github')}<input value={githubLogin} onChange={(event) => setGithubLogin(event.target.value)} placeholder="github-login" disabled={!invites || saving} /></label><label>{t('settings.invite.expiresIn')}<input type="number" min="1" max="720" value={expiresInHours} onChange={(event) => setExpiresInHours(event.target.value)} disabled={!invites || saving} /></label></div><div className="settings-actions"><button className="button primary" onClick={() => void create()} disabled={!invites || saving}>{t('settings.invite.create')}<Plus size={14} /></button>{latestUrl && <><input className="invite-url" value={latestUrl} readOnly aria-label={t('settings.invite.newLink')} /><button className="button secondary" onClick={() => void copy()}><Copy size={14} />{t('settings.invite.copy')}</button></>}</div>{invites === null ? <div className="empty-panel"><div className="empty-illustration"><Users size={20} /></div><h3>{t('settings.invite.emptyTitle')}</h3><p>{t('settings.invite.emptyBody')}</p></div> : invites.length === 0 ? <div className="empty-panel"><div className="empty-illustration"><Users size={20} /></div><h3>{t('settings.invite.noInvitesTitle')}</h3><p>{t('settings.invite.noInvitesBody')}</p></div> : <div className="table-wrap"><table><thead><tr><th>{t('settings.invite.columnIdentity')}</th><th>{t('settings.invite.columnStatus')}</th><th>{t('settings.invite.columnExpires')}</th><th /></tr></thead><tbody>{invites.map((invite) => <tr key={invite.id}><td><div className="cell-title"><div className="table-icon"><Users size={15} /></div><div><strong>{invite.github_login || invite.email || t('settings.invite.noIdentity')}</strong><small>{invite.email || t('settings.invite.noEmail')}</small></div></div></td><td><StatusBadge tone={invite.status === 'pending' ? 'warning' : invite.status === 'used' ? 'success' : 'neutral'}>{t(`status.${invite.status}`, { defaultValue: invite.status })}</StatusBadge></td><td>{formatDateTime(invite.expires_at)}</td><td>{invite.status === 'pending' && <button className="row-action" onClick={() => void revoke(invite)} aria-label={t('settings.invite.revoke')} title={t('settings.invite.revoke')}><X size={15} /></button>}</td></tr>)}</tbody></table></div>}</div>
-}
-
-function SmtpPanel({ settings, onChange, onAction }: { settings: SmtpSettings | null; onChange: (settings: SmtpSettings) => void; onAction: Notify }) {
-  const { t } = useTranslation()
-  const [form, setForm] = useState({ host: '', port: '587', secure: false, username: '', password: '', authType: 'plain' as 'plain' | 'login' | 'cram-md5', from: '', fromName: '', replyTo: '', testTo: '' })
-  const [saving, setSaving] = useState(false)
-  const [testing, setTesting] = useState(false)
-  useEffect(() => {
-    if (!settings?.configured) return
-    setForm((current) => ({ ...current, host: settings.host ?? '', port: String(settings.port ?? 587), secure: settings.secure ?? false, username: settings.username ?? '', authType: settings.authType ?? 'plain', from: settings.from ?? '', fromName: settings.fromName ?? '', replyTo: settings.replyTo ?? '' }))
-  }, [settings])
-  const update = (key: string, value: string | boolean) => setForm((current) => ({ ...current, [key]: value }))
-  const save = async () => {
-    if (!settings) return onAction('warning', t('settings.smtp.notConnectedSave'))
-    setSaving(true)
-    try {
-      onChange(await updateSmtpSettings({ host: form.host, port: Number(form.port), secure: form.secure, username: form.username, password: form.password, authType: form.authType, from: form.from, fromName: form.fromName, replyTo: form.replyTo }))
-      update('password', '')
-      onAction('success', t('settings.smtp.saved'))
-    } catch { onAction('error', t('settings.smtp.saveFailed')) } finally { setSaving(false) }
-  }
-  const test = async () => {
-    if (!settings) return onAction('warning', t('settings.smtp.notConnectedTest'))
-    setTesting(true)
-    try { await sendSmtpTest(form.testTo); onAction('success', t('settings.smtp.sent')) } catch { onAction('error', t('settings.smtp.sendFailed')) } finally { setTesting(false) }
-  }
-  return <div className="panel settings-panel"><div className="settings-heading"><div className="settings-icon"><Mail size={18} /></div><div><h2>{t('settings.smtp.title')}</h2><p>{settings ? t('settings.smtp.description') : t('settings.smtp.descriptionUnavailable')}</p></div><StatusBadge tone={settings?.configured ? 'success' : 'neutral'}>{settings?.configured ? t('settings.smtp.configured') : settings ? t('settings.smtp.notConfigured') : t('settings.smtp.unknown')}</StatusBadge></div><div className="form-grid"><label>{t('settings.smtp.host')}<input value={form.host} onChange={(event) => update('host', event.target.value)} placeholder="smtp.example.com" disabled={!settings} /></label><label>{t('settings.smtp.port')}<input type="number" min="1" max="65535" value={form.port} onChange={(event) => update('port', event.target.value)} disabled={!settings} /></label><label>{t('settings.smtp.username')}<input value={form.username} onChange={(event) => update('username', event.target.value)} disabled={!settings} /></label><label>{t('settings.smtp.password')}<input type="password" value={form.password} onChange={(event) => update('password', event.target.value)} placeholder={settings?.configured ? t('settings.smtp.passwordPlaceholder') : t('settings.smtp.passwordPlaceholderNew')} disabled={!settings} /></label><label>{t('settings.smtp.authType')}<select value={form.authType} onChange={(event) => update('authType', event.target.value)} disabled={!settings}><option value="plain">PLAIN</option><option value="login">LOGIN</option><option value="cram-md5">CRAM-MD5</option></select></label><label>{t('settings.smtp.from')}<input type="email" value={form.from} onChange={(event) => update('from', event.target.value)} placeholder="noreply@example.com" disabled={!settings} /></label><label>{t('settings.smtp.fromName')}<input value={form.fromName} onChange={(event) => update('fromName', event.target.value)} disabled={!settings} /></label><label>{t('settings.smtp.replyTo')}<input type="email" value={form.replyTo} onChange={(event) => update('replyTo', event.target.value)} disabled={!settings} /></label></div><div className="smtp-options"><label className="check-row"><input type="checkbox" checked={form.secure} onChange={(event) => update('secure', event.target.checked)} disabled={!settings} />{t('settings.smtp.secure')}</label><span className="form-hint">{t('settings.smtp.hint')}</span></div><div className="settings-actions"><button className="button primary" onClick={save} disabled={saving || !settings}>{saving ? t('common.saving') : t('settings.smtp.save')}<Check size={14} /></button><div className="smtp-test"><input value={form.testTo} onChange={(event) => update('testTo', event.target.value)} placeholder={t('settings.smtp.testPlaceholder')} disabled={!settings} /><button className="button secondary" onClick={test} disabled={testing || !settings}>{testing ? t('common.sending') : t('settings.smtp.sendTest')}<ArrowUpRight size={14} /></button></div></div></div>
 }
 
 function DetailModal({ detail, data, loading, error, healthLoading, actionLoading, onClose, onOpenPlugin, onHealth, onAction }: { detail: { kind: 'server' | 'plugin'; id: string }; data: { kind: 'server'; value: ApiServerDetail } | { kind: 'plugin'; value: ApiPluginDetail } | null; loading: boolean; error: string | null; healthLoading: boolean; actionLoading: Exclude<PluginAction, 'health'> | null; onClose: () => void; onOpenPlugin: (id: string) => void; onHealth: (plugin: { id: string; name: string }) => void; onAction: (plugin: ApiPlugin, action: Exclude<PluginAction, 'health'>) => void }) {

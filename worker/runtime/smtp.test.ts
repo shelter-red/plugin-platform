@@ -2,7 +2,7 @@ import { SELF } from 'cloudflare:test'
 import { afterEach, beforeEach, expect, test } from 'vitest'
 import { defaultPlatformSettings, setPlatformSettingsCache } from '../src/usage'
 import { hashToken, openControl, resetDatabase, seedServer, testEnv } from './helpers'
-import { smtpSinkSettings } from './smtp-sink.config'
+import { SMTP_SINK, smtpSinkSettings } from './smtp-sink.config'
 
 const ADMIN_TOKEN = 'smtp-admin-session'
 const MEMBER_TOKEN = 'smtp-member-session'
@@ -156,6 +156,27 @@ test('SMTP 测试发送经真实 SMTP 会话投递', { timeout: 20_000 }, async 
   const audit = await testEnv.DB.prepare("SELECT detail_json FROM audit_log WHERE action = 'smtp.test.sent'").all<{ detail_json: string }>()
   expect(audit.results).toHaveLength(1)
   expect(JSON.parse(audit.results[0]!.detail_json)).toEqual({ to: 'ops@example.com', attempts: 1 })
+})
+
+test('SMTP 未保存配置可测试且空密码沿用已存密钥', { timeout: 20_000 }, async () => {
+  // 未保存也能测试：接口直接使用请求体中的表单配置。
+  const tested = await api('/api/settings/smtp/test', ADMIN_TOKEN, { method: 'POST', body: JSON.stringify({ to: 'ops@example.com', settings: smtpSinkSettings }) })
+  expect(tested.status).toBe(200)
+
+  // 无历史密钥时留空密码返回字段级 400。
+  const missingPassword = await api('/api/settings/smtp', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify({ ...smtpSinkSettings, password: '' }) })
+  expect(missingPassword.status).toBe(400)
+  expect(await missingPassword.json()).toMatchObject({ field: 'password' })
+
+  // 首次保存后，空密码二次保存沿用已存密钥。
+  expect((await api('/api/settings/smtp', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify(smtpSinkSettings) })).status).toBe(200)
+  const second = await api('/api/settings/smtp', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify({ ...smtpSinkSettings, username: SMTP_SINK.username, password: '' }) })
+  expect(second.status).toBe(200)
+  expect((await second.json() as { configured: boolean }).configured).toBe(true)
+
+  // 空密码测试同样回退已存密钥，并经真实 SMTP 会话投递。
+  const fallbackTest = await api('/api/settings/smtp/test', ADMIN_TOKEN, { method: 'POST', body: JSON.stringify({ to: 'ops@example.com', settings: { ...smtpSinkSettings, password: '' } }) })
+  expect(fallbackTest.status).toBe(200)
 })
 
 test('SMTP 凭据被服务器拒绝时返回 502 且不泄漏密码', { timeout: 20_000 }, async () => {

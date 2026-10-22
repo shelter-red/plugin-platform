@@ -1,8 +1,15 @@
 export class ApiError extends Error {
-  constructor(readonly status: number, message: string) {
+  constructor(readonly status: number, message: string, readonly field?: string) {
     super(message)
     this.name = 'ApiError'
   }
+}
+
+/** 保留服务端错误码与字段名，便于表单把错误定位到具体输入框。 */
+async function assertOk(response: Response, fallback: string): Promise<void> {
+  if (response.ok) return
+  const body = await response.json().catch(() => null) as { error?: string; field?: string } | null
+  throw new ApiError(response.status, body?.error ?? fallback, body?.field)
 }
 
 export interface ApiOverview {
@@ -199,17 +206,31 @@ export interface PlatformSettings {
   }
 }
 
+export type SmtpAuthType = 'plain' | 'login' | 'cram-md5'
+
 export interface SmtpSettings {
   configured: boolean
   host?: string
   port?: number
   secure?: boolean
   username?: string
-  authType?: 'plain' | 'login' | 'cram-md5'
+  authType?: SmtpAuthType
   from?: string
   fromName?: string | null
   replyTo?: string | null
   updatedAt?: string | null
+}
+
+export interface SmtpSettingsInput {
+  host: string
+  port: number
+  secure: boolean
+  username: string
+  password: string
+  authType: SmtpAuthType
+  from: string
+  fromName?: string
+  replyTo?: string
 }
 
 export interface CloudflareSettings {
@@ -445,15 +466,16 @@ export async function fetchSmtpSettings(): Promise<SmtpSettings> {
   return response.json() as Promise<SmtpSettings>
 }
 
-export async function updateSmtpSettings(settings: { host: string; port: number; secure: boolean; username: string; password: string; authType: 'plain' | 'login' | 'cram-md5'; from: string; fromName?: string; replyTo?: string }): Promise<SmtpSettings> {
+export async function updateSmtpSettings(settings: SmtpSettingsInput): Promise<SmtpSettings> {
   const apiBase = import.meta.env.VITE_API_BASE ?? ''
   const response = await fetch(`${apiBase}/api/settings/smtp`, { method: 'PUT', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(settings) })
-  if (!response.ok) throw new ApiError(response.status, 'smtp settings update request failed')
+  await assertOk(response, 'smtp settings update request failed')
   return response.json() as Promise<SmtpSettings>
 }
 
-export async function sendSmtpTest(to: string): Promise<void> {
+/** 测试发送使用当前表单值，密码为空时由服务端沿用已保存密钥。 */
+export async function sendSmtpTest(to: string, settings?: SmtpSettingsInput): Promise<void> {
   const apiBase = import.meta.env.VITE_API_BASE ?? ''
-  const response = await fetch(`${apiBase}/api/settings/smtp/test`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ to }) })
-  if (!response.ok) throw new ApiError(response.status, 'smtp test request failed')
+  const response = await fetch(`${apiBase}/api/settings/smtp/test`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ to, ...(settings ? { settings } : {}) }) })
+  await assertOk(response, 'smtp test request failed')
 }
