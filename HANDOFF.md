@@ -1,8 +1,8 @@
 # Plugmesh 平台交接（HANDOFF）
 
-> 最后整理：2026-10-23 03:06（Asia/Shanghai）
+> 最后整理：2026-10-23 03:09（Asia/Shanghai）
 > 状态：**进行中，工作区不可推送**
-> 记录基线 HEAD：`7a54cfc`（`main` 与 `origin/main` 当时一致）
+> 记录基线 HEAD：`a9c85f0`（`main` 与 `origin/main` 当时一致）
 > 本文件提交后，以实际 `git log -1 --oneline --decorate` 为最新 HEAD，不要照抄本页基线。
 > 维护规则：每完成一个可验证步骤，先更新本文件，再提交一条可追溯的中文 Git 记录；未记录不得继续下一步。
 > 本文件是压缩后的第一事实源。README、验收矩阵、旧注释或聊天摘要与本文冲突时，以用户最新要求和实际代码为准；旧文档必须在实现后同步重写。
@@ -13,10 +13,10 @@
 - 分支：`main`
 - push：`git@github-plugin-platform:shelter-red/plugin-platform.git`
 - fetch：`https://github.com/shelter-red/plugin-platform.git`
-- 记录基线：HEAD 与 `origin/main` 均为 `7a54cfc docs: 重整完整交接台账与真实阻塞状态`
-- 最近已验收 Actions：run `39835890828`（#48，`7a54cfc`），`completed/success`
+- 记录基线：HEAD 与 `origin/main` 均为 `a9c85f0 docs: 刷新磁盘交接基线与最新验收状态`
+- 最近已验收 Actions：run `39836893476`（#49，`a9c85f0`），`completed/success`
 - 仓库内未发现 `AGENTS.md`；没有额外仓库级代理指令。
-- HANDOFF 已在 `7a54cfc` 单独提交并验收；当前仍有 **22 个代码路径**未提交，不能随文档一起推送：
+- HANDOFF 已单独提交并验收；当前仍有 **22 个代码路径**未提交，不能随文档一起推送：
   - Cloudflare OAuth 删除与 Token 后端迁移；
   - `types.ts` 已删除 `cloudflareQuotas`，新增 Free 额度/套餐类型；
   - 用量/设置 UI 只有零散草稿，仍使用旧 OAuth 和可编辑额度契约；
@@ -149,10 +149,10 @@ git diff --stat
 git diff --check
 ```
 
-记录基线（2026-10-23 03:06）：
+记录基线（2026-10-23 03:09）：
 
-- HEAD / `origin/main`：`7a54cfc`（本次 HANDOFF 校正提交前）
-- 最新 Actions：run `39835890828`（#48），`completed/success`
+- HEAD / `origin/main`：`a9c85f0`（本次 HANDOFF 校正提交前）
+- 最新 Actions：run `39836893476`（#49），`completed/success`
 - 上一批成功记录：
   - `1a5e5c1` run `39833249358`（#46）
   - `f9ae7b8` run `39832365360`（#45）
@@ -721,6 +721,7 @@ ctest --test-dir native-server/build --output-on-failure
 
 ## 9. 最近动作日志
 
+- 2026-10-23 03:09：HANDOFF 基线刷新提交 `a9c85f0` 的 Actions run `39836893476`（#49）为 `completed/success`；web 通过，native jobs 按路径过滤 skipped。当前仍为 22 个代码路径未提交，文档提交未夹带代码。
 - 2026-10-23 03:03：在当前 HEAD `7a54cfc` 上重新实测，确认 `worker:typecheck` 仍为 27 个旧 `cloudflareQuotas` 类型错误，完整 runtime 仍为 82/84（19/20 files，2 个旧 oauth-settings 测试失败）；当前 22 个代码路径未提交，HANDOFF 保持独立可推送。GitHub Actions run `39835890828`（#48）为 `completed/success`。
 - 2026-10-23 03:00：重新核对磁盘与 GitHub。确认最新已验收 Actions 为 `cc00faf` 的 run `39834314392`（#47，success）；实测 `worker:typecheck` 27 个错误、完整 runtime 82/84（19/20 files，2 个旧 oauth-settings 测试失败）、Token/settings/analytics 定向 20/20、`git diff --check` 通过。本次重写 HANDOFF，把 OAuth 已删除事实、usage 契约、剩余前端/文档/部署/原生构建工作和真实阻塞全部固化。
 - 2026-10-23 02:52：开始执行后端 Cloudflare OAuth 删除步骤：移除授权/回调/auth-result 路由、OAuth 配置与环境变量、refresh/revoke 桩、state 清理、旧 smoke 和旧测试；保留并验证 Token 设置/用量 API。
