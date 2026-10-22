@@ -13,27 +13,28 @@
 ```text
 仓库：/home/tc/work/plugin-platform
 分支：main
-本次重写前的 HEAD：649ed66 docs: 重建压缩恢复交接台账
+当前 HEAD：45efad3 docs: 固化完整上下文交接台账
 origin/main：579eb1f docs: 校正交接基线与最新 Actions 结果
-本地关系：ahead origin/main 5 个提交
+本地关系：ahead origin/main 6 个提交
 fetch remote：https://github.com/shelter-red/plugin-platform.git
 push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 ```
 
-本地领先远端的 5 个提交：
+本地领先远端的 6 个提交：
 
 ```text
-9882c76 fix(worker): 收口 Cloudflare API Token 与只读额度契约
-1dbec9c docs: 重整 HANDOFF 恢复基线与未完成事项
-4d43b32 docs: 固化压缩恢复交接台账
-609ba8f docs: 校正 HANDOFF 当前构建阻塞与恢复基线
+45efad3 docs: 固化完整上下文交接台账
 649ed66 docs: 重建压缩恢复交接台账
+609ba8f docs: 校正 HANDOFF 当前构建阻塞与恢复基线
+4d43b32 docs: 固化压缩恢复交接台账
+1dbec9c docs: 重整 HANDOFF 恢复基线与未完成事项
+9882c76 fix(worker): 收口 Cloudflare API Token 与只读额度契约
 ```
 
-- 这 5 个提交尚未 push，**没有对应 Actions 结果**。
+- 这 6 个提交尚未 push，**没有对应 Actions 结果**。
 - 最新已知远端成功 Actions：`579eb1f`，run `39840532476`（#52），`completed/success`。
 - 仓库内未发现 `AGENTS.md`，无额外仓库级代理指令。
-- 本次重写 `HANDOFF.md` 后，本文件自身会出现在未提交改动中；始终以实际 `git log -1` 和 `git status` 为准。
+- `45efad3` 是本次实现工作的代码/文档基线；后续校正本文件的 docs-only 提交会改变 HEAD，但不会改变代码工作区。恢复时始终以实际 `git log -1` 和 `git status` 为准。
 
 恢复时先运行：
 
@@ -47,9 +48,9 @@ git diff --check
 find .. -name AGENTS.md -print
 ```
 
-### 0.2 当前工作区（本次 HANDOFF 重写前为 33 个路径）
+### 0.2 当前工作区（提交 `45efad3` 后为 33 个路径）
 
-本次重写前状态：29 个已跟踪改动 + 4 个未跟踪新文件。写入本文件后，`HANDOFF.md` 也成为未提交改动，共 34 个脏路径。不要据此代替实时 `git status`。
+`HANDOFF.md` 已由 `45efad3` 单独提交，因此不在当前脏路径中。实时状态为：29 个已跟踪改动（19 个修改、10 个删除）+ 4 个未跟踪新文件，共 33 个脏路径。不要据此代替实时 `git status`。
 
 已修改：
 
@@ -106,8 +107,8 @@ D src/features/settings/useCloudflareClientForm.ts
 最近实测：
 
 ```text
-npm run build              PASS（2026-10-23，本次 HANDOFF 重写前实测）
-git diff --check           PASS（2026-10-23，本次 HANDOFF 重写前实测）
+npm run build              PASS（2026-10-23，提交 45efad3 前、当前前端草稿实测）
+git diff --check           PASS（2026-10-23，提交 45efad3 前实测）
 npm run ui:smoke           80 passed（最近一次实测，约 1.3 分钟）
 npm run worker:typecheck   PASS（最近一次已记录实测）
 npm run worker:smoke       PASS（最近一次已记录实测）
@@ -255,7 +256,7 @@ doRequests        100,000
 | ID | 用户反馈/目标 | 必须达到的效果 | 当前状态 |
 | --- | --- | --- | --- |
 | U01 | “不是说全部重构成组件吗？登录页还是旧的” | 清晰组件边界；登录页实际视觉验收 | 🟡 登录页/侧栏/账号/工作区已拆；最终截图验收未完成 |
-| U02 | “自己从会话历史里读 Git 分支，自行提交推送” | 每步有中文 Git 记录；不靠聊天猜 | 🟡 `main` 领先 5 个未推送提交；当前仍有 34 个脏路径（含本文件） |
+| U02 | “自己从会话历史里读 Git 分支，自行提交推送” | 每步有中文 Git 记录；不靠聊天猜 | 🟡 `main` 领先 6 个未推送提交；提交 45efad3 后仍有 33 个脏路径 |
 | U03 | “推送时注意 Actions，老是错误” | 本地完整 CI + push 后追踪到成功 | 🟡 最新远端 #52 成功；当前未提交改动未跑完整 CI，禁止 push |
 | U04 | 为什么错误状态靠 `/?auth_error=` | 真实 HTTP + JSON，留在当前页 | 🟡 Cloudflare 跳转/auth-result 链路已删；GitHub 失败页已是 HTTP；仍需统一测试与旧文案清理 |
 | U05 | setup 失效为什么单独返回 `Setup is not available` | 返回 null 后走普通非路由行为 | ✅ 已实现并有测试 |
@@ -528,7 +529,7 @@ Windows 需处理 OpenSSL DLL/applocal；Linux/macOS 需处理 OpenSSL/RPATH/依
 
 ### 6.1 当前前端
 
-本次 HANDOFF 重写前已实测：
+提交 45efad3 前、当前前端草稿已实测：
 
 ```text
 npm run build              PASS
@@ -741,7 +742,8 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 
 ## 11. 最近动作日志
 
-- 2026-10-23：重写本 HANDOFF，校正 HEAD 为 `649ed66`、`origin/main` 为 `579eb1f`、本地领先 5 个提交；记录本次重写前 33 个脏路径、当前 build PASS 与仍禁止 push 的原因。
+- 2026-10-23：提交 `45efad3` 单独固化了完整 HANDOFF；当前 HEAD 为 `45efad3`、`origin/main` 为 `579eb1f`、本地领先 6 个提交。
+- 2026-10-23：提交 `45efad3` 后校正工作区为 33 个脏路径（19 修改 + 10 删除 + 4 新增）；`HANDOFF.md` 本身已干净提交，不再计入脏路径。
 - 2026-10-23：确认旧 Cloudflare OAuth 前端文件已删除；Token 表单、固定三项只读权限、创建 Token 链接、旧凭据提示已落地。
 - 2026-10-23：确认用量页读取 `usage.limits`，展示 8 项官方免费额度；平台请求显示“不限”；设置页仅保留平台 3 项阈值。
 - 2026-10-23：确认 `PageHeader` 只有一个 `usage-refresh`，自动加载 `usageLoading` 与手动刷新 `usageRefreshing` 已分离。
@@ -749,7 +751,7 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - 2026-10-23：确认 README、方案、验收矩阵、local-e2e、help、privacy、部署脚本提示仍有旧 Cloudflare OAuth/手填额度内容。
 - 2026-10-23：确认 `native-server` 仅有 `plugmesh_core STATIC`；手动构建 workflow、真正核心 SHARED target、公共 ABI 和帮助中心教程仍未实现。
 - 2026-10-23：后端 `9882c76` 完成 Cloudflare API Token 契约，完整 Worker runtime 20/20、89/89 通过，两个 Cloudflare smoke 通过。
-- 2026-10-23：远端 #52 (`579eb1f`) 成功；本地 5 个提交尚未 push，不能声称其 Actions 已通过。
+- 2026-10-23：远端 #52 (`579eb1f`) 成功；本地 6 个提交尚未 push，不能声称其 Actions 已通过。
 - 2026-10-23：确认 Cloudflare 最终只使用 API Token，固定三项权限，删除 `offline_access`、`workers-platform.read`、PKCE、`response_type`、`grant_type`、Client ID/Secret 和回调配置。
 - 2026-10-23：确认免费额度只从 subscriptions 读取，只有 `rate_plan.id === "free"` 才展示 8 项官方基线。
 - 2026-10-23：确认错误必须真实 HTTP + JSON，留在当前系统设置/用量页，不跳首页。
