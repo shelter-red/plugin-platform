@@ -15,7 +15,6 @@ import {
   Check,
   CircleHelp,
   Cloud,
-  Code2,
   Command,
   Copy,
   Database,
@@ -66,10 +65,13 @@ import { CommandPalette, type CommandItem } from './components/CommandPalette'
 import { DocPage } from './components/DocPage'
 import { AccountPage } from './features/account/AccountPage'
 import { PAGE_PATHS, docFromPath, pageFromPath, type Page } from './app/routes'
-import i18n, { storeLanguage, type Language } from './i18n'
+import { storeLanguage, type Language } from './i18n'
 import { fetchMe, fetchWorkspaces, setActiveWorkspace as applyActiveWorkspace, currentWorkspaceId, type ApiMe, type Workspace } from './api'
 import { WorkspacePage } from './features/workspaces/WorkspacePage'
 import { OverviewPage } from './features/overview/OverviewPage'
+import { ServersPage } from './features/servers/ServersPage'
+import { PluginsPage } from './features/plugins/PluginsPage'
+import { DomainsPage } from './features/domains/DomainsPage'
 import { auditActionLabel, auditDetail } from './lib/audit'
 import { downloadCsv } from './lib/csv'
 import { formatBytes, formatDateTime, formatNumber } from './lib/format'
@@ -566,9 +568,9 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
             {dataError && <div className="notice-bar compact"><div className="notice-icon"><AlertCircle size={16} /></div><div><strong>{t('shell.loadFailed')}</strong><span>{translateError(dataError ?? '')}</span></div><button onClick={() => void refreshData()}>{t('shell.retry')} <RefreshCw size={14} /></button></div>}
             {activeWorkspace && !canWrite && page !== 'settings' && page !== 'workspaces' && <div className="notice-bar compact" role="status"><div className="notice-icon"><ShieldCheck size={16} /></div><div><strong>{t('workspace.readOnly')}</strong><span>{t('workspace.readOnlyHint')}</span></div></div>}
             {page === 'overview' && <OverviewPage overview={overview} usage={usage} localUsage={localUsage} settings={platformSettings} audits={audits ?? []} accessLogs={accessLogs} accessLogsLoading={accessLogsLoading} accessLogsError={accessLogsError} servers={servers ?? []} range={range} setRange={setRange} onNavigate={selectPage} />}
-            {page === 'servers' && <Servers servers={servers ?? []} loading={dataLoading} onRefresh={() => void refreshData()} onBind={() => setModal('server')} onDetail={(id) => void openDetail('server', id)} />}
-            {page === 'plugins' && <Plugins plugins={plugins ?? []} loading={dataLoading} onSync={() => void syncManifests()} onLoad={() => setModal('plugin')} onDetail={(id) => void openDetail('plugin', id)} onHealth={(plugin) => void runHealthCheck(plugin)} />}
-            {page === 'domains' && <Domains domains={domains ?? []} loading={dataLoading} onAction={notify} onRefresh={() => void refreshData()} onAssign={() => setModal('domain')} />}
+            {page === 'servers' && <ServersPage servers={servers ?? []} loading={dataLoading} onRefresh={() => void refreshData()} onBind={() => setModal('server')} onDetail={(id) => void openDetail('server', id)} />}
+            {page === 'plugins' && <PluginsPage plugins={plugins ?? []} loading={dataLoading} onSync={() => void syncManifests()} onLoad={() => setModal('plugin')} onDetail={(id) => void openDetail('plugin', id)} onHealth={(plugin) => void runHealthCheck(plugin)} />}
+            {page === 'domains' && <DomainsPage domains={domains ?? []} loading={dataLoading} onAction={notify} onRefresh={() => void refreshData()} onAssign={() => setModal('domain')} />}
             {page === 'usage' && <Usage settings={platformSettings} usage={usage} localUsage={localUsage} loading={usageLoading} error={usageError} onNavigate={selectPage} />}
             {page === 'logs' && <AccessLogs logs={accessLogs ?? []} loading={accessLogsLoading} error={accessLogsError} onExport={exportAccessLogs} />}
             {page === 'audit' && <Audit audits={audits ?? []} loading={auditLoading} error={auditError} onExport={exportAudit} />}
@@ -583,49 +585,6 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} items={paletteItems} />}
     </div>
   )
-}
-
-function capabilityLabel(plugin: ApiPlugin): string {
-  try {
-    const manifest = JSON.parse(plugin.manifest_json) as { capabilities?: Record<string, unknown> }
-    const labels = [
-      ['http', 'HTTP'],
-      ['websocket', 'WebSocket'],
-      ['sse', 'SSE'],
-      ['fileStream', i18n.t('capabilities.fileStream')],
-    ].filter(([key]) => manifest.capabilities?.[key] === true).map(([, label]) => label)
-    return labels.length > 0 ? labels.join(' + ') : i18n.t('capabilities.none')
-  } catch {
-    return i18n.t('capabilities.invalid')
-  }
-}
-
-function Servers({ servers, loading, onRefresh, onBind, onDetail }: { servers: ApiServer[]; loading: boolean; onRefresh: () => void; onBind: () => void; onDetail: (id: string) => void }) {
-  const { t } = useTranslation()
-  return <div className="stack"><div className="panel table-panel"><div className="panel-header"><div><h2>{t('servers.title')}</h2><p>{t('servers.subtitle')}</p></div><button className="button secondary small" onClick={onRefresh} disabled={loading}><RefreshCw size={14} />{t('servers.refresh')}</button></div>{servers.length === 0 ? <div className="empty-panel"><div className="empty-illustration"><Server size={22} /></div><h3>{t('servers.emptyTitle')}</h3><p>{t('servers.emptyBody')}</p></div> : <div className="server-list">{servers.map((server) => <div className="server-row" key={server.id}><div className="server-symbol"><Server size={18} /></div><div className="server-main"><strong>{server.name}</strong><span>{server.id} · {t('common.protocolVersion')}</span></div><StatusBadge tone={server.status === 'online' ? 'success' : server.status === 'revoked' ? 'danger' : 'warning'}>{t(`status.${server.status}`, { defaultValue: server.status })}</StatusBadge><div className="server-meta"><span>{server.last_seen_at ? t('servers.lastSeen', { time: formatDateTime(server.last_seen_at) }) : t('servers.neverConnected')}</span><button className="row-action" onClick={() => onDetail(server.id)} aria-label={t('servers.view', { name: server.name })} title={t('servers.viewTitle')}><MoreHorizontal size={17} /></button></div></div>)}</div>}</div><div className="empty-panel"><div className="empty-illustration"><LockKeyhole size={22} /></div><h3>{t('servers.bindTitle')}</h3><p>{t('servers.bindBody')}</p><button className="button primary" onClick={onBind}><Plus size={15} />{t('servers.bind')}</button></div></div>
-}
-
-function Plugins({ plugins, loading, onSync, onLoad, onDetail, onHealth }: { plugins: ApiPlugin[]; loading: boolean; onSync: () => void; onLoad: () => void; onDetail: (id: string) => void; onHealth: (plugin: ApiPlugin) => void }) {
-  const { t } = useTranslation()
-  const enabled = plugins.filter((plugin) => plugin.state === 'enabled').length
-  return <div className="stack"><div className="filter-row"><div className="filter-summary"><span className="filter-dot" />{t('plugins.enabled', { count: enabled })} <span className="divider" />{t('plugins.discovered', { count: plugins.length })}</div><button className="button secondary small" onClick={onSync} disabled={loading}><RefreshCw size={14} />{t('plugins.sync')}</button></div>{plugins.length === 0 ? <div className="empty-panel"><div className="empty-illustration"><Code2 size={22} /></div><h3>{t('plugins.emptyTitle')}</h3><p>{t('plugins.emptyBody')}</p><button className="button primary" onClick={onLoad}><Plus size={15} />{t('plugins.load')}</button></div> : <div className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>{t('plugins.columnPlugin')}</th><th>{t('plugins.columnServer')}</th><th>{t('plugins.columnState')}</th><th>{t('plugins.columnCapability')}</th><th>{t('plugins.columnDomain')}</th><th /></tr></thead><tbody>{plugins.map((plugin) => <tr key={plugin.id}><td><div className="cell-title"><div className="table-icon"><Code2 size={15} /></div><div><strong>{plugin.name}</strong><small>{plugin.plugin_id} · v{plugin.version}</small></div></div></td><td>{plugin.server_name}</td><td><StatusBadge tone={plugin.state === 'enabled' ? 'success' : plugin.state === 'failed' ? 'danger' : 'neutral'}>{t(`status.${plugin.state}`, { defaultValue: plugin.state })}</StatusBadge></td><td><span className="capability">{capabilityLabel(plugin)}</span></td><td>{plugin.domain_hostname ? <a href={`https://${plugin.domain_hostname}`} target="_blank" rel="noreferrer">{plugin.domain_hostname}</a> : <span className="muted">{t('common.notAssigned')}</span>}</td><td className="row-actions"><>{plugin.state === 'enabled' && <button className="row-action" onClick={() => onHealth(plugin)} aria-label={t('plugins.health', { name: plugin.name })} title={t('plugins.healthTitle')}><Activity size={16} /></button>}<button className="row-action" onClick={() => onDetail(plugin.id)} aria-label={t('plugins.view', { name: plugin.name })} title={t('plugins.viewTitle')}><MoreHorizontal size={17} /></button></></td></tr>)}</tbody></table></div><div className="table-footer"><span>{t('plugins.footer', { count: plugins.length })}</span><button className="text-link" onClick={onLoad}>{t('plugins.load')} <Plus size={14} /> </button></div></div>}</div>
-}
-
-function Domains({ domains, loading, onAction, onRefresh, onAssign }: { domains: ApiDomain[]; loading: boolean; onAction: Notify; onRefresh: () => void; onAssign: () => void }) {
-  const { t } = useTranslation()
-  const copyDomain = async (hostname: string) => {
-    if (!navigator.clipboard) {
-      onAction('warning', t('domains.clipboardUnsupported'))
-      return
-    }
-    try {
-      await navigator.clipboard.writeText(hostname)
-      onAction('success', t('domains.copied'))
-    } catch {
-      onAction('error', t('domains.copyFailed'))
-    }
-  }
-  return <div className="stack"><div className="panel table-panel"><div className="panel-header"><div><h2>{t('domains.title')}</h2><p>{t('domains.subtitle')}</p></div><button className="button secondary small" onClick={onRefresh} disabled={loading}><RefreshCw size={14} />{t('servers.refresh')}</button></div>{domains.length === 0 ? <div className="empty-panel"><div className="empty-illustration"><Globe2 size={22} /></div><h3>{t('domains.emptyTitle')}</h3><p>{t('domains.emptyBody')}</p></div> : <div className="domain-list">{domains.map((domain) => <div className="domain-row" key={domain.id}><div className="domain-icon"><Globe2 size={17} /></div><div className="domain-main"><strong>{domain.hostname}</strong><span>{domain.plugin_name} · {domain.plugin_instance_id}</span></div><StatusBadge tone={domain.status === 'online' ? 'success' : 'warning'}>{t(`status.${domain.status}`, { defaultValue: domain.status })}</StatusBadge><span className="domain-latency">{domain.status === 'online' ? t('domains.available') : t('domains.waiting')}</span><button className="row-action" onClick={() => void copyDomain(domain.hostname)} aria-label={t('domains.copy', { hostname: domain.hostname })} title={t('domains.copy', { hostname: domain.hostname })}><Copy size={16} /></button></div>)}</div>}</div><div className="empty-panel"><div className="empty-illustration"><Globe2 size={22} /></div><h3>{t('domains.assignTitle')}</h3><p>{t('domains.assignBody')}</p><button className="button primary" onClick={onAssign}><Plus size={15} />{t('domains.assign')}</button></div></div>
 }
 
 function Usage({ settings, usage, localUsage, loading, error, onNavigate }: { settings: PlatformSettings | null; usage: CloudflareUsage | null; localUsage: LocalUsage | null; loading: boolean; error: string | null; onNavigate: (page: Page) => void }) {
