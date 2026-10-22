@@ -15,13 +15,11 @@ import {
   Check,
   CircleHelp,
   Command,
-  Copy,
   FileText,
   Gauge,
   Globe2,
   LayoutDashboard,
   LogOut,
-  LockKeyhole,
   Menu,
   MoreHorizontal,
   Network,
@@ -34,7 +32,6 @@ import {
   Sun,
   UserRound,
   X,
-  Zap,
 } from 'lucide-react'
 import '@fontsource/dm-sans/latin-400.css'
 import '@fontsource/dm-sans/latin-500.css'
@@ -49,8 +46,9 @@ import { createAppTheme, type AppThemeMode } from './app/theme'
 import { useToast } from './components/ToastProvider'
 import { readCloudflareDiagnosis, type CloudflareDiagnosis } from './features/settings/cloudflare-auth'
 import { errorMessage, translateError } from './errors'
-import { StatusBadge } from './components/StatusBadge'
 import { IconButton } from './components/IconButton'
+import { DetailModal } from './components/DetailModal'
+import { ProvisionModal, type ModalInput, type ModalResult } from './components/ProvisionModal'
 import { CommandPalette, type CommandItem } from './components/CommandPalette'
 import { DocPage } from './components/DocPage'
 import { AccountPage } from './features/account/AccountPage'
@@ -68,14 +66,10 @@ import { AuditPage } from './features/audit/AuditPage'
 import { SettingsPage, settingsSections } from './features/settings/SettingsPage'
 import { auditActionLabel } from './lib/audit'
 import { downloadCsv } from './lib/csv'
-import { formatDateTime } from './lib/format'
 import { AuthLoadingScreen, LoginPage } from './features/auth/AuthScreen'
 import { assignDomain, checkPluginHealth, commandPlugin, createRegistrationCode, fetchAccessLogs, fetchAudit, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchInvites, fetchLocalUsage, fetchOauthSettings, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchPluginDetails, fetchServerDetails, fetchServers, fetchSmtpSettings, syncServer, type ApiAccessLog, type ApiAudit, type ApiDomain, type ApiInvite, type ApiOverview, type ApiPlugin, type ApiPluginDetail, type ApiServer, type ApiServerDetail, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type OauthSettings, type PlatformSettings, type PluginAction, type PluginHealthResult, type SmtpSettings } from './api'
 
 type Theme = 'dark' | 'light' | 'system'
-type ModalInput = { prefix?: string; pluginInstanceId?: string }
-type ModalResult = { kind: 'registration'; code: string; expiresAt: string } | { kind: 'plugin'; state: string } | { kind: 'domain'; hostname: string }
-
 const navGroups: { labelKey: string; items: { id: Page; icon: typeof LayoutDashboard }[] }[] = [
   {
     labelKey: 'nav.groups.main',
@@ -564,100 +558,11 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
           </div>
         </div>
       </main>
-      {modal && <Modal type={modal} plugins={plugins ?? []} onClose={() => setModal(null)} onConfirm={(input) => confirmModal(modal, input)} />}
+      {modal && <ProvisionModal type={modal} plugins={plugins ?? []} onClose={() => setModal(null)} onConfirm={(input) => confirmModal(modal, input)} />}
       {detail && <DetailModal detail={detail} data={detailData} loading={detailLoading} error={detailError} healthLoading={healthPluginId === detail.id} actionLoading={pluginActionLoading?.id === detail.id ? pluginActionLoading.action : null} onClose={() => setDetail(null)} onOpenPlugin={(id) => void openDetail('plugin', id)} onHealth={(plugin) => void runHealthCheck(plugin)} onAction={(plugin, action) => void runPluginAction(plugin, action)} />}
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} items={paletteItems} />}
     </div>
   )
-}
-
-function DetailModal({ detail, data, loading, error, healthLoading, actionLoading, onClose, onOpenPlugin, onHealth, onAction }: { detail: { kind: 'server' | 'plugin'; id: string }; data: { kind: 'server'; value: ApiServerDetail } | { kind: 'plugin'; value: ApiPluginDetail } | null; loading: boolean; error: string | null; healthLoading: boolean; actionLoading: Exclude<PluginAction, 'health'> | null; onClose: () => void; onOpenPlugin: (id: string) => void; onHealth: (plugin: { id: string; name: string }) => void; onAction: (plugin: ApiPlugin, action: Exclude<PluginAction, 'health'>) => void }) {
-  const { t } = useTranslation()
-  const title = detail.kind === 'server' ? t('detail.serverTitle') : t('detail.pluginTitle')
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
-  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><div className="modal detail-modal" role="dialog" aria-modal="true" aria-label={title}><div className="modal-head"><div><h2>{title}</h2><p>{t('detail.subtitle')}</p></div><IconButton label={t('detail.close')} onClick={onClose}><X size={17} /></IconButton></div>{loading && <div className="detail-loading"><RefreshCw size={18} className="spin" />{t('detail.loading')}</div>}{error && <div className="inline-error"><AlertCircle size={14} />{translateError(error)}</div>}{!loading && !error && data?.kind === 'server' && <ServerDetailContent value={data.value} onOpenPlugin={onOpenPlugin} />}{!loading && !error && data?.kind === 'plugin' && <PluginDetailContent value={data.value} healthLoading={healthLoading} actionLoading={actionLoading} onHealth={onHealth} onAction={onAction} />}</div></div>
-}
-
-function ServerDetailContent({ value, onOpenPlugin }: { value: ApiServerDetail; onOpenPlugin: (id: string) => void }) {
-  const { t } = useTranslation()
-  const { server, plugins, recentErrors } = value
-  return <div className="detail-content"><div className="detail-title-row"><div><strong>{server.name}</strong><span>{server.id}</span></div><StatusBadge tone={server.status === 'online' ? 'success' : server.status === 'revoked' ? 'danger' : 'warning'}>{t(`status.${server.status}`, { defaultValue: server.status })}</StatusBadge></div><div className="detail-grid"><DetailValue label={t('detail.server.lastSeen')} value={server.last_seen_at ? formatDateTime(server.last_seen_at) : t('detail.server.never')} /><DetailValue label={t('detail.server.created')} value={formatDateTime(server.created_at)} /><DetailValue label={t('detail.server.pluginCount')} value={String(plugins.length)} /><DetailValue label={t('detail.server.recentErrors')} value={String(recentErrors.length)} /></div><DetailSection title={t('detail.server.plugins')}>{plugins.length === 0 ? <DetailEmpty text={t('detail.server.noPlugins')} /> : <div className="detail-list">{plugins.map((plugin) => <button className="detail-list-row" key={plugin.id} onClick={() => onOpenPlugin(plugin.id)}><span><strong>{plugin.name}</strong><small>{plugin.plugin_id} · v{plugin.version}</small></span><span className="detail-row-meta">{plugin.domain_hostname ?? t('detail.server.noDomain')}<StatusBadge tone={plugin.state === 'enabled' ? 'success' : plugin.state === 'failed' ? 'danger' : 'neutral'}>{t(`status.${plugin.state}`, { defaultValue: plugin.state })}</StatusBadge></span></button>)}</div>}</DetailSection><DetailSection title={t('detail.server.recentErrors')}>{recentErrors.length === 0 ? <DetailEmpty text={t('detail.plugin.noErrors')} /> : <ErrorList errors={recentErrors} />}</DetailSection></div>
-}
-
-function PluginDetailContent({ value, healthLoading, actionLoading, onHealth, onAction }: { value: ApiPluginDetail; healthLoading: boolean; actionLoading: Exclude<PluginAction, 'health'> | null; onHealth: (plugin: { id: string; name: string }) => void; onAction: (plugin: ApiPlugin, action: Exclude<PluginAction, 'health'>) => void }) {
-  const { t } = useTranslation()
-  const { plugin, recentErrors } = value
-  let manifest = plugin.manifest_json
-  try { manifest = JSON.stringify(JSON.parse(plugin.manifest_json), null, 2) } catch { manifest = plugin.manifest_json }
-  const actionButton = (action: Exclude<PluginAction, 'health'>, label: string, icon: React.ReactNode, tone = 'secondary') => <button className={`button ${tone} small`} onClick={() => onAction(plugin, action)} disabled={actionLoading !== null || healthLoading}>{actionLoading === action ? <RefreshCw size={13} className="spin" /> : icon}{actionLoading === action ? t('common.processing') : label}</button>
-  return <div className="detail-content"><div className="detail-title-row"><div><strong>{plugin.name}</strong><span>{plugin.plugin_id} · v{plugin.version}</span></div><div className="detail-title-actions">{plugin.state === 'enabled' && <button className="button secondary small" onClick={() => onHealth(plugin)} disabled={healthLoading || actionLoading !== null}>{healthLoading ? <><RefreshCw size={13} className="spin" />{t('pluginCommands.checking')}</> : <><Activity size={13} />{t('pluginCommands.healthCheck')}</>}</button>}{plugin.state === 'discovered' || plugin.state === 'unloaded' || plugin.state === 'failed' ? actionButton('load', t('pluginCommands.load'), <Zap size={13} />, 'primary') : null}{plugin.state === 'loaded' ? actionButton('enable', t('pluginCommands.enable'), <Check size={13} />, 'primary') : null}{plugin.state === 'disabled' ? actionButton('enable', t('pluginCommands.enable'), <Check size={13} />, 'primary') : null}{['loaded', 'enabled', 'disabled'].includes(plugin.state) ? actionButton('unload', t('pluginCommands.unload'), <X size={13} />) : null}{['loaded', 'enabled', 'disabled'].includes(plugin.state) ? actionButton('reload', t('pluginCommands.reload'), <RefreshCw size={13} />) : null}{plugin.state === 'enabled' ? actionButton('disable', t('pluginCommands.disable'), <ShieldCheck size={13} />) : null}<StatusBadge tone={plugin.state === 'enabled' ? 'success' : plugin.state === 'failed' ? 'danger' : 'neutral'}>{t(`status.${plugin.state}`, { defaultValue: plugin.state })}</StatusBadge></div></div><div className="detail-grid"><DetailValue label={t('detail.plugin.server')} value={t('detail.plugin.serverValue', { name: plugin.server_name, status: t(`status.${plugin.server_status}`, { defaultValue: plugin.server_status }) })} /><DetailValue label={t('detail.plugin.desiredState')} value={t(`status.${plugin.desired_state}`, { defaultValue: plugin.desired_state })} /><DetailValue label={t('detail.plugin.domain')} value={plugin.domain_hostname ?? t('common.notAssigned')} /><DetailValue label={t('detail.plugin.recentErrors')} value={String(recentErrors.length)} /></div><DetailSection title={t('detail.plugin.manifest')}><pre className="manifest-block">{manifest}</pre></DetailSection><DetailSection title={t('detail.plugin.recentErrors')}>{recentErrors.length === 0 ? <DetailEmpty text={t('detail.plugin.noErrors')} /> : <ErrorList errors={recentErrors} />}</DetailSection></div>
-}
-
-function DetailSection({ title, children }: { title: string; children: React.ReactNode }) { return <section className="detail-section"><h3>{title}</h3>{children}</section> }
-function DetailValue({ label, value }: { label: string; value: string }) { return <div className="detail-value"><span>{label}</span><strong>{value}</strong></div> }
-function DetailEmpty({ text }: { text: string }) { return <div className="detail-empty">{text}</div> }
-function ErrorList({ errors }: { errors: ApiAccessLog[] }) {
-  const { t } = useTranslation()
-  return <div className="detail-errors">{errors.map((error) => <div className="detail-error" key={error.id}><div><strong>{error.status} · {error.method}</strong><span>{error.hostname}{error.path}</span></div><time>{formatDateTime(error.created_at)}</time><small>{error.error || t('detail.requestFailed')}</small></div>)}</div>
-}
-
-function Modal({ type, plugins, onClose, onConfirm }: { type: 'server' | 'domain' | 'plugin'; plugins: ApiPlugin[]; onClose: () => void; onConfirm: (input: ModalInput) => Promise<ModalResult> }) {
-  const { t } = useTranslation()
-  const [value, setValue] = useState('')
-  const [selectedPluginId, setSelectedPluginId] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [result, setResult] = useState<ModalResult | null>(null)
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !submitting) onClose()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onClose, submitting])
-
-  const loadablePlugins = plugins.filter((plugin) => !['loaded', 'enabled'].includes(plugin.state))
-  const domainPlugins = plugins.filter((plugin) => plugin.state === 'enabled' && !plugin.domain_hostname)
-  const candidates = type === 'plugin' ? loadablePlugins : domainPlugins
-  const content = type === 'server'
-    ? { title: t('modal.server.title'), description: t('modal.server.description') }
-    : type === 'domain'
-      ? { title: t('modal.domain.title'), description: t('modal.domain.description') }
-      : { title: t('modal.plugin.title'), description: t('modal.plugin.description') }
-
-  const submit = async () => {
-    setSubmitting(true)
-    setError(null)
-    try {
-      setResult(await onConfirm({ prefix: type === 'domain' ? value : undefined, pluginInstanceId: type === 'server' ? undefined : selectedPluginId }))
-    } catch (submissionError) {
-      setError(errorMessage(submissionError, 'modal.failed'))
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  const copyCode = async (code: string) => {
-    if (!navigator.clipboard) {
-      setError(t('modal.clipboardUnsupported'))
-      return
-    }
-    try {
-      await navigator.clipboard.writeText(code)
-      setError(null)
-    } catch {
-      setError(t('modal.copyFailed'))
-    }
-  }
-
-  return <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget && !submitting) onClose() }}><div className="modal" role="dialog" aria-modal="true" aria-label={content.title}><div className="modal-head"><div><h2>{content.title}</h2><p>{content.description}</p></div><IconButton label={t('modal.close')} onClick={onClose}><X size={17} /></IconButton></div>{result?.kind === 'registration' && <div className="code-callout"><span>{t('modal.codeExpires', { time: formatDateTime(result.expiresAt) })}</span><div className="code-value"><strong>{result.code}</strong><button className="row-action" onClick={() => void copyCode(result.code)} aria-label={t('modal.copyCode')} title={t('modal.copyCode')}><Copy size={15} /></button></div></div>}{result?.kind === 'plugin' && <div className="empty-panel"><div className="empty-illustration"><Check size={22} /></div><h3>{t('modal.loadConfirmed')}</h3><p>{t('modal.loadConfirmedState', { state: result.state })}</p></div>}{result?.kind === 'domain' && <div className="empty-panel"><div className="empty-illustration"><Check size={22} /></div><h3>{t('modal.domainAssigned')}</h3><p>{result.hostname}</p></div>}{!result && type === 'server' && <div className="empty-panel"><div className="empty-illustration"><LockKeyhole size={22} /></div><h3>{t('modal.generateCode')}</h3><p>{t('modal.codeHint')}</p></div>}{!result && type !== 'server' && <>{candidates.length > 0 ? <label className="modal-field">{t('modal.pluginInstance')}<Select autoFocus aria-label={t('modal.pluginInstance')} value={selectedPluginId || undefined} onChange={setSelectedPluginId} placeholder={t('modal.selectPlugin')} options={candidates.map((plugin) => ({ value: plugin.id, label: `${plugin.name} · ${plugin.plugin_id} · ${plugin.server_name}` }))} showSearch optionFilterProp="label" style={{ width: '100%' }} /></label> : <div className="empty-panel"><div className="empty-illustration"><AlertCircle size={22} /></div><h3>{type === 'plugin' ? t('modal.noLoadable') : t('modal.noAssignable')}</h3><p>{type === 'plugin' ? t('modal.noLoadableHint') : t('modal.noAssignableHint')}</p></div>}{type === 'domain' && candidates.length > 0 && <label className="modal-field">{t('modal.prefix')}<input autoFocus value={value} onChange={(event) => setValue(event.target.value)} placeholder={t('modal.prefixPlaceholder')} maxLength={48} /><span className="field-hint">{t('modal.prefixHint')}</span></label>}</>}{error && <div className="inline-error"><AlertCircle size={14} />{translateError(error)}</div>}<div className="modal-actions"><button className="button secondary" onClick={onClose} disabled={submitting}>{t('modal.closeAction')}</button>{!result && <button className="button primary" onClick={() => void submit()} disabled={submitting || (type !== 'server' && (!selectedPluginId || candidates.length === 0))}>{submitting ? t('common.submitting') : type === 'server' ? t('modal.submitServer') : type === 'domain' ? t('modal.submitDomain') : t('modal.submitPlugin')}<ArrowUpRight size={14} /></button>}</div></div></div>
 }
 
 function Root() {
