@@ -1,6 +1,7 @@
 import { theme, type ThemeConfig } from 'antd'
 
 export type AppThemeMode = 'dark' | 'light'
+export type ThemePreference = AppThemeMode | 'system'
 
 export const brandColor = { dark: '#10b981', light: '#059669' } as const
 
