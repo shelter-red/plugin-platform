@@ -136,3 +136,10 @@ else()
     target_link_libraries(plugmesh_core PRIVATE ${CMAKE_DL_LIBS})
   endif()
 endif()
+
+# 所有用例都应在数十秒内跑完；统一设置 ctest 兜底超时，
+# 避免某个用例僵死时把 CI 拖满 ctest 默认的 1500 秒。
+get_property(plugmesh_tests DIRECTORY PROPERTY TESTS)
+if (plugmesh_tests)
+  set_tests_properties(${plugmesh_tests} PROPERTIES TIMEOUT 180)
+endif()

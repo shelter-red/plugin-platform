@@ -393,10 +393,23 @@ void ControlClient::handle_sse_request(const ControlFrame& frame) {
     gate.wait();
     if (worker->cancel_requested.load(std::memory_order_acquire) || stopping_) {
       worker->done.store(true, std::memory_order_release);
+      if (!stopping_) {
+        // request.open 已经发出去了，即使插件还没启动也必须给对端一个终结帧，
+        // 否则这条流在客户端会一直挂起。
+        auto& service = secure_ ? tls_client_.get_io_service() : plain_client_.get_io_service();
+        service.post([this, request = std::move(request)]() mutable {
+          if (stopping_) return;
+          const auto stream_id = text(request.payload, "streamId");
+          auto closed = make_control_frame("stream.close", config_.server_id, {{"connectionId", stream_id}, {"streamId", stream_id}, {"reason", "Client closed the stream before the plugin started"}}, plugin_id(request));
+          closed.request_id = request.request_id;
+          send_frame(std::move(closed));
+        });
+      }
       return;
     }
     plugmesh_http_request plugin_request{method.c_str(), path.c_str(), headers.c_str(), reinterpret_cast<const uint8_t*>(body.data()), body.size()};
     std::string error;
+    worker->started.store(true, std::memory_order_release);
     const bool ok = plugins_.sse(id, stream_id, plugin_request, error);
     worker->done.store(true, std::memory_order_release);
     if (!ok && !worker->cancel_requested.load(std::memory_order_acquire) && !stopping_) {
@@ -443,6 +456,7 @@ void ControlClient::handle_sse_cancel(const ControlFrame& frame) {
     send_error(frame, "SSE stream id is empty");
     return;
   }
+  bool started = false;
   {
     std::lock_guard lock(sse_workers_mutex_);
     const auto iterator = sse_workers_.find(stream_id);
@@ -451,7 +465,11 @@ void ControlClient::handle_sse_cancel(const ControlFrame& frame) {
       return;
     }
     iterator->second->cancel_requested.store(true, std::memory_order_release);
+    started = iterator->second->started.load(std::memory_order_acquire);
   }
+  // 插件还没开始执行时没有必要转发取消：worker 已经在 request.open 之后
+  // 补发了 stream.close，转发只会得到一个“流不存在”的错误。
+  if (!started) return;
   std::string error;
   if (!plugins_.cancel_sse(id, stream_id, reason, error)) send_error(frame, error.empty() ? "SSE cancellation failed" : error);
 }

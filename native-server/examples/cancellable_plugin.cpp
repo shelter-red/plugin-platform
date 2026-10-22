@@ -63,6 +63,15 @@ int handle_sse(const char* stream_id, const plugmesh_http_request* request) {
   }
   if (host->log) host->log(1, (std::string("sse.started:") + stream_id).c_str());
 
+  // 先发一条启动事件：调用方收到它就能确定流已经建立、取消回调一定可达，
+  // 不必靠“等一小段时间”来猜插件有没有跑起来。
+  static const uint8_t started_event[] = "data: started\n\n";
+  if (host->stream_write(stream_id, started_event, sizeof(started_event) - 1, 0) != 0) {
+    std::lock_guard lock(streams_mutex);
+    streams.erase(stream_id);
+    return -1;
+  }
+
   // 模拟长时间运行的计算或数据源。v4 取消回调只负责通知插件，插件必须
   // 自行让 handle_sse 尽快观察到取消并返回；宿主不会强行中止插件线程。
   for (int attempt = 0; attempt < 1000 && !cancelled->load(std::memory_order_acquire); ++attempt) {

@@ -72,6 +72,9 @@ class ControlClient {
     std::string stream_id;
     std::atomic<bool> done{false};
     std::atomic<bool> cancel_requested{false};
+    // 插件侧（handle_sse）是否已经真正开始执行。取消通知在它之前没有意义：
+    // 此时还没有可取消的插件流，worker 会在 request.open 之后补一个 stream.close。
+    std::atomic<bool> started{false};
   };
 
   struct BindingActionResult {

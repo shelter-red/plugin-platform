@@ -44,6 +44,8 @@ int main(int argc, char** argv) {
   bool stream_payload_valid = false;
   bool file_payload_valid = false;
   bool cancellable_stream_payload_valid = false;
+  bool cancellable_started = false;
+  bool cancellable_chunk_valid = false;
   bool cancellable_health_valid = false;
   int cancellable_health_response_count = 0;
   std::vector<std::string> http_frames;
@@ -200,12 +202,21 @@ int main(int argc, char** argv) {
       cancellable_frames.push_back(frame.type);
       if (frame.type == "request.open") {
         cancellable_stream_payload_valid = frame.plugin_id == "cancellable.plugin" && frame.payload.value("status", 0) == 200 && frame.payload.value("headers", plugmesh::Json::object()).value("content-type", "") == "text/event-stream; charset=utf-8";
-        auto close = plugmesh::make_control_frame("stream.close", "server-1", {{"streamId", "cancel-sse"}, {"reason", "Client disconnected"}}, "cancellable.plugin");
-        close.request_id = "cancel-sse";
-        websocketpp::lib::error_code send_error;
-        server.send(handle, plugmesh::serialize_control_frame(close), websocketpp::frame::opcode::text, send_error);
       } else if (frame.type == "stream.chunk") {
-        cancellable_stream_payload_valid = cancellable_stream_payload_valid && websocketpp::base64_decode(frame.payload.value("data", "")) == "data: cancelled\n\n";
+        const auto data = websocketpp::base64_decode(frame.payload.value("data", ""));
+        if (data == "data: started\n\n") {
+          // 插件已经真正跑起来并登记了流，此刻关闭才是稳定的取消时序；
+          // 之前收到 request.open 就关闭会与插件启动赛跑，造成 CI 假失败。
+          cancellable_started = true;
+          auto close = plugmesh::make_control_frame("stream.close", "server-1", {{"streamId", "cancel-sse"}, {"reason", "Client disconnected"}}, "cancellable.plugin");
+          close.request_id = "cancel-sse";
+          websocketpp::lib::error_code send_error;
+          server.send(handle, plugmesh::serialize_control_frame(close), websocketpp::frame::opcode::text, send_error);
+        } else if (data == "data: cancelled\n\n") {
+          cancellable_chunk_valid = true;
+        } else {
+          cancellable_stream_payload_valid = false;
+        }
       } else if (frame.type == "stream.close") {
         auto health = plugmesh::make_control_frame("plugin.health", "server-1", plugmesh::Json::object(), "cancellable.plugin");
         health.request_id = "cancel-health";
@@ -249,14 +260,16 @@ int main(int argc, char** argv) {
   bool completed = false;
   {
     std::unique_lock lock(mutex);
-    completed = condition.wait_for(lock, std::chrono::seconds(8), [&] { return registration_count >= 3 && sync_result_checked && sync_context_count == 1 && sync_result_count == 0 && file_frames.size() >= 3 && file_frames.back() == "stream.close" && cancellable_frames.size() >= 3 && cancellable_frames.back() == "stream.close" && cancellable_health_response_count == 1 && cancellable_health_valid; });
+    // 控制客户端在连接断开后固定等待 5 秒才重连（生产行为），用例本身就要耗掉 5 秒以上；
+    // 原先的 8 秒上限在负载较高的 CI 机器上会假失败，这里放宽到 30 秒。
+    completed = condition.wait_for(lock, std::chrono::seconds(30), [&] { return registration_count >= 3 && sync_result_checked && sync_context_count == 1 && sync_result_count == 0 && file_frames.size() >= 3 && file_frames.back() == "stream.close" && cancellable_frames.size() >= 3 && cancellable_frames.back() == "stream.close" && cancellable_health_response_count == 1 && cancellable_health_valid; });
   }
   client.stop();
   if (client_thread.joinable()) client_thread.join();
   server.get_io_service().post([&] { server.stop(); });
   if (server_thread.joinable()) server_thread.join();
 
-  if (!completed || !requests_valid || validated_connections < 2 || registration_count < 3 || sync_context_count != 1 || !sync_result_checked || sync_result_count != 0 || health_response_count != 1 || stale_response_count != 0 || list_response_count != 1 || !list_payload_valid || !http_payload_valid || http_frames != std::vector<std::string>{"request.open", "request.chunk", "request.close"} || !stream_payload_valid || stream_frames != std::vector<std::string>{"request.open", "stream.chunk", "stream.close"} || !file_payload_valid || file_frames != std::vector<std::string>{"request.open", "stream.chunk", "stream.close"} || !cancellable_stream_payload_valid || cancellable_frames != std::vector<std::string>{"request.open", "stream.chunk", "stream.close"} || cancellable_health_response_count != 1 || !cancellable_health_valid || !client_result) {
+  if (!completed || !requests_valid || validated_connections < 2 || registration_count < 3 || sync_context_count != 1 || !sync_result_checked || sync_result_count != 0 || health_response_count != 1 || stale_response_count != 0 || list_response_count != 1 || !list_payload_valid || !http_payload_valid || http_frames != std::vector<std::string>{"request.open", "request.chunk", "request.close"} || !stream_payload_valid || stream_frames != std::vector<std::string>{"request.open", "stream.chunk", "stream.close"} || !file_payload_valid || file_frames != std::vector<std::string>{"request.open", "stream.chunk", "stream.close"} || !cancellable_stream_payload_valid || !cancellable_started || !cancellable_chunk_valid || cancellable_frames != std::vector<std::string>{"request.open", "stream.chunk", "stream.chunk", "stream.close"} || cancellable_health_response_count != 1 || !cancellable_health_valid || !client_result) {
     std::cerr << "plain control client reconnect smoke failed: " << client_error
               << " completed=" << completed
               << " requests_valid=" << requests_valid
@@ -272,6 +285,7 @@ int main(int argc, char** argv) {
               << " stream=" << stream_payload_valid << '/' << stream_frames.size()
               << " file=" << file_payload_valid << '/' << file_frames.size()
               << " cancellable=" << cancellable_stream_payload_valid << '/' << cancellable_frames.size()
+              << " cancel_frames=" << cancellable_started << '/' << cancellable_chunk_valid
               << " cancel_health=" << cancellable_health_valid << '/' << cancellable_health_response_count
               << " client=" << client_result << '\n';
     return 1;
