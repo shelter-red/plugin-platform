@@ -32,7 +32,7 @@ export default {
     closeNav: 'Close navigation',
     openNav: 'Open navigation',
     console: 'Console',
-    search: 'Search plugins and domains...',
+    search: 'Search or jump to…',
     auditEvents: 'View audit events',
     currentUser: 'Current user',
     live: 'Live data',
@@ -43,6 +43,13 @@ export default {
     loadPlugin: 'Load plugin',
     loadFailed: 'Could not load data',
     retry: 'Retry',
+  },
+  palette: {
+    title: 'Command palette',
+    placeholder: 'Search servers, plugins, domains, logs, audit…',
+    empty: 'No matching results',
+    hint: '↑↓ to select · Enter to open · Esc to close',
+    group: { pages: 'Pages', settings: 'Settings' },
   },
   theme: { label: 'Theme: {{label}}', select: 'Select theme', dark: 'Dark', light: 'Light', system: 'System' },
   auth: {
@@ -321,7 +328,7 @@ export default {
     'smtp.test.failed': 'SMTP test email failed',
   },
   settings: {
-    nav: { invites: 'Users & invites', oauth: 'GitHub login', smtp: 'Email SMTP', maintenance: 'Maintenance, domains & quotas' },
+    nav: { cloudflare: 'Cloudflare', invites: 'Users & invites', oauth: 'GitHub login', smtp: 'Email SMTP', maintenance: 'Maintenance, domains & quotas' },
     cloudflare: {
       title: 'Cloudflare authorization',
       description: 'The platform account manages Worker, D1, R2 and Durable Object resources.',

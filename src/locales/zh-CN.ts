@@ -32,7 +32,7 @@ export default {
     closeNav: '关闭导航',
     openNav: '打开导航',
     console: '控制台',
-    search: '搜索插件、域名...',
+    search: '搜索或跳转…',
     auditEvents: '查看审计事件',
     currentUser: '当前用户',
     live: '实时数据',
@@ -43,6 +43,13 @@ export default {
     loadPlugin: '加载插件',
     loadFailed: '数据读取失败',
     retry: '重试',
+  },
+  palette: {
+    title: '命令面板',
+    placeholder: '搜索服务器、插件、域名、日志、审计…',
+    empty: '没有匹配结果',
+    hint: '↑↓ 选择 · Enter 跳转 · Esc 关闭',
+    group: { pages: '页面', settings: '设置' },
   },
   theme: { label: '主题：{{label}}', select: '选择主题', dark: '深色', light: '浅色', system: '系统' },
   auth: {
@@ -321,7 +328,7 @@ export default {
     'smtp.test.failed': 'SMTP 测试邮件发送失败',
   },
   settings: {
-    nav: { invites: '用户与邀请', oauth: 'GitHub 登录', smtp: '邮件 SMTP', maintenance: '维护、域名与配额' },
+    nav: { cloudflare: 'Cloudflare', invites: '用户与邀请', oauth: 'GitHub 登录', smtp: '邮件 SMTP', maintenance: '维护、域名与配额' },
     cloudflare: {
       title: 'Cloudflare 授权',
       description: '平台账号统一管理 Worker、D1、R2 和 Durable Object 资源。',

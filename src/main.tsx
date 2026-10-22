@@ -52,6 +52,7 @@ import { readCloudflareDiagnosis, type CloudflareDiagnosis } from './features/se
 import { SmtpPanel } from './features/settings/SmtpPanel'
 import { errorMessage, translateError } from './errors'
 import { StatusBadge } from './components/StatusBadge'
+import { CommandPalette, type CommandItem } from './components/CommandPalette'
 import i18n, { storeLanguage, type Language } from './i18n'
 import { ApiError, assignDomain, checkPluginHealth, commandPlugin, createInvite, createRegistrationCode, fetchAccessLogs, fetchAudit, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchInvites, fetchLocalUsage, fetchOauthSettings, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchPluginDetails, fetchServerDetails, fetchServers, fetchSmtpSettings, revokeInvite, syncServer, type ApiAccessLog, type ApiAudit, type ApiDomain, type ApiInvite, type ApiOverview, type ApiPlugin, type ApiPluginDetail, type ApiServer, type ApiServerDetail, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type OauthSettings, type PlatformSettings, type PluginAction, type PluginHealthResult, type SmtpSettings, type UsageBreakdownEntry, type UsageSnapshot, updatePlatformSettings } from './api'
 
@@ -79,6 +80,14 @@ const navGroups: { labelKey: string; items: { id: Page; icon: typeof LayoutDashb
       { id: 'settings', icon: Settings },
     ],
   },
+]
+
+const settingsSections: { id: string; labelKey: string; icon: typeof Cloud }[] = [
+  { id: 'cloudflare', labelKey: 'settings.nav.cloudflare', icon: Cloud },
+  { id: 'oauth', labelKey: 'settings.nav.oauth', icon: KeyRound },
+  { id: 'invites', labelKey: 'settings.nav.invites', icon: Users },
+  { id: 'smtp', labelKey: 'settings.nav.smtp', icon: FileText },
+  { id: 'maintenance', labelKey: 'settings.nav.maintenance', icon: ShieldCheck },
 ]
 
 const currentLocale = () => i18n.resolvedLanguage ?? 'zh-CN'
@@ -159,7 +168,8 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
   const [cloudflareDiagnosis, setCloudflareDiagnosis] = useState<CloudflareDiagnosis | null>(null)
   const [apiLive, setApiLive] = useState(false)
   const [page, setPage] = useState<Page>('overview')
-  const [search, setSearch] = useState('')
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [settingsFocus, setSettingsFocus] = useState<{ section: string; nonce: number } | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [modal, setModal] = useState<'server' | 'domain' | 'plugin' | null>(null)
   const [detail, setDetail] = useState<{ kind: 'server' | 'plugin'; id: string } | null>(null)
@@ -178,6 +188,16 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
   useEffect(() => {
     document.title = `${meta.title} · Plugmesh`
   }, [meta.title])
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setPaletteOpen(true)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
   const userInitials = (authUser?.display_name ?? authUser?.email ?? '—').trim().slice(0, 2).toUpperCase()
 
   useEffect(() => {
@@ -380,17 +400,47 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
     }
   }
 
-  const filteredPlugins = useMemo(() => {
-    const current = plugins ?? []
-    if (!search.trim()) return current
-    const q = search.toLowerCase()
-    return current.filter((plugin) => `${plugin.name} ${plugin.plugin_id} ${plugin.domain_hostname ?? ''}`.toLowerCase().includes(q))
-  }, [plugins, search])
-
   const selectPage = (next: Page) => {
+    if (next === 'settings') setSettingsFocus(null)
     setPage(next)
     setSidebarOpen(false)
   }
+
+  const openSettingsSection = (section: string) => {
+    setPage('settings')
+    setSidebarOpen(false)
+    setSettingsFocus({ section, nonce: Date.now() })
+  }
+
+  const paletteItems = useMemo<CommandItem[]>(() => {
+    const items: CommandItem[] = []
+    for (const group of navGroups) {
+      for (const { id } of group.items) {
+        items.push({ id: `page:${id}`, group: t('palette.group.pages'), label: t(`nav.${id}`), run: () => selectPage(id) })
+      }
+    }
+    for (const { id, labelKey } of settingsSections) {
+      items.push({ id: `settings:${id}`, group: t('palette.group.settings'), label: t(labelKey), run: () => openSettingsSection(id) })
+    }
+    for (const server of servers ?? []) {
+      items.push({ id: `server:${server.id}`, group: t('nav.servers'), label: server.name, hint: t(`status.${server.status}`, { defaultValue: server.status }), run: () => selectPage('servers') })
+    }
+    for (const plugin of plugins ?? []) {
+      items.push({ id: `plugin:${plugin.id}`, group: t('nav.plugins'), label: plugin.name, hint: `${plugin.plugin_id} · ${plugin.server_name}`, run: () => selectPage('plugins') })
+    }
+    for (const domain of domains ?? []) {
+      items.push({ id: `domain:${domain.id}`, group: t('nav.domains'), label: domain.hostname, hint: domain.plugin_name, run: () => selectPage('domains') })
+    }
+    for (const log of (accessLogs ?? []).slice(0, 30)) {
+      items.push({ id: `log:${log.id}`, group: t('nav.logs'), label: `${log.hostname}${log.path}`, hint: `${log.method} · ${log.status}`, run: () => selectPage('logs') })
+    }
+    for (const audit of (audits ?? []).slice(0, 30)) {
+      items.push({ id: `audit:${audit.id}`, group: t('nav.audit'), label: auditActionLabel(audit.action), hint: audit.actor_name ?? t('audit.systemEvent'), run: () => selectPage('audit') })
+    }
+    return items
+    // selectPage/openSettingsSection 只改写页面状态，依赖下列数据即可。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessLogs, audits, domains, plugins, servers, t])
 
   const exportAccessLogs = () => {
     const rows = accessLogs ?? []
@@ -431,7 +481,7 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
         <header className="topbar">
           <div className="topbar-leading"><IconButton label={t('shell.openNav')} onClick={() => setSidebarOpen(true)}><Menu size={18} /></IconButton><div className="breadcrumbs"><span>{t('shell.console')}</span><span>/</span><strong>{meta.title}</strong></div></div>
           <div className="topbar-actions">
-            <label className="search-box"><Search size={15} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('shell.search')} /><span className="shortcut"><Command size={11} /> K</span></label>
+            <button type="button" className="search-box" onClick={() => setPaletteOpen(true)} aria-label={t('palette.title')}><Search size={15} /><span className="search-label">{t('shell.search')}</span><span className="shortcut"><Command size={11} /> K</span></button>
             <div className="theme-menu"><Sun size={16} aria-hidden="true" /><Select aria-label={t('theme.select')} value={theme} onChange={(value) => setTheme(value)} variant="borderless" popupMatchSelectWidth={false} options={[{ value: 'dark', label: t('theme.dark') }, { value: 'light', label: t('theme.light') }, { value: 'system', label: t('theme.system') }]} /></div>
             <div className="theme-menu language-menu"><Globe2 size={16} aria-hidden="true" /><Select aria-label={t('language.select')} value={language} onChange={(value) => changeLanguage(value)} variant="borderless" popupMatchSelectWidth={false} options={[{ value: 'zh-CN', label: t('language.zh') }, { value: 'en', label: t('language.en') }]} /></div>
             <IconButton label={t('shell.auditEvents')} onClick={() => selectPage('audit')}><Activity size={16} /></IconButton>
@@ -444,17 +494,18 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
             {dataError && <div className="notice-bar compact"><div className="notice-icon"><AlertCircle size={16} /></div><div><strong>{t('shell.loadFailed')}</strong><span>{translateError(dataError ?? '')}</span></div><button onClick={() => void refreshData()}>{t('shell.retry')} <RefreshCw size={14} /></button></div>}
             {page === 'overview' && <Overview overview={overview} usage={usage} localUsage={localUsage} settings={platformSettings} audits={audits ?? []} accessLogs={accessLogs} accessLogsLoading={accessLogsLoading} accessLogsError={accessLogsError} servers={servers ?? []} range={range} setRange={setRange} onNavigate={selectPage} />}
             {page === 'servers' && <Servers servers={servers ?? []} loading={dataLoading} onRefresh={() => void refreshData()} onBind={() => setModal('server')} onDetail={(id) => void openDetail('server', id)} />}
-            {page === 'plugins' && <Plugins plugins={filteredPlugins} loading={dataLoading} onAction={() => void syncManifests()} onLoad={() => setModal('plugin')} onDetail={(id) => void openDetail('plugin', id)} onHealth={(plugin) => void runHealthCheck(plugin)} />}
+            {page === 'plugins' && <Plugins plugins={plugins ?? []} loading={dataLoading} onAction={() => void syncManifests()} onLoad={() => setModal('plugin')} onDetail={(id) => void openDetail('plugin', id)} onHealth={(plugin) => void runHealthCheck(plugin)} />}
             {page === 'domains' && <Domains domains={domains ?? []} loading={dataLoading} onAction={notify} onRefresh={() => void refreshData()} onAssign={() => setModal('domain')} />}
             {page === 'usage' && <Usage settings={platformSettings} usage={usage} localUsage={localUsage} loading={usageLoading} error={usageError} onNavigate={selectPage} />}
             {page === 'logs' && <AccessLogs logs={accessLogs ?? []} loading={accessLogsLoading} error={accessLogsError} onExport={exportAccessLogs} />}
             {page === 'audit' && <Audit audits={audits ?? []} loading={auditLoading} error={auditError} onExport={exportAudit} />}
-            {page === 'settings' && <SettingsPage settings={platformSettings} apiLive={apiLive} onSettingsChange={setPlatformSettings} cloudflareSettings={cloudflareSettings} onCloudflareChange={setCloudflareSettings} cloudflareDiagnosis={cloudflareDiagnosis} onDismissCloudflareDiagnosis={() => setCloudflareDiagnosis(null)} smtpSettings={smtpSettings} onSmtpChange={setSmtpSettings} oauthSettings={oauthSettings} onOauthChange={setOauthSettings} invites={invites} onInvitesChange={setInvites} onAction={notify} />}
+            {page === 'settings' && <SettingsPage focusSection={settingsFocus} settings={platformSettings} apiLive={apiLive} onSettingsChange={setPlatformSettings} cloudflareSettings={cloudflareSettings} onCloudflareChange={setCloudflareSettings} cloudflareDiagnosis={cloudflareDiagnosis} onDismissCloudflareDiagnosis={() => setCloudflareDiagnosis(null)} smtpSettings={smtpSettings} onSmtpChange={setSmtpSettings} oauthSettings={oauthSettings} onOauthChange={setOauthSettings} invites={invites} onInvitesChange={setInvites} onAction={notify} />}
           </div>
         </div>
       </main>
       {modal && <Modal type={modal} plugins={plugins ?? []} onClose={() => setModal(null)} onConfirm={(input) => confirmModal(modal, input)} />}
       {detail && <DetailModal detail={detail} data={detailData} loading={detailLoading} error={detailError} healthLoading={healthPluginId === detail.id} actionLoading={pluginActionLoading?.id === detail.id ? pluginActionLoading.action : null} onClose={() => setDetail(null)} onOpenPlugin={(id) => void openDetail('plugin', id)} onHealth={(plugin) => void runHealthCheck(plugin)} onAction={(plugin, action) => void runPluginAction(plugin, action)} />}
+      {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} items={paletteItems} />}
     </div>
   )
 }
@@ -670,7 +721,7 @@ function Audit({ audits, loading, error, onExport }: { audits: ApiAudit[]; loadi
   return <div className="stack">{error && <div className="notice-bar compact"><div className="notice-icon"><AlertCircle size={16} /></div><div><strong>{t('audit.loadFailed')}</strong><span>{translateError(error)}</span></div></div>}<div className="filter-row"><div className="filter-summary"><ListFilter size={15} />{t('audit.allEvents')} <span className="divider" />{t('audit.last180Days')}</div><button className="button secondary small" onClick={onExport} disabled={loading || audits.length === 0}><Download size={14} />{t('audit.export')}</button></div>{loading ? <div className="empty-panel"><div className="empty-illustration"><RefreshCw size={20} /></div><h3>{t('audit.loadingTitle')}</h3><p>{t('audit.loadingBody')}</p></div> : audits.length === 0 ? <div className="empty-panel"><div className="empty-illustration"><Activity size={20} /></div><h3>{t('audit.emptyTitle')}</h3><p>{t('audit.emptyBody')}</p></div> : <div className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>{t('audit.columnEvent')}</th><th>{t('audit.columnDetail')}</th><th>{t('audit.columnActor')}</th><th>{t('audit.columnTime')}</th></tr></thead><tbody>{audits.map((item) => <tr key={item.id}><td><div className="cell-title"><div className="audit-icon"><Activity size={14} /></div><strong>{auditActionLabel(item.action)}</strong></div></td><td>{auditDetail(item)}</td><td><span className="operator"><div className="mini-avatar">{(item.actor_name ?? t('common.system')).slice(0, 1)}</div><span>{item.actor_name ?? t('audit.systemEvent')}<small>{item.actor_email ?? t('audit.noIdentity')}</small></span></span></td><td className="muted">{formatDateTime(item.created_at)}</td></tr>)}</tbody></table></div></div>}</div>
 }
 
-function SettingsPage({ settings, onSettingsChange, apiLive, cloudflareSettings, onCloudflareChange, cloudflareDiagnosis, onDismissCloudflareDiagnosis, smtpSettings, onSmtpChange, oauthSettings, onOauthChange, invites, onInvitesChange, onAction }: { settings: PlatformSettings | null; onSettingsChange: (settings: PlatformSettings) => void; cloudflareSettings: CloudflareSettings | null; onCloudflareChange: (settings: CloudflareSettings) => void; cloudflareDiagnosis: CloudflareDiagnosis | null; onDismissCloudflareDiagnosis: () => void; smtpSettings: SmtpSettings | null; onSmtpChange: (settings: SmtpSettings) => void; oauthSettings: OauthSettings | null; onOauthChange: (settings: OauthSettings) => void; invites: ApiInvite[] | null; onInvitesChange: (invites: ApiInvite[]) => void; onAction: Notify; apiLive: boolean }) {
+function SettingsPage({ focusSection, settings, onSettingsChange, apiLive, cloudflareSettings, onCloudflareChange, cloudflareDiagnosis, onDismissCloudflareDiagnosis, smtpSettings, onSmtpChange, oauthSettings, onOauthChange, invites, onInvitesChange, onAction }: { focusSection: { section: string; nonce: number } | null; settings: PlatformSettings | null; onSettingsChange: (settings: PlatformSettings) => void; cloudflareSettings: CloudflareSettings | null; onCloudflareChange: (settings: CloudflareSettings) => void; cloudflareDiagnosis: CloudflareDiagnosis | null; onDismissCloudflareDiagnosis: () => void; smtpSettings: SmtpSettings | null; onSmtpChange: (settings: SmtpSettings) => void; oauthSettings: OauthSettings | null; onOauthChange: (settings: OauthSettings) => void; invites: ApiInvite[] | null; onInvitesChange: (invites: ApiInvite[]) => void; onAction: Notify; apiLive: boolean }) {
   const { t } = useTranslation()
   const [saving, setSaving] = useState(false)
   const [quotaSaving, setQuotaSaving] = useState(false)
@@ -679,13 +730,12 @@ function SettingsPage({ settings, onSettingsChange, apiLive, cloudflareSettings,
   const [domainSuffix, setDomainSuffix] = useState('')
   const [activeSection, setActiveSection] = useState('cloudflare')
   const maintenance = settings?.maintenance ?? false
-  const sectionNav = [
-    { id: 'cloudflare', label: 'Cloudflare', icon: Cloud },
-    { id: 'oauth', label: t('settings.nav.oauth'), icon: KeyRound },
-    { id: 'invites', label: t('settings.nav.invites'), icon: Users },
-    { id: 'smtp', label: t('settings.nav.smtp'), icon: FileText },
-    { id: 'maintenance', label: t('settings.nav.maintenance'), icon: ShieldCheck },
-  ]
+  const sectionNav = settingsSections.map(({ id, labelKey, icon }) => ({ id, label: t(labelKey), icon }))
+  useEffect(() => {
+    if (!focusSection) return
+    setActiveSection(focusSection.section)
+    document.getElementById(`settings-${focusSection.section}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [focusSection])
   useEffect(() => {
     const scroller = document.querySelector('.page-scroll')
     const sections = sectionNav.map(({ id }) => document.getElementById(`settings-${id}`)).filter((section): section is HTMLElement => section !== null)

@@ -419,6 +419,46 @@ test('管理端设置导航随滚动联动并保持可见', async ({ page }) => 
   await expect(nav.getByRole('button', { name: 'Cloudflare', exact: true })).toHaveAttribute('aria-current', 'page')
 })
 
+test('管理端命令面板跨实体搜索并跳转', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const worker = await mockWorker(page)
+  worker.servers = [onlineServer]
+  worker.plugins = [enabledPlugin]
+  worker.domains = [onlineDomain]
+  worker.audits = [auditEntry]
+  worker.accessLogs = [accessLogEntry]
+  const pluginsLoaded = page.waitForResponse((response) => response.url().endsWith('/api/plugins'))
+  await page.goto('/')
+  worker.releaseLogs()
+  await pluginsLoaded
+
+  await page.keyboard.press('Control+k')
+  const palette = page.locator('.command-palette')
+  await expect(palette).toBeVisible()
+  await expect(palette.getByText('页面', { exact: true })).toBeVisible()
+  await expect(palette.getByText('设置', { exact: true })).toBeVisible()
+  await expect(palette.getByText('本地开发服务器', { exact: true })).toBeVisible()
+
+  const input = palette.getByRole('textbox', { name: '命令面板' })
+  await input.fill('示例插件')
+  await expect(palette.locator('.command-item').first()).toContainText('示例插件')
+  await input.press('Enter')
+  await expect(palette).toBeHidden()
+  await expect(page.getByRole('heading', { name: '插件实例' })).toBeVisible()
+
+  await page.keyboard.press('Control+k')
+  await expect(palette).toBeVisible()
+  await palette.getByRole('textbox', { name: '命令面板' }).fill('维护')
+  await palette.getByRole('textbox', { name: '命令面板' }).press('Enter')
+  await expect(page.getByRole('heading', { name: '系统设置' })).toBeVisible()
+  await expect(page.getByRole('navigation', { name: '系统设置' }).getByRole('button', { name: '维护、域名与配额' })).toHaveAttribute('aria-current', 'page')
+
+  await page.keyboard.press('Control+k')
+  await expect(palette).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(palette).toBeHidden()
+})
+
 const enabledPlugin = {
   id: 'plugin-1',
   plugin_id: 'demo',
