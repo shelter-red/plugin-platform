@@ -1,8 +1,10 @@
 import { useTranslation } from 'react-i18next'
+import { Alert, Button, Card, List, Progress, Segmented, Statistic } from 'antd'
 import { Activity, AlertCircle, ArrowUpRight, Box, Check, Cloud, Database, Globe2, HardDrive, RefreshCw, Server, ShieldCheck, Zap } from 'lucide-react'
 import type { ApiAccessLog, ApiAudit, ApiOverview, ApiServer, CloudflareUsage, LocalUsage, PlatformSettings, UsageSnapshot } from '../../api'
 import type { Page } from '../../app/routes'
-import { IconButton } from '../../components/IconButton'
+import { EmptyState } from '../../components/EmptyState'
+import { Panel } from '../../components/Panel'
 import { StatusBadge } from '../../components/StatusBadge'
 import { translateError } from '../../errors'
 import { auditActionLabel, auditDetail } from '../../lib/audit'
@@ -36,23 +38,71 @@ export function OverviewPage({ overview, usage, localUsage, settings, audits, ac
   const recentErrors = (accessLogs ?? []).filter((log) => log.status >= 500).slice(0, 3)
   const connectionIssues = servers.filter((server) => server.status !== 'online').slice(0, 3)
   return <>
-    <div className="notice-bar"><div className="notice-icon"><ShieldCheck size={16} /></div><div><strong>{overview ? t('overview.noticeConnected') : t('overview.noticeWaiting')}</strong><span>{overview ? t('overview.noticeConnectedBody') : t('overview.noticeWaitingBody')}</span></div><StatusBadge tone={settings ? settings.maintenance ? 'warning' : 'success' : 'neutral'}>{settings ? settings.maintenance ? t('overview.maintenance.on') : t('overview.maintenance.off') : t('overview.maintenance.unknown')}</StatusBadge><button onClick={() => onNavigate('settings')}>{t('overview.configure')} <ArrowUpRight size={14} /></button></div>
+    <Alert
+      className="notice-bar"
+      type={settings?.maintenance ? 'warning' : 'success'}
+      showIcon
+      icon={<ShieldCheck size={16} />}
+      message={overview ? t('overview.noticeConnected') : t('overview.noticeWaiting')}
+      description={overview ? t('overview.noticeConnectedBody') : t('overview.noticeWaitingBody')}
+      action={<div className="notice-actions"><StatusBadge tone={settings ? settings.maintenance ? 'warning' : 'success' : 'neutral'}>{settings ? settings.maintenance ? t('overview.maintenance.on') : t('overview.maintenance.off') : t('overview.maintenance.unknown')}</StatusBadge><Button type="link" size="small" onClick={() => onNavigate('settings')}>{t('overview.configure')} <ArrowUpRight size={14} /></Button></div>}
+    />
     <section className="metric-grid">
-      <Metric label={t('overview.metric.onlineServers')} value={onlineServers} suffix="" note={apiNote} icon={Server} tone="green" onClick={() => onNavigate('servers')} />
-      <Metric label={t('overview.metric.enabledPlugins')} value={enabledPlugins} suffix="" note={apiNote} icon={Box} tone="blue" onClick={() => onNavigate('plugins')} />
-      <Metric label={t('overview.metric.domains')} value={domains} suffix="" note={apiNote} icon={Globe2} tone="purple" onClick={() => onNavigate('domains')} />
-      <Metric label={t('overview.metric.connections')} value={activeConnections} suffix="" note={localNote} icon={Zap} tone="amber" onClick={() => onNavigate('usage')} />
+      <Metric label={t('overview.metric.onlineServers')} value={onlineServers} note={apiNote} icon={Server} tone="green" onClick={() => onNavigate('servers')} />
+      <Metric label={t('overview.metric.enabledPlugins')} value={enabledPlugins} note={apiNote} icon={Box} tone="blue" onClick={() => onNavigate('plugins')} />
+      <Metric label={t('overview.metric.domains')} value={domains} note={apiNote} icon={Globe2} tone="purple" onClick={() => onNavigate('domains')} />
+      <Metric label={t('overview.metric.connections')} value={activeConnections} note={localNote} icon={Zap} tone="amber" onClick={() => onNavigate('usage')} />
     </section>
     <section className="content-grid two-thirds">
-      <div className="panel chart-panel"><div className="panel-header"><div><h2>{t('overview.trend.title')}</h2><p>{t('overview.trend.subtitle')}</p></div><div className="segmented">{(['24h', '7d', '30d'] as const).map((item) => <button className={range === item ? 'selected' : ''} key={item} onClick={() => setRange(item)}>{item}</button>)}</div></div><RequestTrend range={range} snapshots={localUsage?.snapshots ?? []} /></div>
-      <div className="panel"><div className="panel-header"><div><h2>{t('overview.resources.title')}</h2><p>{t('overview.resources.subtitle')}</p></div><IconButton label={t('overview.resources.detail')} onClick={() => onNavigate('usage')}><ArrowUpRight size={15} /></IconButton></div><div className="resource-list"><Resource label={t('overview.resources.requests')} value={requestCount} limit={requestLimit} percent={requestPercent} icon={Cloud} /><Resource label={t('overview.resources.r2')} value={r2Value} limit={r2Limit} percent={r2Percent} icon={HardDrive} /><Resource label={t('overview.resources.d1')} value={d1Queries === null ? '—' : formatNumber(d1Queries)} limit={d1Limit} percent={d1Percent} icon={Database} /><Resource label={t('overview.resources.kv')} value={kvOperations === null ? '—' : formatNumber(kvOperations)} limit={kvLimit} percent={kvPercent} icon={HardDrive} /><Resource label={t('overview.resources.durableObjects')} value={durableObjectRequests === null ? '—' : formatNumber(durableObjectRequests)} limit={durableObjectLimit} percent={durableObjectPercent} icon={Activity} /></div><div className="resource-sources"><span>{usage?.updatedAt ? t('overview.resources.officialUpdated', { time: formatDateTime(usage.updatedAt) }) : t('overview.resources.officialMissing')}</span><span>{localUsage?.updatedAt ? t('overview.resources.localUpdated', { time: formatDateTime(localUsage.updatedAt) }) : t('overview.resources.localMissing')}</span></div><button className="text-link" onClick={() => onNavigate('usage')}>{t('overview.resources.allQuotas')} <ArrowUpRight size={14} /></button></div>
+      <Panel title={t('overview.trend.title')} subtitle={t('overview.trend.subtitle')} extra={<Segmented size="small" value={range} onChange={(value) => setRange(value as '24h' | '7d' | '30d')} options={['24h', '7d', '30d']} />}>
+        <RequestTrend range={range} snapshots={localUsage?.snapshots ?? []} />
+      </Panel>
+      <Panel title={t('overview.resources.title')} subtitle={t('overview.resources.subtitle')} extra={<Button type="text" size="small" aria-label={t('overview.resources.detail')} title={t('overview.resources.detail')} onClick={() => onNavigate('usage')} icon={<ArrowUpRight size={15} />} />}>
+        <div className="resource-list">
+          <Resource label={t('overview.resources.requests')} value={requestCount} limit={requestLimit} percent={requestPercent} icon={Cloud} />
+          <Resource label={t('overview.resources.r2')} value={r2Value} limit={r2Limit} percent={r2Percent} icon={HardDrive} />
+          <Resource label={t('overview.resources.d1')} value={d1Queries === null ? '—' : formatNumber(d1Queries)} limit={d1Limit} percent={d1Percent} icon={Database} />
+          <Resource label={t('overview.resources.kv')} value={kvOperations === null ? '—' : formatNumber(kvOperations)} limit={kvLimit} percent={kvPercent} icon={HardDrive} />
+          <Resource label={t('overview.resources.durableObjects')} value={durableObjectRequests === null ? '—' : formatNumber(durableObjectRequests)} limit={durableObjectLimit} percent={durableObjectPercent} icon={Activity} />
+        </div>
+        <div className="resource-sources"><span>{usage?.updatedAt ? t('overview.resources.officialUpdated', { time: formatDateTime(usage.updatedAt) }) : t('overview.resources.officialMissing')}</span><span>{localUsage?.updatedAt ? t('overview.resources.localUpdated', { time: formatDateTime(localUsage.updatedAt) }) : t('overview.resources.localMissing')}</span></div>
+        <Button type="link" size="small" onClick={() => onNavigate('usage')}>{t('overview.resources.allQuotas')} <ArrowUpRight size={14} /></Button>
+      </Panel>
     </section>
-    <section className="content-grid two-thirds bottom-grid"><div className="panel"><div className="panel-header"><div><h2>{t('overview.activity.title')}</h2><p>{t('overview.activity.subtitle')}</p></div><button className="text-link" onClick={() => onNavigate('audit')}>{t('overview.activity.viewAll')} <ArrowUpRight size={14} /></button></div>{audits.length > 0 ? <div className="activity-list">{audits.slice(0, 3).map((item) => <div className="activity-item" key={item.id}><div className="activity-mark success"><Check size={13} /></div><div className="activity-copy"><strong>{auditActionLabel(item.action)}</strong><span>{auditDetail(item)}</span></div><time>{formatDateTime(item.created_at)}</time></div>)}</div> : <div className="empty-panel"><div className="empty-illustration"><Activity size={20} /></div><h3>{t('overview.activity.emptyTitle')}</h3><p>{t('overview.activity.emptyBody')}</p></div>}</div><div className="panel quick-panel"><div className="panel-header"><div><h2>{t('overview.quick.title')}</h2><p>{t('overview.quick.subtitle')}</p></div></div><QuickStep number="01" title={t('overview.quick.bindTitle')} detail={t('overview.quick.bindDetail')} onClick={() => onNavigate('servers')} /><QuickStep number="02" title={t('overview.quick.loadTitle')} detail={t('overview.quick.loadDetail')} onClick={() => onNavigate('plugins')} /><QuickStep number="03" title={t('overview.quick.domainTitle')} detail={t('overview.quick.domainDetail')} onClick={() => onNavigate('domains')} /></div></section>
-    <section className="panel bottom-grid"><div className="panel-header"><div><h2>{t('overview.errors.title')}</h2><p>{t('overview.errors.subtitle')}</p></div><button className="text-link" onClick={() => onNavigate('logs')}>{t('overview.errors.viewAll')} <ArrowUpRight size={14} /></button></div>{connectionIssues.length > 0 || (!accessLogsError && !accessLogsLoading && recentErrors.length > 0) ? <div className="activity-list">{connectionIssues.map((server) => <div className="activity-item" key={server.id}><div className="activity-mark danger"><Server size={13} /></div><div className="activity-copy"><strong>{server.name}</strong><span>{server.last_seen_at ? t('servers.lastSeen', { time: formatDateTime(server.last_seen_at) }) : t('servers.neverConnected')}</span></div><StatusBadge tone="danger">{t(`status.${server.status}`, { defaultValue: server.status })}</StatusBadge></div>)}{recentErrors.map((log) => <div className="activity-item" key={log.id}><div className="activity-mark danger"><AlertCircle size={13} /></div><div className="activity-copy"><strong>{log.hostname}{log.path}</strong><span>{log.method} · {log.error ?? t('overview.errors.unknownError')}</span></div><StatusBadge tone="danger">{log.status}</StatusBadge><time>{formatDateTime(log.created_at)}</time></div>)}</div> : accessLogsError ? <div className="notice-bar compact"><div className="notice-icon"><AlertCircle size={16} /></div><div><strong>{t('overview.errors.loadFailed')}</strong><span>{translateError(accessLogsError)}</span></div></div> : accessLogsLoading ? <div className="empty-panel"><div className="empty-illustration"><RefreshCw size={20} /></div><h3>{t('overview.errors.loadingTitle')}</h3><p>{t('overview.errors.loadingBody')}</p></div> : <div className="empty-panel"><div className="empty-illustration"><ShieldCheck size={20} /></div><h3>{t('overview.errors.emptyTitle')}</h3><p>{t('overview.errors.emptyBody')}</p></div>}</section>
+    <section className="content-grid two-thirds bottom-grid">
+      <Panel title={t('overview.activity.title')} subtitle={t('overview.activity.subtitle')} extra={<Button type="link" size="small" onClick={() => onNavigate('audit')}>{t('overview.activity.viewAll')} <ArrowUpRight size={14} /></Button>}>
+        {audits.length > 0
+          ? <List className="activity-list" dataSource={audits.slice(0, 3)} rowKey="id" renderItem={(item) => <List.Item className="activity-item"><div className="activity-mark success"><Check size={13} /></div><div className="activity-copy"><strong>{auditActionLabel(item.action)}</strong><span>{auditDetail(item)}</span></div><time>{formatDateTime(item.created_at)}</time></List.Item>} />
+          : <EmptyState icon={<Activity size={20} />} title={t('overview.activity.emptyTitle')} body={t('overview.activity.emptyBody')} />}
+      </Panel>
+      <Panel className="quick-panel" title={t('overview.quick.title')} subtitle={t('overview.quick.subtitle')}>
+        <QuickStep number="01" title={t('overview.quick.bindTitle')} detail={t('overview.quick.bindDetail')} onClick={() => onNavigate('servers')} />
+        <QuickStep number="02" title={t('overview.quick.loadTitle')} detail={t('overview.quick.loadDetail')} onClick={() => onNavigate('plugins')} />
+        <QuickStep number="03" title={t('overview.quick.domainTitle')} detail={t('overview.quick.domainDetail')} onClick={() => onNavigate('domains')} />
+      </Panel>
+    </section>
+    <Panel title={t('overview.errors.title')} subtitle={t('overview.errors.subtitle')} extra={<Button type="link" size="small" onClick={() => onNavigate('logs')}>{t('overview.errors.viewAll')} <ArrowUpRight size={14} /></Button>}>
+      {connectionIssues.length > 0 || (!accessLogsError && !accessLogsLoading && recentErrors.length > 0)
+        ? <List className="activity-list" rowKey={(item) => item.kind === 'server' ? item.server.id : item.log.id} dataSource={[...connectionIssues.map((server) => ({ kind: 'server' as const, server })), ...recentErrors.map((log) => ({ kind: 'log' as const, log }))]} renderItem={(item) => item.kind === 'server'
+          ? <List.Item className="activity-item" key={item.server.id}><div className="activity-mark danger"><Server size={13} /></div><div className="activity-copy"><strong>{item.server.name}</strong><span>{item.server.last_seen_at ? t('servers.lastSeen', { time: formatDateTime(item.server.last_seen_at) }) : t('servers.neverConnected')}</span></div><StatusBadge tone="danger">{t(`status.${item.server.status}`, { defaultValue: item.server.status })}</StatusBadge></List.Item>
+          : <List.Item className="activity-item" key={item.log.id}><div className="activity-mark danger"><AlertCircle size={13} /></div><div className="activity-copy"><strong>{item.log.hostname}{item.log.path}</strong><span>{item.log.method} · {item.log.error ?? t('overview.errors.unknownError')}</span></div><StatusBadge tone="danger">{item.log.status}</StatusBadge><time>{formatDateTime(item.log.created_at)}</time></List.Item>} />
+        : accessLogsError
+          ? <Alert type="error" showIcon message={t('overview.errors.loadFailed')} description={translateError(accessLogsError)} />
+          : accessLogsLoading
+            ? <EmptyState icon={<RefreshCw size={20} />} title={t('overview.errors.loadingTitle')} body={t('overview.errors.loadingBody')} />
+            : <EmptyState icon={<ShieldCheck size={20} />} title={t('overview.errors.emptyTitle')} body={t('overview.errors.emptyBody')} />}
+    </Panel>
   </>
 }
 
-function Metric({ label, value, suffix, note, icon: Icon, tone, onClick }: { label: string; value: string; suffix: string; note: string; icon: typeof Server; tone: string; onClick: () => void }) { return <button className="metric-card" onClick={onClick}><div className={`metric-icon ${tone}`}><Icon size={17} /></div><div className="metric-label">{label}<ArrowUpRight size={13} /></div><div className="metric-number">{value}<small>{suffix}</small></div><div className="metric-note"><span className="status-dot green" />{note}</div></button> }
+function Metric({ label, value, note, icon: Icon, tone, onClick }: { label: string; value: string; note: string; icon: typeof Server; tone: string; onClick: () => void }) {
+  return <Card className="metric-card" hoverable onClick={onClick} role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onClick() } }}>
+    <div className={`metric-icon ${tone}`}><Icon size={17} /></div>
+    <div className="metric-label">{label}<ArrowUpRight size={13} /></div>
+    <Statistic className="metric-number" value={value} />
+    <div className="metric-note"><span className="status-dot green" />{note}</div>
+  </Card>
+}
 
 function RequestTrend({ range, snapshots }: { range: '24h' | '7d' | '30d'; snapshots: UsageSnapshot[] }) {
   const { t } = useTranslation()
@@ -76,7 +126,9 @@ function formatTrendTime(value: string): string {
 
 function Resource({ label, value, limit, percent, icon: Icon }: { label: string; value: string; limit: string; percent: number; icon: typeof Cloud }) {
   const { t } = useTranslation()
-  return <div className="resource"><div className="resource-top"><div className="resource-label"><Icon size={15} />{label}</div><strong>{value}</strong></div><div className="progress" role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(percent)}><span style={{ width: `${percent}%` }} /></div><div className="resource-bottom"><span>{t('common.currentUsage')}</span><span>{limit}</span></div></div>
+  return <div className="resource"><div className="resource-top"><div className="resource-label"><Icon size={15} />{label}</div><strong>{value}</strong></div><Progress percent={Math.round(percent)} showInfo={false} size="small" aria-label={label} /><div className="resource-bottom"><span>{t('common.currentUsage')}</span><span>{limit}</span></div></div>
 }
 
-function QuickStep({ number, title, detail, done, onClick }: { number: string; title: string; detail: string; done?: boolean; onClick: () => void }) { return <button className="quick-step" onClick={onClick}><span className={`step-number ${done ? 'done' : ''}`}>{done ? <Check size={13} /> : number}</span><span className="step-copy"><strong>{title}</strong><small>{detail}</small></span><ArrowUpRight size={14} /></button> }
+function QuickStep({ number, title, detail, done, onClick }: { number: string; title: string; detail: string; done?: boolean; onClick: () => void }) {
+  return <Button type="text" block className="quick-step" onClick={onClick}><span className={`step-number ${done ? 'done' : ''}`}>{done ? <Check size={13} /> : number}</span><span className="step-copy"><strong>{title}</strong><small>{detail}</small></span><ArrowUpRight size={14} /></Button>
+}

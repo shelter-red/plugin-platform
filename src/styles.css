@@ -267,3 +267,12 @@ table { width: 100%; border-collapse: collapse; font-size: 11px; } th { padding:
 .table-panel .ant-table-tbody > tr:last-child > td { border-bottom: 0; }
 .table-panel .ant-table-tbody > tr.ant-table-row:hover > td { background: var(--surface-strong); }
 .table-panel .ant-table-cell::before { display: none !important; }
+.notice-actions { display: flex; align-items: center; gap: 8px; }
+.resource .ant-progress { margin: 8px 0 5px; line-height: 1; }
+.resource .ant-progress .ant-progress-inner { background: rgba(255,255,255,.09); }
+.theme-light .resource .ant-progress .ant-progress-inner { background: rgba(24,24,27,.08); }
+.activity-list.ant-list { padding: 0 16px 12px; }
+.activity-list .ant-list-item { padding: 11px 0; border-block-end: 0; }
+.activity-list .ant-list-item + .ant-list-item { border-top: 1px solid var(--line); }
+.resource-card.ant-card .ant-card-body { padding: 15px; }
+.resource-card .ant-progress { margin-top: 16px; }
