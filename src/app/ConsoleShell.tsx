@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { App, Drawer } from 'antd'
+import { Drawer } from 'antd'
 import { CircleHelp, LogOut, UserRound } from 'lucide-react'
 import { type AppThemeMode, type ThemePreference } from '../app/theme'
 import { useToast } from '../components/ToastProvider'
 import { errorMessage } from '../errors'
 import { DetailModal } from '../components/DetailModal'
 import { ProvisionModal, type ModalInput, type ModalResult } from '../components/ProvisionModal'
-import { CommandPalette, type CommandItem } from '../components/CommandPalette'
+import { CommandPalette } from '../components/CommandPalette'
 import { DocPage } from '../components/DocPage'
 import { AccountPage } from '../features/account/AccountPage'
 import { PAGE_PATHS, docFromPath, pageFromPath, type Page } from '../app/routes'
@@ -22,17 +22,17 @@ import { UsagePage } from '../features/usage/UsagePage'
 import { AccessLogsPage } from '../features/logs/AccessLogsPage'
 import { AuditPage } from '../features/audit/AuditPage'
 import { SettingsPage } from '../features/settings/SettingsPage'
-import { settingsSections } from '../features/settings/settings-sections'
-import { Sidebar, sidebarNavGroups } from './Sidebar'
+import { Sidebar } from './Sidebar'
 import { useConsoleData } from './useConsoleData'
+import { useConsoleExports } from './useConsoleExports'
+import { usePluginActions } from './usePluginActions'
+import { buildCommandItems } from './palette'
 import { Topbar } from './Topbar'
 import { PageHeader } from './PageHeader'
-import { auditActionLabel } from '../lib/audit'
-import { downloadCsv } from '../lib/csv'
 import { useMediaQuery } from '../lib/useMediaQuery'
 import { AuthLoadingScreen } from '../features/auth/AuthLoadingScreen'
 import { LoginPage } from '../features/auth/LoginPage'
-import { assignDomain, checkPluginHealth, commandPlugin, createRegistrationCode, fetchPluginDetails, fetchServerDetails, syncServer, type ApiPlugin, type ApiPluginDetail, type ApiServerDetail, type PluginAction, type PluginHealthResult } from '../api'
+import { assignDomain, commandPlugin, createRegistrationCode, syncServer } from '../api'
 
 export type ConsoleProps = {
   theme: ThemePreference
@@ -43,7 +43,6 @@ export type ConsoleProps = {
 
 export function ConsoleShell({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
   const { t, i18n: translator } = useTranslation()
-  const modalApi = App.useApp().modal
   // ≤1000px 侧栏收成图标条，≤760px 改用抽屉展示，两处都需要改变结构而不只是样式。
   const compactNav = useMediaQuery('(max-width: 1000px)')
   const mobileNav = useMediaQuery('(max-width: 760px)')
@@ -55,12 +54,6 @@ export function ConsoleShell({ theme, setTheme, effectiveTheme, language }: Cons
   const [settingsFocus, setSettingsFocus] = useState<{ section: string; nonce: number } | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [modal, setModal] = useState<'server' | 'domain' | 'plugin' | null>(null)
-  const [detail, setDetail] = useState<{ kind: 'server' | 'plugin'; id: string } | null>(null)
-  const [detailData, setDetailData] = useState<{ kind: 'server'; value: ApiServerDetail } | { kind: 'plugin'; value: ApiPluginDetail } | null>(null)
-  const [detailLoading, setDetailLoading] = useState(false)
-  const [detailError, setDetailError] = useState<string | null>(null)
-  const [healthPluginId, setHealthPluginId] = useState<string | null>(null)
-  const [pluginActionLoading, setPluginActionLoading] = useState<{ id: string; action: Exclude<PluginAction, 'health'> } | null>(null)
 
   const changeLanguage = (next: Language) => {
     storeLanguage(next)
@@ -82,11 +75,13 @@ export function ConsoleShell({ theme, setTheme, effectiveTheme, language }: Cons
     platformSettings, setPlatformSettings, cloudflareSettings, setCloudflareSettings, smtpSettings, setSmtpSettings, oauthSettings, setOauthSettings,
     cloudflareDiagnosis, setCloudflareDiagnosis, apiLive, range, setRange, refreshData, refreshUsage, reloadWorkspaces,
   } = data
+  const { detail, detailData, detailLoading, detailError, openDetail, closeDetail, healthPluginId, pluginActionLoading, runHealthCheck, runPluginAction } = usePluginActions({ notify, refreshData })
+  const { exportAccessLogs, exportAudit } = useConsoleExports({ accessLogs, audits, notify })
 
   // 切换工作区时同时收起打开中的弹窗与详情，避免展示上一个工作区对象。
   const switchWorkspace = (workspaceId: string) => {
     data.switchWorkspace(workspaceId)
-    setDetail(null)
+    closeDetail()
     setModal(null)
   }
 
@@ -139,61 +134,6 @@ export function ConsoleShell({ theme, setTheme, effectiveTheme, language }: Cons
     return { kind: 'domain', hostname: result.hostname }
   }
 
-  const openDetail = async (kind: 'server' | 'plugin', id: string) => {
-    setDetail({ kind, id })
-    setDetailData(null)
-    setDetailError(null)
-    setDetailLoading(true)
-    try {
-      if (kind === 'server') setDetailData({ kind, value: await fetchServerDetails(id) })
-      else setDetailData({ kind, value: await fetchPluginDetails(id) })
-    } catch (error) {
-      setDetailError(errorMessage(error, 'toast.detailFailed'))
-    } finally {
-      setDetailLoading(false)
-    }
-  }
-
-  const runHealthCheck = async (plugin: ApiPlugin | { id: string; name: string }) => {
-    setHealthPluginId(plugin.id)
-    try {
-      const result: PluginHealthResult = await checkPluginHealth(plugin.id)
-      notify('success', t('toast.healthOk', { name: plugin.name, status: result.status, bodySize: result.bodySize }))
-      await refreshData(false)
-      if (detail?.kind === 'plugin' && detail.id === plugin.id) void openDetail('plugin', plugin.id)
-    } catch (error) {
-      notify('error', errorMessage(error, 'toast.healthFailed'))
-    } finally {
-      setHealthPluginId(null)
-    }
-  }
-
-  const executePluginAction = async (plugin: ApiPlugin, action: Exclude<PluginAction, 'health'>) => {
-    setPluginActionLoading({ id: plugin.id, action })
-    try {
-      await commandPlugin(plugin.id, action)
-      notify('success', t('toast.actionDone', { name: plugin.name, action: t(`pluginActionPast.${action}`) }))
-      await refreshData(false)
-      if (detail?.kind === 'plugin' && detail.id === plugin.id) void openDetail('plugin', plugin.id)
-    } catch (error) {
-      notify('error', errorMessage(error, 'toast.actionFailed'))
-    } finally {
-      setPluginActionLoading(null)
-    }
-  }
-
-  // 卸载不可撤销，用 AntD Modal.confirm 取代原生 window.confirm，保持主题与键盘可达。
-  const runPluginAction = (plugin: ApiPlugin, action: Exclude<PluginAction, 'health'>) => {
-    if (action !== 'unload') return executePluginAction(plugin, action)
-    modalApi.confirm({
-      title: t('toast.unloadConfirm', { name: plugin.name }),
-      okText: t('pluginCommands.unload'),
-      okButtonProps: { danger: true },
-      onOk: () => executePluginAction(plugin, action),
-    })
-    return Promise.resolve()
-  }
-
   const syncManifests = async () => {
     const onlineServerIds = [...new Set((servers ?? []).filter((server) => server.status === 'online').map((server) => server.id))]
     if (onlineServerIds.length === 0) {
@@ -215,50 +155,7 @@ export function ConsoleShell({ theme, setTheme, effectiveTheme, language }: Cons
     setSidebarOpen(false)
   }
 
-  const paletteItems = useMemo<CommandItem[]>(() => {
-    const items: CommandItem[] = []
-    for (const group of sidebarNavGroups) {
-      for (const { id } of group.items) {
-        items.push({ id: `page:${id}`, group: t('palette.group.pages'), label: t(`nav.${id}`), run: () => selectPage(id) })
-      }
-    }
-    for (const { id, labelKey } of settingsSections) {
-      items.push({ id: `settings:${id}`, group: t('palette.group.settings'), label: t(labelKey), run: () => openSettingsSection(id) })
-    }
-    for (const server of servers ?? []) {
-      items.push({ id: `server:${server.id}`, group: t('nav.servers'), label: server.name, hint: t(`status.${server.status}`, { defaultValue: server.status }), run: () => selectPage('servers') })
-    }
-    for (const plugin of plugins ?? []) {
-      items.push({ id: `plugin:${plugin.id}`, group: t('nav.plugins'), label: plugin.name, hint: `${plugin.plugin_id} · ${plugin.server_name}`, run: () => selectPage('plugins') })
-    }
-    for (const domain of domains ?? []) {
-      items.push({ id: `domain:${domain.id}`, group: t('nav.domains'), label: domain.hostname, hint: domain.plugin_name, run: () => selectPage('domains') })
-    }
-    for (const log of (accessLogs ?? []).slice(0, 30)) {
-      items.push({ id: `log:${log.id}`, group: t('nav.logs'), label: `${log.hostname}${log.path}`, hint: `${log.method} · ${log.status}`, run: () => selectPage('logs') })
-    }
-    for (const audit of (audits ?? []).slice(0, 30)) {
-      items.push({ id: `audit:${audit.id}`, group: t('nav.audit'), label: auditActionLabel(audit.action), hint: audit.actor_name ?? t('audit.systemEvent'), run: () => selectPage('audit') })
-    }
-    return items
-    // selectPage/openSettingsSection 只改写页面状态，依赖下列数据即可。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accessLogs, audits, domains, plugins, servers, t])
-
-  const exportAccessLogs = () => {
-    const rows = accessLogs ?? []
-    if (rows.length === 0) return notify('info', t('toast.noAccessLogs'))
-    downloadCsv(`plugmesh-access-logs-${new Date().toISOString().slice(0, 10)}.csv`, [t('csv.accessLogs.hostname'), t('csv.accessLogs.method'), t('csv.accessLogs.path'), t('csv.accessLogs.status'), t('csv.accessLogs.duration'), t('csv.accessLogs.error'), t('csv.accessLogs.createdAt')], rows.map((log) => [log.hostname, log.method, log.path, log.status, log.duration_ms, log.error, log.created_at]))
-    notify('success', t('toast.accessLogsExported', { count: rows.length }))
-  }
-
-  const exportAudit = () => {
-    const rows = audits ?? []
-    if (rows.length === 0) return notify('info', t('toast.noAudit'))
-    downloadCsv(`plugmesh-audit-${new Date().toISOString().slice(0, 10)}.csv`, [t('csv.audit.action'), t('csv.audit.detail'), t('csv.audit.actor'), t('csv.audit.actorEmail'), t('csv.audit.createdAt')], rows.map((item) => [item.action, item.detail_json, item.actor_name, item.actor_email, item.created_at]))
-    notify('success', t('toast.auditExported', { count: rows.length }))
-  }
-
+  const paletteItems = useMemo(() => buildCommandItems({ t, servers, plugins, domains, accessLogs, audits, onSelectPage: selectPage, onOpenSettings: openSettingsSection }), [accessLogs, audits, domains, plugins, servers, t])
   const sidebarProps = {
     compactNav: compactNav && !mobileNav,
     onClose: () => setSidebarOpen(false),
@@ -315,7 +212,7 @@ export function ConsoleShell({ theme, setTheme, effectiveTheme, language }: Cons
         </div>
       </main>
       {modal && <ProvisionModal type={modal} plugins={plugins ?? []} onClose={() => setModal(null)} onConfirm={(input) => confirmModal(modal, input)} />}
-      {detail && <DetailModal detail={detail} data={detailData} loading={detailLoading} error={detailError} healthLoading={healthPluginId === detail.id} actionLoading={pluginActionLoading?.id === detail.id ? pluginActionLoading.action : null} onClose={() => setDetail(null)} onOpenPlugin={(id) => void openDetail('plugin', id)} onHealth={(plugin) => void runHealthCheck(plugin)} onAction={(plugin, action) => void runPluginAction(plugin, action)} />}
+      {detail && <DetailModal detail={detail} data={detailData} loading={detailLoading} error={detailError} healthLoading={healthPluginId === detail.id} actionLoading={pluginActionLoading?.id === detail.id ? pluginActionLoading.action : null} onClose={closeDetail} onOpenPlugin={(id) => void openDetail('plugin', id)} onHealth={(plugin) => void runHealthCheck(plugin)} onAction={(plugin, action) => void runPluginAction(plugin, action)} />}
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} items={paletteItems} />}
     </div>
   )
