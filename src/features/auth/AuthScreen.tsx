@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Spin, Typography } from 'antd'
+import { Alert, Avatar, Button, Card, Divider, Flex, Spin, Typography } from 'antd'
 import { Code2, LockKeyhole, Network } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { AppThemeMode } from '../../app/theme'
@@ -13,17 +13,30 @@ function GithubMark({ size = 16 }: { size?: number }) {
   )
 }
 
+// 登录外壳：AntD Card 负责容器，Flex 负责垂直布局，主题变量保持明暗一致。
 function AuthShell({ mode, children }: { mode: AppThemeMode; children: React.ReactNode }) {
-  return <div className={`auth-screen theme-${mode}`}><Card className="auth-card" variant="outlined">{children}</Card></div>
+  return (
+    <div className={`auth-screen theme-${mode}`}>
+      <Card className="auth-card" variant="outlined">
+        <Flex vertical align="center" gap={0}>{children}</Flex>
+      </Card>
+    </div>
+  )
 }
 
 function BrandHeader() {
   const { t } = useTranslation()
   return (
-    <div className="auth-brand">
-      <div className="brand-mark"><Network size={17} strokeWidth={2.4} /></div>
-      <div className="auth-brand-copy"><strong>Plugmesh</strong><span>{t('brand.caption')}</span></div>
-    </div>
+    <>
+      <Flex className="auth-brand" align="center" justify="center" gap={10}>
+        <Avatar className="auth-brand-mark" shape="square" size={34} icon={<Network size={18} strokeWidth={2.4} />} />
+        <Flex vertical align="flex-start" gap={0}>
+          <Text strong className="auth-brand-name">Plugmesh</Text>
+          <Text type="secondary" className="auth-brand-caption">{t('brand.caption')}</Text>
+        </Flex>
+      </Flex>
+      <Divider className="auth-divider" />
+    </>
   )
 }
 
@@ -31,8 +44,8 @@ export function AuthLoadingScreen({ mode }: { mode: AppThemeMode }) {
   const { t } = useTranslation()
   return (
     <AuthShell mode={mode}>
-      <div className="brand-mark auth-loading-mark"><Network size={17} strokeWidth={2.4} /></div>
-      <Title level={1} className="auth-title">{t('auth.checkingTitle')}</Title>
+      <Avatar className="auth-brand-mark auth-loading-mark" shape="square" size={44} icon={<Network size={20} strokeWidth={2.4} />} />
+      <Title level={2} className="auth-title">{t('auth.checkingTitle')}</Title>
       <Paragraph type="secondary" className="auth-copy">{t('auth.checkingBody')}</Paragraph>
       <div className="auth-spinner" role="status" aria-live="polite">
         <Spin size="large" />
@@ -51,11 +64,11 @@ export function LoginPage({ mode }: { mode: AppThemeMode }) {
   return (
     <AuthShell mode={mode}>
       <BrandHeader />
-      <div className="auth-icon"><Code2 size={22} /></div>
-      <Title level={1} className="auth-title">{invite ? t('auth.inviteTitle') : t('auth.loginTitle')}</Title>
+      <Avatar className="auth-icon" shape="square" size={48} icon={<Code2 size={24} />} />
+      <Title level={2} className="auth-title">{invite ? t('auth.inviteTitle') : t('auth.loginTitle')}</Title>
       <Paragraph type="secondary" className="auth-copy">{invite ? t('auth.inviteBody') : t('auth.loginBody')}</Paragraph>
       {authError && <Alert className="auth-alert" type="error" showIcon message={authError} />}
-      <Button className="auth-submit" type="primary" size="large" block href={startUrl} icon={<GithubMark />}>{t('auth.github')}</Button>
+      <Button className="auth-submit" type="primary" size="large" block href={startUrl} icon={<GithubMark size={17} />}>{t('auth.github')}</Button>
       <Text type="secondary" className="auth-note"><LockKeyhole size={13} aria-hidden="true" />{t('auth.note')}</Text>
     </AuthShell>
   )
