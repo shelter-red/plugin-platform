@@ -32,6 +32,26 @@ export interface Env {
   CLOUDFLARE_OAUTH_SCOPE?: string
 }
 
+export type WorkspaceRole = 'owner' | 'operator' | 'viewer'
+
+export interface Workspace {
+  id: string
+  name: string
+  slug: string
+  role: WorkspaceRole
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkspaceMember {
+  user_id: string
+  display_name: string
+  email: string
+  github_id: string
+  role: WorkspaceRole
+  created_at: string
+}
+
 export interface AuthenticatedUser {
   id: string
   github_id: string

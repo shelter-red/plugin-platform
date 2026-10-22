@@ -1,10 +1,11 @@
 import { SELF } from 'cloudflare:test'
 import { beforeEach, expect, test } from 'vitest'
 import { defaultPlatformSettings, setPlatformSettingsCache } from '../src/usage'
-import { hashToken, openControl, publicRequest, reply, resetDatabase, seedServer, sendFrame, testEnv } from './helpers'
+import { addWorkspaceMember, hashToken, openControl, publicRequest, reply, resetDatabase, seedServer, sendFrame, testEnv } from './helpers'
 
 const ADMIN_TOKEN = 'admin-session-token'
 const MEMBER_TOKEN = 'member-session-token'
+const VIEWER_TOKEN = 'viewer-session-token'
 
 const authHeaders = (token: string, json = false): Record<string, string> => ({
   cookie: `plugmesh_session=${token}`,
@@ -27,21 +28,33 @@ async function seedMemberSession(token = MEMBER_TOKEN): Promise<void> {
   await testEnv.DB.prepare('INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)').bind('session-member', 'user-runtime', await hashToken(token), new Date(Date.now() + 3_600_000).toISOString(), now).run()
 }
 
+// 工作区 viewer 只读：用于验证成员越权被拒，owner（user-runtime）仍可写。
+async function seedViewerSession(token = VIEWER_TOKEN): Promise<void> {
+  const now = new Date().toISOString()
+  await testEnv.DB.batch([
+    testEnv.DB.prepare('INSERT INTO users (id, github_id, email, display_name, role, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind('user-viewer', 'gh-viewer', 'viewer@example.com', 'Viewer', 'member', now),
+    testEnv.DB.prepare('INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)').bind('session-viewer', 'user-viewer', await hashToken(token), new Date(Date.now() + 3_600_000).toISOString(), now),
+  ])
+  await addWorkspaceMember('user-viewer', 'viewer')
+}
+
 beforeEach(async () => {
   await resetDatabase()
   setPlatformSettingsCache(defaultPlatformSettings)
 })
 
-test('管理 API 校验邀请参数并拒绝成员越权操作', { timeout: 20_000 }, async () => {
+test('管理 API 校验邀请参数并拒绝工作区 viewer 越权操作', { timeout: 20_000 }, async () => {
   await seedServer()
   await seedAdmin()
   await seedMemberSession()
+  await seedViewerSession()
 
   const anonymous = await SELF.fetch('https://console.example.com/api/invites')
   expect(anonymous.status).toBe(401)
 
-  const forbidden = await api('/api/invites', MEMBER_TOKEN, { method: 'POST', body: JSON.stringify({ githubLogin: 'octocat' }) })
+  const forbidden = await api('/api/invites', VIEWER_TOKEN, { method: 'POST', body: JSON.stringify({ githubLogin: 'octocat' }) })
   expect(forbidden.status).toBe(403)
+  expect((await forbidden.json() as { error: string }).error).toBe('Workspace is read-only for viewers')
 
   for (const body of [{}, { email: 'not-an-email' }, { githubLogin: 'bad login!' }]) {
     const response = await api('/api/invites', ADMIN_TOKEN, { method: 'POST', body: JSON.stringify(body) })
@@ -66,7 +79,7 @@ test('管理 API 校验邀请参数并拒绝成员越权操作', { timeout: 20_0
   expect(rows[0].github_login).toBe('octocat')
   expect(rows[0]).not.toHaveProperty('token_hash')
 
-  expect((await api(`/api/invites/${invite.id}`, MEMBER_TOKEN, { method: 'DELETE' })).status).toBe(403)
+  expect((await api(`/api/invites/${invite.id}`, VIEWER_TOKEN, { method: 'DELETE' })).status).toBe(403)
   expect((await api(`/api/invites/${invite.id}`, ADMIN_TOKEN, { method: 'DELETE' })).status).toBe(200)
   const revoked = await api(`/api/invites/${invite.id}`, ADMIN_TOKEN, { method: 'DELETE' })
   expect(revoked.status).toBe(409)

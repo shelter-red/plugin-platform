@@ -1,4 +1,4 @@
-export type Page = 'overview' | 'servers' | 'plugins' | 'domains' | 'usage' | 'logs' | 'audit' | 'settings'
+export type Page = 'overview' | 'servers' | 'plugins' | 'domains' | 'workspaces' | 'usage' | 'logs' | 'audit' | 'settings'
 export type DocPage = 'help' | 'terms' | 'privacy' | 'account'
 
 export const PAGE_PATHS: Record<Page, string> = {
@@ -6,6 +6,7 @@ export const PAGE_PATHS: Record<Page, string> = {
   servers: '/servers',
   plugins: '/plugins',
   domains: '/domains',
+  workspaces: '/workspaces',
   usage: '/usage',
   logs: '/logs',
   audit: '/audit',

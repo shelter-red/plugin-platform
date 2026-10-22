@@ -44,7 +44,7 @@ const database = {
           return { meta: { changes: 1 } }
         }
         if (sql.includes('INSERT INTO audit_log')) {
-          audits.push(values[2] as string)
+          audits.push(values[3] as string)
           return { meta: { changes: 1 } }
         }
         return { meta: { changes: 1 } }

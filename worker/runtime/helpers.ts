@@ -7,6 +7,7 @@ export const CONTROL_TOKEN = 'runtime-control-token'
 const SERVER_ID = 'server-runtime'
 const PLUGIN_INSTANCE_ID = 'plugin-runtime'
 const PLUGIN_ID = 'sample.runtime'
+export const DEFAULT_WORKSPACE_ID = 'ws_default'
 
 export const manifest: PluginManifest = {
   id: PLUGIN_ID,
@@ -26,6 +27,8 @@ export async function hashToken(token: string): Promise<string> {
 
 export async function resetDatabase(): Promise<void> {
   await testEnv.DB.batch([
+    testEnv.DB.prepare('DELETE FROM workspace_members'),
+    testEnv.DB.prepare('DELETE FROM workspaces'),
     testEnv.DB.prepare('DELETE FROM request_logs'),
     testEnv.DB.prepare('DELETE FROM domains'),
     testEnv.DB.prepare('DELETE FROM plugin_instances'),
@@ -46,6 +49,15 @@ export async function resetDatabase(): Promise<void> {
     testEnv.DB.prepare('DELETE FROM cloudflare_credentials'),
     testEnv.DB.prepare('DELETE FROM users'),
   ])
+  const now = new Date().toISOString()
+  await testEnv.DB.batch([
+    testEnv.DB.prepare("INSERT INTO workspaces (id, name, slug, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)").bind(DEFAULT_WORKSPACE_ID, '默认工作区', 'default', null, now, now),
+  ])
+}
+
+export async function addWorkspaceMember(userId: string, role: 'owner' | 'operator' | 'viewer' = 'owner', workspaceId = DEFAULT_WORKSPACE_ID): Promise<void> {
+  await testEnv.DB.prepare('INSERT INTO workspace_members (workspace_id, user_id, role, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(workspace_id, user_id) DO UPDATE SET role = excluded.role')
+    .bind(workspaceId, userId, role, new Date().toISOString()).run()
 }
 
 export async function seedServer(options: { pluginState?: string; domainStatus?: string } = {}): Promise<string> {
@@ -53,9 +65,10 @@ export async function seedServer(options: { pluginState?: string; domainStatus?:
   const now = new Date().toISOString()
   await testEnv.DB.batch([
     testEnv.DB.prepare('INSERT INTO users (id, github_id, email, display_name, role, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind('user-runtime', 'gh-runtime', 'owner@example.com', 'Runtime Owner', 'member', now),
-    testEnv.DB.prepare('INSERT INTO servers (id, user_id, name, token_hash, status, last_seen_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(SERVER_ID, 'user-runtime', 'Runtime server', await hashToken(CONTROL_TOKEN), 'offline', null, now),
-    testEnv.DB.prepare('INSERT INTO plugin_instances (id, user_id, server_id, plugin_id, name, version, state, desired_state, manifest_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(PLUGIN_INSTANCE_ID, 'user-runtime', SERVER_ID, PLUGIN_ID, manifest.name, manifest.version, options.pluginState ?? 'enabled', 'enabled', JSON.stringify(manifest), now, now),
-    testEnv.DB.prepare('INSERT INTO domains (id, user_id, plugin_instance_id, hostname, status, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind('domain-runtime', 'user-runtime', PLUGIN_INSTANCE_ID, hostname, options.domainStatus ?? 'online', now),
+    testEnv.DB.prepare('INSERT INTO workspace_members (workspace_id, user_id, role, created_at) VALUES (?, ?, ?, ?)').bind(DEFAULT_WORKSPACE_ID, 'user-runtime', 'owner', now),
+    testEnv.DB.prepare('INSERT INTO servers (id, user_id, workspace_id, name, token_hash, status, last_seen_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').bind(SERVER_ID, 'user-runtime', DEFAULT_WORKSPACE_ID, 'Runtime server', await hashToken(CONTROL_TOKEN), 'offline', null, now),
+    testEnv.DB.prepare('INSERT INTO plugin_instances (id, user_id, workspace_id, server_id, plugin_id, name, version, state, desired_state, manifest_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(PLUGIN_INSTANCE_ID, 'user-runtime', DEFAULT_WORKSPACE_ID, SERVER_ID, PLUGIN_ID, manifest.name, manifest.version, options.pluginState ?? 'enabled', 'enabled', JSON.stringify(manifest), now, now),
+    testEnv.DB.prepare('INSERT INTO domains (id, user_id, workspace_id, plugin_instance_id, hostname, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind('domain-runtime', 'user-runtime', DEFAULT_WORKSPACE_ID, PLUGIN_INSTANCE_ID, hostname, options.domainStatus ?? 'online', now),
   ])
   return hostname
 }

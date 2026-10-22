@@ -12,6 +12,9 @@ import { selectPublicRequestMode } from './request-mode'
 import { resolvePublicRoute } from './public-route'
 import { CLOUDFLARE_OAUTH_PROTOCOL, oauthSettingsApi, resolveOauthSettings } from './oauth-settings'
 import { setupApi } from './setup'
+import { recordAudit } from './audit'
+import { DEFAULT_WORKSPACE_ID, activeWorkspaceId, createWorkspace, ensureSuperAdminWorkspace, listWorkspaceMembers, listWorkspaces, ownerCount, parseWorkspaceRole, requireOwner, requireWrite, resolveWorkspace, workspaceForUser } from './workspaces'
+import type { Workspace, WorkspaceRole } from './types'
 
 export { PluginBridge }
 
@@ -42,78 +45,190 @@ export default {
 async function api(request: Request, env: Env, url: URL): Promise<Response> {
   const user = await getCurrentUser(request, env)
   if (!user) return json({ error: 'Authentication required' }, 401)
-  if (url.pathname === '/api/me') return json({ user })
+  if (url.pathname === '/api/me') {
+    const workspaces = await listWorkspaces(env, user)
+    const active = await activeWorkspaceId(env, request, user)
+    return json({ user, workspaces, activeWorkspaceId: active })
+  }
+  const workspaceResponse = await workspaceApi(request, env, user, url)
+  if (workspaceResponse) return workspaceResponse
+  if (request.method === 'POST' && url.pathname === '/api/blobs') return createBlob(request, env)
+
+  const resolved = await resolveWorkspace(request, env, user)
+  if (!resolved.ok) return resolved.response
+  const { workspace } = resolved.value
+  // 平台级设置只允许全局管理员写入，其权限由各 handler 校验；工作区角色不应拦截。
+  const platformWrite = user.role === 'super_admin' && url.pathname.startsWith('/api/settings/')
+  const writeDenied = request.method === 'GET' || platformWrite ? null : requireWrite(workspace)
+  if (writeDenied) return writeDenied
+
   if (request.method === 'GET' && url.pathname === '/api/overview') {
     const [servers, plugins, domains] = await Promise.all([
-      env.DB.prepare('SELECT COUNT(*) AS count FROM servers WHERE user_id = ? AND status = ?').bind(user.id, 'online').first<{ count: number }>(),
-      env.DB.prepare('SELECT COUNT(*) AS count FROM plugin_instances WHERE user_id = ? AND state = ?').bind(user.id, 'enabled').first<{ count: number }>(),
-      env.DB.prepare('SELECT COUNT(*) AS count FROM domains WHERE user_id = ?').bind(user.id).first<{ count: number }>(),
+      env.DB.prepare('SELECT COUNT(*) AS count FROM servers WHERE workspace_id = ? AND status = ?').bind(workspace.id, 'online').first<{ count: number }>(),
+      env.DB.prepare('SELECT COUNT(*) AS count FROM plugin_instances WHERE workspace_id = ? AND state = ?').bind(workspace.id, 'enabled').first<{ count: number }>(),
+      env.DB.prepare('SELECT COUNT(*) AS count FROM domains WHERE workspace_id = ?').bind(workspace.id).first<{ count: number }>(),
     ])
     return json({ onlineServers: servers?.count ?? 0, enabledPlugins: plugins?.count ?? 0, domains: domains?.count ?? 0 })
   }
-  if (request.method === 'GET' && url.pathname === '/api/servers') return json(await env.DB.prepare('SELECT id, name, status, last_seen_at, created_at FROM servers WHERE user_id = ? ORDER BY created_at DESC').bind(user.id).all())
-  if (request.method === 'GET' && url.pathname === '/api/plugins') return json(await env.DB.prepare('SELECT plugin_instances.id, plugin_instances.plugin_id, plugin_instances.name, plugin_instances.version, plugin_instances.state, plugin_instances.desired_state, plugin_instances.server_id, servers.name AS server_name, domains.hostname AS domain_hostname, plugin_instances.manifest_json, plugin_instances.updated_at FROM plugin_instances JOIN servers ON servers.id = plugin_instances.server_id LEFT JOIN domains ON domains.plugin_instance_id = plugin_instances.id WHERE plugin_instances.user_id = ? ORDER BY plugin_instances.updated_at DESC').bind(user.id).all())
-  if (request.method === 'GET' && url.pathname === '/api/domains') return json(await env.DB.prepare('SELECT domains.id, domains.hostname, domains.status, domains.plugin_instance_id, plugin_instances.name AS plugin_name, domains.created_at FROM domains JOIN plugin_instances ON plugin_instances.id = domains.plugin_instance_id WHERE domains.user_id = ? ORDER BY domains.created_at DESC').bind(user.id).all())
+  if (request.method === 'GET' && url.pathname === '/api/servers') return json(await env.DB.prepare('SELECT id, name, status, last_seen_at, created_at FROM servers WHERE workspace_id = ? ORDER BY created_at DESC').bind(workspace.id).all())
+  if (request.method === 'GET' && url.pathname === '/api/plugins') return json(await env.DB.prepare('SELECT plugin_instances.id, plugin_instances.plugin_id, plugin_instances.name, plugin_instances.version, plugin_instances.state, plugin_instances.desired_state, plugin_instances.server_id, servers.name AS server_name, domains.hostname AS domain_hostname, plugin_instances.manifest_json, plugin_instances.updated_at FROM plugin_instances JOIN servers ON servers.id = plugin_instances.server_id LEFT JOIN domains ON domains.plugin_instance_id = plugin_instances.id WHERE plugin_instances.workspace_id = ? ORDER BY plugin_instances.updated_at DESC').bind(workspace.id).all())
+  if (request.method === 'GET' && url.pathname === '/api/domains') return json(await env.DB.prepare('SELECT domains.id, domains.hostname, domains.status, domains.plugin_instance_id, plugin_instances.name AS plugin_name, domains.created_at FROM domains JOIN plugin_instances ON plugin_instances.id = domains.plugin_instance_id WHERE domains.workspace_id = ? ORDER BY domains.created_at DESC').bind(workspace.id).all())
   if (request.method === 'GET' && url.pathname === '/api/audit') {
     const since = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString()
-    if (user.role === 'super_admin') return json(await env.DB.prepare('SELECT audit_log.id, audit_log.action, audit_log.detail_json, audit_log.created_at, users.display_name AS actor_name, users.email AS actor_email FROM audit_log LEFT JOIN users ON users.id = audit_log.user_id WHERE audit_log.created_at >= ? ORDER BY audit_log.created_at DESC LIMIT 200').bind(since).all())
-    return json(await env.DB.prepare('SELECT audit_log.id, audit_log.action, audit_log.detail_json, audit_log.created_at, users.display_name AS actor_name, users.email AS actor_email FROM audit_log LEFT JOIN users ON users.id = audit_log.user_id WHERE audit_log.user_id = ? AND audit_log.created_at >= ? ORDER BY audit_log.created_at DESC LIMIT 100').bind(user.id, since).all())
+    if (user.role === 'super_admin') {
+      return json(await env.DB.prepare('SELECT audit_log.id, audit_log.action, audit_log.detail_json, audit_log.created_at, users.display_name AS actor_name, users.email AS actor_email FROM audit_log LEFT JOIN users ON users.id = audit_log.user_id WHERE (audit_log.workspace_id = ? OR audit_log.workspace_id IS NULL) AND audit_log.created_at >= ? ORDER BY audit_log.created_at DESC LIMIT 200').bind(workspace.id, since).all())
+    }
+    return json(await env.DB.prepare('SELECT audit_log.id, audit_log.action, audit_log.detail_json, audit_log.created_at, users.display_name AS actor_name, users.email AS actor_email FROM audit_log LEFT JOIN users ON users.id = audit_log.user_id WHERE audit_log.workspace_id = ? AND audit_log.created_at >= ? ORDER BY audit_log.created_at DESC LIMIT 100').bind(workspace.id, since).all())
   }
-  if (request.method === 'GET' && url.pathname === '/api/access-logs') return accessLogsApi(env, user)
+  if (request.method === 'GET' && url.pathname === '/api/access-logs') return accessLogsApi(env, workspace)
   if (url.pathname === '/api/settings/oauth') return oauthSettingsApi(request, env, user)
   if (url.pathname === '/api/settings/platform') return platformSettingsApi(request, env, user)
   if (url.pathname === '/api/settings/cloudflare') return cloudflareSettingsApi(request, env, user)
   if (url.pathname === '/api/settings/smtp') return smtpSettingsApi(request, env, user)
   if (url.pathname === '/api/settings/smtp/test') return smtpTestApi(request, env, user)
   if (url.pathname === '/api/usage/cloudflare') return cloudflareUsageApi(env, user)
-  if (url.pathname === '/api/usage/local') return localUsageApi(env, user, url)
+  if (url.pathname === '/api/usage/local') return localUsageApi(env, user, url, workspace)
   const serverDetail = url.pathname.match(/^\/api\/servers\/([^/]+)$/)
   const serverSync = url.pathname.match(/^\/api\/servers\/([^/]+)\/sync$/)
-  if (request.method === 'POST' && serverSync) return syncServer(request, env, user, decodeURIComponent(serverSync[1]))
-  if (request.method === 'GET' && serverDetail) return serverDetailsApi(env, user, decodeURIComponent(serverDetail[1]))
+  if (request.method === 'POST' && serverSync) return syncServer(request, env, user, workspace, decodeURIComponent(serverSync[1]))
+  if (request.method === 'GET' && serverDetail) return serverDetailsApi(env, workspace, decodeURIComponent(serverDetail[1]))
   const pluginDetail = url.pathname.match(/^\/api\/plugins\/([^/]+)$/)
-  if (request.method === 'GET' && pluginDetail) return pluginDetailsApi(env, user, decodeURIComponent(pluginDetail[1]))
+  if (request.method === 'GET' && pluginDetail) return pluginDetailsApi(env, workspace, decodeURIComponent(pluginDetail[1]))
   const pluginAction = url.pathname.match(/^\/api\/plugins\/([^/]+)\/(load|unload|enable|disable|reload|health)$/)
-  if (request.method === 'POST' && pluginAction) return commandPlugin(request, env, user, decodeURIComponent(pluginAction[1]), pluginAction[2] as 'load' | 'unload' | 'enable' | 'disable' | 'reload' | 'health')
-  if (request.method === 'POST' && url.pathname === '/api/domains') return assignDomain(request, env, user)
-  if (request.method === 'GET' && url.pathname === '/api/invites') {
-    if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
-    await expireInvites(env)
-    return json(await env.DB.prepare('SELECT id, email, github_login, status, expires_at, used_at, created_at FROM invites ORDER BY created_at DESC').all())
-  }
+  if (request.method === 'POST' && pluginAction) return commandPlugin(request, env, user, workspace, decodeURIComponent(pluginAction[1]), pluginAction[2] as 'load' | 'unload' | 'enable' | 'disable' | 'reload' | 'health')
+  if (request.method === 'POST' && url.pathname === '/api/domains') return assignDomain(request, env, user, workspace)
+  if (request.method === 'GET' && url.pathname === '/api/invites') return listInvites(env, user, workspace)
   const inviteAction = url.pathname.match(/^\/api\/invites\/([^/]+)$/)
   if (request.method === 'DELETE' && inviteAction) return revokeInvite(env, user, decodeURIComponent(inviteAction[1]))
-  if (request.method === 'POST' && url.pathname === '/api/invites') return createInvite(request, env, user)
-  if (request.method === 'POST' && url.pathname === '/api/registration-codes') return createRegistrationCode(env, user)
-  if (request.method === 'POST' && url.pathname === '/api/blobs') return createBlob(request, env)
+  if (request.method === 'POST' && url.pathname === '/api/invites') return createInvite(request, env, user, workspace)
+  if (request.method === 'POST' && url.pathname === '/api/registration-codes') return createRegistrationCode(env, user, workspace)
   return json({ error: 'Not found' }, 404)
 }
 
-async function serverDetailsApi(env: Env, user: AuthenticatedUser, serverId: string): Promise<Response> {
-  const server = await env.DB.prepare('SELECT id, name, status, last_seen_at, created_at FROM servers WHERE id = ? AND user_id = ?').bind(serverId, user.id).first()
+const workspaceNotFound = () => json({ error: 'Workspace not found' }, 404)
+const workspaceDenied = () => json({ error: 'Workspace access denied' }, 403)
+const invalidWorkspaceName = (name: unknown): boolean => typeof name !== 'string' || name.trim().length === 0 || name.trim().length > 64
+
+async function accessibleWorkspace(env: Env, user: AuthenticatedUser, workspaceId: string): Promise<{ workspace: Workspace } | { status: number }> {
+  const exists = await env.DB.prepare('SELECT id FROM workspaces WHERE id = ?').bind(workspaceId).first<{ id: string }>()
+  if (!exists) return { status: 404 }
+  const workspace = await workspaceForUser(env, user, workspaceId)
+  return workspace ? { workspace } : { status: 403 }
+}
+
+async function workspaceApi(request: Request, env: Env, user: AuthenticatedUser, url: URL): Promise<Response | null> {
+  if (!url.pathname.startsWith('/api/workspaces')) return null
+  if (url.pathname === '/api/workspaces') {
+    if (request.method === 'GET') return json({ results: await listWorkspaces(env, user) })
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+    const body = await request.json().catch(() => null) as { name?: string } | null
+    if (invalidWorkspaceName(body?.name)) return json({ error: 'Workspace name is required' }, 400)
+    const workspace = await createWorkspace(env, user, body!.name!)
+    await recordAudit(env, workspace.id, user.id, 'workspace.created', { name: workspace.name, slug: workspace.slug })
+    return json(workspace, 201)
+  }
+
+  const memberDetail = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/members\/([^/]+)$/)
+  if (memberDetail) {
+    const access = await accessibleWorkspace(env, user, decodeURIComponent(memberDetail[1]))
+    if ('status' in access) return access.status === 404 ? workspaceNotFound() : workspaceDenied()
+    const denied = requireOwner(access.workspace)
+    if (denied) return denied
+    const userId = decodeURIComponent(memberDetail[2])
+    const membership = await env.DB.prepare('SELECT user_id, role FROM workspace_members WHERE workspace_id = ? AND user_id = ?').bind(access.workspace.id, userId).first<{ user_id: string; role: WorkspaceRole }>()
+    if (!membership) return json({ error: 'Workspace member not found' }, 404)
+    if (request.method === 'DELETE') {
+      if (membership.role === 'owner' && await ownerCount(env, access.workspace.id) <= 1) return json({ error: 'Cannot remove the last workspace owner' }, 409)
+      await env.DB.prepare('DELETE FROM workspace_members WHERE workspace_id = ? AND user_id = ?').bind(access.workspace.id, userId).run()
+      await recordAudit(env, access.workspace.id, user.id, 'workspace.member.removed', { userId })
+      return json({ userId, removed: true })
+    }
+    if (request.method !== 'PUT') return json({ error: 'Method not allowed' }, 405)
+    const body = await request.json().catch(() => null) as { role?: unknown } | null
+    const role = parseWorkspaceRole(body?.role)
+    if (!role) return json({ error: 'Workspace role is invalid' }, 400)
+    if (membership.role === 'owner' && role !== 'owner' && await ownerCount(env, access.workspace.id) <= 1) return json({ error: 'Cannot demote the last workspace owner' }, 409)
+    await env.DB.prepare('UPDATE workspace_members SET role = ? WHERE workspace_id = ? AND user_id = ?').bind(role, access.workspace.id, userId).run()
+    await recordAudit(env, access.workspace.id, user.id, 'workspace.member.updated', { userId, role })
+    return json({ userId, role })
+  }
+
+  const members = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/members$/)
+  if (members) {
+    const access = await accessibleWorkspace(env, user, decodeURIComponent(members[1]))
+    if ('status' in access) return access.status === 404 ? workspaceNotFound() : workspaceDenied()
+    if (request.method === 'GET') return json({ results: await listWorkspaceMembers(env, access.workspace.id) })
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+    const denied = requireOwner(access.workspace)
+    if (denied) return denied
+    const body = await request.json().catch(() => null) as { userId?: string; email?: string; role?: unknown } | null
+    const role = parseWorkspaceRole(body?.role ?? 'viewer')
+    if (!role) return json({ error: 'Workspace role is invalid' }, 400)
+    const target = body?.userId
+      ? await env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(body.userId).first<{ id: string }>()
+      : body?.email
+        ? await env.DB.prepare('SELECT id FROM users WHERE lower(email) = lower(?)').bind(body.email.trim()).first<{ id: string }>()
+        : null
+    if (!target) return json({ error: 'User not found; send an invite instead' }, 404)
+    const now = new Date().toISOString()
+    await env.DB.prepare('INSERT INTO workspace_members (workspace_id, user_id, role, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(workspace_id, user_id) DO UPDATE SET role = excluded.role').bind(access.workspace.id, target.id, role, now).run()
+    await recordAudit(env, access.workspace.id, user.id, 'workspace.member.added', { userId: target.id, role })
+    return json({ userId: target.id, role }, 201)
+  }
+
+  const detail = url.pathname.match(/^\/api\/workspaces\/([^/]+)$/)
+  if (!detail) return json({ error: 'Not found' }, 404)
+  const access = await accessibleWorkspace(env, user, decodeURIComponent(detail[1]))
+  if ('status' in access) return access.status === 404 ? workspaceNotFound() : workspaceDenied()
+  const denied = requireOwner(access.workspace)
+  if (denied) return denied
+  if (request.method === 'PUT') {
+    const body = await request.json().catch(() => null) as { name?: string } | null
+    if (invalidWorkspaceName(body?.name)) return json({ error: 'Workspace name is required' }, 400)
+    const updatedAt = new Date().toISOString()
+    await env.DB.prepare('UPDATE workspaces SET name = ?, updated_at = ? WHERE id = ?').bind(body!.name!.trim(), updatedAt, access.workspace.id).run()
+    await recordAudit(env, access.workspace.id, user.id, 'workspace.updated', { name: body!.name!.trim() })
+    return json({ ...access.workspace, name: body!.name!.trim(), updated_at: updatedAt })
+  }
+  if (request.method !== 'DELETE') return json({ error: 'Method not allowed' }, 405)
+  if (access.workspace.id === DEFAULT_WORKSPACE_ID) return json({ error: 'The default workspace cannot be deleted' }, 409)
+  const servers = await env.DB.prepare('SELECT COUNT(*) AS count FROM servers WHERE workspace_id = ?').bind(access.workspace.id).first<{ count: number }>()
+  if ((servers?.count ?? 0) > 0) return json({ error: 'Workspace still contains servers' }, 409)
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM invites WHERE workspace_id = ?').bind(access.workspace.id),
+    env.DB.prepare('DELETE FROM registration_codes WHERE workspace_id = ?').bind(access.workspace.id),
+    env.DB.prepare('DELETE FROM workspace_members WHERE workspace_id = ?').bind(access.workspace.id),
+    env.DB.prepare('DELETE FROM workspaces WHERE id = ?').bind(access.workspace.id),
+  ])
+  await recordAudit(env, access.workspace.id, user.id, 'workspace.deleted', { name: access.workspace.name })
+  return json({ id: access.workspace.id, deleted: true })
+}
+
+async function serverDetailsApi(env: Env, workspace: Workspace, serverId: string): Promise<Response> {
+  const server = await env.DB.prepare('SELECT id, name, status, last_seen_at, created_at FROM servers WHERE id = ? AND workspace_id = ?').bind(serverId, workspace.id).first()
   if (!server) return json({ error: 'Plugin server not found' }, 404)
   const [plugins, errors] = await Promise.all([
-    env.DB.prepare('SELECT plugin_instances.id, plugin_instances.plugin_id, plugin_instances.name, plugin_instances.version, plugin_instances.state, plugin_instances.desired_state, plugin_instances.server_id, servers.name AS server_name, plugin_instances.manifest_json, plugin_instances.updated_at, domains.hostname AS domain_hostname FROM plugin_instances JOIN servers ON servers.id = plugin_instances.server_id LEFT JOIN domains ON domains.plugin_instance_id = plugin_instances.id WHERE plugin_instances.server_id = ? AND plugin_instances.user_id = ? ORDER BY plugin_instances.updated_at DESC').bind(serverId, user.id).all(),
-    env.DB.prepare('SELECT request_logs.id, request_logs.hostname, request_logs.method, request_logs.path, request_logs.status, request_logs.duration_ms, request_logs.error, request_logs.created_at FROM request_logs JOIN plugin_instances ON plugin_instances.id = request_logs.plugin_instance_id WHERE request_logs.user_id = ? AND plugin_instances.server_id = ? AND request_logs.status >= 500 ORDER BY request_logs.created_at DESC LIMIT 20').bind(user.id, serverId).all(),
+    env.DB.prepare('SELECT plugin_instances.id, plugin_instances.plugin_id, plugin_instances.name, plugin_instances.version, plugin_instances.state, plugin_instances.desired_state, plugin_instances.server_id, servers.name AS server_name, plugin_instances.manifest_json, plugin_instances.updated_at, domains.hostname AS domain_hostname FROM plugin_instances JOIN servers ON servers.id = plugin_instances.server_id LEFT JOIN domains ON domains.plugin_instance_id = plugin_instances.id WHERE plugin_instances.server_id = ? AND plugin_instances.workspace_id = ? ORDER BY plugin_instances.updated_at DESC').bind(serverId, workspace.id).all(),
+    env.DB.prepare('SELECT request_logs.id, request_logs.hostname, request_logs.method, request_logs.path, request_logs.status, request_logs.duration_ms, request_logs.error, request_logs.created_at FROM request_logs JOIN plugin_instances ON plugin_instances.id = request_logs.plugin_instance_id WHERE request_logs.workspace_id = ? AND plugin_instances.server_id = ? AND request_logs.status >= 500 ORDER BY request_logs.created_at DESC LIMIT 20').bind(workspace.id, serverId).all(),
   ])
   return json({ server, plugins: plugins.results, recentErrors: errors.results })
 }
 
-export async function syncServer(request: Request, env: Env, user: AuthenticatedUser, serverId: string): Promise<Response> {
+export async function syncServer(request: Request, env: Env, user: AuthenticatedUser, workspace: Workspace, serverId: string): Promise<Response> {
   if (await isMaintenanceMode(env)) return json({ error: 'Platform is in maintenance mode' }, 503)
-  const server = await env.DB.prepare('SELECT id, status FROM servers WHERE id = ? AND user_id = ?').bind(serverId, user.id).first<{ id: string; status: string }>()
+  const server = await env.DB.prepare('SELECT id, status FROM servers WHERE id = ? AND workspace_id = ?').bind(serverId, workspace.id).first<{ id: string; status: string }>()
   if (!server) return json({ error: 'Plugin server not found' }, 404)
   if (server.status !== 'online') return json({ error: 'Plugin server is offline' }, 409)
   const bridge = env.PLUGIN_BRIDGE.get(env.PLUGIN_BRIDGE.idFromName(serverId))
   const response = await bridge.fetch(new Request(new URL('/command', request.url), { method: 'POST', headers: { 'content-type': 'application/json', 'x-plugmesh-server-id': serverId }, body: JSON.stringify({ type: 'server.sync' }) }))
-  if (response.ok) await recordAudit(env, user.id, 'server.manifest_sync.requested', { serverId })
+  if (response.ok) await recordAudit(env, workspace.id, user.id, 'server.manifest_sync.requested', { serverId })
   return response
 }
 
-async function pluginDetailsApi(env: Env, user: AuthenticatedUser, pluginInstanceId: string): Promise<Response> {
-  const plugin = await env.DB.prepare('SELECT plugin_instances.id, plugin_instances.plugin_id, plugin_instances.name, plugin_instances.version, plugin_instances.state, plugin_instances.desired_state, plugin_instances.server_id, plugin_instances.manifest_json, plugin_instances.created_at, plugin_instances.updated_at, servers.name AS server_name, servers.status AS server_status, domains.id AS domain_id, domains.hostname AS domain_hostname, domains.status AS domain_status FROM plugin_instances JOIN servers ON servers.id = plugin_instances.server_id LEFT JOIN domains ON domains.plugin_instance_id = plugin_instances.id WHERE plugin_instances.id = ? AND plugin_instances.user_id = ?').bind(pluginInstanceId, user.id).first()
+async function pluginDetailsApi(env: Env, workspace: Workspace, pluginInstanceId: string): Promise<Response> {
+  const plugin = await env.DB.prepare('SELECT plugin_instances.id, plugin_instances.plugin_id, plugin_instances.name, plugin_instances.version, plugin_instances.state, plugin_instances.desired_state, plugin_instances.server_id, plugin_instances.manifest_json, plugin_instances.created_at, plugin_instances.updated_at, servers.name AS server_name, servers.status AS server_status, domains.id AS domain_id, domains.hostname AS domain_hostname, domains.status AS domain_status FROM plugin_instances JOIN servers ON servers.id = plugin_instances.server_id LEFT JOIN domains ON domains.plugin_instance_id = plugin_instances.id WHERE plugin_instances.id = ? AND plugin_instances.workspace_id = ?').bind(pluginInstanceId, workspace.id).first()
   if (!plugin) return json({ error: 'Plugin instance not found' }, 404)
-  const recentErrors = await env.DB.prepare('SELECT id, hostname, method, path, status, duration_ms, error, created_at FROM request_logs WHERE user_id = ? AND plugin_instance_id = ? AND status >= 500 ORDER BY created_at DESC LIMIT 20').bind(user.id, pluginInstanceId).all()
+  const recentErrors = await env.DB.prepare('SELECT id, hostname, method, path, status, duration_ms, error, created_at FROM request_logs WHERE workspace_id = ? AND plugin_instance_id = ? AND status >= 500 ORDER BY created_at DESC LIMIT 20').bind(workspace.id, pluginInstanceId).all()
   return json({ plugin, recentErrors: recentErrors.results })
 }
 
@@ -371,6 +486,7 @@ async function finishGithubAuth(request: Request, env: Env, url: URL): Promise<R
     if (!allowlisted && !existing) return redirectWithError(request, '该 GitHub 身份未被邀请')
     userId = await upsertGithubUser(env, identity, role)
   }
+  if (role === 'super_admin') await ensureSuperAdminWorkspace(env, userId)
   const token = await createSession(env, userId)
   return new Response(null, { status: 302, headers: { location: '/', 'set-cookie': sessionCookie(token, url.protocol === 'https:') } })
 }
@@ -409,13 +525,13 @@ async function finishCloudflareAuth(request: Request, env: Env, url: URL): Promi
   if ((consumedState.meta.changes ?? 0) !== 1) return redirectWithCloudflareError(request, 'Cloudflare OAuth 状态已过期或已使用')
   const credential = await exchangeCloudflareCode(env, code)
   if (!credential) {
-    await recordAudit(env, user.id, 'cloudflare.oauth.failed', {})
+    await recordAudit(env, null, user.id, 'cloudflare.oauth.failed', {})
     return redirectWithCloudflareError(request, 'Cloudflare OAuth 令牌交换失败')
   }
   if (!credential.accountId) credential.accountId = await discoverCloudflareAccountId(credential.accessToken)
   if (!env.SESSION_SECRET) return redirectWithCloudflareError(request, 'SESSION_SECRET 未配置，无法保存 Cloudflare 凭据')
   await storeCloudflareCredential(env, credential)
-  await recordAudit(env, user.id, 'cloudflare.oauth.connected', { accountIdConfigured: Boolean(credential.accountId) })
+  await recordAudit(env, null, user.id, 'cloudflare.oauth.connected', { accountIdConfigured: Boolean(credential.accountId) })
   return redirectWithCloudflareResult(request, Boolean(credential.accountId))
 }
 
@@ -440,10 +556,6 @@ function redirectWithCloudflareError(request: Request, message: string, code?: s
   return new Response(null, { status: 302, headers: { location: location.toString(), 'referrer-policy': 'no-referrer' } })
 }
 
-async function recordAudit(env: Env, userId: string, action: string, detail: Record<string, unknown>): Promise<void> {
-  await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), userId, action, JSON.stringify(detail), new Date().toISOString()).run()
-}
-
 async function storeCloudflareCredential(env: Env, credential: CloudflareCredential): Promise<string> {
   if (!env.SESSION_SECRET) throw new Error('SESSION_SECRET is not configured')
   const sealed = await encryptSecret(env.SESSION_SECRET, JSON.stringify(credential))
@@ -453,6 +565,7 @@ async function storeCloudflareCredential(env: Env, credential: CloudflareCredent
 }
 
 type AccessLogRecord = {
+  workspaceId: string
   userId: string
   domainId: string
   pluginInstanceId: string
@@ -465,22 +578,35 @@ type AccessLogRecord = {
 }
 
 async function recordAccessLog(env: Env, log: AccessLogRecord): Promise<void> {
-  await env.DB.prepare('INSERT INTO request_logs (id, user_id, domain_id, plugin_instance_id, hostname, method, path, status, duration_ms, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), log.userId, log.domainId, log.pluginInstanceId, log.hostname, log.method.slice(0, 16), log.path.slice(0, 2048), log.status, Math.max(0, Math.round(log.durationMs)), log.error?.slice(0, 160) ?? null, new Date().toISOString()).run()
+  await env.DB.prepare('INSERT INTO request_logs (id, workspace_id, user_id, domain_id, plugin_instance_id, hostname, method, path, status, duration_ms, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), log.workspaceId, log.userId, log.domainId, log.pluginInstanceId, log.hostname, log.method.slice(0, 16), log.path.slice(0, 2048), log.status, Math.max(0, Math.round(log.durationMs)), log.error?.slice(0, 160) ?? null, new Date().toISOString()).run()
 }
 
-async function accessLogsApi(env: Env, user: AuthenticatedUser): Promise<Response> {
+async function accessLogsApi(env: Env, workspace: Workspace): Promise<Response> {
   const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
   await env.DB.prepare('DELETE FROM request_logs WHERE created_at < ?').bind(since).run()
   const [logs, errors] = await Promise.all([
-    env.DB.prepare('SELECT id, hostname, method, path, status, duration_ms, error, created_at FROM request_logs WHERE user_id = ? AND created_at >= ? ORDER BY created_at DESC LIMIT 200').bind(user.id, since).all(),
-    env.DB.prepare('SELECT COUNT(*) AS count FROM request_logs WHERE user_id = ? AND created_at >= ? AND status >= 500').bind(user.id, since).first<{ count: number }>(),
+    env.DB.prepare('SELECT id, hostname, method, path, status, duration_ms, error, created_at FROM request_logs WHERE workspace_id = ? AND created_at >= ? ORDER BY created_at DESC LIMIT 200').bind(workspace.id, since).all(),
+    env.DB.prepare('SELECT COUNT(*) AS count FROM request_logs WHERE workspace_id = ? AND created_at >= ? AND status >= 500').bind(workspace.id, since).first<{ count: number }>(),
   ])
   return json({ results: logs.results, errorCount: errors?.count ?? 0, since })
 }
 
-async function createInvite(request: Request, env: Env, user: AuthenticatedUser): Promise<Response> {
-  if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
-  const body = await request.json().catch(() => null) as { email?: string; githubLogin?: string; expiresInHours?: number } | null
+async function listInvites(env: Env, user: AuthenticatedUser, workspace: Workspace): Promise<Response> {
+  await expireInvites(env)
+  if (user.role !== 'super_admin' && workspace.role !== 'owner') return json({ error: 'Workspace owner permission required' }, 403)
+  const query = user.role === 'super_admin'
+    ? 'SELECT id, workspace_id, role, email, github_login, status, expires_at, used_at, created_at FROM invites ORDER BY created_at DESC'
+    : 'SELECT id, workspace_id, role, email, github_login, status, expires_at, used_at, created_at FROM invites WHERE workspace_id = ? ORDER BY created_at DESC'
+  return json(user.role === 'super_admin' ? await env.DB.prepare(query).all() : await env.DB.prepare(query).bind(workspace.id).all())
+}
+
+async function createInvite(request: Request, env: Env, user: AuthenticatedUser, workspace: Workspace): Promise<Response> {
+  const body = await request.json().catch(() => null) as { email?: string; githubLogin?: string; expiresInHours?: number; workspaceId?: string; role?: unknown } | null
+  const target = body?.workspaceId && body.workspaceId !== workspace.id ? await workspaceForUser(env, user, body.workspaceId) : workspace
+  if (!target) return json({ error: 'Workspace access denied' }, 403)
+  if (target.role !== 'owner') return json({ error: 'Workspace owner permission required' }, 403)
+  const role = parseWorkspaceRole(body?.role ?? 'viewer')
+  if (!role) return json({ error: 'Workspace role is invalid' }, 400)
   const email = body?.email?.trim() || null
   const githubLogin = body?.githubLogin?.trim() || null
   const expiresInHours = Number(body?.expiresInHours ?? 72)
@@ -488,7 +614,7 @@ async function createInvite(request: Request, env: Env, user: AuthenticatedUser)
   const boundedExpiresInHours = Math.min(Math.max(expiresInHours, 1), 720)
   const rawToken = crypto.randomUUID() + crypto.randomUUID()
   const invite = { id: crypto.randomUUID(), email, githubLogin, expiresAt: new Date(Date.now() + boundedExpiresInHours * 60 * 60 * 1000).toISOString() }
-  await env.DB.prepare('INSERT INTO invites (id, token_hash, email, github_login, status, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(invite.id, await digest(rawToken), invite.email, invite.githubLogin, 'pending', invite.expiresAt, new Date().toISOString()).run()
+  await env.DB.prepare('INSERT INTO invites (id, token_hash, email, github_login, status, expires_at, created_at, workspace_id, role) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(invite.id, await digest(rawToken), invite.email, invite.githubLogin, 'pending', invite.expiresAt, new Date().toISOString(), target.id, role).run()
   const inviteUrl = `${new URL('/', request.url).origin}/auth/github/start?invite=${encodeURIComponent(rawToken)}`
   let emailSent: boolean | null = null
   let emailAttempts = 0
@@ -501,12 +627,12 @@ async function createInvite(request: Request, env: Env, user: AuthenticatedUser)
         emailSent = true
       } catch {
         emailAttempts = 3
-        await recordAudit(env, user.id, 'invite.email.failed', { inviteId: invite.id, to: invite.email, attempts: emailAttempts })
+        await recordAudit(env, target.id, user.id, 'invite.email.failed', { inviteId: invite.id, to: invite.email, attempts: emailAttempts })
       }
     }
   }
-  await recordAudit(env, user.id, 'invite.created', { inviteId: invite.id, emailSent, emailAttempts })
-  return json({ id: invite.id, inviteUrl, expiresAt: invite.expiresAt, emailSent }, 201)
+  await recordAudit(env, target.id, user.id, 'invite.created', { inviteId: invite.id, emailSent, emailAttempts, role })
+  return json({ id: invite.id, inviteUrl, expiresAt: invite.expiresAt, emailSent, workspaceId: target.id, role }, 201)
 }
 
 async function expireInvites(env: Env): Promise<void> {
@@ -514,28 +640,32 @@ async function expireInvites(env: Env): Promise<void> {
 }
 
 async function revokeInvite(env: Env, user: AuthenticatedUser, inviteId: string): Promise<Response> {
-  if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
   await expireInvites(env)
+  const invite = await env.DB.prepare('SELECT workspace_id FROM invites WHERE id = ?').bind(inviteId).first<{ workspace_id: string }>()
+  if (!invite) return json({ error: 'Invite is not pending or does not exist' }, 409)
+  const target = await workspaceForUser(env, user, invite.workspace_id)
+  if (!target) return json({ error: 'Workspace access denied' }, 403)
+  if (target.role !== 'owner') return json({ error: 'Workspace owner permission required' }, 403)
   const updated = await env.DB.prepare('UPDATE invites SET status = ? WHERE id = ? AND status = ?').bind('revoked', inviteId, 'pending').run()
   if ((updated.meta.changes ?? 0) !== 1) return json({ error: 'Invite is not pending or does not exist' }, 409)
-  await recordAudit(env, user.id, 'invite.revoked', { inviteId })
+  await recordAudit(env, invite.workspace_id, user.id, 'invite.revoked', { inviteId })
   return json({ id: inviteId, status: 'revoked' })
 }
 
-async function createRegistrationCode(env: Env, user: AuthenticatedUser): Promise<Response> {
+async function createRegistrationCode(env: Env, user: AuthenticatedUser, workspace: Workspace): Promise<Response> {
   if (await isMaintenanceMode(env)) return json({ error: 'Platform is in maintenance mode' }, 503)
   const rawCode = crypto.randomUUID() + '-' + crypto.randomUUID().slice(0, 8)
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString()
-  await env.DB.prepare('INSERT INTO registration_codes (id, user_id, code_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, await hashControlToken(rawCode), expiresAt, new Date().toISOString()).run()
-  await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'server.registration_code.created', JSON.stringify({ expiresAt }), new Date().toISOString()).run()
+  await env.DB.prepare('INSERT INTO registration_codes (id, user_id, workspace_id, code_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, workspace.id, await hashControlToken(rawCode), expiresAt, new Date().toISOString()).run()
+  await recordAudit(env, workspace.id, user.id, 'server.registration_code.created', { expiresAt })
   return json({ code: rawCode, expiresAt }, 201)
 }
 
-async function commandPlugin(request: Request, env: Env, user: AuthenticatedUser, pluginInstanceId: string, action: 'load' | 'unload' | 'enable' | 'disable' | 'reload' | 'health'): Promise<Response> {
+async function commandPlugin(request: Request, env: Env, user: AuthenticatedUser, workspace: Workspace, pluginInstanceId: string, action: 'load' | 'unload' | 'enable' | 'disable' | 'reload' | 'health'): Promise<Response> {
   if (await isMaintenanceMode(env)) return json({ error: 'Platform is in maintenance mode' }, 503)
-  const plugin = await env.DB.prepare('SELECT plugin_instances.id, plugin_instances.plugin_id, plugin_instances.server_id, plugin_instances.state, plugin_instances.desired_state, domains.hostname AS domain_hostname FROM plugin_instances LEFT JOIN domains ON domains.plugin_instance_id = plugin_instances.id WHERE plugin_instances.id = ? AND plugin_instances.user_id = ?').bind(pluginInstanceId, user.id).first<{ id: string; plugin_id: string; server_id: string; state: string; desired_state: string; domain_hostname?: string }>()
+  const plugin = await env.DB.prepare('SELECT plugin_instances.id, plugin_instances.plugin_id, plugin_instances.server_id, plugin_instances.state, plugin_instances.desired_state, domains.hostname AS domain_hostname FROM plugin_instances LEFT JOIN domains ON domains.plugin_instance_id = plugin_instances.id WHERE plugin_instances.id = ? AND plugin_instances.workspace_id = ?').bind(pluginInstanceId, workspace.id).first<{ id: string; plugin_id: string; server_id: string; state: string; desired_state: string; domain_hostname?: string }>()
   if (!plugin) return json({ error: 'Plugin instance not found' }, 404)
-  const server = await env.DB.prepare('SELECT status FROM servers WHERE id = ? AND user_id = ?').bind(plugin.server_id, user.id).first<{ status: string }>()
+  const server = await env.DB.prepare('SELECT status FROM servers WHERE id = ? AND workspace_id = ?').bind(plugin.server_id, workspace.id).first<{ status: string }>()
   if (!server || server.status !== 'online') return json({ error: 'Plugin server is offline' }, 409)
   const bridge = env.PLUGIN_BRIDGE.get(env.PLUGIN_BRIDGE.idFromName(plugin.server_id))
   const response = await bridge.fetch(new Request(new URL('/command', request.url), { method: 'POST', headers: { 'content-type': 'application/json', 'x-plugmesh-server-id': plugin.server_id }, body: JSON.stringify({ type: `plugin.${action}`, pluginId: plugin.plugin_id }) }))
@@ -546,7 +676,7 @@ async function commandPlugin(request: Request, env: Env, user: AuthenticatedUser
       await env.DB.batch([
         env.DB.prepare('UPDATE plugin_instances SET state = ?, updated_at = ? WHERE id = ?').bind('failed', failedAt, plugin.id),
         env.DB.prepare('UPDATE domains SET status = ? WHERE plugin_instance_id = ?').bind('offline', plugin.id),
-        env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, `plugin.${action}.failed`, JSON.stringify({ pluginInstanceId: plugin.id, status: response.status }), failedAt),
+        env.DB.prepare('INSERT INTO audit_log (id, workspace_id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), workspace.id, user.id, `plugin.${action}.failed`, JSON.stringify({ pluginInstanceId: plugin.id, status: response.status }), failedAt),
       ])
     }
     invalidatePluginRoute(plugin.domain_hostname)
@@ -561,7 +691,7 @@ async function commandPlugin(request: Request, env: Env, user: AuthenticatedUser
     }
     await env.DB.prepare('UPDATE domains SET status = ? WHERE plugin_instance_id = ?').bind('online', plugin.id).run()
     invalidatePluginRoute(plugin.domain_hostname)
-    await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'plugin.health', JSON.stringify({ pluginInstanceId: plugin.id, status: result.status, bodySize: result.bodySize ?? 0 }), new Date().toISOString()).run()
+    await env.DB.prepare('INSERT INTO audit_log (id, workspace_id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), workspace.id, user.id, 'plugin.health', JSON.stringify({ pluginInstanceId: plugin.id, status: result.status, bodySize: result.bodySize ?? 0 }), new Date().toISOString()).run()
     return json({ id: plugin.id, ok: true, status: result.status, bodySize: result.bodySize ?? 0 }, 200)
   }
   const nextState = result?.state ?? (action === 'load' ? 'loaded' : action === 'unload' ? 'unloaded' : action === 'enable' ? 'enabled' : action === 'disable' ? 'disabled' : plugin.state)
@@ -572,32 +702,32 @@ async function commandPlugin(request: Request, env: Env, user: AuthenticatedUser
     env.DB.prepare('UPDATE domains SET status = ? WHERE plugin_instance_id = ?').bind('offline', plugin.id),
   ])
   invalidatePluginRoute(plugin.domain_hostname)
-  await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, `plugin.${action}`, JSON.stringify({ pluginInstanceId: plugin.id }), new Date().toISOString()).run()
+  await env.DB.prepare('INSERT INTO audit_log (id, workspace_id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), workspace.id, user.id, `plugin.${action}`, JSON.stringify({ pluginInstanceId: plugin.id }), new Date().toISOString()).run()
   return json({ id: plugin.id, state: nextState, accepted: true }, 202)
 }
 
-async function assignDomain(request: Request, env: Env, user: AuthenticatedUser): Promise<Response> {
+async function assignDomain(request: Request, env: Env, user: AuthenticatedUser, workspace: Workspace): Promise<Response> {
   if (await isMaintenanceMode(env)) return json({ error: 'Platform is in maintenance mode' }, 503)
   const body = await request.json().catch(() => null) as { pluginInstanceId?: string; prefix?: string } | null
   const prefix = body?.prefix?.trim().toLowerCase() ?? ''
   const reserved = new Set(['admin', 'api', 'auth', 'console', 'control', 'plugins', 'www'])
   if (!body?.pluginInstanceId || !/^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$/.test(prefix) || reserved.has(prefix)) return json({ error: 'Invalid domain prefix' }, 400)
-  const plugin = await env.DB.prepare('SELECT id, server_id, state FROM plugin_instances WHERE id = ? AND user_id = ?').bind(body.pluginInstanceId, user.id).first<{ id: string; server_id: string; state: string }>()
+  const plugin = await env.DB.prepare('SELECT id, server_id, state FROM plugin_instances WHERE id = ? AND workspace_id = ?').bind(body.pluginInstanceId, workspace.id).first<{ id: string; server_id: string; state: string }>()
   if (!plugin) return json({ error: 'Plugin instance not found' }, 404)
   if (plugin.state !== 'enabled') return json({ error: 'Plugin must be enabled before assigning a domain' }, 409)
   const suffix = await pluginDomainSuffix(env)
   const hostname = `${prefix}${suffix}`
-  const server = await env.DB.prepare('SELECT status FROM servers WHERE id = ? AND user_id = ?').bind(plugin.server_id, user.id).first<{ status: string }>()
+  const server = await env.DB.prepare('SELECT status FROM servers WHERE id = ? AND workspace_id = ?').bind(plugin.server_id, workspace.id).first<{ status: string }>()
   if (!server || server.status !== 'online') return json({ error: 'Plugin server is offline' }, 409)
-  const health = await commandPlugin(new Request(new URL(`/api/plugins/${encodeURIComponent(plugin.id)}/health`, request.url), { method: 'POST' }), env, user, plugin.id, 'health')
+  const health = await commandPlugin(new Request(new URL(`/api/plugins/${encodeURIComponent(plugin.id)}/health`, request.url), { method: 'POST' }), env, user, workspace, plugin.id, 'health')
   if (!health.ok) return json({ error: 'Plugin health check failed' }, 409)
   try {
-    await env.DB.prepare('INSERT INTO domains (id, user_id, plugin_instance_id, hostname, status, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, plugin.id, hostname, 'online', new Date().toISOString()).run()
+    await env.DB.prepare('INSERT INTO domains (id, user_id, workspace_id, plugin_instance_id, hostname, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, workspace.id, plugin.id, hostname, 'online', new Date().toISOString()).run()
   } catch {
     return json({ error: 'Domain is already assigned' }, 409)
   }
   invalidatePluginRoute(hostname)
-  await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'domain.assigned', JSON.stringify({ pluginInstanceId: plugin.id, hostname }), new Date().toISOString()).run()
+  await env.DB.prepare('INSERT INTO audit_log (id, workspace_id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), workspace.id, user.id, 'domain.assigned', JSON.stringify({ pluginInstanceId: plugin.id, hostname }), new Date().toISOString()).run()
   return json({ hostname, status: 'online' }, 201)
 }
 
@@ -660,9 +790,9 @@ export async function createServerRegistration(env: Env, code: string | undefine
   const tokenHash = await hashControlToken(accessToken)
   const claimedAt = new Date().toISOString()
   const [inserted, claimed] = await env.DB.batch([
-    env.DB.prepare('INSERT INTO servers (id, user_id, name, token_hash, status, created_at) SELECT ?, user_id, ?, ?, ?, ? FROM registration_codes WHERE code_hash = ? AND used_at IS NULL AND expires_at > ?').bind(serverId, name.trim(), tokenHash, 'offline', claimedAt, codeHash, claimedAt),
+    env.DB.prepare('INSERT INTO servers (id, user_id, workspace_id, name, token_hash, status, created_at) SELECT ?, user_id, workspace_id, ?, ?, ?, ? FROM registration_codes WHERE code_hash = ? AND used_at IS NULL AND expires_at > ?').bind(serverId, name.trim(), tokenHash, 'offline', claimedAt, codeHash, claimedAt),
     env.DB.prepare('UPDATE registration_codes SET used_at = ? WHERE code_hash = ? AND used_at IS NULL AND expires_at > ?').bind(claimedAt, codeHash, claimedAt),
-    env.DB.prepare("INSERT INTO audit_log (id, user_id, action, detail_json, created_at) SELECT ?, user_id, 'server.registered', ?, ? FROM servers WHERE id = ?").bind(crypto.randomUUID(), JSON.stringify({ serverId }), claimedAt, serverId),
+    env.DB.prepare("INSERT INTO audit_log (id, workspace_id, user_id, action, detail_json, created_at) SELECT ?, workspace_id, user_id, 'server.registered', ?, ? FROM servers WHERE id = ?").bind(crypto.randomUUID(), JSON.stringify({ serverId }), claimedAt, serverId),
   ])
   if ((inserted.meta.changes ?? 0) !== 1 || (claimed.meta.changes ?? 0) !== 1) return { error: 'Registration code is invalid or expired', status: 401 }
   return { value: { serverId, accessToken, protocolVersion: 1 } }
@@ -683,12 +813,12 @@ async function proxyPublicHost(request: Request, env: Env, url: URL, ctx: Execut
   const startedAt = Date.now()
   if (!await reserveRequest(env, settings.quotas)) {
     await activateMaintenance(env, 'request quota reached')
-    ctx.waitUntil(recordAccessLog(env, { userId: domain.user_id, domainId: domain.domain_id, pluginInstanceId: domain.plugin_instance_id, hostname: domain.hostname, method: request.method, path: url.pathname, status: 503, durationMs: Date.now() - startedAt, error: 'platform quota reached' }))
+    ctx.waitUntil(recordAccessLog(env, { workspaceId: domain.workspace_id, userId: domain.user_id, domainId: domain.domain_id, pluginInstanceId: domain.plugin_instance_id, hostname: domain.hostname, method: request.method, path: url.pathname, status: 503, durationMs: Date.now() - startedAt, error: 'platform quota reached' }))
     return maintenanceResponse()
   }
   const mode = selectPublicRequestMode(request, domain.manifest_json)
   if (!mode) {
-    ctx.waitUntil(recordAccessLog(env, { userId: domain.user_id, domainId: domain.domain_id, pluginInstanceId: domain.plugin_instance_id, hostname: domain.hostname, method: request.method, path: url.pathname, status: 501, durationMs: Date.now() - startedAt, error: 'plugin capability unavailable' }))
+    ctx.waitUntil(recordAccessLog(env, { workspaceId: domain.workspace_id, userId: domain.user_id, domainId: domain.domain_id, pluginInstanceId: domain.plugin_instance_id, hostname: domain.hostname, method: request.method, path: url.pathname, status: 501, durationMs: Date.now() - startedAt, error: 'plugin capability unavailable' }))
     return new Response('Plugin capability is not available', { status: 501, headers: { 'content-type': 'text/plain; charset=utf-8' } })
   }
   const bridge = env.PLUGIN_BRIDGE.get(env.PLUGIN_BRIDGE.idFromName(domain.server_id))
@@ -703,10 +833,10 @@ async function proxyPublicHost(request: Request, env: Env, url: URL, ctx: Execut
       : await bridge.fetch(new Request(new URL('/proxy', request.url), { method: request.method, headers, body: request.body }))
     const bridgeOffline = bridgeResponse.status === 503 && bridgeResponse.headers.get('x-plugmesh-bridge-error') === 'server-offline'
     const response = bridgeOffline ? maintenanceResponse('插件暂时不可用', '插件服务器当前离线，请稍后再试。') : bridgeResponse
-    ctx.waitUntil(recordAccessLog(env, { userId: domain.user_id, domainId: domain.domain_id, pluginInstanceId: domain.plugin_instance_id, hostname: domain.hostname, method: request.method, path: url.pathname, status: response.status, durationMs: Date.now() - startedAt, ...(bridgeOffline ? { error: 'plugin server offline' } : {}) }))
+    ctx.waitUntil(recordAccessLog(env, { workspaceId: domain.workspace_id, userId: domain.user_id, domainId: domain.domain_id, pluginInstanceId: domain.plugin_instance_id, hostname: domain.hostname, method: request.method, path: url.pathname, status: response.status, durationMs: Date.now() - startedAt, ...(bridgeOffline ? { error: 'plugin server offline' } : {}) }))
     return response
   } catch {
-    ctx.waitUntil(recordAccessLog(env, { userId: domain.user_id, domainId: domain.domain_id, pluginInstanceId: domain.plugin_instance_id, hostname: domain.hostname, method: request.method, path: url.pathname, status: 502, durationMs: Date.now() - startedAt, error: 'bridge request failed' }))
+    ctx.waitUntil(recordAccessLog(env, { workspaceId: domain.workspace_id, userId: domain.user_id, domainId: domain.domain_id, pluginInstanceId: domain.plugin_instance_id, hostname: domain.hostname, method: request.method, path: url.pathname, status: 502, durationMs: Date.now() - startedAt, error: 'bridge request failed' }))
     return new Response('Plugin bridge request failed', { status: 502 })
   }
 }
@@ -736,7 +866,7 @@ async function platformSettingsApi(request: Request, env: Env, user: Authenticat
   }
   await env.DB.prepare('INSERT INTO platform_settings (key, value_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at').bind('platform', JSON.stringify(next), new Date().toISOString()).run()
   setPlatformSettingsCache(next)
-  await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'platform.settings.updated', JSON.stringify(next), new Date().toISOString()).run()
+  await env.DB.prepare('INSERT INTO audit_log (id, workspace_id, user_id, action, detail_json, created_at) VALUES (?, NULL, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'platform.settings.updated', JSON.stringify(next), new Date().toISOString()).run()
   return json(next)
 }
 
@@ -758,7 +888,7 @@ export async function cloudflareSettingsApi(request: Request, env: Env, user: Au
       if (credential) await revokeCloudflareToken(env, credential.accessToken)
     }
     await env.DB.prepare('DELETE FROM cloudflare_credentials WHERE id = ?').bind('primary').run()
-    await recordAudit(env, user.id, 'cloudflare.credentials.revoked', {})
+    await recordAudit(env, null, user.id, 'cloudflare.credentials.revoked', {})
     return json({ configured: false, accountIdConfigured: false, accountId: null, updatedAt: null })
   }
   if (request.method !== 'PUT') return json({ error: 'Method not allowed' }, 405)
@@ -768,7 +898,7 @@ export async function cloudflareSettingsApi(request: Request, env: Env, user: Au
   const sealed = await encryptSecret(env.SESSION_SECRET, JSON.stringify({ accessToken: body.accessToken.trim(), accountId: body.accountId?.trim() || null, tokenType: 'Bearer', expiresAt: null } satisfies CloudflareCredential))
   const updatedAt = new Date().toISOString()
   await env.DB.prepare('INSERT INTO cloudflare_credentials (id, ciphertext, iv, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET ciphertext = excluded.ciphertext, iv = excluded.iv, updated_at = excluded.updated_at').bind('primary', sealed.ciphertext, sealed.iv, updatedAt).run()
-  await recordAudit(env, user.id, 'cloudflare.credentials.updated', { accountIdConfigured: Boolean(body.accountId?.trim()) })
+  await recordAudit(env, null, user.id, 'cloudflare.credentials.updated', { accountIdConfigured: Boolean(body.accountId?.trim()) })
   return json({ configured: true, accountIdConfigured: Boolean(body.accountId?.trim()), accountId: maskAccountId(body.accountId?.trim() || null), updatedAt })
 }
 
@@ -822,7 +952,7 @@ export async function smtpSettingsApi(request: Request, env: Env, user: Authenti
   }
   if (request.method === 'DELETE') {
     await env.DB.prepare('DELETE FROM smtp_settings WHERE id = ?').bind('primary').run()
-    await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'smtp.settings.revoked', '{}', new Date().toISOString()).run()
+    await env.DB.prepare('INSERT INTO audit_log (id, workspace_id, user_id, action, detail_json, created_at) VALUES (?, NULL, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'smtp.settings.revoked', '{}', new Date().toISOString()).run()
     return json({ configured: false, updatedAt: null })
   }
   if (request.method !== 'PUT') return json({ error: 'Method not allowed' }, 405)
@@ -842,7 +972,7 @@ export async function smtpSettingsApi(request: Request, env: Env, user: Authenti
   const sealed = await encryptSecret(env.SESSION_SECRET, JSON.stringify(settings))
   const updatedAt = new Date().toISOString()
   await env.DB.prepare('INSERT INTO smtp_settings (id, ciphertext, iv, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET ciphertext = excluded.ciphertext, iv = excluded.iv, updated_at = excluded.updated_at').bind('primary', sealed.ciphertext, sealed.iv, updatedAt).run()
-  await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'smtp.settings.updated', JSON.stringify({ host: settings.host, port: settings.port, secure: settings.secure, username: settings.username, authType: settings.authType, from: settings.from }), updatedAt).run()
+  await env.DB.prepare('INSERT INTO audit_log (id, workspace_id, user_id, action, detail_json, created_at) VALUES (?, NULL, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'smtp.settings.updated', JSON.stringify({ host: settings.host, port: settings.port, secure: settings.secure, username: settings.username, authType: settings.authType, from: settings.from }), updatedAt).run()
   return json(publicSmtpSettings(settings, updatedAt))
 }
 
@@ -873,14 +1003,14 @@ export async function smtpTestApi(request: Request, env: Env, user: Authenticate
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
       await sendSmtpTest(settings, body.to)
-      await recordAudit(env, user.id, 'smtp.test.sent', { to: body.to, attempts: attempt })
+      await recordAudit(env, null, user.id, 'smtp.test.sent', { to: body.to, attempts: attempt })
       return json({ sent: true, attempts: attempt })
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error)
       if (attempt < maxAttempts) await wait(250 * 2 ** (attempt - 1))
     }
   }
-  await recordAudit(env, user.id, 'smtp.test.failed', { to: body.to, attempts: maxAttempts, error: redactSmtpError(lastError, settings.password) })
+  await recordAudit(env, null, user.id, 'smtp.test.failed', { to: body.to, attempts: maxAttempts, error: redactSmtpError(lastError, settings.password) })
   return json({ error: 'SMTP test send failed', attempts: maxAttempts }, 502)
 }
 
@@ -912,7 +1042,7 @@ export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser, fetc
     credential = next
     refreshed = true
     await storeCloudflareCredential(env, credential)
-    await recordAudit(env, user.id, 'cloudflare.oauth.refreshed', {})
+    await recordAudit(env, null, user.id, 'cloudflare.oauth.refreshed', {})
   }
   if (!credential.accountId) return json({ configured: true, accountIdConfigured: false, cached: false })
   const accountId = credential.accountId
@@ -930,7 +1060,7 @@ export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser, fetc
       credential = next
       refreshed = true
       await storeCloudflareCredential(env, credential)
-      await recordAudit(env, user.id, 'cloudflare.oauth.refreshed', {})
+      await recordAudit(env, null, user.id, 'cloudflare.oauth.refreshed', {})
       response = await analyticsRequest(credential.accessToken)
     }
   }
@@ -949,7 +1079,7 @@ export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser, fetc
     if (next) {
       credential = next
       await storeCloudflareCredential(env, credential)
-      await recordAudit(env, user.id, 'cloudflare.oauth.refreshed', {})
+      await recordAudit(env, null, user.id, 'cloudflare.oauth.refreshed', {})
       resourceResponse = await resourceAnalyticsRequest(credential.accessToken)
     }
   }
@@ -1014,17 +1144,18 @@ async function enforceCloudflareUsageQuotas(env: Env, usage: CloudflareUsageResu
   if (reason) await activateMaintenance(env, reason)
 }
 
-export async function localUsageApi(env: Env, user: AuthenticatedUser, url = new URL('https://worker.invalid/api/usage/local')): Promise<Response> {
+export async function localUsageApi(env: Env, user: AuthenticatedUser, url = new URL('https://worker.invalid/api/usage/local'), workspace?: Workspace): Promise<Response> {
   if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
+  const workspaceId = workspace?.id ?? null
   const range = url.searchParams.get('range')
   const durationMs = range === '24h' ? 24 * 60 * 60 * 1000 : range === '30d' ? 30 * 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000
   const since = new Date(Date.now() - durationMs).toISOString()
   const [usage, snapshots, users, plugins, domains] = await Promise.all([
     env.DB.prepare('SELECT request_count, request_window_started_at, active_connections, r2_bytes, r2_objects, updated_at FROM platform_usage WHERE key = ?').bind('global').first<{ request_count: number; request_window_started_at: string; active_connections: number; r2_bytes: number; r2_objects: number; updated_at: string }>(),
     env.DB.prepare('SELECT captured_at, request_count, active_connections, r2_bytes, r2_objects FROM usage_snapshots WHERE captured_at >= ? ORDER BY captured_at ASC').bind(since).all<UsageSnapshot>(),
-    env.DB.prepare('SELECT request_logs.user_id AS id, COALESCE(users.display_name, users.email, request_logs.user_id) AS label, COUNT(*) AS requests FROM request_logs LEFT JOIN users ON users.id = request_logs.user_id WHERE request_logs.created_at >= ? GROUP BY request_logs.user_id ORDER BY requests DESC, label ASC LIMIT 5').bind(since).all<UsageBreakdownEntry>(),
-    env.DB.prepare('SELECT request_logs.plugin_instance_id AS id, COALESCE(plugin_instances.name, request_logs.plugin_instance_id) AS label, COUNT(*) AS requests FROM request_logs LEFT JOIN plugin_instances ON plugin_instances.id = request_logs.plugin_instance_id WHERE request_logs.created_at >= ? GROUP BY request_logs.plugin_instance_id ORDER BY requests DESC, label ASC LIMIT 5').bind(since).all<UsageBreakdownEntry>(),
-    env.DB.prepare('SELECT hostname AS id, hostname AS label, COUNT(*) AS requests FROM request_logs WHERE created_at >= ? GROUP BY hostname ORDER BY requests DESC, label ASC LIMIT 5').bind(since).all<UsageBreakdownEntry>(),
+    env.DB.prepare('SELECT request_logs.user_id AS id, COALESCE(users.display_name, users.email, request_logs.user_id) AS label, COUNT(*) AS requests FROM request_logs LEFT JOIN users ON users.id = request_logs.user_id WHERE request_logs.created_at >= ? AND (? IS NULL OR request_logs.workspace_id = ?) GROUP BY request_logs.user_id ORDER BY requests DESC, label ASC LIMIT 5').bind(since, workspaceId, workspaceId).all<UsageBreakdownEntry>(),
+    env.DB.prepare('SELECT request_logs.plugin_instance_id AS id, COALESCE(plugin_instances.name, request_logs.plugin_instance_id) AS label, COUNT(*) AS requests FROM request_logs LEFT JOIN plugin_instances ON plugin_instances.id = request_logs.plugin_instance_id WHERE request_logs.created_at >= ? AND (? IS NULL OR request_logs.workspace_id = ?) GROUP BY request_logs.plugin_instance_id ORDER BY requests DESC, label ASC LIMIT 5').bind(since, workspaceId, workspaceId).all<UsageBreakdownEntry>(),
+    env.DB.prepare('SELECT hostname AS id, hostname AS label, COUNT(*) AS requests FROM request_logs WHERE created_at >= ? AND (? IS NULL OR workspace_id = ?) GROUP BY hostname ORDER BY requests DESC, label ASC LIMIT 5').bind(since, workspaceId, workspaceId).all<UsageBreakdownEntry>(),
   ])
   return json({
     requestCount: usage?.request_count ?? 0,

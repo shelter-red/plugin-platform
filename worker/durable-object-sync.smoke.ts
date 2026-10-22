@@ -42,7 +42,7 @@ const database = {
         return query
       },
       first: async <T>() => {
-        if (sql.includes('SELECT user_id FROM servers')) return { user_id: 'user-1' } as T
+        if (sql.includes('SELECT user_id') && sql.includes('FROM servers')) return { user_id: 'user-1', workspace_id: 'ws_default' } as T
         return null
       },
       all: async <T>() => ({ results: [] as T[] }),

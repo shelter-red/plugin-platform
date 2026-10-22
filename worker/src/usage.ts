@@ -85,7 +85,7 @@ async function notifyMaintenance(env: Env, reason: string, sendEmail: Maintenanc
 }
 
 async function recordMaintenanceNotice(env: Env, action: string, detail: Record<string, unknown>): Promise<void> {
-  await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), null, action, JSON.stringify(detail), new Date().toISOString()).run()
+  await env.DB.prepare('INSERT INTO audit_log (id, workspace_id, user_id, action, detail_json, created_at) VALUES (?, NULL, ?, ?, ?, ?)').bind(crypto.randomUUID(), null, action, JSON.stringify(detail), new Date().toISOString()).run()
 }
 
 export function setPlatformSettingsCache(settings: PlatformSettings): void {

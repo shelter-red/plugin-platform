@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert'
 import { syncServer } from './src/index.ts'
-import type { AuthenticatedUser, Env } from './src/types.ts'
+import type { AuthenticatedUser, Env, Workspace } from './src/types.ts'
 import { defaultPlatformSettings, setPlatformSettingsCache } from './src/usage.ts'
 
 type QueryResult = {
@@ -22,12 +22,12 @@ function createDatabase(server: { id: string; status: string } | null, ownerId =
         },
         first: async <T>() => {
           if (sql.includes('SELECT value_json FROM platform_settings')) return { value_json: JSON.stringify({ maintenance }) } as T
-          if (sql.includes('SELECT id, status FROM servers')) return server && boundValues[1] === ownerId ? server as T : null
+          if (sql.includes('SELECT id, status FROM servers')) return server && boundValues[1] === 'ws_default' ? server as T : null
           return null
         },
         run: async () => {
           if (sql.includes('INSERT INTO audit_log')) {
-            audits.push({ action: String(boundValues[2]), detail: String(boundValues[3]) })
+            audits.push({ action: String(boundValues[3]), detail: String(boundValues[4]) })
           }
           return { meta: { changes: 1 } }
         },
@@ -57,6 +57,8 @@ function createEnvironment(database: ReturnType<typeof createDatabase>, bridgeRe
   }
 }
 
+const workspace: Workspace = { id: 'ws_default', name: '默认工作区', slug: 'default', role: 'owner', created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z' }
+
 const user: AuthenticatedUser = {
   id: 'user-1',
   github_id: 'github-1',
@@ -68,7 +70,7 @@ const user: AuthenticatedUser = {
 {
   const database = createDatabase({ id: 'server-1', status: 'online' })
   const environment = createEnvironment(database)
-  const response = await syncServer(new Request('https://console.example.test/api/servers/server-1/sync', { method: 'POST' }), environment.env, user, 'server-1')
+  const response = await syncServer(new Request('https://console.example.test/api/servers/server-1/sync', { method: 'POST' }), environment.env, user, workspace, 'server-1')
 
   assert.equal(response.status, 202)
   assert.equal(environment.bridgeCalls, 1)
@@ -84,7 +86,7 @@ const user: AuthenticatedUser = {
 {
   const database = createDatabase({ id: 'server-1', status: 'online' })
   const environment = createEnvironment(database)
-  const response = await syncServer(new Request('https://console.example.test/api/servers/server-1/sync', { method: 'POST' }), environment.env, { ...user, id: 'user-2' }, 'server-1')
+  const response = await syncServer(new Request('https://console.example.test/api/servers/server-1/sync', { method: 'POST' }), environment.env, { ...user, id: 'user-2' }, { ...workspace, id: 'ws_other' }, 'server-1')
 
   assert.equal(response.status, 404)
   assert.equal(environment.bridgeCalls, 0)
@@ -93,7 +95,7 @@ const user: AuthenticatedUser = {
 {
   const database = createDatabase({ id: 'server-1', status: 'offline' })
   const environment = createEnvironment(database)
-  const response = await syncServer(new Request('https://console.example.test/api/servers/server-1/sync', { method: 'POST' }), environment.env, user, 'server-1')
+  const response = await syncServer(new Request('https://console.example.test/api/servers/server-1/sync', { method: 'POST' }), environment.env, user, workspace, 'server-1')
 
   assert.equal(response.status, 409)
   assert.equal(environment.bridgeCalls, 0)
@@ -103,7 +105,7 @@ const user: AuthenticatedUser = {
   setPlatformSettingsCache({ ...defaultPlatformSettings, maintenance: true })
   const database = createDatabase({ id: 'server-1', status: 'online' }, 'user-1', true)
   const environment = createEnvironment(database)
-  const response = await syncServer(new Request('https://console.example.test/api/servers/server-1/sync', { method: 'POST' }), environment.env, user, 'server-1')
+  const response = await syncServer(new Request('https://console.example.test/api/servers/server-1/sync', { method: 'POST' }), environment.env, user, workspace, 'server-1')
 
   assert.equal(response.status, 503)
   assert.equal(environment.bridgeCalls, 0)

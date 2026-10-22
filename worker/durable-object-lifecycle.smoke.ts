@@ -63,7 +63,7 @@ const database = {
         return query
       },
       first: async <T>() => {
-        if (sql.includes('SELECT user_id FROM servers')) return server.status === 'revoked' ? null : { user_id: 'user-1' } as T
+        if (sql.includes('SELECT user_id') && sql.includes('FROM servers')) return server.status === 'revoked' ? null : { user_id: 'user-1', workspace_id: 'ws_default' } as T
         return null
       },
       all: async <T>() => {
@@ -84,7 +84,7 @@ const database = {
           return { meta: { changes: 1 } }
         }
         if (sql.includes('INSERT INTO plugin_instances')) {
-          plugin.pluginId = String(query.values[3])
+          plugin.pluginId = String(query.values[4])
           if (plugin.state === 'server_offline') plugin.state = 'discovered'
           return { meta: { changes: 1 } }
         }

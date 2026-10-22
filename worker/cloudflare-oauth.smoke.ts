@@ -33,7 +33,9 @@ const database = {
         } else if (sql.includes('INSERT INTO smtp_settings')) {
           smtp = { ciphertext: values[1] as string, iv: values[2] as string, updated_at: values[3] as string }
         } else if (sql.includes('INSERT INTO audit_log')) {
-          audits.push({ action: values[2] as string, detail: values[3] as string })
+          // recordAudit 绑定 workspace_id；平台设置类审计使用字面量 NULL，参数位置不同。
+          const shift = sql.includes('NULL') ? 0 : 1
+          audits.push({ action: values[2 + shift] as string, detail: values[3 + shift] as string })
         }
         return { meta: { changes: 1 } }
       },

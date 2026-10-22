@@ -209,7 +209,7 @@ export async function oauthSettingsApi(request: Request, env: Env, user: Authent
     } else if (stored.unreadable) {
       await env.DB.prepare('DELETE FROM oauth_settings WHERE id = ?').bind('primary').run()
     }
-    await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'oauth.settings.revoked', JSON.stringify({ provider }), new Date().toISOString()).run()
+    await env.DB.prepare('INSERT INTO audit_log (id, workspace_id, user_id, action, detail_json, created_at) VALUES (?, NULL, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'oauth.settings.revoked', JSON.stringify({ provider }), new Date().toISOString()).run()
     return json(await publicSettings(env))
   }
   if (request.method !== 'PUT') return json({ error: 'Method not allowed' }, 405)
@@ -234,6 +234,6 @@ export async function oauthSettingsApi(request: Request, env: Env, user: Authent
   }
   if (updated.length === 0) return json({ error: '至少提交 GitHub 或 Cloudflare 配置' }, 400)
   const updatedAt = await saveStoredOauthSettings(env, next)
-  await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'oauth.settings.updated', JSON.stringify({ providers: updated, githubClientId: next.github?.clientId ?? null, cloudflareClientId: next.cloudflare?.clientId ?? null }), updatedAt).run()
+  await env.DB.prepare('INSERT INTO audit_log (id, workspace_id, user_id, action, detail_json, created_at) VALUES (?, NULL, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'oauth.settings.updated', JSON.stringify({ providers: updated, githubClientId: next.github?.clientId ?? null, cloudflareClientId: next.cloudflare?.clientId ?? null }), updatedAt).run()
   return json(await publicSettings(env))
 }

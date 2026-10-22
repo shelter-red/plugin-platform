@@ -8,6 +8,7 @@ const admin: AuthenticatedUser = { id: 'admin-1', github_id: 'github-admin', ema
 const sessionTokens = new Map<string, string>()
 const users = new Map([[member.id, member], [admin.id, admin]])
 const serverQueries: unknown[][] = []
+const defaultWorkspace = { id: 'ws_default', name: '默认工作区', slug: 'default', role: 'owner', created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z' }
 
 const database = {
   prepare(sql: string) {
@@ -21,15 +22,18 @@ const database = {
         if (sql.includes('FROM sessions')) return (sessionTokens.get(values[0] as string) ? { user_id: sessionTokens.get(values[0] as string) } : null) as T
         if (sql.includes('FROM users WHERE id')) return (users.get(values[0] as string) ?? null) as T
         if (sql.includes('FROM platform_settings')) return { value_json: JSON.stringify({ maintenance: false, quotas: {} }) } as T
+        if (sql.includes('FROM workspaces') || sql.includes('JOIN workspaces')) return defaultWorkspace as T
         return null as T
       },
       all: async <T>() => {
-        if (sql.includes('FROM servers WHERE user_id')) {
+        if (sql.includes('FROM workspaces') || sql.includes('JOIN workspaces')) return { results: [defaultWorkspace] } as T
+        if (sql.includes('FROM servers WHERE workspace_id')) {
           serverQueries.push(values)
-          return { results: [{ id: 'server-member', name: 'Member server', status: 'online', user_id: values[0] }] } as T
+          return { results: [{ id: 'server-member', name: 'Member server', status: 'online', workspace_id: values[0] }] } as T
         }
         return { results: [] } as T
       },
+      run: async () => ({ meta: { changes: 1 } }),
     }
     return query
   },
@@ -51,13 +55,15 @@ response = await worker.fetch(request('/api/settings/platform', memberToken), en
 assert.equal(response.status, 403)
 assert.equal((await response.json() as { error: string }).error, 'Forbidden')
 
+// 工作区所有者可以读取本工作区邀请，但平台级设置仍然只允许超级管理员。
 response = await worker.fetch(request('/api/invites', memberToken), env, ctx)
-assert.equal(response.status, 403)
+assert.equal(response.status, 200)
+assert.deepEqual(await response.json(), { results: [] })
 
 response = await worker.fetch(request('/api/servers', memberToken), env, ctx)
 assert.equal(response.status, 200)
-assert.deepEqual((await response.json() as { results: Array<{ id: string; user_id: string }> }).results, [{ id: 'server-member', name: 'Member server', status: 'online', user_id: member.id }])
-assert.deepEqual(serverQueries, [[member.id]])
+assert.deepEqual((await response.json() as { results: Array<{ id: string; workspace_id: string }> }).results, [{ id: 'server-member', name: 'Member server', status: 'online', workspace_id: 'ws_default' }])
+assert.deepEqual(serverQueries, [['ws_default']])
 
 response = await worker.fetch(request('/api/settings/platform', adminToken), env, ctx)
 assert.equal(response.status, 200)

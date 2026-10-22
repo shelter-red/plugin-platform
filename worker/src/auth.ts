@@ -1,5 +1,5 @@
 import { resolveOauthSettings } from './oauth-settings'
-import type { AuthenticatedUser, Env } from './types'
+import type { AuthenticatedUser, Env, WorkspaceRole } from './types'
 
 const SESSION_COOKIE = 'plugmesh_session'
 
@@ -33,7 +33,7 @@ export async function isAllowlisted(env: Env, identity: { login: string; emails:
 
 export async function acceptInvite(env: Env, tokenHash: string, identity: { login: string; emails: string[]; displayName: string; githubId: string }, role: AuthenticatedUser['role']): Promise<string | null> {
   const now = new Date().toISOString()
-  const invite = await env.DB.prepare('SELECT id, email, github_login FROM invites WHERE token_hash = ? AND status = ? AND expires_at > ?').bind(tokenHash, 'pending', now).first<{ id: string; email: string | null; github_login: string | null }>()
+  const invite = await env.DB.prepare('SELECT id, email, github_login, workspace_id, role FROM invites WHERE token_hash = ? AND status = ? AND expires_at > ?').bind(tokenHash, 'pending', now).first<{ id: string; email: string | null; github_login: string | null; workspace_id: string; role: WorkspaceRole }>()
   if (!invite || (invite.email && !identity.emails.some((email) => email.toLowerCase() === invite.email?.toLowerCase())) || (invite.github_login && invite.github_login.toLowerCase() !== identity.login.toLowerCase())) return null
 
   const candidateId = crypto.randomUUID()
@@ -46,6 +46,7 @@ export async function acceptInvite(env: Env, tokenHash: string, identity: { logi
       ON CONFLICT(github_id) DO UPDATE SET email = excluded.email, display_name = excluded.display_name, role = excluded.role
     `).bind(candidateId, identity.githubId, identity.emails[0], identity.displayName, role, now, invite.id, tokenHash, 'pending', now),
     env.DB.prepare('UPDATE invites SET status = ?, used_at = ? WHERE id = ? AND token_hash = ? AND status = ? AND expires_at > ?').bind('used', now, invite.id, tokenHash, 'pending', now),
+    env.DB.prepare('INSERT INTO workspace_members (workspace_id, user_id, role, created_at) SELECT ?, id, ?, ? FROM users WHERE github_id = ? ON CONFLICT(workspace_id, user_id) DO UPDATE SET role = excluded.role').bind(invite.workspace_id, invite.role, now, identity.githubId),
   ])
   if ((results[1]?.meta.changes ?? 0) !== 1) return null
   const user = await env.DB.prepare('SELECT id FROM users WHERE github_id = ?').bind(identity.githubId).first<{ id: string }>()

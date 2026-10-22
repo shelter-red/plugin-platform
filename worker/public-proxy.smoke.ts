@@ -7,6 +7,7 @@ import type { PluginRoute } from './src/route-cache.ts'
 
 const readyRoute: PluginRoute = {
   domain_id: 'domain-ready',
+  workspace_id: 'ws_default',
   user_id: 'user-1',
   plugin_instance_id: 'instance-ready',
   server_id: 'server-ready',
@@ -41,7 +42,7 @@ const database = {
         return null as T
       },
       run: async () => {
-        if (sql.includes('INSERT INTO request_logs')) accessLogs.push({ status: values[7] as number, path: values[6] as string })
+        if (sql.includes('INSERT INTO request_logs')) accessLogs.push({ status: values[8] as number, path: values[7] as string })
         return { meta: { changes: 1 } }
       },
     }

@@ -2,6 +2,8 @@ import { expect, test, type Page, type Route } from '@playwright/test'
 
 const overview = { onlineServers: 2, enabledPlugins: 3, domains: 1 }
 
+const defaultWorkspace = { id: 'ws_default', name: '默认工作区', slug: 'default', role: 'owner', created_at: '2026-09-01T00:00:00.000Z', updated_at: '2026-09-01T00:00:00.000Z' }
+
 const platformSettings = {
   maintenance: false,
   pluginDomainSuffix: '.plugins.example.com',
@@ -42,6 +44,9 @@ type WorkerMock = {
   domainRequests: { pluginInstanceId: string; prefix: string }[]
   commandRequests: string[]
   syncRequests: string[]
+  workspaces: { id: string; name: string; slug: string; role: string; created_at: string; updated_at: string }[]
+  workspaceMembers: { user_id: string; display_name: string | null; email: string | null; github_id: string | null; role: string; created_at: string }[]
+  workspaceRequests: string[]
   oauthUpdates: unknown[]
   platformUpdates: unknown[]
   smtpUpdates: unknown[]
@@ -67,6 +72,9 @@ async function mockWorker(page: Page): Promise<WorkerMock> {
     domainRequests: [],
     commandRequests: [],
     syncRequests: [],
+    workspaces: [{ ...defaultWorkspace }],
+    workspaceMembers: [{ user_id: 'user-1', display_name: 'E2E Admin', email: 'e2e@example.com', github_id: '1', role: 'owner', created_at: '2026-09-01T00:00:00.000Z' }],
+    workspaceRequests: [],
     oauthUpdates: [],
     platformUpdates: [],
     smtpUpdates: [],
@@ -150,12 +158,61 @@ async function handleApi(route: Route, state: WorkerMock, logsGate: Promise<void
     await logsGate
     return route.fulfill({ json: { results: state.accessLogs, errorCount: 0, since: '2026-09-21T00:00:00.000Z' } })
   }
+  const memberAction = pathname.match(/^\/api\/workspaces\/([^/]+)\/members\/([^/]+)$/)
+  if (memberAction) {
+    const userId = decodeURIComponent(memberAction[2])
+    state.workspaceRequests.push(`${method} ${pathname}`)
+    if (method === 'DELETE') {
+      state.workspaceMembers = state.workspaceMembers.filter((member) => member.user_id !== userId)
+      return route.fulfill({ json: { deleted: true } })
+    }
+    const body = route.request().postDataJSON() as { role: string }
+    state.workspaceMembers = state.workspaceMembers.map((member) => member.user_id === userId ? { ...member, role: body.role } : member)
+    return route.fulfill({ json: { updated: true } })
+  }
+  const members = pathname.match(/^\/api\/workspaces\/([^/]+)\/members$/)
+  if (members) {
+    state.workspaceRequests.push(`${method} ${pathname}`)
+    if (method === 'POST') {
+      const body = route.request().postDataJSON() as { email?: string; userId?: string; role: string }
+      const email = body.email ?? null
+      state.workspaceMembers.push({ user_id: `user-${state.workspaceMembers.length + 1}`, display_name: email, email, github_id: null, role: body.role, created_at: '2026-10-22T00:00:00.000Z' })
+      return route.fulfill({ status: 201, json: { added: true } })
+    }
+    return route.fulfill({ json: { results: state.workspaceMembers } })
+  }
+  const workspaceAction = pathname.match(/^\/api\/workspaces\/([^/]+)$/)
+  if (workspaceAction) {
+    const id = decodeURIComponent(workspaceAction[1])
+    state.workspaceRequests.push(`${method} ${pathname}`)
+    if (method === 'DELETE') {
+      if (id === 'ws_default') return route.fulfill({ status: 409, json: { error: 'The default workspace cannot be deleted' } })
+      state.workspaces = state.workspaces.filter((workspace) => workspace.id !== id)
+      return route.fulfill({ json: { id, deleted: true } })
+    }
+    const body = route.request().postDataJSON() as { name: string }
+    state.workspaces = state.workspaces.map((workspace) => workspace.id === id ? { ...workspace, name: body.name } : workspace)
+    return route.fulfill({ json: state.workspaces.find((workspace) => workspace.id === id) })
+  }
+  if (pathname === '/api/workspaces') {
+    state.workspaceRequests.push(`${method} ${pathname}`)
+    if (method === 'POST') {
+      const body = route.request().postDataJSON() as { name: string }
+      const created = { id: `ws_${state.workspaces.length}`, name: body.name, slug: `workspace-${state.workspaces.length}`, role: 'owner', created_at: '2026-10-22T00:00:00.000Z', updated_at: '2026-10-22T00:00:00.000Z' }
+      state.workspaces.push(created)
+      return route.fulfill({ status: 201, json: created })
+    }
+    return route.fulfill({ json: { results: state.workspaces } })
+  }
+  if (pathname === '/api/invites' && method === 'GET') {
+    return route.fulfill({ json: { results: [] } })
+  }
   if (state.failData && ['/api/servers', '/api/plugins', '/api/domains'].includes(pathname)) {
     return route.fulfill({ status: 500, json: { error: 'smoke failure' } })
   }
   switch (pathname) {
     case '/api/me':
-      return route.fulfill({ json: { user: { id: 'user-1', github_id: '1', display_name: 'E2E Admin', email: 'e2e@example.com', role: 'super_admin' } } })
+      return route.fulfill({ json: { user: { id: 'user-1', github_id: '1', display_name: 'E2E Admin', email: 'e2e@example.com', role: 'super_admin' }, workspaces: state.workspaces, activeWorkspaceId: state.workspaces[0]?.id ?? null } })
     case '/api/overview':
       return route.fulfill({ json: overview })
     case '/api/servers':
@@ -725,4 +782,29 @@ test('管理端窄窗口下表格、图表和详情弹窗可用', async ({ page 
 
   await page.keyboard.press('Escape')
   await expect(dialog).toBeHidden()
+})
+
+test('管理端切换工作区并管理工作区成员', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  const worker = await mockWorker(page)
+  await page.goto('/workspaces')
+
+  await expect(page.getByRole('heading', { level: 1, name: '工作区' })).toBeVisible()
+  await expect(page.getByText('默认工作区').first()).toBeVisible()
+  await expect(page.getByText('e2e@example.com').first()).toBeVisible()
+
+  await page.getByPlaceholder('例如：生产环境').fill('生产环境')
+  await page.getByRole('button', { name: '新建工作区' }).click()
+  await expect(page.locator('.ant-notification-notice').filter({ hasText: '工作区已创建' })).toBeVisible()
+  await expect(page.getByText('生产环境').first()).toBeVisible()
+  expect(worker.workspaceRequests).toContain('POST /api/workspaces')
+
+  await page.getByPlaceholder('member@example.com').fill('ops@example.com')
+  await page.getByRole('button', { name: '添加成员' }).click()
+  await expect(page.locator('.ant-notification-notice').filter({ hasText: '成员已添加' })).toBeVisible()
+  await expect(page.getByText('ops@example.com').first()).toBeVisible()
+
+  await page.getByRole('button', { name: '切换工作区' }).click()
+  await page.getByRole('menuitem', { name: /默认工作区/ }).click()
+  await expect(page.locator('.ant-notification-notice').filter({ hasText: '已切换到工作区「默认工作区」' })).toBeVisible()
 })

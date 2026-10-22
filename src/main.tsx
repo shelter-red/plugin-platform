@@ -11,6 +11,7 @@ import {
   AlertCircle,
   ArrowUpRight,
   Box,
+  Building2,
   Check,
   CircleHelp,
   Cloud,
@@ -65,7 +66,9 @@ import { DocPage } from './components/DocPage'
 import { AccountPage } from './features/account/AccountPage'
 import { PAGE_PATHS, docFromPath, pageFromPath, type Page } from './app/routes'
 import i18n, { storeLanguage, type Language } from './i18n'
-import { ApiError, assignDomain, checkPluginHealth, commandPlugin, createInvite, createRegistrationCode, fetchAccessLogs, fetchAudit, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchInvites, fetchLocalUsage, fetchOauthSettings, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchPluginDetails, fetchServerDetails, fetchServers, fetchSmtpSettings, revokeInvite, syncServer, type ApiAccessLog, type ApiAudit, type ApiDomain, type ApiInvite, type ApiOverview, type ApiPlugin, type ApiPluginDetail, type ApiServer, type ApiServerDetail, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type OauthSettings, type PlatformSettings, type PluginAction, type PluginHealthResult, type SmtpSettings, type UsageBreakdownEntry, type UsageSnapshot, updatePlatformSettings } from './api'
+import { fetchMe, fetchWorkspaces, setActiveWorkspace as applyActiveWorkspace, currentWorkspaceId, type ApiMe, type Workspace } from './api'
+import { WorkspacePage } from './features/workspaces/WorkspacePage'
+import { ApiError, assignDomain, checkPluginHealth, commandPlugin, createInvite, createRegistrationCode, fetchAccessLogs, fetchAudit, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchInvites, fetchLocalUsage, fetchOauthSettings, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchPluginDetails, fetchServerDetails, fetchServers, fetchSmtpSettings, revokeInvite, syncServer, type ApiAccessLog, type ApiAudit, type ApiDomain, type ApiInvite, type ApiOverview, type ApiPlugin, type ApiPluginDetail, type ApiServer, type ApiServerDetail, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type OauthSettings, type PlatformSettings, type PluginAction, type PluginHealthResult, type SmtpSettings, type UsageBreakdownEntry, type UsageSnapshot, type WorkspaceRole, updatePlatformSettings } from './api'
 
 type Theme = 'dark' | 'light' | 'system'
 type ModalInput = { prefix?: string; pluginInstanceId?: string }
@@ -79,6 +82,7 @@ const navGroups: { labelKey: string; items: { id: Page; icon: typeof LayoutDashb
       { id: 'servers', icon: Server },
       { id: 'plugins', icon: Box },
       { id: 'domains', icon: Globe2 },
+      { id: 'workspaces', icon: Building2 },
     ],
   },
   {
@@ -157,8 +161,19 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
   const page = pageFromPath(location.pathname)
   const docPage = docFromPath(location.pathname)
   const authEnabled = import.meta.env.VITE_AUTH_ENABLED !== 'false'
+  // 纯静态预览（无鉴权且未配置 API 地址）不发起任何 Worker 请求，保持空态展示。
+  const apiConnected = authEnabled || Boolean(import.meta.env.VITE_API_BASE)
   const [authState, setAuthState] = useState<'loading' | 'authenticated' | 'anonymous'>(authEnabled ? 'loading' : 'authenticated')
-  const [authUser, setAuthUser] = useState<{ display_name: string; email: string; role?: string } | null>(null)
+  const [authUser, setAuthUser] = useState<ApiMe['user'] | null>(null)
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null)
+  const [workspaceKey, setWorkspaceKey] = useState(0)
+  const [workspaceReady, setWorkspaceReady] = useState(!apiConnected)
+  const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null
+  // 尚未接入 Worker（纯静态预览）时不做角色限制；接入后必须由已解析工作区的角色决定。
+  const canWrite = activeWorkspace ? activeWorkspace.role !== 'viewer' : !apiConnected
+  // 静态预览没有登录态，保持原有演示能力；接入 Worker 后严格以真实角色判断。
+  const isSuperAdmin = !apiConnected || authUser?.role === 'super_admin'
   const [overview, setOverview] = useState<ApiOverview | null>(null)
   const [servers, setServers] = useState<ApiServer[] | null>(null)
   const [plugins, setPlugins] = useState<ApiPlugin[] | null>(null)
@@ -228,17 +243,33 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
     if (key === 'account') navigate('/account')
     if (key === 'help') navigate('/help')
   }
+  const workspaceMenuItems = [
+    ...workspaces.map((workspace) => ({ key: `ws:${workspace.id}`, label: `${workspace.name} · ${t(`workspace.roles.${workspace.role}`)}`, icon: workspace.id === activeWorkspaceId ? <Check size={14} /> : <Building2 size={14} /> })),
+    ...(workspaces.length > 0 ? [{ type: 'divider' as const }] : []),
+    { key: 'workspace:manage', label: t('workspace.manage'), icon: <Building2 size={14} /> },
+    { key: 'workspace:create', label: t('workspace.create'), icon: <Plus size={14} /> },
+  ]
+  const onWorkspaceMenu = ({ key }: { key: string }) => {
+    if (key.startsWith('ws:')) switchWorkspace(key.slice(3))
+    else if (key === 'workspace:manage' || key === 'workspace:create') navigate('/workspaces')
+  }
 
   useEffect(() => {
     if (!authEnabled && !import.meta.env.VITE_API_BASE) return
-    fetch('/api/me', { credentials: 'include' })
-      .then(async (response) => {
-        if (!response.ok) throw new Error('anonymous')
-        const data = await response.json() as { user?: { display_name: string; email: string; role?: string } }
+    fetchMe()
+      .then((data) => {
         setAuthUser(data.user ?? null)
+        setWorkspaces(data.workspaces ?? [])
+        // Worker 已按 Header/Cookie/首个工作区解析，前端直接采用解析结果。
+        if (data.activeWorkspaceId) applyActiveWorkspace(data.activeWorkspaceId)
+        setActiveWorkspaceId(data.activeWorkspaceId ?? null)
+        setWorkspaceReady(true)
         if (authEnabled) setAuthState('authenticated')
       })
-      .catch(() => { if (authEnabled) setAuthState('anonymous') })
+      .catch(() => {
+        setWorkspaceReady(true)
+        if (authEnabled) setAuthState('anonymous')
+      })
   }, [authEnabled])
 
   useEffect(() => {
@@ -277,20 +308,24 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
   }, [authEnabled])
 
   useEffect(() => {
-    if (authUser?.role !== 'super_admin') return
+    if (!apiConnected || !workspaceReady) return
+    if (authUser?.role !== 'super_admin' && activeWorkspace?.role !== 'owner') {
+      setInvites(null)
+      return
+    }
     fetchInvites().then(setInvites).catch(() => setInvites(null))
-  }, [authUser?.role])
+  }, [authUser?.role, activeWorkspace?.role, workspaceReady, workspaceKey])
 
   useEffect(() => {
-    if (!authEnabled && !import.meta.env.VITE_API_BASE) return
+    if (!apiConnected || !workspaceReady) return
     fetchOverview().then((data) => {
       setOverview(data)
       setApiLive(true)
     }).catch(() => setApiLive(false))
-  }, [authEnabled])
+  }, [workspaceReady, workspaceKey])
 
   useEffect(() => {
-    if (!authEnabled && !import.meta.env.VITE_API_BASE) return
+    if (!apiConnected || !workspaceReady) return
     setDataLoading(true)
     Promise.all([fetchServers(), fetchPlugins(), fetchDomains()]).then(([nextServers, nextPlugins, nextDomains]) => {
       setServers(nextServers)
@@ -298,10 +333,10 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
       setDomains(nextDomains)
       setDataError(null)
     }).catch(() => setDataError('toast.dataUnavailable')).finally(() => setDataLoading(false))
-  }, [authEnabled])
+  }, [workspaceReady, workspaceKey])
 
   useEffect(() => {
-    if (!authEnabled && !import.meta.env.VITE_API_BASE) return
+    if (!apiConnected || !workspaceReady) return
     setAuditLoading(true)
     fetchAudit().then((data) => {
       setAudits(data)
@@ -323,14 +358,37 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
       setUsage(null)
       setUsageError(errorMessage(error, 'toast.usageUnavailable'))
     }).finally(() => setUsageLoading(false))
-  }, [authEnabled])
+  }, [workspaceReady, workspaceKey])
 
   useEffect(() => {
-    if (!authEnabled && !import.meta.env.VITE_API_BASE) return
+    if (!apiConnected || !workspaceReady) return
     fetchLocalUsage(range).then(setLocalUsage).catch(() => setLocalUsage(null))
-  }, [authEnabled, range])
+  }, [workspaceReady, workspaceKey, range])
 
   const notify = useToast()
+
+  const switchWorkspace = (workspaceId: string) => {
+    if (workspaceId === activeWorkspaceId) return
+    // 新建或删除后列表尚未重新渲染，此时也应立即切换，名称回退到列表中的最新值。
+    const next = workspaces.find((workspace) => workspace.id === workspaceId)
+    applyActiveWorkspace(workspaceId)
+    setActiveWorkspaceId(workspaceId)
+    setWorkspaceKey((value) => value + 1)
+    setDetail(null)
+    setModal(null)
+    notify('success', t('workspace.switched', { name: next?.name ?? workspaceId }))
+  }
+
+  const reloadWorkspaces = async () => {
+    const next = await fetchWorkspaces()
+    setWorkspaces(next)
+    if (!next.some((workspace) => workspace.id === currentWorkspaceId())) {
+      const fallback = next[0]?.id ?? null
+      applyActiveWorkspace(fallback)
+      setActiveWorkspaceId(fallback)
+      setWorkspaceKey((value) => value + 1)
+    }
+  }
 
   const refreshData = async (announce = true) => {
     setDataLoading(true)
@@ -499,7 +557,13 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
           </Link>
           <IconButton label={t('shell.closeNav')} onClick={() => setSidebarOpen(false)}><X size={17} /></IconButton>
         </div>
-        <div className="workspace-switcher"><div className="workspace-icon">P</div><div className="workspace-copy"><strong>{t('shell.workspace')}</strong><span>{apiLive ? t('shell.connected') : t('shell.waiting')}</span></div></div>
+        <Dropdown menu={{ items: workspaceMenuItems, onClick: onWorkspaceMenu }} trigger={['click']} placement="bottomLeft">
+          <button type="button" className="workspace-switcher" aria-label={t('workspace.switch')}>
+            <div className="workspace-icon">{(activeWorkspace?.name ?? t('shell.workspace')).trim().slice(0, 1).toUpperCase()}</div>
+            <div className="workspace-copy"><strong>{activeWorkspace?.name ?? t('workspace.none')}</strong><span>{activeWorkspace ? `${t(`workspace.roles.${activeWorkspace.role}`)} · ${apiLive ? t('shell.connected') : t('shell.waiting')}` : t('shell.waiting')}</span></div>
+            <MoreHorizontal size={16} />
+          </button>
+        </Dropdown>
         <nav className="nav-area">
           {navGroups.map((group) => <div className="nav-group" key={group.labelKey}><div className="nav-label">{t(group.labelKey)}</div>{group.items.map(({ id, icon: NavIcon }) => <button className={`nav-item ${page === id ? 'active' : ''}`} key={id} onClick={() => selectPage(id)} aria-label={t(`nav.${id}`)}><NavIcon size={16} /><span>{t(`nav.${id}`)}</span>{id === 'servers' && servers && servers.length > 0 && <span className="nav-count">{servers.length}</span>}</button>)}</div>)}
         </nav>
@@ -530,8 +594,9 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
         </header>
         <div className="page-scroll">
           <div className="page-content">
-            <div className="page-header"><div><div className="eyebrow"><span className="live-pulse" />{apiLive ? t('shell.live') : t('shell.waitingData')}</div><h1>{meta.title}</h1><p>{meta.description}</p></div><div className="header-actions">{page === 'overview' && <button className="button secondary" onClick={() => void refreshData()} disabled={dataLoading}><RefreshCw size={15} />{t('shell.refresh')}</button>}{page === 'servers' && <button className="button primary" onClick={() => setModal('server')}><Plus size={16} />{t('shell.bindServer')}</button>}{page === 'domains' && <button className="button primary" onClick={() => setModal('domain')}><Plus size={16} />{t('shell.assignDomain')}</button>}{page === 'plugins' && <button className="button primary" onClick={() => setModal('plugin')}><Plus size={16} />{t('shell.loadPlugin')}</button>}</div></div>
+            <div className="page-header"><div><div className="eyebrow"><span className="live-pulse" />{apiLive ? t('shell.live') : t('shell.waitingData')}</div><h1>{meta.title}</h1><p>{meta.description}</p></div><div className="header-actions">{page === 'overview' && <button className="button secondary" onClick={() => void refreshData()} disabled={dataLoading}><RefreshCw size={15} />{t('shell.refresh')}</button>}{page === 'servers' && <button className="button primary" onClick={() => setModal('server')} disabled={!canWrite} title={canWrite ? undefined : t('workspace.readOnlyHint')}><Plus size={16} />{t('shell.bindServer')}</button>}{page === 'domains' && <button className="button primary" onClick={() => setModal('domain')} disabled={!canWrite} title={canWrite ? undefined : t('workspace.readOnlyHint')}><Plus size={16} />{t('shell.assignDomain')}</button>}{page === 'plugins' && <button className="button primary" onClick={() => setModal('plugin')} disabled={!canWrite} title={canWrite ? undefined : t('workspace.readOnlyHint')}><Plus size={16} />{t('shell.loadPlugin')}</button>}</div></div>
             {dataError && <div className="notice-bar compact"><div className="notice-icon"><AlertCircle size={16} /></div><div><strong>{t('shell.loadFailed')}</strong><span>{translateError(dataError ?? '')}</span></div><button onClick={() => void refreshData()}>{t('shell.retry')} <RefreshCw size={14} /></button></div>}
+            {activeWorkspace && !canWrite && page !== 'settings' && page !== 'workspaces' && <div className="notice-bar compact" role="status"><div className="notice-icon"><ShieldCheck size={16} /></div><div><strong>{t('workspace.readOnly')}</strong><span>{t('workspace.readOnlyHint')}</span></div></div>}
             {page === 'overview' && <Overview overview={overview} usage={usage} localUsage={localUsage} settings={platformSettings} audits={audits ?? []} accessLogs={accessLogs} accessLogsLoading={accessLogsLoading} accessLogsError={accessLogsError} servers={servers ?? []} range={range} setRange={setRange} onNavigate={selectPage} />}
             {page === 'servers' && <Servers servers={servers ?? []} loading={dataLoading} onRefresh={() => void refreshData()} onBind={() => setModal('server')} onDetail={(id) => void openDetail('server', id)} />}
             {page === 'plugins' && <Plugins plugins={plugins ?? []} loading={dataLoading} onSync={() => void syncManifests()} onLoad={() => setModal('plugin')} onDetail={(id) => void openDetail('plugin', id)} onHealth={(plugin) => void runHealthCheck(plugin)} />}
@@ -539,7 +604,8 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
             {page === 'usage' && <Usage settings={platformSettings} usage={usage} localUsage={localUsage} loading={usageLoading} error={usageError} onNavigate={selectPage} />}
             {page === 'logs' && <AccessLogs logs={accessLogs ?? []} loading={accessLogsLoading} error={accessLogsError} onExport={exportAccessLogs} />}
             {page === 'audit' && <Audit audits={audits ?? []} loading={auditLoading} error={auditError} onExport={exportAudit} />}
-            {page === 'settings' && <SettingsPage focusSection={settingsFocus} settings={platformSettings} apiLive={apiLive} onSettingsChange={setPlatformSettings} cloudflareSettings={cloudflareSettings} onCloudflareChange={setCloudflareSettings} cloudflareDiagnosis={cloudflareDiagnosis} onDismissCloudflareDiagnosis={() => setCloudflareDiagnosis(null)} smtpSettings={smtpSettings} onSmtpChange={setSmtpSettings} oauthSettings={oauthSettings} onOauthChange={setOauthSettings} invites={invites} onInvitesChange={setInvites} onAction={notify} />}
+            {page === 'workspaces' && <WorkspacePage workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} onSwitch={switchWorkspace} onWorkspacesChange={reloadWorkspaces} onAction={notify} />}
+            {page === 'settings' && <SettingsPage focusSection={settingsFocus} settings={platformSettings} apiLive={apiLive} isSuperAdmin={isSuperAdmin} canManageInvites={isSuperAdmin || activeWorkspace?.role === 'owner'} activeWorkspaceId={activeWorkspaceId} workspaces={workspaces} onSettingsChange={setPlatformSettings} cloudflareSettings={cloudflareSettings} onCloudflareChange={setCloudflareSettings} cloudflareDiagnosis={cloudflareDiagnosis} onDismissCloudflareDiagnosis={() => setCloudflareDiagnosis(null)} smtpSettings={smtpSettings} onSmtpChange={setSmtpSettings} oauthSettings={oauthSettings} onOauthChange={setOauthSettings} invites={invites} onInvitesChange={setInvites} onAction={notify} />}
             {docPage && (docPage === 'account' ? <AccountPage user={authUser} /> : <DocPage page={docPage} />)}
           </div>
         </div>
@@ -762,7 +828,7 @@ function Audit({ audits, loading, error, onExport }: { audits: ApiAudit[]; loadi
   return <div className="stack">{error && <div className="notice-bar compact"><div className="notice-icon"><AlertCircle size={16} /></div><div><strong>{t('audit.loadFailed')}</strong><span>{translateError(error)}</span></div></div>}<div className="filter-row"><div className="filter-summary"><ListFilter size={15} />{t('audit.allEvents')} <span className="divider" />{t('audit.last180Days')}</div><button className="button secondary small" onClick={onExport} disabled={loading || audits.length === 0}><Download size={14} />{t('audit.export')}</button></div>{loading ? <div className="empty-panel"><div className="empty-illustration"><RefreshCw size={20} /></div><h3>{t('audit.loadingTitle')}</h3><p>{t('audit.loadingBody')}</p></div> : audits.length === 0 ? <div className="empty-panel"><div className="empty-illustration"><Activity size={20} /></div><h3>{t('audit.emptyTitle')}</h3><p>{t('audit.emptyBody')}</p></div> : <div className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>{t('audit.columnEvent')}</th><th>{t('audit.columnDetail')}</th><th>{t('audit.columnActor')}</th><th>{t('audit.columnTime')}</th></tr></thead><tbody>{audits.map((item) => <tr key={item.id}><td><div className="cell-title"><div className="audit-icon"><Activity size={14} /></div><strong>{auditActionLabel(item.action)}</strong></div></td><td>{auditDetail(item)}</td><td><span className="operator"><div className="mini-avatar">{(item.actor_name ?? t('common.system')).slice(0, 1)}</div><span>{item.actor_name ?? t('audit.systemEvent')}<small>{item.actor_email ?? t('audit.noIdentity')}</small></span></span></td><td className="muted">{formatDateTime(item.created_at)}</td></tr>)}</tbody></table></div></div>}</div>
 }
 
-function SettingsPage({ focusSection, settings, onSettingsChange, apiLive, cloudflareSettings, onCloudflareChange, cloudflareDiagnosis, onDismissCloudflareDiagnosis, smtpSettings, onSmtpChange, oauthSettings, onOauthChange, invites, onInvitesChange, onAction }: { focusSection: { section: string; nonce: number } | null; settings: PlatformSettings | null; onSettingsChange: (settings: PlatformSettings) => void; cloudflareSettings: CloudflareSettings | null; onCloudflareChange: (settings: CloudflareSettings) => void; cloudflareDiagnosis: CloudflareDiagnosis | null; onDismissCloudflareDiagnosis: () => void; smtpSettings: SmtpSettings | null; onSmtpChange: (settings: SmtpSettings) => void; oauthSettings: OauthSettings | null; onOauthChange: (settings: OauthSettings) => void; invites: ApiInvite[] | null; onInvitesChange: (invites: ApiInvite[]) => void; onAction: Notify; apiLive: boolean }) {
+function SettingsPage({ focusSection, settings, onSettingsChange, apiLive, isSuperAdmin, canManageInvites, activeWorkspaceId, workspaces, cloudflareSettings, onCloudflareChange, cloudflareDiagnosis, onDismissCloudflareDiagnosis, smtpSettings, onSmtpChange, oauthSettings, onOauthChange, invites, onInvitesChange, onAction }: { focusSection: { section: string; nonce: number } | null; settings: PlatformSettings | null; onSettingsChange: (settings: PlatformSettings) => void; apiLive: boolean; isSuperAdmin: boolean; canManageInvites: boolean; activeWorkspaceId: string | null; workspaces: Workspace[]; cloudflareSettings: CloudflareSettings | null; onCloudflareChange: (settings: CloudflareSettings) => void; cloudflareDiagnosis: CloudflareDiagnosis | null; onDismissCloudflareDiagnosis: () => void; smtpSettings: SmtpSettings | null; onSmtpChange: (settings: SmtpSettings) => void; oauthSettings: OauthSettings | null; onOauthChange: (settings: OauthSettings) => void; invites: ApiInvite[] | null; onInvitesChange: (invites: ApiInvite[]) => void; onAction: Notify }) {
   const { t } = useTranslation()
   const [saving, setSaving] = useState(false)
   const [quotaSaving, setQuotaSaving] = useState(false)
@@ -771,7 +837,7 @@ function SettingsPage({ focusSection, settings, onSettingsChange, apiLive, cloud
   const [domainSuffix, setDomainSuffix] = useState('')
   const [activeSection, setActiveSection] = useState('cloudflare')
   const maintenance = settings?.maintenance ?? false
-  const sectionNav = settingsSections.map(({ id, labelKey, icon }) => ({ id, label: t(labelKey), icon }))
+  const sectionNav = settingsSections.filter(({ id }) => (isSuperAdmin ? true : id === 'invites') && (id !== 'invites' || canManageInvites)).map(({ id, labelKey, icon }) => ({ id, label: t(labelKey), icon }))
   useEffect(() => {
     if (!focusSection) return
     setActiveSection(focusSection.section)
@@ -860,14 +926,15 @@ function SettingsPage({ focusSection, settings, onSettingsChange, apiLive, cloud
     setActiveSection(section)
     document.getElementById(`settings-${section}`)?.scrollIntoView({ behavior: scrollBehavior(), block: 'start' })
   }
-  return <div className="settings-layout"><nav className="settings-nav" aria-label={t('pages.settings.title')}>{sectionNav.map(({ id, label, icon: Icon }) => <button key={id} className={activeSection === id ? 'selected' : ''} onClick={() => goToSection(id)} aria-current={activeSection === id ? 'page' : undefined}><Icon size={15} />{label}</button>)}</nav><div className="settings-content"><CloudflarePanel settings={cloudflareSettings} onSettingsChange={onCloudflareChange} oauth={oauthSettings} onOauthChange={onOauthChange} diagnosis={cloudflareDiagnosis} onDismissDiagnosis={onDismissCloudflareDiagnosis} apiLive={apiLive} onAction={onAction} /><div id="settings-oauth"><OauthPanel settings={oauthSettings} onChange={onOauthChange} onAction={onAction} /></div><div id="settings-invites"><InvitePanel invites={invites} onChange={onInvitesChange} onAction={onAction} /></div><div id="settings-smtp"><SmtpPanel settings={smtpSettings} onChange={onSmtpChange} onAction={onAction} /></div><div id="settings-maintenance" className="panel settings-panel"><div className="settings-heading"><div className="settings-icon"><ShieldCheck size={18} /></div><div><h2>{t('settings.maintenance.title')}</h2><p>{settings ? t('settings.maintenance.description') : t('settings.maintenance.descriptionOffline')}</p></div><StatusBadge tone={maintenance ? 'warning' : settings ? 'success' : 'neutral'}>{maintenance ? t('settings.maintenance.on') : settings ? t('settings.maintenance.off') : t('settings.maintenance.unknown')}</StatusBadge></div><div className="maintenance-row"><div><strong>{settings ? (maintenance ? t('settings.maintenance.pause') : t('settings.maintenance.allow')) : t('settings.maintenance.unknownTitle')}</strong><span>{settings ? (maintenance ? t('settings.maintenance.pauseBody') : t('settings.maintenance.allowBody')) : t('settings.maintenance.unknownBody')}</span></div><button className={`toggle ${settings && !maintenance ? 'on' : ''}`} disabled={saving || !settings} onClick={toggleMaintenance}><span /></button></div><div className="quota-form domain-form"><div className="form-grid"><label>{t('settings.domainSuffix.label')}<input value={domainSuffix} onChange={(event) => setDomainSuffix(event.target.value)} placeholder="plugins.example.com" disabled={!settings || suffixSaving} /></label></div><div className="settings-actions quota-actions"><span className="form-hint">{t('settings.domainSuffix.hint')}</span><button className="button secondary" onClick={() => void saveDomainSuffix()} disabled={!settings || suffixSaving || quotaSaving}>{suffixSaving ? t('common.saving') : t('settings.domainSuffix.save')}<Check size={14} /></button></div></div><div className="quota-form"><div className="form-grid"><label>{t('settings.quotas.requests')}<input type="number" min="1" step="1" value={quotaForm.requests} onChange={(event) => updateQuota('requests', event.target.value)} disabled={!settings || quotaSaving} /></label><label>{t('settings.quotas.connections')}<input type="number" min="1" step="1" value={quotaForm.activeConnections} onChange={(event) => updateQuota('activeConnections', event.target.value)} disabled={!settings || quotaSaving} /></label><label>{t('settings.quotas.r2Bytes')}<input type="number" min="1" step="1" value={quotaForm.r2Bytes} onChange={(event) => updateQuota('r2Bytes', event.target.value)} disabled={!settings || quotaSaving} /></label><label>{t('settings.quotas.r2Objects')}<input type="number" min="1" step="1" value={quotaForm.r2Objects} onChange={(event) => updateQuota('r2Objects', event.target.value)} disabled={!settings || quotaSaving} /></label><label>{t('settings.quotas.d1')}<input type="number" min="1" step="1" value={quotaForm.d1Queries} onChange={(event) => updateQuota('d1Queries', event.target.value)} disabled={!settings || quotaSaving} /></label><label>{t('settings.quotas.kv')}<input type="number" min="1" step="1" value={quotaForm.kvOperations} onChange={(event) => updateQuota('kvOperations', event.target.value)} disabled={!settings || quotaSaving} /></label><label>{t('settings.quotas.durableObjects')}<input type="number" min="1" step="1" value={quotaForm.durableObjectRequests} onChange={(event) => updateQuota('durableObjectRequests', event.target.value)} disabled={!settings || quotaSaving} /></label></div><div className="settings-actions quota-actions"><span className="form-hint">{t('settings.quotas.hint')}</span><button className="button secondary" onClick={() => void saveQuotas()} disabled={!settings || quotaSaving || suffixSaving}>{quotaSaving ? t('common.saving') : t('settings.quotas.save')}<Check size={14} /></button></div></div></div></div></div>
+  return <div className="settings-layout"><nav className="settings-nav" aria-label={t('pages.settings.title')}>{sectionNav.map(({ id, label, icon: Icon }) => <button key={id} className={activeSection === id ? 'selected' : ''} onClick={() => goToSection(id)} aria-current={activeSection === id ? 'page' : undefined}><Icon size={15} />{label}</button>)}</nav><div className="settings-content">{isSuperAdmin && <CloudflarePanel settings={cloudflareSettings} onSettingsChange={onCloudflareChange} oauth={oauthSettings} onOauthChange={onOauthChange} diagnosis={cloudflareDiagnosis} onDismissDiagnosis={onDismissCloudflareDiagnosis} apiLive={apiLive} onAction={onAction} />}{isSuperAdmin && <div id="settings-oauth"><OauthPanel settings={oauthSettings} onChange={onOauthChange} onAction={onAction} /></div>}{canManageInvites && <div id="settings-invites"><InvitePanel invites={invites} onChange={onInvitesChange} onAction={onAction} isSuperAdmin={isSuperAdmin} activeWorkspaceId={activeWorkspaceId} workspaces={workspaces} /></div>}{isSuperAdmin && <div id="settings-smtp"><SmtpPanel settings={smtpSettings} onChange={onSmtpChange} onAction={onAction} /></div>}{isSuperAdmin && <div id="settings-maintenance" className="panel settings-panel"><div className="settings-heading"><div className="settings-icon"><ShieldCheck size={18} /></div><div><h2>{t('settings.maintenance.title')}</h2><p>{settings ? t('settings.maintenance.description') : t('settings.maintenance.descriptionOffline')}</p></div><StatusBadge tone={maintenance ? 'warning' : settings ? 'success' : 'neutral'}>{maintenance ? t('settings.maintenance.on') : settings ? t('settings.maintenance.off') : t('settings.maintenance.unknown')}</StatusBadge></div><div className="maintenance-row"><div><strong>{settings ? (maintenance ? t('settings.maintenance.pause') : t('settings.maintenance.allow')) : t('settings.maintenance.unknownTitle')}</strong><span>{settings ? (maintenance ? t('settings.maintenance.pauseBody') : t('settings.maintenance.allowBody')) : t('settings.maintenance.unknownBody')}</span></div><button className={`toggle ${settings && !maintenance ? 'on' : ''}`} disabled={saving || !settings} onClick={toggleMaintenance}><span /></button></div><div className="quota-form domain-form"><div className="form-grid"><label>{t('settings.domainSuffix.label')}<input value={domainSuffix} onChange={(event) => setDomainSuffix(event.target.value)} placeholder="plugins.example.com" disabled={!settings || suffixSaving} /></label></div><div className="settings-actions quota-actions"><span className="form-hint">{t('settings.domainSuffix.hint')}</span><button className="button secondary" onClick={() => void saveDomainSuffix()} disabled={!settings || suffixSaving || quotaSaving}>{suffixSaving ? t('common.saving') : t('settings.domainSuffix.save')}<Check size={14} /></button></div></div><div className="quota-form"><div className="form-grid"><label>{t('settings.quotas.requests')}<input type="number" min="1" step="1" value={quotaForm.requests} onChange={(event) => updateQuota('requests', event.target.value)} disabled={!settings || quotaSaving} /></label><label>{t('settings.quotas.connections')}<input type="number" min="1" step="1" value={quotaForm.activeConnections} onChange={(event) => updateQuota('activeConnections', event.target.value)} disabled={!settings || quotaSaving} /></label><label>{t('settings.quotas.r2Bytes')}<input type="number" min="1" step="1" value={quotaForm.r2Bytes} onChange={(event) => updateQuota('r2Bytes', event.target.value)} disabled={!settings || quotaSaving} /></label><label>{t('settings.quotas.r2Objects')}<input type="number" min="1" step="1" value={quotaForm.r2Objects} onChange={(event) => updateQuota('r2Objects', event.target.value)} disabled={!settings || quotaSaving} /></label><label>{t('settings.quotas.d1')}<input type="number" min="1" step="1" value={quotaForm.d1Queries} onChange={(event) => updateQuota('d1Queries', event.target.value)} disabled={!settings || quotaSaving} /></label><label>{t('settings.quotas.kv')}<input type="number" min="1" step="1" value={quotaForm.kvOperations} onChange={(event) => updateQuota('kvOperations', event.target.value)} disabled={!settings || quotaSaving} /></label><label>{t('settings.quotas.durableObjects')}<input type="number" min="1" step="1" value={quotaForm.durableObjectRequests} onChange={(event) => updateQuota('durableObjectRequests', event.target.value)} disabled={!settings || quotaSaving} /></label></div><div className="settings-actions quota-actions"><span className="form-hint">{t('settings.quotas.hint')}</span><button className="button secondary" onClick={() => void saveQuotas()} disabled={!settings || quotaSaving || suffixSaving}>{quotaSaving ? t('common.saving') : t('settings.quotas.save')}<Check size={14} /></button></div></div></div>}</div></div>
 }
 
-function InvitePanel({ invites, onChange, onAction }: { invites: ApiInvite[] | null; onChange: (invites: ApiInvite[]) => void; onAction: Notify }) {
+function InvitePanel({ invites, onChange, onAction, isSuperAdmin, activeWorkspaceId, workspaces }: { invites: ApiInvite[] | null; onChange: (invites: ApiInvite[]) => void; onAction: Notify; isSuperAdmin: boolean; activeWorkspaceId: string | null; workspaces: Workspace[] }) {
   const { t } = useTranslation()
   const [email, setEmail] = useState('')
   const [githubLogin, setGithubLogin] = useState('')
   const [expiresInHours, setExpiresInHours] = useState('72')
+  const [role, setRole] = useState<WorkspaceRole>('viewer')
   const [saving, setSaving] = useState(false)
   const [latestUrl, setLatestUrl] = useState<string | null>(null)
 
@@ -879,7 +946,7 @@ function InvitePanel({ invites, onChange, onAction }: { invites: ApiInvite[] | n
     }
     setSaving(true)
     try {
-      const result = await createInvite({ email: email.trim() || undefined, githubLogin: githubLogin.trim() || undefined, expiresInHours: Number(expiresInHours) || 72 })
+      const result = await createInvite({ email: email.trim() || undefined, githubLogin: githubLogin.trim() || undefined, expiresInHours: Number(expiresInHours) || 72, workspaceId: activeWorkspaceId ?? undefined, role })
       setLatestUrl(result.inviteUrl)
       setEmail('')
       setGithubLogin('')
@@ -906,7 +973,9 @@ function InvitePanel({ invites, onChange, onAction }: { invites: ApiInvite[] | n
     await navigator.clipboard.writeText(latestUrl)
     onAction('success', t('settings.invite.copied'))
   }
-  return <div className="panel settings-panel"><div className="settings-heading"><div className="settings-icon"><Users size={18} /></div><div><h2>{t('settings.invite.title')}</h2><p>{invites ? t('settings.invite.description') : t('settings.invite.descriptionUnavailable')}</p></div><StatusBadge tone={invites ? 'success' : 'neutral'}>{invites ? t('settings.invite.count', { count: invites.length }) : t('settings.invite.unknown')}</StatusBadge></div><div className="form-grid"><label>{t('settings.invite.email')}<input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="member@example.com" disabled={!invites || saving} /></label><label>{t('settings.invite.github')}<input value={githubLogin} onChange={(event) => setGithubLogin(event.target.value)} placeholder="github-login" disabled={!invites || saving} /></label><label>{t('settings.invite.expiresIn')}<input type="number" min="1" max="720" value={expiresInHours} onChange={(event) => setExpiresInHours(event.target.value)} disabled={!invites || saving} /></label></div><div className="settings-actions"><button className="button primary" onClick={() => void create()} disabled={!invites || saving}>{t('settings.invite.create')}<Plus size={14} /></button>{latestUrl && <><input className="invite-url" value={latestUrl} readOnly aria-label={t('settings.invite.newLink')} /><button className="button secondary" onClick={() => void copy()}><Copy size={14} />{t('settings.invite.copy')}</button></>}</div>{invites === null ? <div className="empty-panel"><div className="empty-illustration"><Users size={20} /></div><h3>{t('settings.invite.emptyTitle')}</h3><p>{t('settings.invite.emptyBody')}</p></div> : invites.length === 0 ? <div className="empty-panel"><div className="empty-illustration"><Users size={20} /></div><h3>{t('settings.invite.noInvitesTitle')}</h3><p>{t('settings.invite.noInvitesBody')}</p></div> : <div className="table-wrap"><table><thead><tr><th>{t('settings.invite.columnIdentity')}</th><th>{t('settings.invite.columnStatus')}</th><th>{t('settings.invite.columnExpires')}</th><th /></tr></thead><tbody>{invites.map((invite) => <tr key={invite.id}><td><div className="cell-title"><div className="table-icon"><Users size={15} /></div><div><strong>{invite.github_login || invite.email || t('settings.invite.noIdentity')}</strong><small>{invite.email || t('settings.invite.noEmail')}</small></div></div></td><td><StatusBadge tone={invite.status === 'pending' ? 'warning' : invite.status === 'used' ? 'success' : 'neutral'}>{t(`status.${invite.status}`, { defaultValue: invite.status })}</StatusBadge></td><td>{formatDateTime(invite.expires_at)}</td><td>{invite.status === 'pending' && <button className="row-action" onClick={() => void revoke(invite)} aria-label={t('settings.invite.revoke')} title={t('settings.invite.revoke')}><X size={15} /></button>}</td></tr>)}</tbody></table></div>}</div>
+  const workspaceName = (id: string | undefined) => workspaces.find((workspace) => workspace.id === id)?.name ?? id ?? '—'
+  const roleOptions = (['owner', 'operator', 'viewer'] as WorkspaceRole[]).map((value) => ({ value, label: t(`workspace.roles.${value}`) }))
+  return <div className="panel settings-panel"><div className="settings-heading"><div className="settings-icon"><Users size={18} /></div><div><h2>{t('settings.invite.title')}</h2><p>{invites ? t('settings.invite.description') : t('settings.invite.descriptionUnavailable')}</p></div><StatusBadge tone={invites ? 'success' : 'neutral'}>{invites ? t('settings.invite.count', { count: invites.length }) : t('settings.invite.unknown')}</StatusBadge></div><div className="form-grid"><label>{t('settings.invite.email')}<input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="member@example.com" disabled={!invites || saving} /></label><label>{t('settings.invite.github')}<input value={githubLogin} onChange={(event) => setGithubLogin(event.target.value)} placeholder="github-login" disabled={!invites || saving} /></label><label>{t('settings.invite.role')}<Select aria-label={t('settings.invite.role')} value={role} onChange={(value: WorkspaceRole) => setRole(value)} disabled={!invites || saving} options={roleOptions} /></label><label>{t('settings.invite.expiresIn')}<input type="number" min="1" max="720" value={expiresInHours} onChange={(event) => setExpiresInHours(event.target.value)} disabled={!invites || saving} /></label></div><div className="settings-actions"><span className="form-hint">{t('settings.invite.workspaceHint', { name: workspaceName(activeWorkspaceId ?? undefined) })}</span><button className="button primary" onClick={() => void create()} disabled={!invites || saving}>{t('settings.invite.create')}<Plus size={14} /></button>{latestUrl && <><input className="invite-url" value={latestUrl} readOnly aria-label={t('settings.invite.newLink')} /><button className="button secondary" onClick={() => void copy()}><Copy size={14} />{t('settings.invite.copy')}</button></>}</div>{invites === null ? <div className="empty-panel"><div className="empty-illustration"><Users size={20} /></div><h3>{t('settings.invite.emptyTitle')}</h3><p>{t('settings.invite.emptyBody')}</p></div> : invites.length === 0 ? <div className="empty-panel"><div className="empty-illustration"><Users size={20} /></div><h3>{t('settings.invite.noInvitesTitle')}</h3><p>{t('settings.invite.noInvitesBody')}</p></div> : <div className="table-wrap"><table><thead><tr><th>{t('settings.invite.columnIdentity')}</th>{isSuperAdmin && <th>{t('settings.invite.columnWorkspace')}</th>}<th>{t('settings.invite.columnRole')}</th><th>{t('settings.invite.columnStatus')}</th><th>{t('settings.invite.columnExpires')}</th><th /></tr></thead><tbody>{invites.map((invite) => <tr key={invite.id}><td><div className="cell-title"><div className="table-icon"><Users size={15} /></div><div><strong>{invite.github_login || invite.email || t('settings.invite.noIdentity')}</strong><small>{invite.email || t('settings.invite.noEmail')}</small></div></div></td>{isSuperAdmin && <td>{workspaceName(invite.workspace_id)}</td>}<td>{invite.role ? t(`workspace.roles.${invite.role}`) : '—'}</td><td><StatusBadge tone={invite.status === 'pending' ? 'warning' : invite.status === 'used' ? 'success' : 'neutral'}>{t(`status.${invite.status}`, { defaultValue: invite.status })}</StatusBadge></td><td>{formatDateTime(invite.expires_at)}</td><td>{invite.status === 'pending' && <button className="row-action" onClick={() => void revoke(invite)} aria-label={t('settings.invite.revoke')} title={t('settings.invite.revoke')}><X size={15} /></button>}</td></tr>)}</tbody></table></div>}</div>
 }
 
 function DetailModal({ detail, data, loading, error, healthLoading, actionLoading, onClose, onOpenPlugin, onHealth, onAction }: { detail: { kind: 'server' | 'plugin'; id: string }; data: { kind: 'server'; value: ApiServerDetail } | { kind: 'plugin'; value: ApiPluginDetail } | null; loading: boolean; error: string | null; healthLoading: boolean; actionLoading: Exclude<PluginAction, 'health'> | null; onClose: () => void; onOpenPlugin: (id: string) => void; onHealth: (plugin: { id: string; name: string }) => void; onAction: (plugin: ApiPlugin, action: Exclude<PluginAction, 'health'>) => void }) {

@@ -366,7 +366,7 @@ export class PluginBridge {
 
   private async handleServerBindingAction(frame: ControlFrame) {
     try {
-      const owner = await this.env.DB.prepare('SELECT user_id FROM servers WHERE id = ?').bind(this.serverId).first<{ user_id: string }>()
+      const owner = await this.env.DB.prepare('SELECT user_id, workspace_id FROM servers WHERE id = ?').bind(this.serverId).first<{ user_id: string; workspace_id: string }>()
       if (frame.type === 'server.rotate') {
         const accessToken = crypto.randomUUID() + crypto.randomUUID()
         const updated = await this.env.DB.prepare('UPDATE servers SET token_hash = ?, status = ?, last_seen_at = ? WHERE id = ? AND status != ?').bind(await hashControlToken(accessToken), 'online', new Date().toISOString(), this.serverId, 'revoked').run()
@@ -374,7 +374,7 @@ export class PluginBridge {
           this.sendServerActionError(frame.requestId, 'Server binding is revoked or unavailable')
           return
         }
-        if (owner) await this.recordBindingAudit(owner.user_id, 'server.rotated')
+        if (owner) await this.recordBindingAudit(owner.workspace_id, owner.user_id, 'server.rotated')
         const result = makeFrame('server.result', this.serverId, { ok: true, action: 'rotate', accessToken })
         result.requestId = frame.requestId
         this.serverSocket?.send(JSON.stringify(result))
@@ -389,7 +389,7 @@ export class PluginBridge {
         this.sendServerActionError(frame.requestId, 'Server binding is already revoked or unavailable')
         return
       }
-      if (owner) await this.recordBindingAudit(owner.user_id, 'server.revoked')
+      if (owner) await this.recordBindingAudit(owner.workspace_id, owner.user_id, 'server.revoked')
       const result = makeFrame('server.result', this.serverId, { ok: true, action: 'revoke' })
       result.requestId = frame.requestId
       this.serverSocket?.send(JSON.stringify(result))
@@ -400,9 +400,9 @@ export class PluginBridge {
   }
 
   // 轮换与撤销会改变长期密钥和绑定关系，必须写入审计；详情只记服务器 ID，不落令牌。
-  private async recordBindingAudit(userId: string, action: 'server.rotated' | 'server.revoked') {
-    await this.env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)')
-      .bind(crypto.randomUUID(), userId, action, JSON.stringify({ serverId: this.serverId }), new Date().toISOString()).run()
+  private async recordBindingAudit(workspaceId: string, userId: string, action: 'server.rotated' | 'server.revoked') {
+    await this.env.DB.prepare('INSERT INTO audit_log (id, workspace_id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(crypto.randomUUID(), workspaceId, userId, action, JSON.stringify({ serverId: this.serverId }), new Date().toISOString()).run()
   }
 
   private sendServerActionError(requestId: string, message: string) {
@@ -707,7 +707,7 @@ export class PluginBridge {
 
   private async registerServer(payload: Record<string, unknown>): Promise<{ ok: boolean; error?: string }> {
     if (!await this.markServerOnline()) return { ok: false, error: 'Server binding is revoked or unavailable' }
-    const server = await this.env.DB.prepare('SELECT user_id FROM servers WHERE id = ? AND status != ?').bind(this.serverId, 'revoked').first<{ user_id: string }>()
+    const server = await this.env.DB.prepare('SELECT user_id, workspace_id FROM servers WHERE id = ? AND status != ?').bind(this.serverId, 'revoked').first<{ user_id: string; workspace_id: string }>()
     if (!server) return { ok: false, error: 'Plugin server is not registered' }
     if (!Array.isArray(payload.manifests)) {
       await this.rejectServerRegistration('server manifest list is invalid')
@@ -721,10 +721,10 @@ export class PluginBridge {
     const now = new Date().toISOString()
     for (const manifest of manifests) {
       await this.env.DB.prepare(`
-        INSERT INTO plugin_instances (id, user_id, server_id, plugin_id, name, version, state, desired_state, manifest_json, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO plugin_instances (id, user_id, workspace_id, server_id, plugin_id, name, version, state, desired_state, manifest_json, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(server_id, plugin_id) DO UPDATE SET name = excluded.name, version = excluded.version, manifest_json = excluded.manifest_json, state = CASE WHEN plugin_instances.state = 'server_offline' THEN 'discovered' ELSE plugin_instances.state END, updated_at = excluded.updated_at
-      `).bind(crypto.randomUUID(), server.user_id, this.serverId, manifest.id, manifest.name, manifest.version, 'discovered', 'discovered', JSON.stringify(manifest), now, now).run()
+      `).bind(crypto.randomUUID(), server.user_id, server.workspace_id, this.serverId, manifest.id, manifest.name, manifest.version, 'discovered', 'discovered', JSON.stringify(manifest), now, now).run()
     }
     const knownPluginIds = new Set(manifests.map((manifest) => manifest.id))
     const existing = await this.env.DB.prepare('SELECT id, plugin_id FROM plugin_instances WHERE server_id = ?').bind(this.serverId).all<{ id: string; plugin_id: string }>()

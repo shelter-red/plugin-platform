@@ -185,7 +185,7 @@ export async function setupApi(request: Request, env: Env, url: URL): Promise<Re
   } catch {
     return setupPage(url, state, values, 'OAuth 配置保存失败，请检查 SESSION_SECRET 与 D1 migration 是否已就绪。', 503)
   }
-  await env.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)')
+  await env.DB.prepare('INSERT INTO audit_log (id, workspace_id, user_id, action, detail_json, created_at) VALUES (?, NULL, ?, ?, ?, ?)')
     .bind(crypto.randomUUID(), null, 'setup.github.configured', JSON.stringify({ clientId: github.clientId, allowlist: github.allowlist }), new Date().toISOString())
     .run()
 

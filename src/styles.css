@@ -227,3 +227,19 @@ table { width: 100%; border-collapse: collapse; font-size: 11px; } th { padding:
 .account-links a { display: flex; align-items: center; justify-content: space-between; color: var(--text-2); font-size: 11px; }
 .account-links a:hover { color: var(--primary); }
 .account-logout { align-self: flex-start; }
+
+.workspace-switcher { width: 100%; font: inherit; text-align: left; cursor: pointer; }
+.workspace-switcher:hover { border-color: var(--line-strong); background: var(--surface-strong); }
+.button.danger { color: #f87171; border: 1px solid rgba(248,113,113,.35); background: rgba(248,113,113,.08); }
+.button.danger:hover { background: rgba(248,113,113,.14); }
+.form-hint.error { color: #f87171; }
+.workspace-page { display: flex; flex-direction: column; gap: 12px; }
+.workspace-list { display: flex; flex-direction: column; gap: 6px; margin-top: 18px; }
+.workspace-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--text-2); text-align: left; }
+.workspace-row:hover { background: var(--surface-strong); }
+.workspace-row.selected { border-color: rgba(16,185,129,.35); background: var(--primary-faint); }
+.workspace-row-name { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; color: var(--text); font-size: 11px; font-weight: 600; }
+.workspace-row-meta { display: flex; align-items: center; gap: 8px; font-size: 10px; color: var(--text-3); }
+.workspace-row-meta small { font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: var(--text-4); }
+.form-grid .ant-select { width: 100%; }
+.table-wrap .ant-select { min-width: 108px; }

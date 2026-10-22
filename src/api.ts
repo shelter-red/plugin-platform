@@ -1,3 +1,58 @@
+export type WorkspaceRole = 'owner' | 'operator' | 'viewer'
+
+export interface Workspace {
+  id: string
+  name: string
+  slug: string
+  role: WorkspaceRole
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkspaceMember {
+  user_id: string
+  display_name: string
+  email: string
+  github_id: string
+  role: WorkspaceRole
+  created_at: string
+}
+
+export interface ApiMe {
+  user: { id?: string; github_id?: string; display_name: string; email: string; role?: string }
+  workspaces: Workspace[]
+  activeWorkspaceId: string | null
+}
+
+const WORKSPACE_STORAGE_KEY = 'plugmesh-workspace'
+
+function readStoredWorkspace(): string | null {
+  try { return window.localStorage.getItem(WORKSPACE_STORAGE_KEY) } catch { return null }
+}
+
+let activeWorkspaceId: string | null = readStoredWorkspace()
+
+/** 切换工作区后所有请求都带上 X-Workspace-Id，Worker 据此隔离数据。 */
+export function setActiveWorkspace(workspaceId: string | null): void {
+  activeWorkspaceId = workspaceId
+  try {
+    if (workspaceId) window.localStorage.setItem(WORKSPACE_STORAGE_KEY, workspaceId)
+    else window.localStorage.removeItem(WORKSPACE_STORAGE_KEY)
+  } catch { /* 隐私模式下 localStorage 不可写，退化为仅内存生效。 */ }
+}
+
+export function currentWorkspaceId(): string | null {
+  return activeWorkspaceId
+}
+
+const apiBase = import.meta.env.VITE_API_BASE ?? ''
+
+function apiRequest(path: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers)
+  if (activeWorkspaceId) headers.set('X-Workspace-Id', activeWorkspaceId)
+  return fetch(`${apiBase}${path}`, { ...init, credentials: 'include', headers })
+}
+
 export class ApiError extends Error {
   constructor(readonly status: number, message: string, readonly field?: string) {
     super(message)
@@ -121,6 +176,8 @@ interface ApiAccessLogs {
 
 export interface ApiInvite {
   id: string
+  workspace_id?: string
+  role?: WorkspaceRole
   email: string | null
   github_login: string | null
   status: 'pending' | 'used' | 'expired' | 'revoked' | string
@@ -281,75 +338,65 @@ export interface OauthSettingsInput {
 export type OauthProvider = 'github' | 'cloudflare'
 
 export async function fetchOverview(): Promise<ApiOverview> {
-  const apiBase = import.meta.env.VITE_API_BASE ?? ''
-  const response = await fetch(`${apiBase}/api/overview`, { credentials: 'include' })
+  const response = await apiRequest(`/api/overview`, { credentials: 'include' })
   if (!response.ok) throw new ApiError(response.status, 'overview request failed')
   return response.json() as Promise<ApiOverview>
 }
 
 export async function fetchPlatformSettings(): Promise<PlatformSettings> {
-  const apiBase = import.meta.env.VITE_API_BASE ?? ''
-  const response = await fetch(`${apiBase}/api/settings/platform`, { credentials: 'include' })
+  const response = await apiRequest(`/api/settings/platform`, { credentials: 'include' })
   if (!response.ok) throw new ApiError(response.status, 'platform settings request failed')
   return response.json() as Promise<PlatformSettings>
 }
 
 export async function fetchServers(): Promise<ApiServer[]> {
-  const apiBase = import.meta.env.VITE_API_BASE ?? ''
-  const response = await fetch(`${apiBase}/api/servers`, { credentials: 'include' })
+  const response = await apiRequest(`/api/servers`, { credentials: 'include' })
   if (!response.ok) throw new ApiError(response.status, 'servers request failed')
   const data = await response.json() as { results?: ApiServer[] }
   return data.results ?? []
 }
 
 export async function fetchServerDetails(serverId: string): Promise<ApiServerDetail> {
-  const apiBase = import.meta.env.VITE_API_BASE ?? ''
-  const response = await fetch(`${apiBase}/api/servers/${encodeURIComponent(serverId)}`, { credentials: 'include' })
+  const response = await apiRequest(`/api/servers/${encodeURIComponent(serverId)}`, { credentials: 'include' })
   if (!response.ok) throw await apiError(response, 'server detail request failed')
   return response.json() as Promise<ApiServerDetail>
 }
 
 export async function fetchPlugins(): Promise<ApiPlugin[]> {
-  const apiBase = import.meta.env.VITE_API_BASE ?? ''
-  const response = await fetch(`${apiBase}/api/plugins`, { credentials: 'include' })
+  const response = await apiRequest(`/api/plugins`, { credentials: 'include' })
   if (!response.ok) throw new ApiError(response.status, 'plugins request failed')
   const data = await response.json() as { results?: ApiPlugin[] }
   return data.results ?? []
 }
 
 export async function fetchPluginDetails(pluginInstanceId: string): Promise<ApiPluginDetail> {
-  const apiBase = import.meta.env.VITE_API_BASE ?? ''
-  const response = await fetch(`${apiBase}/api/plugins/${encodeURIComponent(pluginInstanceId)}`, { credentials: 'include' })
+  const response = await apiRequest(`/api/plugins/${encodeURIComponent(pluginInstanceId)}`, { credentials: 'include' })
   if (!response.ok) throw await apiError(response, 'plugin detail request failed')
   return response.json() as Promise<ApiPluginDetail>
 }
 
 export async function fetchDomains(): Promise<ApiDomain[]> {
-  const apiBase = import.meta.env.VITE_API_BASE ?? ''
-  const response = await fetch(`${apiBase}/api/domains`, { credentials: 'include' })
+  const response = await apiRequest(`/api/domains`, { credentials: 'include' })
   if (!response.ok) throw new ApiError(response.status, 'domains request failed')
   const data = await response.json() as { results?: ApiDomain[] }
   return data.results ?? []
 }
 
 export async function fetchAudit(): Promise<ApiAudit[]> {
-  const apiBase = import.meta.env.VITE_API_BASE ?? ''
-  const response = await fetch(`${apiBase}/api/audit`, { credentials: 'include' })
+  const response = await apiRequest(`/api/audit`, { credentials: 'include' })
   if (!response.ok) throw new ApiError(response.status, 'audit request failed')
   const data = await response.json() as { results?: ApiAudit[] }
   return data.results ?? []
 }
 
 export async function fetchAccessLogs(): Promise<ApiAccessLogs> {
-  const apiBase = import.meta.env.VITE_API_BASE ?? ''
-  const response = await fetch(`${apiBase}/api/access-logs`, { credentials: 'include' })
+  const response = await apiRequest(`/api/access-logs`, { credentials: 'include' })
   if (!response.ok) throw await apiError(response, 'access logs request failed')
   return response.json() as Promise<ApiAccessLogs>
 }
 
 export async function fetchInvites(): Promise<ApiInvite[]> {
-  const apiBase = import.meta.env.VITE_API_BASE ?? ''
-  const response = await fetch(`${apiBase}/api/invites`, { credentials: 'include' })
+  const response = await apiRequest(`/api/invites`, { credentials: 'include' })
   if (!response.ok) throw await apiError(response, 'invites request failed')
   const data = await response.json() as { results?: ApiInvite[] }
   return data.results ?? []
@@ -361,126 +408,160 @@ async function apiError(response: Response, fallback: string): Promise<ApiError>
 }
 
 export async function createRegistrationCode(): Promise<RegistrationCode> {
-  const apiBase = import.meta.env.VITE_API_BASE ?? ''
-  const response = await fetch(`${apiBase}/api/registration-codes`, { method: 'POST', credentials: 'include' })
+  const response = await apiRequest(`/api/registration-codes`, { method: 'POST', credentials: 'include' })
   if (!response.ok) throw await apiError(response, 'registration code request failed')
   return response.json() as Promise<RegistrationCode>
 }
 
-export async function createInvite(input: { email?: string; githubLogin?: string; expiresInHours: number }): Promise<InviteCreation> {
-  const apiBase = import.meta.env.VITE_API_BASE ?? ''
-  const response = await fetch(`${apiBase}/api/invites`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input) })
+export async function createInvite(input: { email?: string; githubLogin?: string; expiresInHours: number; workspaceId?: string; role?: WorkspaceRole }): Promise<InviteCreation> {
+  const response = await apiRequest(`/api/invites`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input) })
   if (!response.ok) throw await apiError(response, `invite creation failed: ${response.status}`)
   return response.json() as Promise<InviteCreation>
 }
 
 export async function revokeInvite(inviteId: string): Promise<void> {
-  const apiBase = import.meta.env.VITE_API_BASE ?? ''
-  const response = await fetch(`${apiBase}/api/invites/${encodeURIComponent(inviteId)}`, { method: 'DELETE', credentials: 'include' })
+  const response = await apiRequest(`/api/invites/${encodeURIComponent(inviteId)}`, { method: 'DELETE', credentials: 'include' })
   if (!response.ok) throw await apiError(response, `invite revoke failed: ${response.status}`)
 }
 
 export async function commandPlugin(pluginInstanceId: string, action: PluginAction): Promise<PluginCommandResult> {
-  const apiBase = import.meta.env.VITE_API_BASE ?? ''
-  const response = await fetch(`${apiBase}/api/plugins/${encodeURIComponent(pluginInstanceId)}/${action}`, { method: 'POST', credentials: 'include' })
+  const response = await apiRequest(`/api/plugins/${encodeURIComponent(pluginInstanceId)}/${action}`, { method: 'POST', credentials: 'include' })
   if (!response.ok) throw await apiError(response, `plugin command failed: ${response.status}`)
   return response.json() as Promise<PluginCommandResult>
 }
 
 export async function syncServer(serverId: string): Promise<PluginCommandResult> {
-  const apiBase = import.meta.env.VITE_API_BASE ?? ''
-  const response = await fetch(`${apiBase}/api/servers/${encodeURIComponent(serverId)}/sync`, { method: 'POST', credentials: 'include' })
+  const response = await apiRequest(`/api/servers/${encodeURIComponent(serverId)}/sync`, { method: 'POST', credentials: 'include' })
   if (!response.ok) throw await apiError(response, `server sync failed: ${response.status}`)
   return response.json() as Promise<PluginCommandResult>
 }
 
 export async function checkPluginHealth(pluginInstanceId: string): Promise<PluginHealthResult> {
-  const apiBase = import.meta.env.VITE_API_BASE ?? ''
-  const response = await fetch(`${apiBase}/api/plugins/${encodeURIComponent(pluginInstanceId)}/health`, { method: 'POST', credentials: 'include' })
+  const response = await apiRequest(`/api/plugins/${encodeURIComponent(pluginInstanceId)}/health`, { method: 'POST', credentials: 'include' })
   if (!response.ok) throw await apiError(response, `plugin health check failed: ${response.status}`)
   return response.json() as Promise<PluginHealthResult>
 }
 
 export async function assignDomain(pluginInstanceId: string, prefix: string): Promise<DomainAssignmentResult> {
-  const apiBase = import.meta.env.VITE_API_BASE ?? ''
-  const response = await fetch(`${apiBase}/api/domains`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pluginInstanceId, prefix }) })
+  const response = await apiRequest(`/api/domains`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pluginInstanceId, prefix }) })
   if (!response.ok) throw await apiError(response, `domain assignment failed: ${response.status}`)
   return response.json() as Promise<DomainAssignmentResult>
 }
 
 export async function fetchCloudflareUsage(): Promise<CloudflareUsage> {
-  const apiBase = import.meta.env.VITE_API_BASE ?? ''
-  const response = await fetch(`${apiBase}/api/usage/cloudflare`, { credentials: 'include' })
+  const response = await apiRequest(`/api/usage/cloudflare`, { credentials: 'include' })
   if (!response.ok) throw await apiError(response, 'cloudflare usage request failed')
   return response.json() as Promise<CloudflareUsage>
 }
 
 export async function fetchLocalUsage(range: '24h' | '7d' | '30d' = '7d'): Promise<LocalUsage> {
-  const apiBase = import.meta.env.VITE_API_BASE ?? ''
-  const response = await fetch(`${apiBase}/api/usage/local?range=${range}`, { credentials: 'include' })
+  const response = await apiRequest(`/api/usage/local?range=${range}`, { credentials: 'include' })
   if (!response.ok) throw await apiError(response, 'local usage request failed')
   return response.json() as Promise<LocalUsage>
 }
 
 export async function updatePlatformSettings(settings: PlatformSettings): Promise<PlatformSettings> {
-  const apiBase = import.meta.env.VITE_API_BASE ?? ''
-  const response = await fetch(`${apiBase}/api/settings/platform`, { method: 'PUT', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(settings) })
+  const response = await apiRequest(`/api/settings/platform`, { method: 'PUT', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(settings) })
   if (!response.ok) throw new ApiError(response.status, 'platform settings update request failed')
   return response.json() as Promise<PlatformSettings>
 }
 
 export async function fetchCloudflareSettings(): Promise<CloudflareSettings> {
-  const apiBase = import.meta.env.VITE_API_BASE ?? ''
-  const response = await fetch(`${apiBase}/api/settings/cloudflare`, { credentials: 'include' })
+  const response = await apiRequest(`/api/settings/cloudflare`, { credentials: 'include' })
   if (!response.ok) throw new ApiError(response.status, 'cloudflare settings request failed')
   return response.json() as Promise<CloudflareSettings>
 }
 
 export async function revokeCloudflareSettings(): Promise<CloudflareSettings> {
-  const apiBase = import.meta.env.VITE_API_BASE ?? ''
-  const response = await fetch(`${apiBase}/api/settings/cloudflare`, { method: 'DELETE', credentials: 'include' })
+  const response = await apiRequest(`/api/settings/cloudflare`, { method: 'DELETE', credentials: 'include' })
   if (!response.ok) throw new ApiError(response.status, 'cloudflare settings revoke request failed')
   return response.json() as Promise<CloudflareSettings>
 }
 
 export async function fetchOauthSettings(): Promise<OauthSettings> {
-  const apiBase = import.meta.env.VITE_API_BASE ?? ''
-  const response = await fetch(`${apiBase}/api/settings/oauth`, { credentials: 'include' })
+  const response = await apiRequest(`/api/settings/oauth`, { credentials: 'include' })
   if (!response.ok) throw new ApiError(response.status, 'oauth settings request failed')
   return response.json() as Promise<OauthSettings>
 }
 
 export async function updateOauthSettings(settings: OauthSettingsInput): Promise<OauthSettings> {
-  const apiBase = import.meta.env.VITE_API_BASE ?? ''
-  const response = await fetch(`${apiBase}/api/settings/oauth`, { method: 'PUT', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(settings) })
+  const response = await apiRequest(`/api/settings/oauth`, { method: 'PUT', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(settings) })
   if (!response.ok) throw new ApiError(response.status, 'oauth settings update request failed')
   return response.json() as Promise<OauthSettings>
 }
 
 export async function revokeOauthSettings(provider: OauthProvider): Promise<OauthSettings> {
-  const apiBase = import.meta.env.VITE_API_BASE ?? ''
-  const response = await fetch(`${apiBase}/api/settings/oauth?provider=${provider}`, { method: 'DELETE', credentials: 'include' })
+  const response = await apiRequest(`/api/settings/oauth?provider=${provider}`, { method: 'DELETE', credentials: 'include' })
   if (!response.ok) throw new ApiError(response.status, 'oauth settings revoke request failed')
   return response.json() as Promise<OauthSettings>
 }
 
 export async function fetchSmtpSettings(): Promise<SmtpSettings> {
-  const apiBase = import.meta.env.VITE_API_BASE ?? ''
-  const response = await fetch(`${apiBase}/api/settings/smtp`, { credentials: 'include' })
+  const response = await apiRequest(`/api/settings/smtp`, { credentials: 'include' })
   if (!response.ok) throw new ApiError(response.status, 'smtp settings request failed')
   return response.json() as Promise<SmtpSettings>
 }
 
 export async function updateSmtpSettings(settings: SmtpSettingsInput): Promise<SmtpSettings> {
-  const apiBase = import.meta.env.VITE_API_BASE ?? ''
-  const response = await fetch(`${apiBase}/api/settings/smtp`, { method: 'PUT', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(settings) })
+  const response = await apiRequest(`/api/settings/smtp`, { method: 'PUT', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(settings) })
   await assertOk(response, 'smtp settings update request failed')
   return response.json() as Promise<SmtpSettings>
 }
 
 /** 测试发送使用当前表单值，密码为空时由服务端沿用已保存密钥。 */
 export async function sendSmtpTest(to: string, settings?: SmtpSettingsInput): Promise<void> {
-  const apiBase = import.meta.env.VITE_API_BASE ?? ''
-  const response = await fetch(`${apiBase}/api/settings/smtp/test`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ to, ...(settings ? { settings } : {}) }) })
+  const response = await apiRequest(`/api/settings/smtp/test`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ to, ...(settings ? { settings } : {}) }) })
   await assertOk(response, 'smtp test request failed')
+}
+
+export async function fetchMe(): Promise<ApiMe> {
+  const response = await apiRequest('/api/me')
+  if (!response.ok) throw new ApiError(response.status, 'me request failed')
+  return response.json() as Promise<ApiMe>
+}
+
+export async function fetchWorkspaces(): Promise<Workspace[]> {
+  const response = await apiRequest('/api/workspaces')
+  await assertOk(response, 'workspaces request failed')
+  const data = await response.json() as { results?: Workspace[] }
+  return data.results ?? []
+}
+
+export async function createWorkspace(name: string): Promise<Workspace> {
+  const response = await apiRequest('/api/workspaces', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name }) })
+  await assertOk(response, 'workspace creation failed')
+  return response.json() as Promise<Workspace>
+}
+
+export async function renameWorkspace(workspaceId: string, name: string): Promise<Workspace> {
+  const response = await apiRequest(`/api/workspaces/${encodeURIComponent(workspaceId)}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name }) })
+  await assertOk(response, 'workspace rename failed')
+  return response.json() as Promise<Workspace>
+}
+
+export async function deleteWorkspace(workspaceId: string): Promise<void> {
+  const response = await apiRequest(`/api/workspaces/${encodeURIComponent(workspaceId)}`, { method: 'DELETE' })
+  await assertOk(response, 'workspace deletion failed')
+}
+
+export async function fetchWorkspaceMembers(workspaceId: string): Promise<WorkspaceMember[]> {
+  const response = await apiRequest(`/api/workspaces/${encodeURIComponent(workspaceId)}/members`)
+  await assertOk(response, 'workspace members request failed')
+  const data = await response.json() as { results?: WorkspaceMember[] }
+  return data.results ?? []
+}
+
+export async function addWorkspaceMember(workspaceId: string, input: { userId?: string; email?: string; role: WorkspaceRole }): Promise<void> {
+  const response = await apiRequest(`/api/workspaces/${encodeURIComponent(workspaceId)}/members`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input) })
+  await assertOk(response, 'workspace member addition failed')
+}
+
+export async function updateWorkspaceMember(workspaceId: string, userId: string, role: WorkspaceRole): Promise<void> {
+  const response = await apiRequest(`/api/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(userId)}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ role }) })
+  await assertOk(response, 'workspace member update failed')
+}
+
+export async function removeWorkspaceMember(workspaceId: string, userId: string): Promise<void> {
+  const response = await apiRequest(`/api/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(userId)}`, { method: 'DELETE' })
+  await assertOk(response, 'workspace member removal failed')
 }
