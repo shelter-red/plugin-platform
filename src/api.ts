@@ -258,6 +258,11 @@ export interface CloudflareOauthSettings {
   scope: string
   secretConfigured: boolean
   source: OauthSource
+  /** 以下协议参数由 Worker 只读输出，前端不允许修改。 */
+  responseType: string
+  grantType: string
+  tokenAuthMethod: string
+  pkce: boolean
 }
 
 export interface OauthSettings {

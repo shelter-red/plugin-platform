@@ -128,7 +128,8 @@ GitHub Actions 是可选的自维护仓库部署方式，使用同一个脚本�
 
 | 配置项 | 管理后台位置 |
 | --- | --- |
-| GitHub OAuth 修改、Cloudflare OAuth | 系统设置 → 登录与授权 |
+| GitHub OAuth 修改 | 系统设置 → GitHub 登录 |
+| Cloudflare 授权与 OAuth 客户端 | 系统设置 → Cloudflare 授权 |
 | SMTP 和测试发送 | 系统设置 → 邮件 SMTP |
 | 配额、维护策略、插件域名后缀 | 系统设置 → 维护、域名与配额 |
 

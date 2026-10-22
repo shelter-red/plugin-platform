@@ -10,7 +10,7 @@ const platformSettings = {
 
 const oauthSettings = {
   github: { configured: true, clientId: 'mock-github-client', redirectUri: 'https://console.example.test/auth/github/callback', allowlist: 'admin', secretConfigured: true, source: 'environment' },
-  cloudflare: { configured: true, clientId: 'mock-cloudflare-client', redirectUri: 'https://console.example.test/auth/cloudflare/callback', scope: 'workers-platform.read workers-platform.write', secretConfigured: true, source: 'environment' },
+  cloudflare: { configured: true, clientId: 'mock-cloudflare-client', redirectUri: 'https://console.example.test/auth/cloudflare/callback', scope: 'workers-platform.read workers-platform.write', secretConfigured: true, source: 'environment', responseType: 'code', grantType: 'authorization_code', tokenAuthMethod: 'client_secret_basic', pkce: false },
   sessionSecretConfigured: true,
   updatedAt: null,
   unreadable: false,
@@ -196,7 +196,7 @@ test('管理端在后台保存 OAuth 配置且不回显密钥', async ({ page })
   const worker = await mockWorker(page)
   await page.goto('/')
   await page.getByRole('button', { name: '系统设置', exact: true }).click()
-  await page.getByRole('button', { name: '登录与授权' }).click()
+  await page.getByRole('button', { name: 'GitHub 登录' }).click()
   const panel = page.locator('#settings-oauth')
   await expect(panel).toContainText('环境变量回退')
   const callback = panel.getByLabel('回调地址').first()
@@ -209,6 +209,42 @@ test('管理端在后台保存 OAuth 配置且不回显密钥', async ({ page })
   expect(worker.oauthUpdates).toEqual([{ github: { clientId: 'mock-github-client-new', clientSecret: 'mock-secret', redirectUri: 'http://127.0.0.1:4184/auth/github/callback', allowlist: 'admin' } }])
   await expect(panel.getByLabel('Client Secret').first()).toHaveValue('')
   await expect(panel).toContainText('后台配置')
+})
+
+test('Cloudflare 区块展示协议参数并区分授权诊断', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  const worker = await mockWorker(page)
+  await page.goto('/?cloudflare_error=access_denied&cloudflare_error_code=access_denied&cloudflare_error_description=User%20denied%20access')
+  await page.getByRole('button', { name: '系统设置', exact: true }).click()
+  const panel = page.locator('#settings-cloudflare')
+  const protocol = panel.locator('.protocol-facts')
+  await expect(protocol).toContainText('response_type')
+  await expect(protocol).toContainText('code')
+  await expect(protocol).toContainText('authorization_code')
+  await expect(protocol).toContainText('client_secret_basic')
+  await expect(protocol).toContainText('关闭')
+  await expect(panel.getByRole('textbox', { name: '回调地址' })).toHaveValue('http://127.0.0.1:4184/auth/cloudflare/callback')
+
+  const diagnosis = panel.getByTestId('cloudflare-diagnosis')
+  await expect(diagnosis).toContainText('授权诊断')
+  await expect(diagnosis).toContainText('access_denied')
+  await expect(diagnosis).toContainText('User denied access')
+  await expect(diagnosis).toContainText('你拒绝了授权请求')
+  expect(new URL(page.url()).search).toBe('')
+  await diagnosis.getByRole('button', { name: '关闭诊断' }).click()
+  await expect(panel.getByTestId('cloudflare-diagnosis')).toHaveCount(0)
+
+  await panel.getByLabel('Client ID').fill('mock-cloudflare-client-new')
+  await panel.getByRole('button', { name: '保存配置' }).click()
+  await expect(page.locator('.ant-notification-notice').filter({ hasText: 'Cloudflare 客户端配置已保存' })).toBeVisible()
+  expect(worker.oauthUpdates).toEqual([{ cloudflare: { clientId: 'mock-cloudflare-client-new', clientSecret: '', redirectUri: 'http://127.0.0.1:4184/auth/cloudflare/callback', scope: 'workers-platform.read workers-platform.write' } }])
+
+  await page.goto('/?cloudflare_error=Cloudflare%20%E6%8E%88%E6%9D%83%E5%A4%B1%E8%B4%A5%EF%BC%9Ainvalid_client&cloudflare_error_code=invalid_client')
+  await page.getByRole('button', { name: '系统设置', exact: true }).click()
+  const invalidClient = page.locator('#settings-cloudflare').getByTestId('cloudflare-diagnosis')
+  await expect(invalidClient).toContainText('invalid_client')
+  await expect(invalidClient).toContainText('Client ID 或 Secret')
+  await expect(invalidClient).not.toContainText('你拒绝了授权请求')
 })
 
 test('管理端测试 SMTP 通过后才能保存并清空密码', async ({ page }) => {

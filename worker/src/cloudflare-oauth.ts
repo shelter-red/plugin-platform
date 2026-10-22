@@ -1,4 +1,4 @@
-import { resolveOauthSettings } from './oauth-settings'
+import { CLOUDFLARE_OAUTH_PROTOCOL, resolveOauthSettings } from './oauth-settings'
 import { decryptSecret } from './secrets'
 import type { Env } from './types'
 
@@ -33,7 +33,7 @@ export async function exchangeCloudflareCode(env: Env, code: string): Promise<Cl
       accept: 'application/json',
       'content-type': 'application/x-www-form-urlencoded',
     },
-    body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: cloudflare.redirectUri }).toString(),
+    body: new URLSearchParams({ grant_type: CLOUDFLARE_OAUTH_PROTOCOL.grantType, code, redirect_uri: cloudflare.redirectUri }).toString(),
   })
   if (!response.ok) return null
   const payload = await response.json().catch(() => null) as TokenResponse | null

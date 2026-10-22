@@ -442,14 +442,14 @@ test('管理端在后台保存 OAuth 配置到真实 D1 且不回显密钥', asy
   try {
     await page.goto('/')
     await page.getByRole('button', { name: '系统设置', exact: true }).click()
-    await page.getByRole('button', { name: '登录与授权' }).click()
+    await page.getByRole('button', { name: 'GitHub 登录' }).click()
     const panel = page.locator('#settings-oauth')
     const github = panel.locator('.oauth-block').filter({ hasText: 'GitHub 登录' })
     await expect(github).toContainText('未配置')
 
     await github.getByLabel('Client ID').fill(clientId)
     await github.getByLabel('Client Secret').fill(clientSecret)
-    await github.getByLabel('回调地址').fill(redirectUri)
+    await expect(github.getByRole('textbox', { name: '回调地址' })).toHaveValue(redirectUri)
     await github.getByLabel('管理员白名单').fill(allowlist)
     await github.getByRole('button', { name: '保存配置' }).click()
     await expect(page.getByText('OAuth 配置已保存')).toBeVisible()
@@ -474,7 +474,7 @@ test('管理端在后台保存 OAuth 配置到真实 D1 且不回显密钥', asy
 
     await page.reload()
     await page.getByRole('button', { name: '系统设置', exact: true }).click()
-    await page.getByRole('button', { name: '登录与授权' }).click()
+    await page.getByRole('button', { name: 'GitHub 登录' }).click()
     const reloadedGithub = page.locator('#settings-oauth .oauth-block').filter({ hasText: 'GitHub 登录' })
     await expect(reloadedGithub).toContainText('后台配置')
     await expect(reloadedGithub.getByLabel('Client ID')).toHaveValue(clientId)

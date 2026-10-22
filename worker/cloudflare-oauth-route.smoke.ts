@@ -92,8 +92,23 @@ try {
   assert.equal(authorizeUrl.pathname, '/oauth2/auth')
   assert.equal(authorizeUrl.searchParams.get('client_id'), 'cf-client-id')
   assert.equal(authorizeUrl.searchParams.get('scope'), 'workers-platform.read')
+  assert.equal(authorizeUrl.searchParams.get('response_type'), 'code')
+  assert.equal(authorizeUrl.searchParams.get('code_challenge'), null)
   const state = authorizeUrl.searchParams.get('state')!
   assert.equal(oauthStates.size, 1)
+
+  // 用户拒绝授权：透传 error / error_description，且不消耗 state。
+  response = await worker.fetch(request(`/auth/cloudflare/callback?error=access_denied&error_description=${encodeURIComponent('User denied access')}&state=${encodeURIComponent(state)}`, adminToken), env, {} as ExecutionContext)
+  assert.equal(response.status, 302)
+  const deniedLocation = new URL(response.headers.get('location')!, 'https://console.example.test')
+  assert.equal(deniedLocation.searchParams.get('cloudflare_error_code'), 'access_denied')
+  assert.equal(deniedLocation.searchParams.get('cloudflare_error_description'), 'User denied access')
+  assert.match(deniedLocation.searchParams.get('cloudflare_error') ?? '', /access_denied/)
+  assert.equal(oauthStates.size, 1)
+
+  // 回调缺少 code 时给出可排查的错误码。
+  response = await worker.fetch(request(`/auth/cloudflare/callback?state=${encodeURIComponent(state)}`, adminToken), env, {} as ExecutionContext)
+  assert.equal(new URL(response.headers.get('location')!, 'https://console.example.test').searchParams.get('cloudflare_error_code'), 'invalid_callback')
 
   response = await worker.fetch(request(`/auth/cloudflare/callback?state=${encodeURIComponent(state)}&code=cf-code`, adminToken), env, {} as ExecutionContext)
   assert.equal(response.status, 302)

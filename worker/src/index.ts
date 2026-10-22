@@ -10,7 +10,7 @@ import { activateMaintenance, cloudflareQuotaReason, defaultPlatformSettings, ge
 import { findPluginRoute, invalidatePluginRoute } from './route-cache'
 import { selectPublicRequestMode } from './request-mode'
 import { resolvePublicRoute } from './public-route'
-import { oauthSettingsApi, resolveOauthSettings } from './oauth-settings'
+import { CLOUDFLARE_OAUTH_PROTOCOL, oauthSettingsApi, resolveOauthSettings } from './oauth-settings'
 import { setupApi } from './setup'
 
 export { PluginBridge }
@@ -386,7 +386,7 @@ async function startCloudflareAuth(request: Request, env: Env): Promise<Response
   const authorizeUrl = new URL('https://dash.cloudflare.com/oauth2/auth')
   authorizeUrl.searchParams.set('client_id', cloudflare.clientId)
   authorizeUrl.searchParams.set('redirect_uri', cloudflare.redirectUri)
-  authorizeUrl.searchParams.set('response_type', 'code')
+  authorizeUrl.searchParams.set('response_type', CLOUDFLARE_OAUTH_PROTOCOL.responseType)
   authorizeUrl.searchParams.set('scope', cloudflare.scope)
   authorizeUrl.searchParams.set('state', state)
   return new Response(null, { status: 302, headers: { location: authorizeUrl.toString(), 'referrer-policy': 'no-referrer' } })
@@ -397,8 +397,10 @@ async function finishCloudflareAuth(request: Request, env: Env, url: URL): Promi
   const state = url.searchParams.get('state')
   const code = url.searchParams.get('code')
   const oauthError = url.searchParams.get('error')
-  if (!user || user.role !== 'super_admin') return redirectWithError(request, '需要超级管理员会话才能完成 Cloudflare 授权')
-  if (oauthError || !state || !code) return redirectWithCloudflareError(request, 'Cloudflare 授权未完成')
+  const oauthErrorDescription = url.searchParams.get('error_description')
+  if (!user || user.role !== 'super_admin') return redirectWithCloudflareError(request, '需要超级管理员会话才能完成 Cloudflare 授权', 'session_required')
+  if (oauthError) return redirectWithCloudflareError(request, cloudflareAuthorizationMessage(oauthError, oauthErrorDescription), oauthError, oauthErrorDescription)
+  if (!state || !code) return redirectWithCloudflareError(request, 'Cloudflare 回调缺少 state 或 code 参数，请重新发起授权', 'invalid_callback')
   const stateHash = await digest(state)
   const now = new Date().toISOString()
   const stateRow = await env.DB.prepare('SELECT state_hash, user_id FROM cloudflare_oauth_states WHERE state_hash = ? AND user_id = ? AND expires_at > ?').bind(stateHash, user.id, now).first<{ state_hash: string; user_id: string }>()
@@ -423,9 +425,18 @@ function redirectWithCloudflareResult(request: Request, accountConfigured: boole
   return new Response(null, { status: 302, headers: { location: location.toString(), 'referrer-policy': 'no-referrer' } })
 }
 
-function redirectWithCloudflareError(request: Request, message: string): Response {
+/** 授权诊断：保留 Cloudflare 返回的 error / error_description，避免折叠成一句无法排查的提示。 */
+function cloudflareAuthorizationMessage(code: string, description: string | null): string {
+  if (code === 'access_denied') return '你取消了 Cloudflare 授权（access_denied），平台未写入任何凭据。'
+  if (code === 'invalid_client') return 'Cloudflare 拒绝了客户端凭据（invalid_client），请检查 Client ID 与 Secret。'
+  return description ? `Cloudflare 授权失败：${code} · ${description}` : `Cloudflare 授权失败：${code}`
+}
+
+function redirectWithCloudflareError(request: Request, message: string, code?: string, description?: string | null): Response {
   const location = new URL('/', request.url)
   location.searchParams.set('cloudflare_error', message)
+  if (code) location.searchParams.set('cloudflare_error_code', code)
+  if (description) location.searchParams.set('cloudflare_error_description', description)
   return new Response(null, { status: 302, headers: { location: location.toString(), 'referrer-policy': 'no-referrer' } })
 }
 

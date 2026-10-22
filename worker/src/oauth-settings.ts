@@ -3,6 +3,14 @@ import type { AuthenticatedUser, Env } from './types'
 
 export const DEFAULT_CLOUDFLARE_SCOPE = 'workers-platform.read workers-platform.write'
 
+/** Cloudflare OAuth 客户端固定使用授权码 + Basic 认证，不支持 PKCE；接口只读输出以便前端展示。 */
+export const CLOUDFLARE_OAUTH_PROTOCOL = {
+  responseType: 'code',
+  grantType: 'authorization_code',
+  tokenAuthMethod: 'client_secret_basic',
+  pkce: false,
+} as const
+
 export interface GithubOAuthConfig {
   clientId: string
   clientSecret: string
@@ -156,8 +164,8 @@ function publicGithub(config: GithubOAuthConfig | null, source: OauthSource | nu
 }
 
 function publicCloudflare(config: CloudflareOAuthConfig | null, source: OauthSource | null) {
-  if (!config) return { configured: false, clientId: null, redirectUri: null, scope: DEFAULT_CLOUDFLARE_SCOPE, secretConfigured: false, source: null }
-  return { configured: true, clientId: config.clientId, redirectUri: config.redirectUri, scope: config.scope, secretConfigured: true, source }
+  if (!config) return { configured: false, clientId: null, redirectUri: null, scope: DEFAULT_CLOUDFLARE_SCOPE, secretConfigured: false, source: null, ...CLOUDFLARE_OAUTH_PROTOCOL }
+  return { configured: true, clientId: config.clientId, redirectUri: config.redirectUri, scope: config.scope, secretConfigured: true, source, ...CLOUDFLARE_OAUTH_PROTOCOL }
 }
 
 async function publicSettings(env: Env) {
