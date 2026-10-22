@@ -261,8 +261,8 @@ test('管理端在后台保存 OAuth 配置且不回显密钥', async ({ page })
   await page.setViewportSize({ width: 1440, height: 1000 })
   const worker = await mockWorker(page)
   await page.goto('/')
-  await page.getByRole('button', { name: '系统设置', exact: true }).click()
-  await page.getByRole('button', { name: 'GitHub 登录' }).click()
+  await page.getByRole('menuitem', { name: '系统设置', exact: true }).click()
+  await page.getByRole('navigation', { name: '系统设置' }).getByRole('menuitem', { name: 'GitHub 登录' }).click()
   const panel = page.locator('#settings-oauth')
   await expect(panel).toContainText('环境变量回退')
   const callback = panel.getByLabel('回调地址').first()
@@ -281,7 +281,7 @@ test('Cloudflare 区块展示协议参数并区分授权诊断', async ({ page }
   await page.setViewportSize({ width: 1440, height: 1000 })
   const worker = await mockWorker(page)
   await page.goto('/?cloudflare_error=access_denied&cloudflare_error_code=access_denied&cloudflare_error_description=User%20denied%20access')
-  await page.getByRole('button', { name: '系统设置', exact: true }).click()
+  await page.getByRole('menuitem', { name: '系统设置', exact: true }).click()
   const panel = page.locator('#settings-cloudflare')
   const protocol = panel.locator('.protocol-facts')
   await expect(protocol).toContainText('response_type')
@@ -306,7 +306,7 @@ test('Cloudflare 区块展示协议参数并区分授权诊断', async ({ page }
   expect(worker.oauthUpdates).toEqual([{ cloudflare: { clientId: 'mock-cloudflare-client-new', clientSecret: '', redirectUri: 'http://127.0.0.1:4184/auth/cloudflare/callback', scope: 'workers-platform.read workers-platform.write' } }])
 
   await page.goto('/?cloudflare_error=Cloudflare%20%E6%8E%88%E6%9D%83%E5%A4%B1%E8%B4%A5%EF%BC%9Ainvalid_client&cloudflare_error_code=invalid_client')
-  await page.getByRole('button', { name: '系统设置', exact: true }).click()
+  await page.getByRole('menuitem', { name: '系统设置', exact: true }).click()
   const invalidClient = page.locator('#settings-cloudflare').getByTestId('cloudflare-diagnosis')
   await expect(invalidClient).toContainText('invalid_client')
   await expect(invalidClient).toContainText('Client ID 或 Secret')
@@ -317,8 +317,8 @@ test('管理端测试 SMTP 通过后才能保存并清空密码', async ({ page 
   await page.setViewportSize({ width: 1440, height: 1000 })
   const worker = await mockWorker(page)
   await page.goto('/')
-  await page.getByRole('button', { name: '系统设置', exact: true }).click()
-  await page.getByRole('button', { name: '邮件 SMTP' }).click()
+  await page.getByRole('menuitem', { name: '系统设置', exact: true }).click()
+  await page.getByRole('menuitem', { name: '邮件 SMTP' }).click()
   const panel = page.locator('#settings-smtp')
 
   await panel.getByLabel('SMTP Host').fill('smtp.example.test')
@@ -347,8 +347,8 @@ test('管理端 SMTP 测试失败保留错误且不能保存', async ({ page }) 
   const worker = await mockWorker(page)
   worker.smtpTestError = { error: 'SMTP host is invalid', field: 'host' }
   await page.goto('/')
-  await page.getByRole('button', { name: '系统设置', exact: true }).click()
-  await page.getByRole('button', { name: '邮件 SMTP' }).click()
+  await page.getByRole('menuitem', { name: '系统设置', exact: true }).click()
+  await page.getByRole('menuitem', { name: '邮件 SMTP' }).click()
   const panel = page.locator('#settings-smtp')
 
   await panel.getByLabel('SMTP Host').fill('bad host')
@@ -367,8 +367,8 @@ test('管理端在后台保存插件域名后缀', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 })
   const worker = await mockWorker(page)
   await page.goto('/')
-  await page.getByRole('button', { name: '系统设置', exact: true }).click()
-  await page.getByRole('button', { name: '维护、域名与配额' }).click()
+  await page.getByRole('menuitem', { name: '系统设置', exact: true }).click()
+  await page.getByRole('menuitem', { name: '维护、域名与配额' }).click()
   const panel = page.locator('#settings-maintenance')
   await expect(panel.getByLabel('插件域名后缀')).toHaveValue('.plugins.example.com')
   await panel.getByLabel('插件域名后缀').fill('plugins.example.net')
@@ -430,7 +430,7 @@ test('管理端总览展示最近错误并可跳转访问日志', async ({ page 
 test('管理端访问日志先显示加载态再回到空态', async ({ page }) => {
   const worker = await mockWorker(page)
   await page.goto('/')
-  await page.getByRole('button', { name: '访问日志', exact: true }).click()
+  await page.getByRole('menuitem', { name: '访问日志', exact: true }).click()
 
   await expect(page.getByText('正在读取访问日志')).toBeVisible()
   worker.releaseLogs()
@@ -456,7 +456,7 @@ test('管理端设置页显示 Worker 维护状态', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 })
   await mockWorker(page)
   await page.goto('/')
-  await page.getByRole('button', { name: '系统设置', exact: true }).click()
+  await page.getByRole('menuitem', { name: '系统设置', exact: true }).click()
 
   await expect(page.getByText('运行中')).toBeVisible()
   await expect(page.getByText('允许新连接')).toBeVisible()
@@ -466,23 +466,23 @@ test('管理端设置导航随滚动联动并保持可见', async ({ page }) => 
   await page.setViewportSize({ width: 1440, height: 800 })
   await mockWorker(page)
   await page.goto('/')
-  await page.getByRole('button', { name: '系统设置', exact: true }).click()
+  await page.getByRole('menuitem', { name: '系统设置', exact: true }).click()
 
   const nav = page.getByRole('navigation', { name: '系统设置' })
   const scroller = page.locator('.page-scroll')
-  await expect(nav.getByRole('button', { name: 'Cloudflare', exact: true })).toHaveAttribute('aria-current', 'page')
+  await expect(nav.getByRole('menuitem', { name: 'Cloudflare', exact: true })).toHaveClass(/ant-menu-item-selected/)
 
   await scroller.evaluate((element) => element.scrollTo({ top: document.getElementById('settings-smtp')!.getBoundingClientRect().top + element.scrollTop - 8 }))
-  await expect(nav.getByRole('button', { name: '邮件 SMTP' })).toHaveAttribute('aria-current', 'page')
+  await expect(nav.getByRole('menuitem', { name: '邮件 SMTP' })).toHaveClass(/ant-menu-item-selected/)
 
   await scroller.evaluate((element) => element.scrollTo({ top: element.scrollHeight }))
-  await expect(nav.getByRole('button', { name: '维护、域名与配额' })).toHaveAttribute('aria-current', 'page')
+  await expect(nav.getByRole('menuitem', { name: '维护、域名与配额' })).toHaveClass(/ant-menu-item-selected/)
   const box = (await nav.boundingBox())!
   expect(box.y).toBeGreaterThanOrEqual(0)
   expect(box.y + box.height).toBeLessThanOrEqual(800)
 
   await scroller.evaluate((element) => element.scrollTo({ top: 0 }))
-  await expect(nav.getByRole('button', { name: 'Cloudflare', exact: true })).toHaveAttribute('aria-current', 'page')
+  await expect(nav.getByRole('menuitem', { name: 'Cloudflare', exact: true })).toHaveClass(/ant-menu-item-selected/)
 })
 
 test('管理端命令面板跨实体搜索并跳转', async ({ page }) => {
@@ -517,7 +517,7 @@ test('管理端命令面板跨实体搜索并跳转', async ({ page }) => {
   await palette.getByRole('textbox', { name: '命令面板' }).fill('维护')
   await palette.getByRole('textbox', { name: '命令面板' }).press('Enter')
   await expect(page.getByRole('heading', { name: '系统设置' })).toBeVisible()
-  await expect(page.getByRole('navigation', { name: '系统设置' }).getByRole('button', { name: '维护、域名与配额' })).toHaveAttribute('aria-current', 'page')
+  await expect(page.getByRole('navigation', { name: '系统设置' }).getByRole('menuitem', { name: '维护、域名与配额' })).toHaveClass(/ant-menu-item-selected/)
 
   await page.keyboard.press('Control+k')
   await expect(palette).toBeVisible()
@@ -558,6 +558,8 @@ test('管理端移除背景模糊与背景过渡并使用本地字体', async ({
   expect(audit.plexMono).toBe(true)
 
   const topbar = page.locator('.topbar')
+  // AntD 会在挂载后跑一小段颜色过渡，等有限动画结束后再比对，避免把过渡帧当成闪烁。
+  await page.waitForFunction(() => document.getAnimations().every((animation) => !(animation instanceof CSSTransition) || animation.playState !== 'running'))
   const first = await topbar.screenshot()
   await page.waitForTimeout(150)
   const second = await topbar.screenshot()
@@ -626,7 +628,7 @@ test('管理端生成一次性注册码并在弹窗中保留展示', async ({ pa
   await page.setViewportSize({ width: 1440, height: 1000 })
   const worker = await mockWorker(page)
   await page.goto('/')
-  await page.getByRole('button', { name: '插件服务器', exact: true }).click()
+  await page.getByRole('menuitem', { name: '插件服务器', exact: true }).click()
 
   await page.getByRole('button', { name: '绑定服务器' }).click()
   const dialog = page.getByRole('dialog', { name: '绑定插件服务器' })
@@ -644,7 +646,7 @@ test('管理端分配域名时先校验前缀再提交并展示结果', async ({
   const worker = await mockWorker(page)
   worker.plugins = [enabledPlugin]
   await page.goto('/')
-  await page.getByRole('button', { name: '公开域名', exact: true }).click()
+  await page.getByRole('menuitem', { name: '公开域名', exact: true }).click()
   await page.getByRole('button', { name: '分配域名' }).click()
 
   const dialog = page.getByRole('dialog', { name: '分配公开域名' })
@@ -669,7 +671,7 @@ test('管理端域名分配失败时在弹窗内显示服务端校验错误', as
   worker.plugins = [enabledPlugin]
   worker.domainError = '域名前缀仅允许小写字母、数字和连字符'
   await page.goto('/')
-  await page.getByRole('button', { name: '公开域名', exact: true }).click()
+  await page.getByRole('menuitem', { name: '公开域名', exact: true }).click()
   await page.getByRole('button', { name: '分配域名' }).click()
 
   const dialog = page.getByRole('dialog', { name: '分配公开域名' })
@@ -690,7 +692,7 @@ test('管理端把英文服务端错误替换为本地化提示', async ({ page 
   worker.plugins = [enabledPlugin]
   worker.domainError = 'Domain prefix is invalid'
   await page.goto('/')
-  await page.getByRole('button', { name: '公开域名', exact: true }).click()
+  await page.getByRole('menuitem', { name: '公开域名', exact: true }).click()
   await page.getByRole('button', { name: '分配域名' }).click()
 
   const dialog = page.getByRole('dialog', { name: '分配公开域名' })
@@ -708,7 +710,7 @@ test('管理端从发现态插件提交加载命令', async ({ page }) => {
   const worker = await mockWorker(page)
   worker.plugins = [{ ...enabledPlugin, state: 'discovered', desired_state: 'loaded' }]
   await page.goto('/')
-  await page.getByRole('button', { name: '插件实例', exact: true }).click()
+  await page.getByRole('menuitem', { name: '插件实例', exact: true }).click()
   await page.locator('.header-actions').getByRole('button', { name: '加载插件' }).click()
 
   const dialog = page.getByRole('dialog', { name: '加载插件' })
@@ -736,7 +738,7 @@ test('管理端同步 manifest 调用服务器接口并提示结果', async ({ p
   const worker = await mockWorker(page)
   worker.servers = [onlineServer]
   await page.goto('/')
-  await page.getByRole('button', { name: '插件实例', exact: true }).click()
+  await page.getByRole('menuitem', { name: '插件实例', exact: true }).click()
 
   await page.getByRole('button', { name: '同步 manifest' }).click()
 
@@ -768,13 +770,14 @@ test('管理端窄窗口下表格、图表和详情弹窗可用', async ({ page 
   ]
   for (const entry of pages) {
     await page.getByRole('button', { name: '打开导航' }).click()
-    await page.getByRole('button', { name: entry.nav, exact: true }).click()
+    // 服务器数量角标会进入可访问名，这里按前缀匹配导航项。
+    await page.getByRole('navigation', { name: '主导航' }).getByRole('menuitem', { name: new RegExp(`^${entry.nav}`) }).click()
     await expect(page.getByText(entry.row).first()).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
   }
 
   await page.getByRole('button', { name: '打开导航' }).click()
-  await page.getByRole('button', { name: '插件实例', exact: true }).click()
+  await page.getByRole('menuitem', { name: '插件实例', exact: true }).click()
   await page.getByRole('button', { name: '查看 示例插件 详情' }).click()
   const dialog = page.getByRole('dialog')
   await expect(dialog).toBeVisible()

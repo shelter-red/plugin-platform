@@ -20,7 +20,7 @@ test('管理端桌面空态和主题切换可用', async ({ page }) => {
   await expect(page.locator('.app-shell')).toHaveClass(/theme-light/)
   expect(await page.evaluate(() => localStorage.getItem('plugmesh-theme'))).toBe('light')
 
-  await page.getByRole('button', { name: '插件实例' }).click()
+  await page.getByRole('menuitem', { name: '插件实例' }).click()
   await expect(page.getByRole('heading', { name: '插件实例', level: 1 })).toBeVisible()
   await expect(page.getByRole('heading', { name: '暂无插件 manifest' })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
@@ -32,10 +32,10 @@ test('管理端移动侧栏和布局可用', async ({ page }) => {
   await page.goto('/')
 
   await page.getByRole('button', { name: '打开导航' }).click()
-  await expect(page.locator('.sidebar')).toHaveClass(/open/)
-  await page.getByRole('button', { name: '系统设置' }).click()
+  await expect(page.locator('.nav-drawer.ant-drawer-open')).toBeVisible()
+  await page.getByRole('navigation', { name: '主导航' }).getByRole('menuitem', { name: '系统设置' }).click()
   await expect(page.getByRole('heading', { name: '系统设置', level: 1 })).toBeVisible()
-  await expect(page.locator('.sidebar')).not.toHaveClass(/open/)
+  await expect(page.locator('.nav-drawer.ant-drawer-open')).toHaveCount(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
   await expect(page).toHaveScreenshot('console-mobile-settings.png', { fullPage: true, animations: 'disabled' })
 })
@@ -72,7 +72,7 @@ test('管理端各页面展示真实空态', async ({ page }) => {
   await expect(page.getByRole('heading', { name: '总览', level: 1 })).toBeVisible()
 
   for (const entry of emptyPages) {
-    await page.getByRole('button', { name: entry.nav, exact: true }).click()
+    await page.getByRole('menuitem', { name: entry.nav, exact: true }).click()
     await expect(page.getByRole('heading', { name: entry.title, level: 1 })).toBeVisible()
     await expect(page.getByText(entry.empty).first()).toBeVisible()
     if (entry.extra) await expect(page.getByText(entry.extra).first()).toBeVisible()
@@ -87,10 +87,10 @@ test('管理端窄窗口各页面空态可用', async ({ page }) => {
 
   for (const entry of emptyPages) {
     await page.getByRole('button', { name: '打开导航' }).click()
-    await page.getByRole('button', { name: entry.nav, exact: true }).click()
+    await page.getByRole('menuitem', { name: entry.nav, exact: true }).click()
     await expect(page.getByRole('heading', { name: entry.title, level: 1 })).toBeVisible()
     await expect(page.getByText(entry.empty).first()).toBeVisible()
-    await expect(page.locator('.sidebar')).not.toHaveClass(/open/)
+    await expect(page.locator('.nav-drawer.ant-drawer-open')).toHaveCount(0)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
   }
 })
@@ -99,7 +99,7 @@ test('管理端窄窗口弹窗可用', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/')
   await page.getByRole('button', { name: '打开导航' }).click()
-  await page.getByRole('button', { name: '插件实例', exact: true }).click()
+  await page.getByRole('navigation', { name: '主导航' }).getByRole('menuitem', { name: '插件实例', exact: true }).click()
   await page.getByRole('button', { name: '加载插件' }).first().click()
 
   const dialog = page.getByRole('dialog', { name: '加载插件' })
@@ -121,7 +121,7 @@ test('管理端中英切换并持久化', async ({ page }) => {
 
   await selectAntOption(page, '.theme-menu.language-menu .ant-select', 'English')
   await expect(page.getByRole('heading', { name: 'Overview', level: 1 })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Plugin instances', exact: true })).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: 'Plugin instances', exact: true })).toBeVisible()
   await expect(page.getByRole('combobox', { name: 'Select theme' })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.lang)).toBe('en')
   expect(await page.evaluate(() => localStorage.getItem('plugmesh-language'))).toBe('en')

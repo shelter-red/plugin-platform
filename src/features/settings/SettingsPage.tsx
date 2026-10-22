@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button, Input, Switch } from 'antd'
+import { Button, Input, Menu, Switch } from 'antd'
 import { Check, Cloud, FileText, KeyRound, ShieldCheck, Users } from 'lucide-react'
 import { ApiError, updatePlatformSettings, type ApiInvite, type CloudflareSettings, type OauthSettings, type PlatformSettings, type SmtpSettings, type Workspace } from '../../api'
 import type { Notify } from '../../components/ToastProvider'
@@ -42,6 +42,7 @@ export function SettingsPage({ focusSection, settings, onSettingsChange, apiLive
   const [activeSection, setActiveSection] = useState('cloudflare')
   const maintenance = settings?.maintenance ?? false
   const sectionNav = settingsSections.filter(({ id }) => (isSuperAdmin ? true : id === 'invites') && (id !== 'invites' || canManageInvites)).map(({ id, labelKey, icon }) => ({ id, label: t(labelKey), icon }))
+  const sectionMenuItems = sectionNav.map(({ id, label, icon: Icon }) => ({ key: id, icon: <Icon size={15} />, label }))
   useEffect(() => {
     if (!focusSection) return
     setActiveSection(focusSection.section)
@@ -131,7 +132,7 @@ export function SettingsPage({ focusSection, settings, onSettingsChange, apiLive
     document.getElementById(`settings-${section}`)?.scrollIntoView({ behavior: scrollBehavior(), block: 'start' })
   }
   return <div className="settings-layout">
-    <nav className="settings-nav" aria-label={t('pages.settings.title')}>{sectionNav.map(({ id, label, icon: Icon }) => <Button key={id} type="text" block className={activeSection === id ? 'selected' : ''} onClick={() => goToSection(id)} aria-current={activeSection === id ? 'page' : undefined} icon={<Icon size={15} />}>{label}</Button>)}</nav>
+    <nav className="settings-nav" aria-label={t('pages.settings.title')}><Menu mode="inline" className="settings-menu" items={sectionMenuItems} selectedKeys={[activeSection]} onClick={({ key }) => goToSection(key)} /></nav>
     <div className="settings-content">
       {isSuperAdmin && <CloudflarePanel settings={cloudflareSettings} onSettingsChange={onCloudflareChange} oauth={oauthSettings} onOauthChange={onOauthChange} diagnosis={cloudflareDiagnosis} onDismissDiagnosis={onDismissCloudflareDiagnosis} apiLive={apiLive} onAction={onAction} />}
       {isSuperAdmin && <div id="settings-oauth"><OauthPanel settings={oauthSettings} onChange={onOauthChange} onAction={onAction} /></div>}

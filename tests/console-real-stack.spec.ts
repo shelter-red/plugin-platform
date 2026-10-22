@@ -22,16 +22,16 @@ test('管理端读取真实 Worker 数据并展示服务器、插件和域名', 
   await page.goto('/')
   await expect(page.getByRole('heading', { name: '总览', level: 1 })).toBeVisible()
 
-  await page.getByRole('button', { name: '插件服务器', exact: true }).click()
+  await page.getByRole('menuitem', { name: '插件服务器', exact: true }).click()
   await expect(page.getByRole('heading', { name: '插件服务器', level: 1 })).toBeVisible()
   await expect(page.getByText('真实栈服务器')).toBeVisible()
   await expect(page.getByText('离线').first()).toBeVisible()
 
-  await page.getByRole('button', { name: '插件实例', exact: true }).click()
+  await page.getByRole('menuitem', { name: '插件实例', exact: true }).click()
   await expect(page.getByText('真实栈插件')).toBeVisible()
   await expect(page.getByText('real.plugin · v1.0.0')).toBeVisible()
 
-  await page.getByRole('button', { name: '公开域名', exact: true }).click()
+  await page.getByRole('menuitem', { name: '公开域名', exact: true }).click()
   await expect(page.getByText('real.plugins.example.com')).toBeVisible()
 })
 
@@ -39,7 +39,7 @@ test('管理端邀请与注册码操作落到真实 D1', async ({ page }) => {
   const { call } = createStackApi(page.request, sessionToken)
 
   await page.goto('/')
-  await page.getByRole('button', { name: '系统设置', exact: true }).click()
+  await page.getByRole('menuitem', { name: '系统设置', exact: true }).click()
   await expect(page.getByRole('heading', { name: '用户与邀请' })).toBeVisible()
 
   const githubInput = page.getByPlaceholder('github-login')
@@ -80,13 +80,13 @@ test('管理端邀请与注册码操作落到真实 D1', async ({ page }) => {
 
   // 撤销状态来自 D1：整页重载后列表仍显示已撤销。
   await page.reload()
-  await page.getByRole('button', { name: '系统设置', exact: true }).click()
+  await page.getByRole('menuitem', { name: '系统设置', exact: true }).click()
   await expect(page.getByRole('row', { name: new RegExp(invitee) })).toContainText('已撤销')
 
-  await page.getByRole('button', { name: '审计日志', exact: true }).click()
+  await page.getByRole('menuitem', { name: '审计日志', exact: true }).click()
   await expect(page.getByRole('row').filter({ hasText: invite!.id }).first()).toContainText('撤销平台邀请')
 
-  await page.getByRole('button', { name: '插件服务器', exact: true }).click()
+  await page.getByRole('menuitem', { name: '插件服务器', exact: true }).click()
   await page.getByRole('button', { name: '绑定服务器' }).click()
   await page.getByRole('dialog').getByRole('button', { name: '生成注册码' }).click()
   await expect(page.locator('.code-value strong')).toHaveText(/[0-9a-f-]{20,}/)
@@ -110,7 +110,7 @@ test('管理端在真实 C++ 服务器上加载、启停插件并分配域名', 
       .toBe('online')
 
     await page.goto('/')
-    await page.getByRole('button', { name: '插件实例', exact: true }).click()
+    await page.getByRole('menuitem', { name: '插件实例', exact: true }).click()
     const pluginRow = page.getByRole('row', { name: new RegExp(`Sample Plugin.*${server.name}`) })
     await expect(pluginRow).toContainText('已发现')
 
@@ -139,7 +139,7 @@ test('管理端在真实 C++ 服务器上加载、启停插件并分配域名', 
     await expect(detail.getByText('已启用').first()).toBeVisible()
     await detail.getByRole('button', { name: '关闭详情' }).click()
 
-    await page.getByRole('button', { name: '公开域名', exact: true }).click()
+    await page.getByRole('menuitem', { name: '公开域名', exact: true }).click()
     await page.locator('.header-actions').getByRole('button', { name: '分配域名' }).click()
     const domainDialog = page.getByRole('dialog', { name: '分配公开域名' })
     const prefix = `console-${Date.now().toString(36)}`
@@ -158,7 +158,7 @@ test('管理端在真实 C++ 服务器上加载、启停插件并分配域名', 
     expect(publicResponse.body).toBe('ok')
 
     // 停用后公开入口立即降级为维护页，重新启用后恢复转发（状态写真实 D1）。
-    await page.getByRole('button', { name: '插件实例', exact: true }).click()
+    await page.getByRole('menuitem', { name: '插件实例', exact: true }).click()
     await pluginRow.getByRole('button', { name: '查看 Sample Plugin 详情' }).click()
     const lifecycleDialog = page.getByRole('dialog', { name: '插件实例详情' })
     await lifecycleDialog.getByRole('button', { name: '停用', exact: true }).click()
@@ -213,7 +213,7 @@ test('管理端总览展示真实 5xx 访问日志与连接异常', async ({ pag
 
     // 公开域名行的复制按钮必须写入真实剪贴板，而不是只弹 Toast。
     await page.goto('/')
-    await page.getByRole('button', { name: '公开域名', exact: true }).click()
+    await page.getByRole('menuitem', { name: '公开域名', exact: true }).click()
     const domainRow = page.locator('.domain-row').filter({ hasText: hostname })
     await expect(domainRow).toContainText('在线')
     await domainRow.getByRole('button', { name: `复制 ${hostname}` }).click()
@@ -233,7 +233,7 @@ test('管理端总览展示真实 5xx 访问日志与连接异常', async ({ pag
     await expect(errorRow).toContainText('501')
     await expect(errorRow).toContainText('plugin capability unavailable')
 
-    await page.getByRole('button', { name: '访问日志', exact: true }).click()
+    await page.getByRole('menuitem', { name: '访问日志', exact: true }).click()
     await expect(page.getByRole('row').filter({ hasText: hostname })).toContainText('501')
     await expect(page.getByText(/错误 \d+ 条/)).toBeVisible()
     const downloadPromise = page.waitForEvent('download')
@@ -253,7 +253,7 @@ test('管理端总览展示真实 5xx 访问日志与连接异常', async ({ pag
     await page.reload()
     await expect(panel.locator('.activity-item').filter({ hasText: prepared.server.name })).toContainText('离线')
 
-    await page.getByRole('button', { name: '插件服务器', exact: true }).click()
+    await page.getByRole('menuitem', { name: '插件服务器', exact: true }).click()
     await page.getByRole('button', { name: `查看 ${prepared.server.name} 详情` }).click()
     const serverDetail = page.getByRole('dialog', { name: '服务器详情' })
     await expect(serverDetail).toContainText('离线')
@@ -273,7 +273,7 @@ test('管理端维护开关与配额保存落到真实平台状态并写入审�
   expect(original.maintenance, '真实栈应处于运行状态').toBe(false)
   try {
     await page.goto('/')
-    await page.getByRole('button', { name: '系统设置', exact: true }).click()
+    await page.getByRole('menuitem', { name: '系统设置', exact: true }).click()
     await page.getByRole('button', { name: '维护与配额' }).click()
     const panel = page.locator('#settings-maintenance')
     await expect(panel).toContainText('运行中')
@@ -286,10 +286,10 @@ test('管理端维护开关与配额保存落到真实平台状态并写入审�
     expect(paused.status).toBe(503)
     expect(paused.body).toContain('平台维护中')
 
-    await page.getByRole('button', { name: '总览', exact: true }).click()
+    await page.getByRole('menuitem', { name: '总览', exact: true }).click()
     await expect(page.getByText('平台维护中', { exact: true })).toBeVisible()
 
-    await page.getByRole('button', { name: '系统设置', exact: true }).click()
+    await page.getByRole('menuitem', { name: '系统设置', exact: true }).click()
     await page.getByRole('button', { name: '维护与配额' }).click()
     await panel.locator('button.toggle').click()
     await expect(page.getByText('平台已恢复运行')).toBeVisible()
@@ -305,17 +305,17 @@ test('管理端维护开关与配额保存落到真实平台状态并写入审�
     const saved = (await (await call('/api/settings/platform')).json()) as { quotas: { requests: number } }
     expect(saved.quotas.requests).toBe(raisedQuota)
 
-    await page.getByRole('button', { name: '用量与配额', exact: true }).click()
+    await page.getByRole('menuitem', { name: '用量与配额', exact: true }).click()
     await expect(page.locator('.resource-card').filter({ hasText: '平台请求计数' }))
       .toContainText(`上限 ${raisedQuota.toLocaleString('zh-CN')}`)
 
     // 配额必须回源 D1：整页重载后表单仍显示新值，而不是只存在内存状态里。
     await page.reload()
-    await page.getByRole('button', { name: '系统设置', exact: true }).click()
+    await page.getByRole('menuitem', { name: '系统设置', exact: true }).click()
     await page.getByRole('button', { name: '维护与配额' }).click()
     await expect(page.locator('#settings-maintenance').getByLabel('请求数 / 24 小时')).toHaveValue(String(raisedQuota))
 
-    await page.getByRole('button', { name: '审计日志', exact: true }).click()
+    await page.getByRole('menuitem', { name: '审计日志', exact: true }).click()
     await expect(page.getByRole('row', { name: /更新平台设置/ }).first()).toBeVisible()
 
     const downloadPromise = page.waitForEvent('download')
@@ -361,7 +361,7 @@ test('管理端用量与配额页展示真实本地计数、分布与官方未�
     }, { timeout: 15_000 }).toBe(true)
 
     await page.goto('/')
-    await page.getByRole('button', { name: '用量与配额', exact: true }).click()
+    await page.getByRole('menuitem', { name: '用量与配额', exact: true }).click()
     await expect(page.getByRole('heading', { name: '用量与配额', level: 1 })).toBeVisible()
     await expect(page.getByText('用量读取失败')).toHaveCount(0)
 
@@ -391,7 +391,7 @@ test('管理端用量与配额页展示真实本地计数、分布与官方未�
     }, { timeout: 15_000 }).toBe(true)
 
     await page.reload()
-    await page.getByRole('button', { name: '用量与配额', exact: true }).click()
+    await page.getByRole('menuitem', { name: '用量与配额', exact: true }).click()
     await expect(page.locator('.resource-card').filter({ hasText: 'R2 存储' })).toContainText('0 个对象')
 
     // 本地分布按用户聚合：对刚就绪的公开域名再发 3 次请求，该用户请求数必须精确增加 3。
@@ -410,7 +410,7 @@ test('管理端用量与配额页展示真实本地计数、分布与官方未�
     expect(breakdown.domains.some((entry) => entry.id.endsWith('.plugins.example.com')), '域名分布应来自真实公开域名').toBe(true)
 
     await page.reload()
-    await page.getByRole('button', { name: '用量与配额', exact: true }).click()
+    await page.getByRole('menuitem', { name: '用量与配额', exact: true }).click()
     const panel = page.locator('.breakdown-panel')
     await expect(panel.getByRole('heading', { name: '本地请求分布' })).toBeVisible()
     // 刚产生过真实公开请求，三个维度都应至少返回一行。
@@ -441,8 +441,8 @@ test('管理端在后台保存 OAuth 配置到真实 D1 且不回显密钥', asy
   const allowlist = `admin-${suffix}@example.com`
   try {
     await page.goto('/')
-    await page.getByRole('button', { name: '系统设置', exact: true }).click()
-    await page.getByRole('button', { name: 'GitHub 登录' }).click()
+    await page.getByRole('menuitem', { name: '系统设置', exact: true }).click()
+    await page.getByRole('navigation', { name: '系统设置' }).getByRole('menuitem', { name: 'GitHub 登录' }).click()
     const panel = page.locator('#settings-oauth')
     const github = panel.locator('.oauth-block').filter({ hasText: 'GitHub 登录' })
     await expect(github).toContainText('未配置')
@@ -473,8 +473,8 @@ test('管理端在后台保存 OAuth 配置到真实 D1 且不回显密钥', asy
     })
 
     await page.reload()
-    await page.getByRole('button', { name: '系统设置', exact: true }).click()
-    await page.getByRole('button', { name: 'GitHub 登录' }).click()
+    await page.getByRole('menuitem', { name: '系统设置', exact: true }).click()
+    await page.getByRole('navigation', { name: '系统设置' }).getByRole('menuitem', { name: 'GitHub 登录' }).click()
     const reloadedGithub = page.locator('#settings-oauth .oauth-block').filter({ hasText: 'GitHub 登录' })
     await expect(reloadedGithub).toContainText('后台配置')
     await expect(reloadedGithub.getByLabel('Client ID')).toHaveValue(clientId)
@@ -490,8 +490,8 @@ test('管理端用未保存的表单值测试 SMTP，并校验空密码二次保
   const config = { host: '127.0.0.1', port: 1, secure: false, username: 'real-smtp-user', authType: 'plain', from: 'noreply@example.com', fromName: 'Plugmesh E2E' }
   try {
     await page.goto('/')
-    await page.getByRole('button', { name: '系统设置', exact: true }).click()
-    await page.getByRole('button', { name: '邮件 SMTP' }).click()
+    await page.getByRole('menuitem', { name: '系统设置', exact: true }).click()
+    await page.getByRole('menuitem', { name: '邮件 SMTP' }).click()
     const panel = page.locator('#settings-smtp')
     await expect(panel).toContainText('未配置')
 
@@ -523,8 +523,8 @@ test('管理端用未保存的表单值测试 SMTP，并校验空密码二次保
 
     // 重载后配置来自 D1，密码输入框保持为空。
     await page.reload()
-    await page.getByRole('button', { name: '系统设置', exact: true }).click()
-    await page.getByRole('button', { name: '邮件 SMTP' }).click()
+    await page.getByRole('menuitem', { name: '系统设置', exact: true }).click()
+    await page.getByRole('menuitem', { name: '邮件 SMTP' }).click()
     await expect(panel).toContainText('已配置')
     await expect(panel.getByLabel('SMTP Host')).toHaveValue('127.0.0.1')
     await expect(panel.getByLabel('用户名')).toHaveValue('real-smtp-user')
