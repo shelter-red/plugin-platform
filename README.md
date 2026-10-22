@@ -22,10 +22,10 @@
 - 维护模式支持全局暂停流量、停止新增域名/插件操作，并通过已配置 SMTP 向超级管理员发送带重试和审计记录的通知。
 - Worker Cron 定时清理 30 天访问日志、180 天审计日志、过期邀请、会话和临时 R2 对象。
 - 插件公开访问日志记录状态、耗时和错误摘要，并按用户隔离展示在管理端。
-- Worker 静态资源绑定管理端 SPA，控制台、API、OAuth 和插件域名共用统一入口。
-- 一键部署脚本自动准备 D1/R2、执行迁移、生成基础设施 Secret 并发布 Worker；OAuth、SMTP 等业务配置在管理后台完成。
+- Worker 静态资源绑定管理端 SPA，控制台、API、GitHub OAuth 回调、插件域名共用统一入口。
+- 一键部署脚本自动准备 D1/R2、执行迁移、生成基础设施 Secret 并发布 Worker；GitHub OAuth、SMTP 和 Cloudflare API Token 等业务配置在管理后台完成。
 - 一次性 `/setup` 初始化入口：部署令牌保护，首个 GitHub 白名单账号成为超级管理员，创建用户后永久锁定。
-- Cloudflare OAuth Authorization Code 回调：管理员状态校验、一次性 state、令牌密文保存、账号自动发现和官方撤销。
+- Cloudflare API Token：固定三项只读权限、保存前验证 Token、完整分页发现账号、从 subscriptions 确认 Free 计划和八项官方额度；Token 只以密文保存且永不回显。
 - C++20 跨平台基础：Linux `.so` / macOS `.dylib` / Windows `.dll` 动态库加载、ABI v2/v3/v4 版本检查、插件生命周期管理、公开 WebSocket 建立/关闭回调、ABI v4 协作式 SSE 取消回调、Windows Credential Manager/macOS Keychain 系统凭据存储和 WebSocket++ 出站控制连接。插件运行在独立 `plugmesh-plugin-host` 子进程中，原生崩溃只终止宿主并标记插件失败，不会带走服务器。
 - 独立本地 React + TypeScript 控制台：连接状态、插件 manifest、生命周期操作、诊断摘要、运行日志、首次绑定以及访问密钥轮换/绑定撤销。
 
@@ -70,7 +70,7 @@ cd native-server/build && ctest --output-on-failure
 
 ## 一键部署（Cloudflare Workers）
 
-> **唯一部署必填项：Cloudflare 账号授权。** 本仓库没有额外部署变量。D1/R2 ID、`SESSION_SECRET`、`SETUP_TOKEN`、OAuth、SMTP、配额和维护策略都不需要出现在部署页。
+> **唯一部署必填项：连接 Cloudflare Workers Builds 账号。** 本仓库没有额外部署变量。D1/R2 ID、`SESSION_SECRET`、`SETUP_TOKEN`、OAuth、SMTP、配额和维护策略都不需要出现在部署页。
 
 | 部署方式 | 必填 | 可选 |
 | --- | --- | --- |
@@ -141,7 +141,7 @@ npx wrangler d1 migrations apply plugmesh --remote  # 补齐后重新发布即�
 | 配置项 | 管理后台位置 |
 | --- | --- |
 | GitHub OAuth 修改 | 系统设置 → GitHub 登录 |
-| Cloudflare 授权与 OAuth 客户端 | 系统设置 → Cloudflare 授权 |
+| Cloudflare API Token、账号与官方用量 | 系统设置 → Cloudflare |
 | SMTP 和测试发送 | 系统设置 → 邮件 SMTP |
 | 配额、维护策略、插件域名后缀 | 系统设置 → 维护、域名与配额 |
 
@@ -162,22 +162,27 @@ GitHub 回调失败时 Worker 直接返回对应 HTTP 状态（400/403/409/502/5
 
 回调地址格式为 `https://<你的域名>/auth/github/callback`，必须与 GitHub OAuth App 中登记的地址逐字符一致（协议、域名、路径都不能差）。除本地 `localhost` 外，GitHub 只接受 HTTPS 回调，系统保存时会把 `http://` 自动升级为 `https://`。
 
-### Cloudflare OAuth 客户端所需权限（固定）
+### Cloudflare API Token 所需权限（固定）
 
-平台只申请以下两项权限，界面不可增删，环境变量和提交里的 `scope` 都会被忽略。创建 Cloudflare OAuth 客户端时按名称勾选即可（系统设置 → Cloudflare 授权里也会只读列出）。Cloudflare 的 OAuth 客户端创建页没有 Offline Access 选项，平台也绝不请求 `offline_access`，否则会得到 `invalid_scope`：
+平台运行期只使用长期 Cloudflare API Token，不使用 OAuth、回调、refresh token 或 scope。请从 **Cloudflare Dashboard → My Profile → API Tokens → Create Token** 创建自定义 Token，并在创建页按名称勾选以下三项只读权限。系统设置 → Cloudflare 只读展示同一份清单，不提供勾选、取消或编辑入口：
 
-| 官方权限名称 | Scope ID | 用途 |
-| --- | --- | --- |
-| Account Settings Read | `account-settings.read` | 读取账号与成员关系，用于识别唯一的 Cloudflare 账号 |
-| Account Analytics Read | `account-analytics.read` | 读取账号级 Analytics，用于 Worker、D1、KV 与 Durable Object 用量 |
+| 官方权限名称 | 用途 |
+| --- | --- |
+| Account Settings Read | 读取账号列表，确认唯一 Account ID，并读取订阅信息 |
+| Account Analytics Read | 读取账号级 Analytics，用于 Worker、D1、KV 与 Durable Object 用量 |
+| Billing Read | 读取 subscriptions 与套餐信息，确认是否为 Cloudflare Free |
 
-缺少任意一项都会导致授权失败（`invalid_scope`）或识别不到账号（“未识别唯一账号”）。这两项已用官方 `GET /oauth/scopes` 列表复核（2026-10-22）：`account-settings.read`、`account-analytics.read` 均存在；该列表里没有 `offline_access`，也没有文档示例中出现过的 `workers-platform.read`，所以两者都不能写进客户端。授权页的响应类型、授权类型与令牌认证方式同样属于 OAuth 客户端创建页的配置项（`response_type=code`、`grant_type=authorization_code`、`token_endpoint_auth_method=client_secret_basic`），设置页与 Client ID、回调地址放在同一区域只读展示，不再归到权限清单一节。刷新令牌只使用 Cloudflare 在 token 响应中实际返回的 `refresh_token`；没有返回时平台会提示重新授权，而不是伪造一个不存在的 Scope。授权结束后无论成功失败都会回到 **系统设置 → Cloudflare 授权**：成功刷新凭据状态，失败在面板内显示稳定错误码与原始描述。用量与配额页顶栏提供“刷新用量”，可立即验证 Analytics 是否已通；官方用量为空时界面会提示检查上述两项权限。用量页的“平台请求计数 / R2 / 活跃连接”来自本平台 D1 的请求日志，不依赖 Cloudflare 授权，因此 `/api/usage/cloudflare` 返回 `configured=false` 时 `/api/usage/local` 仍会返回 200 和本地数据，界面会分别标注两类数据源。
+保存 Token 时平台依次调用 Token verify、accounts 全分页和 subscriptions；三项权限缺一不可。未填写 Account ID 且 Token 可见多个账号时，接口返回 `409 account_ambiguous`，需要填写目标 Account ID 后重新保存。
+
+Token 只以 AES-GCM 密文保存在 D1，GET 设置接口永远不回显明文。Token 被撤销、权限被修改或用户设置了过期时间后，平台会返回真实 HTTP 错误并在当前 Cloudflare 设置面板显示：`401 token_invalid` 表示 Token 无效、已撤销或已过期；`403 token_permission_denied` 表示缺少上面的固定权限；`409 account_missing` / `account_ambiguous` 表示账号不可见或需要指定 Account ID；`502 cloudflare_upstream_error` 表示 Cloudflare 或网络异常。删除平台保存的 Token 只删除本地密文和用量缓存，不会替你撤销 Cloudflare 上的 Token。
+
+用量页唯一的“刷新用量”按钮会重新读取官方 Analytics；免费额度只能从 subscriptions 读取，未确认 Free 计划时不会展示或允许手填八项上限。用量页同时分开显示平台本地统计与 Cloudflare 官方监控：平台请求只计数、不设上限，因此 `/api/usage/cloudflare` 返回 `configured=false` 时 `/api/usage/local` 仍返回 200 和本地数据。
 
 ### 自定义域名与插件域名
 
 默认 `workers.dev` 地址可以直接用于初始化、登录和后台管理。要让插件公开域名工作，需要在 Cloudflare 中一次性配置 DNS 和 Worker Route，例如：
 
-- `console.example.com/*`：管理端、管理 API 和 OAuth 回调；
+- `console.example.com/*`：管理端、管理 API 和 GitHub OAuth 回调；
 - `*.plugins.example.com/*`：插件公开入口。
 
 随后在后台把插件域名后缀设为 `plugins.example.com`。新增插件域名会立即使用该后缀，不需要修改环境变量或重新部署。`PLUGIN_DOMAIN_SUFFIX` 仅用于本地测试和旧数据兼容回退，不是部署必填项。
@@ -190,7 +195,7 @@ npm run deploy -- --skip-build  # 复用已有 dist，只做资源准备与发�
 npm run deploy -- --help
 ```
 
-`--dry-run` 不需要 D1 ID 或云端凭据。真实部署时脚本会自动创建或复用资源；通常不需要设置 `SESSION_SECRET`、`SETUP_TOKEN` 或任何 OAuth/SMTP 环境变量。
+`--dry-run` 不需要 D1 ID 或云端凭据。真实部署时脚本会自动创建或复用资源；通常不需要设置 `SESSION_SECRET`、`SETUP_TOKEN` 或任何 GitHub OAuth/SMTP 环境变量。
 
 ### 本地 Worker 调试
 
@@ -230,9 +235,9 @@ sha256sum -c SHA256SUMS
 
 ## 当前边界
 
-当前提交建立了可编译的 MVP 基础，但还没有把生产凭据放入仓库。C++ 服务器已支持独立 sidecar `manifest.json` 校验、ABI v2/v3/v4 插件生命周期、健康检查、文件流、出站控制连接、SSE 流及 ABI v4 协作式取消、公开 WebSocket base64 二进制桥接，以及基于子进程的插件崩溃隔离；Worker 侧已具备 GitHub OAuth、Cloudflare OAuth、邀请会话、HTTP/SSE/文件流式响应、公开 WebSocket 桥接、R2 一次性对象、Cloudflare Analytics 查询和基于 `worker-mailer` 的 SMTP 测试发送能力；管理端已具备对应的 Cloudflare 和 SMTP 配置入口。平台本地用量快照按 Cron 保存 30 天，用于管理端请求趋势展示。这些功能仍需在真实 Cloudflare 资源、OAuth client 和本地服务器之间完成端到端联调。
+当前提交建立了可编译的 MVP 基础，但还没有把生产凭据放入仓库。C++ 服务器已支持独立 sidecar `manifest.json` 校验、ABI v2/v3/v4 插件生命周期、健康检查、文件流、出站控制连接、SSE 流及 ABI v4 协作式取消、公开 WebSocket base64 二进制桥接，以及基于子进程的插件崩溃隔离；Worker 侧已具备 GitHub OAuth、Cloudflare API Token、邀请会话、HTTP/SSE/文件流式响应、公开 WebSocket 桥接、R2 一次性对象、Cloudflare Analytics 查询和基于 `worker-mailer` 的 SMTP 测试发送能力；管理端已具备对应的 Cloudflare API Token 和 SMTP 配置入口。平台本地用量快照按 Cron 保存 30 天，用于管理端请求趋势展示。这些功能仍需在真实 Cloudflare 资源、GitHub OAuth App、SMTP 和本地服务器之间完成端到端联调。
 
-上述 `worker:*:smoke` 使用本地 mock D1、Durable Object 和 OAuth 端点，只验证协议、权限边界和敏感字段处理。`npm run worker:runtime-test` 使用官方 `@cloudflare/vitest-plugin` 在 workerd/Miniflare 中加载根目录 `wrangler.toml`、真实 D1 迁移和真实 Durable Object 类，覆盖 Host 路由、HTTP 转发、并发 requestId 隔离、公开 WebSocket connectionId 隔离、断线维护、注册码并发消费、密钥轮换/撤销、SSE 正常结束与客户端主动断开后的即时释放、超过 32 KiB 请求体被拒绝、插件 25 秒无响应返回 504 并释放连接与 R2 中转，以及大文件在真实 R2 模拟中的定长流/回退上传和读取后清理；GitHub OAuth 用例用 `outboundService` 桩替代 GitHub 端点，验证授权跳转、state 一次性消费、邀请领取与用户创建原子落库后签发会话、未受邀身份拒绝和白名单管理员登录；Cloudflare OAuth 用例同样用该桩模拟令牌与账号端点，覆盖回调兑换、账号自动发现、凭据加密落库、state 重放拒绝，以及临近过期刷新、Analytics 401 后刷新重试和刷新失败回滚。其中 SMTP 用例会在本机启动真实 SMTP 服务端，经 `worker-mailer` 完成真实 TCP 会话、PLAIN 认证与投递并校验邮件内容，再断言测试邮件、邀请邮件和维护通知的成功/失败路径；它仍不代表真实 Cloudflare 账号、公网 SMTP、GitHub OAuth 或多地域网络已联通。
+上述 `worker:*:smoke` 使用本地 mock D1、Durable Object 和 OAuth 端点，只验证协议、权限边界和敏感字段处理。`npm run worker:runtime-test` 使用官方 `@cloudflare/vitest-plugin` 在 workerd/Miniflare 中加载根目录 `wrangler.toml`、真实 D1 迁移和真实 Durable Object 类，覆盖 Host 路由、HTTP 转发、并发 requestId 隔离、公开 WebSocket connectionId 隔离、断线维护、注册码并发消费、密钥轮换/撤销、SSE 正常结束与客户端主动断开后的即时释放、超过 32 KiB 请求体被拒绝、插件 25 秒无响应返回 504 并释放连接与 R2 中转，以及大文件在真实 R2 模拟中的定长流/回退上传和读取后清理；GitHub OAuth 用例用 `outboundService` 桩替代 GitHub 端点，验证授权跳转、state 一次性消费、邀请领取与用户创建原子落库后签发会话、未受邀身份拒绝和白名单管理员登录；Cloudflare API Token 用例同样使用 `outboundService` 桩模拟 Token verify、accounts、subscriptions 与 Analytics 端点，覆盖固定三项权限、账号全分页与唯一账号校验、Free 计划确认、Token 密文保存、GET 不回显、旧 OAuth 凭据短路、真实 HTTP 错误和八项免费额度；删除 Token 不调用 Cloudflare 撤销。其中 SMTP 用例会在本机启动真实 SMTP 服务端，经 `worker-mailer` 完成真实 TCP 会话、PLAIN 认证与投递并校验邮件内容，再断言测试邮件、邀请邮件和维护通知的成功/失败路径；它仍不代表真实 Cloudflare 账号、公网 SMTP、GitHub OAuth 或多地域网络已联通。
 
 workerd 需要 glibc 2.35 或更高版本；在较旧的发行版（例如 Ubuntu 20.04）上可通过容器执行：
 

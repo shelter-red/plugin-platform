@@ -271,7 +271,7 @@ export interface UsageBreakdownEntry {
 }
 
 export interface LocalUsage {
-  /** 平台自身 D1 请求日志统计，与 Cloudflare 授权无关。 */
+  /** 平台自身 D1 请求日志统计，与 Cloudflare 凭据/API Token 无关。 */
   source?: 'platform_local'
   requestCount: number
   requestWindowStartedAt: string | null

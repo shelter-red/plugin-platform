@@ -1184,7 +1184,7 @@ export async function localUsageApi(env: Env, user: AuthenticatedUser, url = new
     env.DB.prepare('SELECT hostname AS id, hostname AS label, COUNT(*) AS requests FROM request_logs WHERE created_at >= ? AND (? IS NULL OR workspace_id = ?) GROUP BY hostname ORDER BY requests DESC, label ASC LIMIT 5').bind(since, workspaceId, workspaceId).all<UsageBreakdownEntry>(),
   ])
   return json({
-    // 本地用量来自本平台 D1 中的请求日志，与 Cloudflare 授权无关，未配置 Cloudflare 时也应返回。
+    // 本地用量来自本平台 D1 中的请求日志，与 Cloudflare 凭据/API Token 无关，未配置 Cloudflare 时也应返回。
     source: 'platform_local',
     requestCount: usage?.request_count ?? 0,
     requestWindowStartedAt: usage?.request_window_started_at ?? null,

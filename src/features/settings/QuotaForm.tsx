@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { Button, Input } from 'antd'
 import { Check } from 'lucide-react'
 
-// 一组数值阈值表单：平台阈值与 Cloudflare 免费额度共用同一套输入与保存交互。
+// 平台自身数值阈值表单；Cloudflare 免费额度只读，不经过这里编辑。
 export function QuotaForm<K extends string>({ title, hint, fields, values, onChange, onSave, saving, disabled }: {
   title: string
   hint: string

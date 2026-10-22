@@ -115,7 +115,7 @@ printf 'ok：首次部署生成基础设施密钥，且不输出明文\n'
 for deploy_file in scripts/deploy-worker.sh wrangler.toml .github/workflows/platform-ci.yml .github/workflows/release.yml; do
   ! grep -Eq '^(GITHUB_CLIENT|CLOUDFLARE_OAUTH_CLIENT|SMTP_|PLUGIN_DOMAIN_SUFFIX)[A-Z_]*[[:space:]]*[:=]' "$ROOT/$deploy_file"
 done
-printf 'ok：部署脚本、Wrangler 配置和 CI 均不包含 OAuth、SMTP 或插件域名后缀业务配置\n'
+printf 'ok：部署脚本、Wrangler 配置和 CI 均不包含 GitHub OAuth、Cloudflare Token、SMTP 或插件域名后缀业务配置\n'
 
 node - "$ROOT" <<'NODE'
 const assert = require('node:assert/strict')
@@ -130,7 +130,7 @@ const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8')
 for (const marker of [
   '[![Deploy to Cloudflare]',
   'https://deploy.workers.cloudflare.com/?url=https://github.com/shelter-red/plugin-platform',
-  '唯一部署必填项：Cloudflare 账号授权',
+  '唯一部署必填项：连接 Cloudflare Workers Builds 账号',
   '`npm run build`',
   '`npm run deploy`',
   '不要填写任何业务变量',
@@ -139,7 +139,7 @@ for (const marker of [
 ]) assert.ok(readme.includes(marker), `README 缺少最小部署约束：${marker}`)
 assert.ok(!readme.includes('OWNER/REPO'), 'README 仍包含未替换的仓库占位符')
 NODE
-printf 'ok：README 与 package.json 锁定 Cloudflare 授权即部署，且不声明额外输入项\n'
+printf 'ok：README 与 package.json 锁定 Cloudflare Workers Builds 账号连接，且不声明额外输入项\n'
 
 mkdir -p "$TMP/state-local-fresh"
 cp "$ROOT/wrangler.toml" "$TMP/wrangler.toml"

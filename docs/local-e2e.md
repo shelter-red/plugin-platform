@@ -88,7 +88,7 @@ PLUGMESH_REAL_STACK_URL=http://127.0.0.1:18888 npm run ui:real-stack
 - 打开“绑定插件服务器”弹窗后从 `/api/registration-codes` 取得一次性注册码；
 - 第三条用例用一次性注册码启动真实 `plugmesh-server`，在管理端加载并启用 `sample.plugin`、分配以 `console-` 开头的唯一域名，再从该域名请求插件得到 `200` 和 `ok`；接着在插件详情弹窗停用，断言公开入口立即变为 503「插件暂时不可用」且 API 状态为 `disabled`，重新启用后域名状态被置回 offline（入口仍 503），点健康检查通过后恢复 `200`；最后卸载，入口回到 503。
 - 第四条用例先在「公开域名」页点击目标域名行的复制按钮（`aria-label` 为 `复制 <hostname>`），断言 Toast「公开域名已复制」并从系统剪贴板读回该 hostname；随后在真实栈上复核仪表盘“最近错误和连接异常”：对只声明 `http`/`websocket` 能力的 `lifecycle.plugin` 域名发起文件流请求，得到 `501` 并确认 `/api/access-logs` 中写入 `plugin capability unavailable`，总览错误面板展示该入口与 `501` 徽标；停掉后服务器状态转为 `offline`，总览出现该服务器与“离线”徽标；服务器详情弹窗在真实数据下显示“离线”状态、“服务器离线”插件状态以及该 501 错误，访问日志页展示同一行并可用「导出日志」下载含该记录的 CSV。
-- 第五条用例在管理端「维护与配额」面板点击开关进入维护，断言公开入口返回 503 维护页、总览徽标为「平台维护中」，再点击恢复后未知域名回到 404；随后把 Cloudflare 免费额度的「D1 行读取 / 日」改为 `4,000,000` 并点「保存配额」，断言 Toast「平台配额已保存」、`/api/settings/platform` 的 `cloudflareQuotas.d1RowsRead` 回源该值、用量页「D1 行读取」卡显示「上限 4,000,000」，整页重载后表单仍为 `4000000`；最后确认审计日志页出现「更新平台设置」，并用「导出日志」下载审计 CSV，断言带 UTF-8 BOM 且含 `platform.settings.updated` 与操作者 `E2E Admin`/`e2e@example.com`。用例结束时会把维护开关和配额复位为原值。
+- 第五条用例在管理端「维护与配额」面板点击开关进入维护，断言公开入口返回 503 维护页、总览徽标为「平台维护中」，再点击恢复后未知域名回到 404；随后断言面板不存在 Cloudflare 免费额度输入框和「保存配额」按钮，确认官方额度只能从 subscriptions 读取、系统设置只保留平台自身三项阈值；最后确认审计日志页出现「更新平台设置」，并用「导出日志」下载审计 CSV，断言带 UTF-8 BOM 且含 `platform.settings.updated` 与操作者 `E2E Admin`/`e2e@example.com`。用例结束时会把维护开关复位。
 - 第七条用例在系统设置「邮件 SMTP」面板保存 Host `127.0.0.1`、端口 `1`、用户名、密码与发件人，断言 Toast「SMTP 配置已保存」、`/api/settings/smtp` 返回脱敏配置且不含 `password`，整页重载后表单从 D1 回填而密码框为空；随后对不可达端口点「发送测试邮件」，页面提示「测试邮件发送失败」，审计出现 `smtp.test.failed` 且详情不含明文密码；用例结束删除配置。
 - 第六条用例打开「用量与配额」：先通过真实 `POST /api/blobs` 上传 5 字节对象，确认 `/api/usage/local` 的请求计数 +1、`r2Objects=1`，页面「平台请求计数」显示该真实计数与「24 小时窗口」、R2 卡片显示「1 个对象」，而「Worker 请求」在官方未连接时显示 `—` 与「官方数据尚未连接」，数据源行分别为「未配置」和「更新于 …」；随后读取一次性 blob，`r2Objects`/`r2Bytes` 归零，刷新后 R2 卡片回到「0 个对象」。该用例另外拉起一台真实 C++ 服务器和一个公开域名，发 3 次请求后断言 `/api/usage/local` 的 `breakdown.users` 中该管理员请求数精确 +3，`breakdown.plugins`/`breakdown.domains` 按请求数降序且域名来自真实公开域名，并在「本地请求分布」面板核对用户、插件、域名三列首行与 API 返回一致。
 
@@ -352,6 +352,6 @@ pkill -f 'build/plugmesh[-]server'
 ## 边界
 
 - 当前为本地 miniflare/workerd 与本地 D1/R2 模拟，不是已部署 Cloudflare；未验证真实 DNS、证书、Worker routes 和公网长连接。
-- 未连接真实 GitHub OAuth、Cloudflare OAuth 和 SMTP。
+- 未连接真实 GitHub OAuth、Cloudflare API Token / Analytics / subscriptions 和 SMTP。
 - 本地服务器的轮换、撤销和同进程重新绑定已在本地真实栈上用本地控制台联调通过；`worker:runtime-test` 与 Native UI smoke 仍覆盖对应逻辑边界。
 - Windows 的构建、DLL 和 Credential Manager 只在 Wine 下验证过，真实 Windows 主机仍未验证。

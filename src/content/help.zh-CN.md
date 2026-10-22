@@ -23,9 +23,16 @@
 
 域名只能分配给已启用且健康检查通过的插件；前缀必须唯一，且不能使用平台保留字。
 
-### Cloudflare 授权失败怎么办？
+### Cloudflare API Token 读取失败怎么办？
 
-授权卡片会显示诊断信息：`access_denied` 表示在授权页拒绝了访问；`invalid_client` 表示客户端 ID 或 Secret 不匹配。
+配置 Cloudflare 不需要创建 OAuth 客户端。请在「系统设置 → Cloudflare」点击「创建 API Token」，按页面固定清单授予 `Account Settings Read`、`Account Analytics Read` 和 `Billing Read` 三项只读权限，然后粘贴回来保存。平台会先验证 Token、读取可见账号，再读取 subscriptions；这三项权限不需要也无法在平台内勾选或取消。
+
+- `401 token_invalid`：Token 无效、已被撤销，或你设置了过期时间且已经到期；请重建 Token。
+- `403 token_permission_denied`：Token 缺少上述任一权限；请修改权限或重新创建 Token。
+- `409 account_missing` / `409 account_ambiguous`：Token 看不到账号，或能看到多个账号；请在表单中填写目标 Account ID。
+- `502 cloudflare_upstream_error`：Cloudflare 或网络暂时异常；可稍后在用量页点击唯一的「刷新用量」重试。
+
+错误会保留在当前设置或用量页面并显示 HTTP 状态、错误码和原始消息。Cloudflare 免费额度只从 subscriptions 读取；未确认 Free 计划时页面显示「未读取」，不能手工填写。
 
 ## 支持范围
 

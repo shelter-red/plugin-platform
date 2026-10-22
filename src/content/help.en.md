@@ -23,9 +23,16 @@ The server must reach the Worker over an outbound connection. Check that the reg
 
 Domains can only be assigned to enabled plugins that pass the health check. Prefixes must be unique and avoid reserved names.
 
-### What if Cloudflare authorization fails?
+### What if the Cloudflare API Token cannot read usage?
 
-The authorization card shows diagnostics: `access_denied` means access was denied on the consent page, `invalid_client` means the client ID or secret does not match.
+Configuring Cloudflare does not require an OAuth client. Open **Settings → Cloudflare**, select **Create API Token**, grant the three fixed read-only permissions `Account Settings Read`, `Account Analytics Read` and `Billing Read`, then paste the Token back. The platform verifies the Token, lists visible accounts and reads subscriptions before saving. These permissions cannot be selected, removed or edited inside the platform.
+
+- `401 token_invalid`: the Token is invalid, revoked, or has passed its configured expiry date; create a new Token.
+- `403 token_permission_denied`: one of the fixed permissions is missing; update the permissions or recreate the Token.
+- `409 account_missing` / `409 account_ambiguous`: the Token sees no account, or sees multiple accounts; enter the target Account ID.
+- `502 cloudflare_upstream_error`: Cloudflare or the network is temporarily unavailable; retry later with the single **Refresh usage** button on the usage page.
+
+Errors stay on the current settings or usage page with the HTTP status, error code and upstream message. Free limits come only from subscriptions; until a Free plan is confirmed the UI shows “Not available” and does not accept manual limits.
 
 ## Support scope
 

@@ -127,7 +127,7 @@ function setupPage(url: URL, state: SetupState, values: SetupValues, error = '',
 <main>
   <span class="badge">仅首次部署可用</span>
   <h1>初始化 Plugmesh</h1>
-  <p>配置 GitHub OAuth 后，白名单中的第一个 GitHub 账号会成为超级管理员。Cloudflare OAuth 与 SMTP 等配置可在登录后进入后台继续填写。</p>
+  <p>配置 GitHub OAuth 后，白名单中的第一个 GitHub 账号会成为超级管理员。Cloudflare API Token 与 SMTP 等配置可在登录后进入后台继续填写。</p>
   ${configuredNotice}
   ${errorNotice}
   <ol>

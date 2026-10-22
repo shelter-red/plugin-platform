@@ -22,7 +22,7 @@ export default {
     usage: { title: '用量与配额', description: '查看 Cloudflare 官方数据与平台本地计数。' },
     logs: { title: '访问日志', description: '查看插件公开入口的请求状态、耗时和错误摘要。' },
     audit: { title: '审计日志', description: '追踪邀请、绑定、密钥和插件生命周期变更。' },
-    settings: { title: '系统设置', description: '配置登录授权、邮件通知、Cloudflare 授权和全局维护状态。' },
+    settings: { title: '系统设置', description: '配置登录授权、邮件通知、Cloudflare API Token 和全局维护状态。' },
   },
   workspace: {
     switcherTitle: '工作区',
@@ -714,8 +714,6 @@ export default {
     accessLogsExported: '已导出 {{count}} 条访问日志',
     noAudit: '暂无可导出的审计记录',
     auditExported: '已导出 {{count}} 条审计记录',
-    cloudflareConnected: 'Cloudflare 已授权并识别账号',
-    cloudflareConnectedWithoutAccount: 'Cloudflare 已授权，但未识别唯一账号',
     http: {
       unauthorized: '登录状态已失效，请重新登录',
       forbidden: '当前账号没有执行该操作的权限',

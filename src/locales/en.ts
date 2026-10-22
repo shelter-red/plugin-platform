@@ -22,7 +22,7 @@ export default {
     usage: { title: 'Usage & quotas', description: 'Review official Cloudflare data and platform-local counters.' },
     logs: { title: 'Access logs', description: 'Inspect request status, latency and error summaries for public plugin traffic.' },
     audit: { title: 'Audit log', description: 'Track invites, bindings, keys and plugin lifecycle changes.' },
-    settings: { title: 'Settings', description: 'Configure login authorization, email notifications, Cloudflare authorization and global maintenance.' },
+    settings: { title: 'Settings', description: 'Configure login authorization, email notifications, the Cloudflare API Token and global maintenance.' },
   },
   workspace: {
     switcherTitle: 'Workspaces',
@@ -713,8 +713,6 @@ export default {
     accessLogsExported: 'Exported {{count}} access log entries',
     noAudit: 'No audit entries to export',
     auditExported: 'Exported {{count}} audit entries',
-    cloudflareConnected: 'Cloudflare authorized and account identified',
-    cloudflareConnectedWithoutAccount: 'Cloudflare authorized, but no single account was identified',
     http: {
       unauthorized: 'Your session has expired, please sign in again',
       forbidden: 'This account is not allowed to perform that action',

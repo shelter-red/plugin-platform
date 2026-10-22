@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 一键部署 Cloudflare Worker：构建管理端、补齐 D1/R2 资源、执行迁移、初始化基础设施密钥并发布。
-# OAuth、SMTP 等业务配置不通过环境变量注入，部署完成后在管理后台填写。
+# GitHub OAuth、Cloudflare API Token、SMTP 等业务配置不通过环境变量注入，部署完成后在管理后台填写。
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -239,8 +239,8 @@ cat <<'NEXT_STEPS'
      - Cloudflare Workers Builds：本轮构建日志中的“初始化令牌”一行
   3. 在初始化页填写 GitHub OAuth App 的 Client ID、Client Secret 和管理员白名单。
      回调地址由当前访问域名自动生成，无需手填。
-  4. 完成 GitHub 登录后，在管理后台配置 Cloudflare OAuth、SMTP、配额和插件域名后缀。
+  4. 完成 GitHub 登录后，在管理后台配置 Cloudflare API Token、SMTP、平台阈值和插件域名后缀。
   5. 如需自定义插件域名，再在 Cloudflare 配置一次 DNS / Worker Route，并在后台保存域名后缀。
 
-部署阶段不会写入 GitHub / Cloudflare OAuth、SMTP 或插件域名后缀；这些均在后台配置并加密保存。
+部署阶段不会写入 GitHub OAuth、Cloudflare API Token、SMTP 或插件域名后缀；这些均在后台配置并加密保存。
 NEXT_STEPS
