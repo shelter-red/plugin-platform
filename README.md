@@ -14,6 +14,7 @@
 - Worker API 基础路由：健康检查、总览、服务器、插件和域名查询。
 - 控制 WebSocket 接入边界和 Durable Object 插件桥接对象，支持 HTTP/SSE/文件流响应及带 base64 二进制帧的公开 WebSocket 桥接；HTTP 控制帧的请求体和响应块也使用 base64 保护二进制数据，大文件流由 Worker 临时中转到 R2，SSE 客户端断开会立即归还连接配额并通知插件服务器关闭流。
 - D1 表结构：用户、服务器、插件实例、域名和审计日志。
+- 多工作区与三角色权限：`workspaces`/`workspace_members` 记录 owner、operator、viewer 三种角色，服务器、插件实例、域名、访问日志、注册码、邀请和审计日志均按 `workspace_id` 隔离；管理端顶栏可切换工作区，`/api/workspaces` 提供创建、重命名、删除与成员角色管理，viewer 的写操作在前端禁用、后端 403；`super_admin` 可跨工作区查看但需显式切换，平台级设置仍由超级管理员维护。
 - 控制 token 使用 SHA-256 摘要后与 D1 字段比对。
 - SMTP 配置使用 `worker-mailer` 开源依赖，支持密文保存、脱敏读取和管理员测试发送。
 - Cloudflare Analytics GraphQL 查询按 5 分钟写入 D1 缓存，权限错误和未配置状态会明确返回；D1、KV 和 Durable Object 官方用量也参与维护判定。
@@ -62,7 +63,7 @@ cmake --build native-server/build --parallel 2
 cd native-server/build && ctest --output-on-failure
 ```
 
-`.github/workflows/platform-ci.yml` 会在 GitHub 的 Ubuntu、Windows 和 macOS 原生 runner 上执行同一套 CTest；Windows 和 macOS 会强制验证系统凭据存储的保存、读取、更新和删除往返。
+`.github/workflows/platform-ci.yml` 的 `web` job 依次执行 `ui:conventions`、`worker:typecheck`、`build`、`worker:smoke` 和 `ui:smoke`；Linux、Windows 和 macOS 原生验收 job 只在 `native-server/**` 或该工作流本身变化时触发（`dorny/paths-filter`），统一以 `ctest --output-on-failure -V` 运行，失败时上传 `Testing/Temporary` 日志 artifact。CI 不再强制 `PLUGMESH_TEST_SYSTEM_CREDENTIALS=required`：runner 缺少系统凭据时，凭据用例回退到加密凭据文件路径，系统凭据存储的完整往返仍需在真实 Windows 主机和 macOS Keychain 上单独验证。
 
 完整的实现状态、验证证据和生产发布阻塞项见 [`docs/acceptance-matrix.md`](docs/acceptance-matrix.md)。
 
@@ -110,7 +111,7 @@ npm run deploy
 5. 首次缺失时生成 `SESSION_SECRET` 和一次性 `SETUP_TOKEN`，已有值不轮换；
 6. 发布 Worker，并把初始化令牌保存到 `.wrangler/plugmesh-setup-token`（权限 `0600`）。
 
-GitHub Actions 是可选的自维护仓库部署方式，使用同一个脚本，只需配置 Secret `CLOUDFLARE_API_TOKEN`；`CLOUDFLARE_ACCOUNT_ID` 是多账号环境下的可选 Variable。首次初始化令牌会写入 Actions 的 Job Summary。已经使用 Cloudflare 一键部署时，无需再配置这条链路。
+部署统一由 Cloudflare Workers Builds 触发（`WORKERS_CI=1` 时脚本自动进入托管模式），仓库不再保留 `deploy.yml` 部署工作流；本地或自有 CI 仍可直接执行 `npm run deploy`，只需配置 `CLOUDFLARE_API_TOKEN`，多账号环境再设置 `CLOUDFLARE_ACCOUNT_ID`。
 
 ### 部署后只做一次业务初始化
 
@@ -185,6 +186,25 @@ npx wrangler dev --config wrangler.toml --var SESSION_SECRET:local-only-session-
 ```
 
 该值只用于本地 Miniflare，不要用于生产。
+
+## 发布原生端
+
+推送 `v*` tag（或手动触发 `.github/workflows/release.yml`）会在 Ubuntu、Windows 和 macOS runner 上构建 `plugmesh-server`，并发布到对应 GitHub Release：
+
+| 产物 | 说明 |
+| --- | --- |
+| `plugmesh-server-linux.zip` | Linux x86_64，需系统 OpenSSL 3 |
+| `plugmesh-server-windows.zip` | Windows x64，内含随包 OpenSSL DLL |
+| `plugmesh-server-macos.zip` | macOS，运行时需 `brew install openssl@3` |
+| `SHA256SUMS` | 三个 zip 的 SHA-256 校验和 |
+
+产物不做代码签名。下载后先校验再运行：
+
+```bash
+sha256sum -c SHA256SUMS
+```
+
+也可以按 [`native-server/README.md`](native-server/README.md) 从源码构建，自行确认工具链与依赖版本。
 
 ## 当前边界
 
