@@ -170,7 +170,7 @@ GitHub 回调失败时 Worker 直接返回对应 HTTP 状态（400/403/409/502/5
 | Account Settings Read | `account-settings.read` | 读取账号与成员关系，用于识别唯一的 Cloudflare 账号 |
 | Account Analytics Read | `account-analytics.read` | 读取账号级 Analytics，用于 Worker、D1、KV 与 Durable Object 用量 |
 
-缺少任意一项都会导致授权失败（`invalid_scope`）或识别不到账号（“未识别唯一账号”）。授权页的响应类型、授权类型与令牌认证方式同样属于 OAuth 客户端创建页的配置项（`response_type=code`、`grant_type=authorization_code`、`token_endpoint_auth_method=client_secret_basic`），设置页与 Client ID、回调地址放在同一区域只读展示，不再归到权限清单一节。刷新令牌只使用 Cloudflare 在 token 响应中实际返回的 `refresh_token`；没有返回时平台会提示重新授权，而不是伪造一个不存在的 Scope。授权结束后无论成功失败都会回到 **系统设置 → Cloudflare 授权**：成功刷新凭据状态，失败在面板内显示稳定错误码与原始描述。用量与配额页顶栏提供“刷新用量”，可立即验证 Analytics 是否已通；官方用量为空时界面会提示检查上述两项权限。用量页的“平台请求计数 / R2 / 活跃连接”来自本平台 D1 的请求日志，不依赖 Cloudflare 授权，因此 `/api/usage/cloudflare` 返回 `configured=false` 时 `/api/usage/local` 仍会返回 200 和本地数据，界面会分别标注两类数据源。
+缺少任意一项都会导致授权失败（`invalid_scope`）或识别不到账号（“未识别唯一账号”）。这两项已用官方 `GET /oauth/scopes` 列表复核（2026-10-22）：`account-settings.read`、`account-analytics.read` 均存在；该列表里没有 `offline_access`，也没有文档示例中出现过的 `workers-platform.read`，所以两者都不能写进客户端。授权页的响应类型、授权类型与令牌认证方式同样属于 OAuth 客户端创建页的配置项（`response_type=code`、`grant_type=authorization_code`、`token_endpoint_auth_method=client_secret_basic`），设置页与 Client ID、回调地址放在同一区域只读展示，不再归到权限清单一节。刷新令牌只使用 Cloudflare 在 token 响应中实际返回的 `refresh_token`；没有返回时平台会提示重新授权，而不是伪造一个不存在的 Scope。授权结束后无论成功失败都会回到 **系统设置 → Cloudflare 授权**：成功刷新凭据状态，失败在面板内显示稳定错误码与原始描述。用量与配额页顶栏提供“刷新用量”，可立即验证 Analytics 是否已通；官方用量为空时界面会提示检查上述两项权限。用量页的“平台请求计数 / R2 / 活跃连接”来自本平台 D1 的请求日志，不依赖 Cloudflare 授权，因此 `/api/usage/cloudflare` 返回 `configured=false` 时 `/api/usage/local` 仍会返回 200 和本地数据，界面会分别标注两类数据源。
 
 ### 自定义域名与插件域名
 
