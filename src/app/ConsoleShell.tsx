@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { Alert, App, Avatar, Button, Drawer, Dropdown, Menu, Select, Typography } from 'antd'
-import { Activity, ArrowUpRight, Box, Building2, Check, CircleHelp, Command, FileText, Gauge, Globe2, LayoutDashboard, LogOut, Menu as MenuIcon, MoreHorizontal, Network, Plus, RefreshCw, Search, Server, Settings, ShieldCheck, Sun, UserRound, X } from 'lucide-react'
+import { Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { Alert, App, Button, Drawer, Typography } from 'antd'
+import { CircleHelp, LogOut, Plus, RefreshCw, ShieldCheck, UserRound } from 'lucide-react'
 import { type AppThemeMode, type ThemePreference } from '../app/theme'
 import { useToast } from '../components/ToastProvider'
 import { diagnosisMessageKey, type CloudflareDiagnosis } from '../features/settings/cloudflare-auth'
 import { errorMessage, translateError } from '../errors'
-import { IconButton } from '../components/IconButton'
 import { DetailModal } from '../components/DetailModal'
 import { ProvisionModal, type ModalInput, type ModalResult } from '../components/ProvisionModal'
 import { CommandPalette, type CommandItem } from '../components/CommandPalette'
@@ -25,33 +24,13 @@ import { UsagePage } from '../features/usage/UsagePage'
 import { AccessLogsPage } from '../features/logs/AccessLogsPage'
 import { AuditPage } from '../features/audit/AuditPage'
 import { SettingsPage, settingsSections } from '../features/settings/SettingsPage'
+import { Sidebar, sidebarNavGroups } from './Sidebar'
+import { Topbar } from './Topbar'
 import { auditActionLabel } from '../lib/audit'
 import { downloadCsv } from '../lib/csv'
 import { useMediaQuery } from '../lib/useMediaQuery'
 import { AuthLoadingScreen, LoginPage } from '../features/auth/AuthScreen'
 import { assignDomain, checkPluginHealth, commandPlugin, createRegistrationCode, fetchAccessLogs, fetchAudit, fetchCloudflareAuthResult, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchInvites, fetchLocalUsage, fetchOauthSettings, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchPluginDetails, fetchServerDetails, fetchServers, fetchSmtpSettings, syncServer, type ApiAccessLog, type ApiAudit, type ApiDomain, type ApiInvite, type ApiOverview, type ApiPlugin, type ApiPluginDetail, type ApiServer, type ApiServerDetail, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type OauthSettings, type PlatformSettings, type PluginAction, type PluginHealthResult, type SmtpSettings } from '../api'
-
-const navGroups: { labelKey: string; items: { id: Page; icon: typeof LayoutDashboard }[] }[] = [
-  {
-    labelKey: 'nav.groups.main',
-    items: [
-      { id: 'overview', icon: LayoutDashboard },
-      { id: 'servers', icon: Server },
-      { id: 'plugins', icon: Box },
-      { id: 'domains', icon: Globe2 },
-      { id: 'workspaces', icon: Building2 },
-    ],
-  },
-  {
-    labelKey: 'nav.groups.system',
-    items: [
-      { id: 'usage', icon: Gauge },
-      { id: 'logs', icon: Activity },
-      { id: 'audit', icon: FileText },
-      { id: 'settings', icon: Settings },
-    ],
-  },
-]
 
 export type ConsoleProps = {
   theme: ThemePreference
@@ -155,29 +134,6 @@ export function ConsoleShell({ theme, setTheme, effectiveTheme, language }: Cons
     if (key === 'account') navigate('/account')
     if (key === 'help') navigate('/help')
   }
-  const workspaceMenuItems = [
-    ...workspaces.map((workspace) => ({ key: `ws:${workspace.id}`, label: `${workspace.name} · ${t(`workspace.roles.${workspace.role}`)}`, icon: workspace.id === activeWorkspaceId ? <Check size={14} /> : <Building2 size={14} /> })),
-    ...(workspaces.length > 0 ? [{ type: 'divider' as const }] : []),
-    { key: 'workspace:manage', label: t('workspace.manage'), icon: <Building2 size={14} /> },
-    { key: 'workspace:create', label: t('workspace.create'), icon: <Plus size={14} /> },
-  ]
-  const onWorkspaceMenu = ({ key }: { key: string }) => {
-    if (key.startsWith('ws:')) switchWorkspace(key.slice(3))
-    else if (key === 'workspace:manage' || key === 'workspace:create') navigate('/workspaces')
-  }
-
-  const navItems = navGroups.map((group) => ({
-    type: 'group' as const,
-    key: group.labelKey,
-    label: t(group.labelKey),
-    children: group.items.map(({ id, icon: NavIcon }) => ({
-      key: id,
-      icon: <NavIcon size={16} />,
-      label: t(`nav.${id}`),
-      extra: id === 'servers' && servers && servers.length > 0 ? <span className="nav-count">{servers.length}</span> : undefined,
-    })),
-  }))
-
   useEffect(() => {
     if (!authEnabled && !import.meta.env.VITE_API_BASE) return
     fetchMe()
@@ -462,7 +418,7 @@ export function ConsoleShell({ theme, setTheme, effectiveTheme, language }: Cons
 
   const paletteItems = useMemo<CommandItem[]>(() => {
     const items: CommandItem[] = []
-    for (const group of navGroups) {
+    for (const group of sidebarNavGroups) {
       for (const { id } of group.items) {
         items.push({ id: `page:${id}`, group: t('palette.group.pages'), label: t(`nav.${id}`), run: () => selectPage(id) })
       }
@@ -504,47 +460,26 @@ export function ConsoleShell({ theme, setTheme, effectiveTheme, language }: Cons
     notify('success', t('toast.auditExported', { count: rows.length }))
   }
 
+  const sidebarProps = {
+    compactNav: compactNav && !mobileNav,
+    onClose: () => setSidebarOpen(false),
+    page,
+    serverCount: servers?.length ?? 0,
+    workspaces,
+    activeWorkspace,
+    activeWorkspaceId,
+    apiLive,
+    user: authUser,
+    userMenuItems,
+    onUserMenu,
+    onSelectPage: selectPage,
+    onSwitchWorkspace: switchWorkspace,
+    onManageWorkspaces: () => navigate('/workspaces'),
+  }
+
   if (authEnabled && authState === 'loading') return <AuthLoadingScreen mode={effectiveTheme} />
   if (authEnabled && authState === 'anonymous') return <LoginPage mode={effectiveTheme} />
   if (!page && !docPage) return <Navigate to="/" replace />
-
-  const sidebar = (
-    <aside className="sidebar">
-      <div className="brand-row">
-        <Link className="brand-link" to="/" onClick={() => setSidebarOpen(false)}>
-          <Avatar shape="square" size={30} className="brand-mark" icon={<Network size={17} strokeWidth={2.4} />} />
-          <div>
-            <Typography.Text strong className="brand-name">Plugmesh</Typography.Text>
-            <Typography.Text className="brand-caption">{t('brand.caption')}</Typography.Text>
-          </div>
-          <span className="sr-only">{t('shell.home')}</span>
-        </Link>
-        <IconButton label={t('shell.closeNav')} onClick={() => setSidebarOpen(false)}><X size={17} /></IconButton>
-      </div>
-      <Dropdown menu={{ items: workspaceMenuItems, onClick: onWorkspaceMenu }} trigger={['click']} placement="bottomLeft">
-        <Button type="text" block className="workspace-switcher">
-          <Avatar shape="square" size={24} className="workspace-icon">{(activeWorkspace?.name ?? t('shell.workspace')).trim().slice(0, 1).toUpperCase()}</Avatar>
-          <span className="workspace-copy"><strong>{activeWorkspace?.name ?? t('workspace.none')}</strong><span>{activeWorkspace ? `${t(`workspace.roles.${activeWorkspace.role}`)} · ${apiLive ? t('shell.connected') : t('shell.waiting')}` : t('shell.waiting')}</span></span>
-          <MoreHorizontal size={16} />
-          <span className="sr-only">{t('workspace.switch')}</span>
-        </Button>
-      </Dropdown>
-      <nav className="nav-area" aria-label={t('shell.navigation')}>
-        <Menu mode="inline" inlineCollapsed={compactNav && !mobileNav} className="nav-menu" items={navItems} selectedKeys={page ? [page] : []} onClick={({ key }) => selectPage(key as Page)} />
-      </nav>
-      <div className="sidebar-bottom">
-        <Link className="support-link" to="/help" onClick={() => setSidebarOpen(false)}><CircleHelp size={15} /><span>{t('shell.help')}</span><ArrowUpRight size={12} /></Link>
-        <Dropdown menu={{ items: userMenuItems, onClick: onUserMenu }} trigger={['click']} placement="topLeft">
-          <Button type="text" block className="user-card">
-            <Avatar size={26} className="avatar">{(authUser?.display_name ?? '—').slice(0, 2).toUpperCase()}</Avatar>
-            <span className="user-copy"><strong>{authUser?.display_name ?? t('shell.unknownUser')}</strong><span>{authUser?.email ?? t('shell.unknownIdentity')}</span></span>
-            <MoreHorizontal size={16} />
-            <span className="sr-only">{t('shell.openUserMenu')}</span>
-          </Button>
-        </Dropdown>
-      </div>
-    </aside>
-  )
 
   return (
     <div className={`app-shell theme-${effectiveTheme}`}>
@@ -558,23 +493,12 @@ export function ConsoleShell({ theme, setTheme, effectiveTheme, language }: Cons
           closable={false}
           styles={{ body: { padding: 0 } }}
         >
-          {sidebar}
+          <Sidebar {...sidebarProps} compactNav={false} />
         </Drawer>
-      ) : sidebar}
+      ) : <Sidebar {...sidebarProps} />}
 
       <main className="main-column">
-        <header className="topbar">
-          <div className="topbar-leading"><IconButton label={t('shell.openNav')} onClick={() => setSidebarOpen(true)}><MenuIcon size={18} /></IconButton><div className="breadcrumbs"><span>{t('shell.console')}</span><span>/</span><strong>{meta.title}</strong></div></div>
-          <div className="topbar-actions">
-            <Button type="text" className="search-box" onClick={() => setPaletteOpen(true)} icon={<Search size={15} />}><span className="search-label">{t('shell.search')}</span><span className="shortcut"><Command size={11} /> K</span><span className="sr-only">{t('palette.title')}</span></Button>
-            <div className="theme-menu"><Sun size={16} aria-hidden="true" /><Select aria-label={t('theme.select')} value={theme} onChange={(value) => setTheme(value)} variant="borderless" popupMatchSelectWidth={false} options={[{ value: 'dark', label: t('theme.dark') }, { value: 'light', label: t('theme.light') }, { value: 'system', label: t('theme.system') }]} /></div>
-            <div className="theme-menu language-menu"><Globe2 size={16} aria-hidden="true" /><Select aria-label={t('language.select')} value={language} onChange={(value) => changeLanguage(value)} variant="borderless" popupMatchSelectWidth={false} options={[{ value: 'zh-CN', label: t('language.zh') }, { value: 'en', label: t('language.en') }]} /></div>
-            <IconButton label={t('shell.auditEvents')} onClick={() => selectPage('audit')}><Activity size={16} /></IconButton>
-            <Dropdown menu={{ items: userMenuItems, onClick: onUserMenu }} trigger={['click']} placement="bottomRight">
-              <Button type="text" shape="circle" className="top-avatar" aria-label={t('shell.currentUser')}>{userInitials}</Button>
-            </Dropdown>
-          </div>
-        </header>
+        <Topbar title={meta.title} theme={theme} onThemeChange={setTheme} language={language} onLanguageChange={changeLanguage} userInitials={userInitials} userMenuItems={userMenuItems} onUserMenu={onUserMenu} onOpenPalette={() => setPaletteOpen(true)} onOpenNav={() => setSidebarOpen(true)} onOpenAudit={() => selectPage('audit')} />
         <div className="page-scroll">
           <div className="page-content">
             <div className="page-header">
