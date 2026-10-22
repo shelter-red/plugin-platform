@@ -148,7 +148,7 @@ npx wrangler d1 migrations apply plugmesh --remote  # 补齐后重新发布即�
 
 ### 登录失败排查
 
-GitHub 授权回跳后，登录页会显示具体失败原因：
+GitHub 回调失败时 Worker 直接返回对应 HTTP 状态（400/403/409/502/503）的错误页，不再回跳 `/?auth_error=`；页面会给出具体原因和“返回登录”入口：
 
 | 提示 | 处理方式 |
 | --- | --- |
@@ -160,6 +160,18 @@ GitHub 授权回跳后，登录页会显示具体失败原因：
 | `OAuth 状态已过期` | 回到登录页重新发起授权，不要在同一个回调地址上重复刷新 |
 
 回调地址格式为 `https://<你的域名>/auth/github/callback`，必须与 GitHub OAuth App 中登记的地址逐字符一致（协议、域名、路径都不能差）。除本地 `localhost` 外，GitHub 只接受 HTTPS 回调，系统保存时会把 `http://` 自动升级为 `https://`。
+
+### Cloudflare OAuth 客户端所需权限（固定）
+
+平台只申请以下三项权限，界面不可增删，环境变量和提交里的 `scope` 都会被忽略。创建 Cloudflare OAuth 客户端时按名称勾选即可（系统设置 → Cloudflare 授权里也会只读列出）：
+
+| 官方权限名称 | Scope ID | 用途 |
+| --- | --- | --- |
+| Account Settings Read | `account-settings.read` | 读取账号与成员关系，用于识别唯一的 Cloudflare 账号 |
+| Account Analytics Read | `account-analytics.read` | 读取账号级 Analytics，用于 Worker、D1、KV 与 Durable Object 用量 |
+| Offline Access | `offline_access` | access token 过期后自动刷新，无需再次人工授权 |
+
+缺少任意一项都会导致授权失败（`invalid_scope`）或识别不到账号（“未识别唯一账号”）。授权结束后无论成功失败都会回到 **系统设置 → Cloudflare 授权**：成功刷新凭据状态，失败在面板内显示稳定错误码与原始描述。用量与配额页顶栏提供“刷新用量”，可立即验证 Analytics 是否已通；官方用量为空时界面会提示检查上述三项权限。
 
 ### 自定义域名与插件域名
 
