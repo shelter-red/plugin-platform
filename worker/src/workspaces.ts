@@ -1,3 +1,4 @@
+import { getCookie } from './cookies'
 import type { AuthenticatedUser, Env, Workspace, WorkspaceMember, WorkspaceRole } from './types'
 
 export const DEFAULT_WORKSPACE_ID = 'ws_default'
@@ -6,15 +7,6 @@ export const WORKSPACE_COOKIE = 'plugmesh_workspace'
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json; charset=utf-8' } })
 
 export type WorkspaceContext = { workspace: Workspace }
-
-function getCookie(request: Request, name: string): string | null {
-  const cookieHeader = request.headers.get('Cookie') ?? ''
-  for (const part of cookieHeader.split(';')) {
-    const [key, ...value] = part.trim().split('=')
-    if (key === name) return decodeURIComponent(value.join('=')) || null
-  }
-  return null
-}
 
 export async function listWorkspaces(env: Env, user: AuthenticatedUser): Promise<Workspace[]> {
   if (user.role === 'super_admin') {
@@ -109,10 +101,6 @@ export async function listWorkspaceMembers(env: Env, workspaceId: string): Promi
 export async function ownerCount(env: Env, workspaceId: string): Promise<number> {
   const row = await env.DB.prepare("SELECT COUNT(*) AS count FROM workspace_members WHERE workspace_id = ? AND role = 'owner'").bind(workspaceId).first<{ count: number }>()
   return row?.count ?? 0
-}
-
-export function workspaceJson(value: Workspace): Workspace {
-  return value
 }
 
 export function parseWorkspaceRole(value: unknown): WorkspaceRole | null {

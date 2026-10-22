@@ -25,6 +25,7 @@ export interface ApiMe {
 }
 
 const WORKSPACE_STORAGE_KEY = 'plugmesh-workspace'
+const WORKSPACE_COOKIE = 'plugmesh_workspace'
 
 function readStoredWorkspace(): string | null {
   try { return window.localStorage.getItem(WORKSPACE_STORAGE_KEY) } catch { return null }
@@ -39,6 +40,10 @@ export function setActiveWorkspace(workspaceId: string | null): void {
     if (workspaceId) window.localStorage.setItem(WORKSPACE_STORAGE_KEY, workspaceId)
     else window.localStorage.removeItem(WORKSPACE_STORAGE_KEY)
   } catch { /* 隐私模式下 localStorage 不可写，退化为仅内存生效。 */ }
+  // 同一份选择写入 cookie，供未携带自定义头的同源请求（如直接跳转接口）兜底。
+  document.cookie = workspaceId
+    ? `${WORKSPACE_COOKIE}=${encodeURIComponent(workspaceId)}; Path=/; SameSite=Lax`
+    : `${WORKSPACE_COOKIE}=; Path=/; SameSite=Lax; Max-Age=0`
 }
 
 export function currentWorkspaceId(): string | null {

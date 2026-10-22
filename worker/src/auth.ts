@@ -1,16 +1,8 @@
+import { getCookie } from './cookies'
 import { resolveOauthSettings } from './oauth-settings'
 import type { AuthenticatedUser, Env, WorkspaceRole } from './types'
 
 const SESSION_COOKIE = 'plugmesh_session'
-
-function getCookie(request: Request, name: string): string | null {
-  const cookieHeader = request.headers.get('Cookie') ?? ''
-  for (const part of cookieHeader.split(';')) {
-    const [key, ...value] = part.trim().split('=')
-    if (key === name) return value.join('=') || null
-  }
-  return null
-}
 
 export function sessionCookie(token: string, secure: boolean): string {
   return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800${secure ? '; Secure' : ''}`
