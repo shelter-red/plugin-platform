@@ -198,18 +198,18 @@ test('管理 API 保存配额并让维护模式阻止注册码与域名分配', 
 
   const updated = await api('/api/settings/platform', ADMIN_TOKEN, {
     method: 'PUT',
-    body: JSON.stringify({ pluginDomainSuffix: 'Plugins.Example.NET', quotas: { requests: 250, activeConnections: -5 } }),
+    body: JSON.stringify({ pluginDomainSuffix: 'Plugins.Example.NET', quotas: { r2Objects: 250, activeConnections: -5 } }),
   })
   expect(updated.status).toBe(200)
   const settings = await updated.json() as typeof defaultPlatformSettings
   expect(settings.maintenance).toBe(false)
   expect(settings.pluginDomainSuffix).toBe('.plugins.example.net')
-  expect(settings.quotas.requests).toBe(250)
+  expect(settings.quotas.r2Objects).toBe(250)
   expect(settings.quotas.activeConnections).toBe(defaultPlatformSettings.quotas.activeConnections)
 
   const stored = await testEnv.DB.prepare('SELECT value_json FROM platform_settings WHERE key = ?').bind('platform').first<{ value_json: string }>()
   expect(JSON.parse(stored?.value_json ?? '{}').pluginDomainSuffix).toBe('.plugins.example.net')
-  expect(JSON.parse(stored?.value_json ?? '{}').quotas.requests).toBe(250)
+  expect(JSON.parse(stored?.value_json ?? '{}').quotas.r2Objects).toBe(250)
 
   const invalidSuffix = await api('/api/settings/platform', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify({ pluginDomainSuffix: 'not a domain' }) })
   expect(invalidSuffix.status).toBe(400)

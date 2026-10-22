@@ -1294,6 +1294,24 @@ td a {
 .row-actions {
   white-space: nowrap;
 }
+.usage-section {
+  display: grid;
+  gap: 10px;
+}
+.usage-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+}
+.usage-section-head h2 {
+  color: var(--text-1);
+  font: 500 12px 'IBM Plex Mono', monospace;
+}
+.usage-section-head p {
+  color: var(--text-3);
+  font-size: 10px;
+}
 .usage-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -1333,6 +1351,29 @@ td a {
 }
 .resource-card-limit span {
   color: var(--text-4);
+}
+.resource-card-limit .resource-card-percent {
+  margin-left: 6px;
+  color: var(--text-2);
+  font: 500 10px 'IBM Plex Mono', monospace;
+}
+.resource-card-note {
+  margin-top: 2px;
+  color: var(--text-4);
+  font-size: 9px;
+}
+.resource-group {
+  border-bottom: 1px solid var(--line);
+}
+.resource-group:last-of-type {
+  border-bottom: 0;
+}
+.resource-group-title {
+  padding: 10px 16px 0;
+  color: var(--text-3);
+  font: 500 9px 'IBM Plex Mono', monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 .source-row {
   display: flex;
@@ -1413,6 +1454,11 @@ td a {
 }
 .quota-form .form-grid {
   margin-top: 0;
+}
+.quota-form-title {
+  margin-bottom: 10px;
+  color: var(--text-2);
+  font: 500 11px 'IBM Plex Mono', monospace;
 }
 .domain-form .form-grid {
   grid-template-columns: minmax(0, 1fr);

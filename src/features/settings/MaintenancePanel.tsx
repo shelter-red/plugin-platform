@@ -2,22 +2,35 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button, Input, Switch } from 'antd'
 import { Check, ShieldCheck } from 'lucide-react'
-import { ApiError, updatePlatformSettings, type PlatformSettings } from '../../api'
+import { ApiError, updatePlatformSettings, type CloudflareQuotas, type PlatformQuotas, type PlatformSettings } from '../../api'
 import { Panel } from '../../components/Panel'
 import { StatusBadge } from '../../components/StatusBadge'
 import type { Notify } from '../../components/ToastProvider'
+import { QuotaForm } from './QuotaForm'
 
-const QUOTA_FIELDS = [
-  ['requests', 'settings.quotas.requests'],
+// 平台阈值的字段顺序与文案；与 Cloudflare 免费额度分开，避免把官方限额当成平台自设值。
+const PLATFORM_QUOTA_FIELDS = [
   ['activeConnections', 'settings.quotas.connections'],
   ['r2Bytes', 'settings.quotas.r2Bytes'],
   ['r2Objects', 'settings.quotas.r2Objects'],
-  ['d1Queries', 'settings.quotas.d1'],
-  ['kvOperations', 'settings.quotas.kv'],
-  ['durableObjectRequests', 'settings.quotas.durableObjects'],
 ] as const
 
-/** 维护开关、插件域名后缀与总配额：三项都写同一个平台设置接口，因此放在一起维护。 */
+// Cloudflare 免费计划每日额度：D1 按行读写、KV 按每种操作、DO 按请求数逐项监控。
+const CLOUDFLARE_QUOTA_FIELDS = [
+  ['workerRequests', 'settings.cloudflareQuotas.workerRequests'],
+  ['d1RowsRead', 'settings.cloudflareQuotas.d1RowsRead'],
+  ['d1RowsWritten', 'settings.cloudflareQuotas.d1RowsWritten'],
+  ['kvRead', 'settings.cloudflareQuotas.kvRead'],
+  ['kvWrite', 'settings.cloudflareQuotas.kvWrite'],
+  ['kvDelete', 'settings.cloudflareQuotas.kvDelete'],
+  ['kvList', 'settings.cloudflareQuotas.kvList'],
+  ['doRequests', 'settings.cloudflareQuotas.doRequests'],
+] as const
+
+const EMPTY_PLATFORM_FORM: Record<keyof PlatformQuotas, string> = { activeConnections: '', r2Bytes: '', r2Objects: '' }
+const EMPTY_CLOUDFLARE_FORM: Record<keyof CloudflareQuotas, string> = { workerRequests: '', d1RowsRead: '', d1RowsWritten: '', kvRead: '', kvWrite: '', kvDelete: '', kvList: '', doRequests: '' }
+
+/** 维护开关、插件域名后缀与两组阈值：都写同一个平台设置接口，因此放在一起维护。 */
 export function MaintenancePanel({ settings, onChange, onAction }: {
   settings: PlatformSettings | null
   onChange: (settings: PlatformSettings) => void
@@ -27,13 +40,24 @@ export function MaintenancePanel({ settings, onChange, onAction }: {
   const [saving, setSaving] = useState(false)
   const [quotaSaving, setQuotaSaving] = useState(false)
   const [suffixSaving, setSuffixSaving] = useState(false)
-  const [quotaForm, setQuotaForm] = useState({ requests: '', activeConnections: '', r2Bytes: '', r2Objects: '', d1Queries: '', kvOperations: '', durableObjectRequests: '' })
+  const [quotaForm, setQuotaForm] = useState(EMPTY_PLATFORM_FORM)
+  const [cloudflareForm, setCloudflareForm] = useState(EMPTY_CLOUDFLARE_FORM)
   const [domainSuffix, setDomainSuffix] = useState('')
   const maintenance = settings?.maintenance ?? false
 
   useEffect(() => {
     if (!settings) return
-    setQuotaForm({ requests: String(settings.quotas.requests), activeConnections: String(settings.quotas.activeConnections), r2Bytes: String(settings.quotas.r2Bytes), r2Objects: String(settings.quotas.r2Objects), d1Queries: String(settings.quotas.d1Queries), kvOperations: String(settings.quotas.kvOperations), durableObjectRequests: String(settings.quotas.durableObjectRequests) })
+    setQuotaForm({ activeConnections: String(settings.quotas.activeConnections), r2Bytes: String(settings.quotas.r2Bytes), r2Objects: String(settings.quotas.r2Objects) })
+    setCloudflareForm({
+      workerRequests: String(settings.cloudflareQuotas.workerRequests),
+      d1RowsRead: String(settings.cloudflareQuotas.d1RowsRead),
+      d1RowsWritten: String(settings.cloudflareQuotas.d1RowsWritten),
+      kvRead: String(settings.cloudflareQuotas.kvRead),
+      kvWrite: String(settings.cloudflareQuotas.kvWrite),
+      kvDelete: String(settings.cloudflareQuotas.kvDelete),
+      kvList: String(settings.cloudflareQuotas.kvList),
+      doRequests: String(settings.cloudflareQuotas.doRequests),
+    })
     setDomainSuffix(settings.pluginDomainSuffix)
   }, [settings])
 
@@ -72,14 +96,28 @@ export function MaintenancePanel({ settings, onChange, onAction }: {
 
   const saveQuotas = async () => {
     if (!settings) return onAction('warning', t('settings.quotas.notConnected'))
-    const quotas = Object.fromEntries(Object.entries(quotaForm).map(([key, value]) => [key, Number(value)])) as PlatformSettings['quotas']
-    if (Object.values(quotas).some((value) => !Number.isSafeInteger(value) || value <= 0)) {
+    const quotas: PlatformQuotas = {
+      activeConnections: Number(quotaForm.activeConnections),
+      r2Bytes: Number(quotaForm.r2Bytes),
+      r2Objects: Number(quotaForm.r2Objects),
+    }
+    const cloudflareQuotas: CloudflareQuotas = {
+      workerRequests: Number(cloudflareForm.workerRequests),
+      d1RowsRead: Number(cloudflareForm.d1RowsRead),
+      d1RowsWritten: Number(cloudflareForm.d1RowsWritten),
+      kvRead: Number(cloudflareForm.kvRead),
+      kvWrite: Number(cloudflareForm.kvWrite),
+      kvDelete: Number(cloudflareForm.kvDelete),
+      kvList: Number(cloudflareForm.kvList),
+      doRequests: Number(cloudflareForm.doRequests),
+    }
+    if ([...Object.values(quotas), ...Object.values(cloudflareQuotas)].some((value) => !Number.isSafeInteger(value) || value <= 0)) {
       onAction('warning', t('settings.quotas.invalid'))
       return
     }
     setQuotaSaving(true)
     try {
-      onChange(await updatePlatformSettings({ ...settings, quotas }))
+      onChange(await updatePlatformSettings({ ...settings, quotas, cloudflareQuotas }))
       onAction('success', t('settings.quotas.saved'))
     } catch {
       onAction('error', t('settings.quotas.saveFailed'))
@@ -87,8 +125,6 @@ export function MaintenancePanel({ settings, onChange, onAction }: {
       setQuotaSaving(false)
     }
   }
-
-  const updateQuota = (key: keyof typeof quotaForm, value: string) => setQuotaForm((current) => ({ ...current, [key]: value }))
 
   return <Panel id="settings-maintenance" className="settings-panel" padded heading={
     <div className="settings-heading">
@@ -105,9 +141,7 @@ export function MaintenancePanel({ settings, onChange, onAction }: {
       <div className="form-grid"><label>{t('settings.domainSuffix.label')}<Input value={domainSuffix} onChange={(event) => setDomainSuffix(event.target.value)} placeholder="plugins.example.com" disabled={!settings || suffixSaving} /></label></div>
       <div className="settings-actions quota-actions"><span className="form-hint">{t('settings.domainSuffix.hint')}</span><Button onClick={() => void saveDomainSuffix()} loading={suffixSaving} disabled={!settings || quotaSaving}>{t('settings.domainSuffix.save')}<Check size={14} /></Button></div>
     </div>
-    <div className="quota-form">
-      <div className="form-grid">{QUOTA_FIELDS.map(([key, labelKey]) => <label key={key}>{t(labelKey)}<Input type="number" min={1} step={1} value={quotaForm[key]} onChange={(event) => updateQuota(key, event.target.value)} disabled={!settings || quotaSaving} /></label>)}</div>
-      <div className="settings-actions quota-actions"><span className="form-hint">{t('settings.quotas.hint')}</span><Button onClick={() => void saveQuotas()} loading={quotaSaving} disabled={!settings || suffixSaving}>{t('settings.quotas.save')}<Check size={14} /></Button></div>
-    </div>
+    <QuotaForm title={t('settings.quotas.platformTitle')} hint={t('settings.quotas.platformHint')} fields={PLATFORM_QUOTA_FIELDS} values={quotaForm} onChange={(key, value) => setQuotaForm((current) => ({ ...current, [key]: value }))} onSave={() => void saveQuotas()} saving={quotaSaving} disabled={!settings || suffixSaving || quotaSaving} />
+    <QuotaForm title={t('settings.quotas.cloudflareTitle')} hint={t('settings.quotas.cloudflareHint')} fields={CLOUDFLARE_QUOTA_FIELDS} values={cloudflareForm} onChange={(key, value) => setCloudflareForm((current) => ({ ...current, [key]: value }))} onSave={() => void saveQuotas()} saving={quotaSaving} disabled={!settings || suffixSaving || quotaSaving} />
   </Panel>
 }

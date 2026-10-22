@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert'
 import { cloudflareUsageApi } from './src/index.ts'
 import { encryptSecret } from './src/secrets.ts'
-import { cloudflareQuotaReason, defaultPlatformSettings } from './src/usage.ts'
+import { cloudflareQuotaReason, defaultCloudflareQuotas } from './src/usage.ts'
 import type { AuthenticatedUser, Env } from './src/types.ts'
 
 const credential = await encryptSecret('session-secret', JSON.stringify({ accessToken: 'access-token', accountId: 'account-1' }))
@@ -14,7 +14,7 @@ const database = {
         if (sql.includes("key = 'cloudflare:workers'")) return null
         if (sql.includes('FROM cloudflare_credentials')) return credential as T
         if (sql.includes('FROM platform_settings')) {
-          return { value_json: JSON.stringify({ maintenance: false, quotas: { ...defaultPlatformSettings.quotas, d1Queries: 14 } }) } as T
+          return { value_json: JSON.stringify({ maintenance: false, cloudflareQuotas: { ...defaultCloudflareQuotas, d1RowsRead: 14 } }) } as T
         }
         return null
       },
@@ -60,9 +60,15 @@ try {
   assert.deepEqual(result.kv, { read: 8, write: 3, delete: 1, list: 2 })
   assert.deepEqual(result.durableObjects, { requests: 7, cpuTime: 12, storedBytes: 4096 })
   assert.equal(maintenanceUpdates, 1)
-  assert.equal(cloudflareQuotaReason(result, { ...defaultPlatformSettings.quotas, d1Queries: 14 }), 'D1 query quota reached')
-  assert.equal(cloudflareQuotaReason(result, { ...defaultPlatformSettings.quotas, d1Queries: 15, kvOperations: 14 }), 'KV operation quota reached')
-  assert.equal(cloudflareQuotaReason(result, { ...defaultPlatformSettings.quotas, d1Queries: 15, kvOperations: 15, durableObjectRequests: 7 }), 'Durable Object request quota reached')
+  assert.equal(cloudflareQuotaReason(result, defaultCloudflareQuotas), null)
+  assert.equal(cloudflareQuotaReason(result, { ...defaultCloudflareQuotas, workerRequests: 99 }), 'Worker request quota reached')
+  assert.equal(cloudflareQuotaReason(result, { ...defaultCloudflareQuotas, d1RowsRead: 20 }), 'D1 rows read quota reached')
+  assert.equal(cloudflareQuotaReason(result, { ...defaultCloudflareQuotas, d1RowsWritten: 5 }), 'D1 rows written quota reached')
+  assert.equal(cloudflareQuotaReason(result, { ...defaultCloudflareQuotas, kvRead: 8 }), 'KV read quota reached')
+  assert.equal(cloudflareQuotaReason(result, { ...defaultCloudflareQuotas, kvWrite: 3 }), 'KV write quota reached')
+  assert.equal(cloudflareQuotaReason(result, { ...defaultCloudflareQuotas, kvDelete: 1 }), 'KV delete quota reached')
+  assert.equal(cloudflareQuotaReason(result, { ...defaultCloudflareQuotas, kvList: 2 }), 'KV list quota reached')
+  assert.equal(cloudflareQuotaReason(result, { ...defaultCloudflareQuotas, doRequests: 7 }), 'Durable Object request quota reached')
 } finally {
   globalThis.fetch = originalFetch
 }

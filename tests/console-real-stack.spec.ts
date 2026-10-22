@@ -271,7 +271,7 @@ test('管理端总览展示真实 5xx 访问日志与连接异常', async ({ pag
 
 test('管理端维护开关与配额保存落到真实平台状态并写入审计', async ({ page }) => {
   const { call } = createStackApi(page.request, sessionToken)
-  const original = (await (await call('/api/settings/platform')).json()) as { maintenance: boolean; quotas: Record<string, number> }
+  const original = (await (await call('/api/settings/platform')).json()) as { maintenance: boolean; quotas: Record<string, number>; cloudflareQuotas: Record<string, number> }
   expect(original.maintenance, '真实栈应处于运行状态').toBe(false)
   try {
     await page.goto('/')
@@ -299,23 +299,24 @@ test('管理端维护开关与配额保存落到真实平台状态并写入审�
     const resumed = await getPublic(baseURL!, 'maintenance-check.plugins.example.com')
     expect(resumed.status).toBe(404)
 
-    const raisedQuota = 5_000_000
-    const quotaInput = panel.getByLabel('请求数 / 24 小时')
+    // 平台请求不设上限，可调的是 Cloudflare 免费额度逐项阈值；这里下调 D1 行读取。
+    const raisedQuota = 4_000_000
+    const quotaInput = panel.getByLabel('D1 行读取 / 日')
     await quotaInput.fill(String(raisedQuota))
-    await panel.getByRole('button', { name: '保存配额' }).click()
+    await panel.getByRole('button', { name: '保存配额' }).first().click()
     await expect(page.getByText('平台配额已保存')).toBeVisible()
-    const saved = (await (await call('/api/settings/platform')).json()) as { quotas: { requests: number } }
-    expect(saved.quotas.requests).toBe(raisedQuota)
+    const saved = (await (await call('/api/settings/platform')).json()) as { cloudflareQuotas: { d1RowsRead: number } }
+    expect(saved.cloudflareQuotas.d1RowsRead).toBe(raisedQuota)
 
     await page.getByRole('menuitem', { name: '用量与配额', exact: true }).click()
-    await expect(page.locator('.resource-card').filter({ hasText: '平台请求计数' }))
+    await expect(page.locator('.resource-card').filter({ hasText: 'D1 行读取' }))
       .toContainText(`上限 ${raisedQuota.toLocaleString('zh-CN')}`)
 
     // 配额必须回源 D1：整页重载后表单仍显示新值，而不是只存在内存状态里。
     await page.reload()
     await page.getByRole('menuitem', { name: '系统设置', exact: true }).click()
     await page.getByRole('button', { name: '维护与配额' }).click()
-    await expect(page.locator('#settings-maintenance').getByLabel('请求数 / 24 小时')).toHaveValue(String(raisedQuota))
+    await expect(page.locator('#settings-maintenance').getByLabel('D1 行读取 / 日')).toHaveValue(String(raisedQuota))
 
     await page.getByRole('menuitem', { name: '审计日志', exact: true }).click()
     await expect(page.getByRole('row', { name: /更新平台设置/ }).first()).toBeVisible()
@@ -330,7 +331,7 @@ test('管理端维护开关与配额保存落到真实平台状态并写入审�
     expect(csv).toContain('E2E Admin')
     expect(csv).toContain('e2e@example.com')
   } finally {
-    await call('/api/settings/platform', { method: 'PUT', data: { maintenance: false, quotas: original.quotas } })
+    await call('/api/settings/platform', { method: 'PUT', data: { maintenance: false, quotas: original.quotas, cloudflareQuotas: original.cloudflareQuotas } })
   }
 })
 
@@ -346,7 +347,7 @@ test('管理端用量与配额页展示真实本地计数、分布与官方未�
   // 先拉起真实插件域名，后面用它验证本地计数按用户维度的增量来自真实请求日志。
   const prepared = await preparePublicPlugin(baseURL!, api)
   const before = await readUsage()
-  // POST /api/blobs 会先占用一次请求配额并写入真实 R2 用量，用于验证页面计数不是伪造值。
+  // POST /api/blobs 会先累计一次平台请求计数并写入真实 R2 用量，用于验证页面计数不是伪造值。
   const upload = await page.request.post('/api/blobs', {
     headers: { 'content-type': 'application/octet-stream', 'content-length': '5' },
     data: Buffer.from('hello'),

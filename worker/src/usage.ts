@@ -1,21 +1,31 @@
-import type { Env, PlatformQuotas, PlatformSettings } from './types'
+import type { CloudflareQuotas, Env, PlatformQuotas, PlatformSettings } from './types'
 import { decryptSecret } from './secrets'
 import { parseSmtpSettings, sendMaintenanceEmail, type SmtpSettings } from './email'
 
 export const defaultPluginDomainSuffix = '.plugins.example.com'
 
+// Cloudflare 免费计划每日额度，取自官方限额页（Workers / D1 / KV / Durable Objects，核对于 2026-10）。
+// 平台请求本身不设上限，这里的 Worker 请求数只用于判断官方免费额度是否触顶。
+export const defaultCloudflareQuotas: CloudflareQuotas = {
+  workerRequests: 100_000,
+  d1RowsRead: 5_000_000,
+  d1RowsWritten: 100_000,
+  kvRead: 100_000,
+  kvWrite: 1_000,
+  kvDelete: 1_000,
+  kvList: 1_000,
+  doRequests: 100_000,
+}
+
 export const defaultPlatformSettings: PlatformSettings = {
   maintenance: false,
   pluginDomainSuffix: defaultPluginDomainSuffix,
   quotas: {
-    requests: 100000,
     activeConnections: 100,
     r2Bytes: 10 * 1024 * 1024 * 1024,
     r2Objects: 1000,
-    d1Queries: 5_000_000,
-    kvOperations: 100_000,
-    durableObjectRequests: 100_000,
   },
+  cloudflareQuotas: defaultCloudflareQuotas,
 }
 
 const usageKey = 'global'
@@ -101,19 +111,19 @@ export function normalizePluginDomainSuffix(value: unknown): string | null {
   return `.${domain}`
 }
 
-export async function reserveRequest(env: Env, quotas: PlatformQuotas): Promise<boolean> {
+// 平台请求只计数不拦截：24 小时窗口内的请求数用于展示，真正的额度上限在 Cloudflare 官方侧。
+export async function recordRequest(env: Env): Promise<void> {
   await ensureUsageRow(env)
   const now = new Date()
   const nowIso = now.toISOString()
   const windowStart = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString()
-  const result = await env.DB.prepare(`
+  await env.DB.prepare(`
     UPDATE platform_usage
     SET request_count = CASE WHEN request_window_started_at <= ? THEN 1 ELSE request_count + 1 END,
         request_window_started_at = CASE WHEN request_window_started_at <= ? THEN ? ELSE request_window_started_at END,
         updated_at = ?
-    WHERE key = ? AND (request_window_started_at <= ? OR request_count < ?)
-  `).bind(windowStart, windowStart, nowIso, nowIso, usageKey, windowStart, quotas.requests).run()
-  return (result.meta.changes ?? 0) === 1
+    WHERE key = ?
+  `).bind(windowStart, windowStart, nowIso, nowIso, usageKey).run()
 }
 
 export async function reserveActiveConnection(env: Env, quotas: PlatformQuotas): Promise<boolean> {
@@ -138,16 +148,22 @@ export async function releaseR2Usage(env: Env, bytes: number): Promise<void> {
   await env.DB.prepare('UPDATE platform_usage SET r2_bytes = MAX(r2_bytes - ?, 0), r2_objects = MAX(r2_objects - 1, 0), updated_at = ? WHERE key = ?').bind(bytes, new Date().toISOString(), usageKey).run()
 }
 
+// 逐项比对 Cloudflare 免费额度：D1 按行读写、KV 按每种操作、DO 按请求数分别判断，
+// 任何一项触顶都进入维护模式，避免合并统计掩盖单项超限。
 export function cloudflareQuotaReason(usage: {
-  d1?: { readQueries: number; writeQueries: number }
+  requests?: number
+  d1?: { rowsRead: number; rowsWritten: number }
   kv?: { read: number; write: number; delete: number; list: number }
   durableObjects?: { requests: number }
-}, quotas: PlatformQuotas): string | null {
-  const d1Queries = usage.d1 ? usage.d1.readQueries + usage.d1.writeQueries : 0
-  if (d1Queries >= quotas.d1Queries) return 'D1 query quota reached'
-  const kvOperations = usage.kv ? usage.kv.read + usage.kv.write + usage.kv.delete + usage.kv.list : 0
-  if (kvOperations >= quotas.kvOperations) return 'KV operation quota reached'
-  if ((usage.durableObjects?.requests ?? 0) >= quotas.durableObjectRequests) return 'Durable Object request quota reached'
+}, quotas: CloudflareQuotas): string | null {
+  if ((usage.requests ?? 0) >= quotas.workerRequests) return 'Worker request quota reached'
+  if ((usage.d1?.rowsRead ?? 0) >= quotas.d1RowsRead) return 'D1 rows read quota reached'
+  if ((usage.d1?.rowsWritten ?? 0) >= quotas.d1RowsWritten) return 'D1 rows written quota reached'
+  if ((usage.kv?.read ?? 0) >= quotas.kvRead) return 'KV read quota reached'
+  if ((usage.kv?.write ?? 0) >= quotas.kvWrite) return 'KV write quota reached'
+  if ((usage.kv?.delete ?? 0) >= quotas.kvDelete) return 'KV delete quota reached'
+  if ((usage.kv?.list ?? 0) >= quotas.kvList) return 'KV list quota reached'
+  if ((usage.durableObjects?.requests ?? 0) >= quotas.doRequests) return 'Durable Object request quota reached'
   return null
 }
 
@@ -171,13 +187,30 @@ async function readPlatformSettings(env: Env): Promise<PlatformSettings> {
       maintenance: Boolean(value.maintenance),
       pluginDomainSuffix: normalizePluginDomainSuffix(value.pluginDomainSuffix) ?? fallback.pluginDomainSuffix,
       quotas: {
-        ...defaultPlatformSettings.quotas,
-        ...(value.quotas ?? {}),
+        activeConnections: positiveQuota(value.quotas?.activeConnections) ?? fallback.quotas.activeConnections,
+        r2Bytes: positiveQuota(value.quotas?.r2Bytes) ?? fallback.quotas.r2Bytes,
+        r2Objects: positiveQuota(value.quotas?.r2Objects) ?? fallback.quotas.r2Objects,
+      },
+      cloudflareQuotas: {
+        workerRequests: positiveQuota(value.cloudflareQuotas?.workerRequests) ?? fallback.cloudflareQuotas.workerRequests,
+        d1RowsRead: positiveQuota(value.cloudflareQuotas?.d1RowsRead) ?? fallback.cloudflareQuotas.d1RowsRead,
+        d1RowsWritten: positiveQuota(value.cloudflareQuotas?.d1RowsWritten) ?? fallback.cloudflareQuotas.d1RowsWritten,
+        kvRead: positiveQuota(value.cloudflareQuotas?.kvRead) ?? fallback.cloudflareQuotas.kvRead,
+        kvWrite: positiveQuota(value.cloudflareQuotas?.kvWrite) ?? fallback.cloudflareQuotas.kvWrite,
+        kvDelete: positiveQuota(value.cloudflareQuotas?.kvDelete) ?? fallback.cloudflareQuotas.kvDelete,
+        kvList: positiveQuota(value.cloudflareQuotas?.kvList) ?? fallback.cloudflareQuotas.kvList,
+        doRequests: positiveQuota(value.cloudflareQuotas?.doRequests) ?? fallback.cloudflareQuotas.doRequests,
       },
     }
   } catch {
     return fallback
   }
+}
+
+// 旧版本把 D1/KV/DO/请求数混在 quotas 里，这里只接受新字段，缺失或非法的一律回退默认值。
+function positiveQuota(value: unknown): number | null {
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null
 }
 
 function environmentPlatformSettings(env: Env): PlatformSettings {

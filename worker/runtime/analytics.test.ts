@@ -162,9 +162,9 @@ test('未配置账号 ID 时跳过 Analytics 请求', { timeout: 20_000 }, async
   expect(calls).toHaveLength(0)
 })
 
-test('Analytics 用量达到 D1 配额时进入维护模式', { timeout: 20_000 }, async () => {
+test('Analytics 用量达到 D1 行读取额度时进入维护模式', { timeout: 20_000 }, async () => {
   await saveCredential()
-  const settings = await api('/api/settings/platform', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify({ quotas: { d1Queries: 10 } }) })
+  const settings = await api('/api/settings/platform', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify({ cloudflareQuotas: { d1RowsRead: 10 } }) })
   expect(settings.status).toBe(200)
 
   const response = await cloudflareUsageApi(testEnv, admin, analyticsFetcher([], graphqlHandler))
@@ -173,7 +173,7 @@ test('Analytics 用量达到 D1 配额时进入维护模式', { timeout: 20_000 
   const platform = await testEnv.DB.prepare('SELECT value_json FROM platform_settings WHERE key = ?').bind('platform').first<{ value_json: string }>()
   expect(Boolean(JSON.parse(platform!.value_json).maintenance)).toBe(true)
   const notice = await testEnv.DB.prepare("SELECT detail_json FROM audit_log WHERE action = 'maintenance.email.skipped'").first<{ detail_json: string }>()
-  expect(JSON.parse(notice!.detail_json)).toMatchObject({ reason: 'D1 query quota reached' })
+  expect(JSON.parse(notice!.detail_json)).toMatchObject({ reason: 'D1 rows read quota reached' })
 
   const publicResponse = await SELF.fetch('https://blocked.plugins.example.com/', { headers: { host: 'blocked.plugins.example.com' } })
   expect(publicResponse.status).toBe(503)

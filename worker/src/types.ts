@@ -1,17 +1,27 @@
+// 平台自身可拒绝的资源阈值：只约束本平台能拦下的连接与 R2 存储，达到后进入维护模式。
 export interface PlatformQuotas {
-  requests: number
   activeConnections: number
   r2Bytes: number
   r2Objects: number
-  d1Queries: number
-  kvOperations: number
-  durableObjectRequests: number
+}
+
+// Cloudflare 免费计划每日额度。请求数本身不设平台上限，这里只是观察官方用量是否触顶。
+export interface CloudflareQuotas {
+  workerRequests: number
+  d1RowsRead: number
+  d1RowsWritten: number
+  kvRead: number
+  kvWrite: number
+  kvDelete: number
+  kvList: number
+  doRequests: number
 }
 
 export interface PlatformSettings {
   maintenance: boolean
   pluginDomainSuffix: string
   quotas: PlatformQuotas
+  cloudflareQuotas: CloudflareQuotas
 }
 
 export interface Env {

@@ -1,7 +1,7 @@
 import { SELF } from 'cloudflare:test'
 import { afterEach, beforeEach, expect, test } from 'vitest'
-import { defaultPlatformSettings, setPlatformSettingsCache } from '../src/usage'
-import { hashToken, openControl, resetDatabase, seedServer, testEnv } from './helpers'
+import { activateMaintenance, defaultPlatformSettings, setPlatformSettingsCache } from '../src/usage'
+import { hashToken, resetDatabase, seedServer, testEnv } from './helpers'
 import { SMTP_SINK, smtpSinkSettings } from './smtp-sink.config'
 
 const ADMIN_TOKEN = 'smtp-admin-session'
@@ -104,12 +104,14 @@ test('SMTP 测试发送在不可达服务器上重试三次并记录脱敏审计
   expect(notConfigured.status).toBe(409)
 })
 
-test('配额触发维护模式时向管理员发送通知并记录失败重试', { timeout: 30_000 }, async () => {
+test('维护模式激活时向管理员发送通知并记录失败重试', { timeout: 30_000 }, async () => {
   await api('/api/settings/smtp', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify(settings) })
-  const { socket } = await openControl()
-  const platform = { ...defaultPlatformSettings, maintenance: false, quotas: { ...defaultPlatformSettings.quotas, requests: 0 } }
+  const platform = { ...defaultPlatformSettings, maintenance: false }
   await testEnv.DB.prepare('INSERT INTO platform_settings (key, value_json, updated_at) VALUES (?, ?, ?)').bind('platform', JSON.stringify(platform), new Date().toISOString()).run()
   setPlatformSettingsCache(platform)
+
+  // 直接激活维护模式：触发来源（官方额度）由 analytics 测试覆盖，这里只验证邮件通知链路。
+  await activateMaintenance(testEnv, 'R2 storage quota reached')
 
   const response = await SELF.fetch(`https://${hostname}/`)
   expect(response.status).toBe(503)
@@ -121,10 +123,9 @@ test('配额触发维护模式时向管理员发送通知并记录失败重试',
   const audit = await testEnv.DB.prepare("SELECT action, detail_json FROM audit_log WHERE action LIKE 'maintenance.email.%'").first<{ action: string; detail_json: string }>()
   expect(audit?.action).toBe('maintenance.email.failed')
   const detail = JSON.parse(audit?.detail_json ?? '{}') as { reason: string; attempts: number }
-  expect(detail.reason).toBe('request quota reached')
+  expect(detail.reason).toBe('R2 storage quota reached')
   expect(detail.attempts).toBe(3)
   expect(audit?.detail_json).not.toContain(PASSWORD)
-  socket.close(1000, 'test complete')
   setPlatformSettingsCache(defaultPlatformSettings)
 })
 
@@ -199,10 +200,11 @@ test('邀请邮件经真实 SMTP 会话投递', { timeout: 20_000 }, async () =>
 
 test('维护模式通知经真实 SMTP 会话投递', { timeout: 30_000 }, async () => {
   await api('/api/settings/smtp', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify(smtpSinkSettings) })
-  const { socket } = await openControl()
-  const platform = { ...defaultPlatformSettings, maintenance: false, quotas: { ...defaultPlatformSettings.quotas, requests: 0 } }
+  const platform = { ...defaultPlatformSettings, maintenance: false }
   await testEnv.DB.prepare('INSERT INTO platform_settings (key, value_json, updated_at) VALUES (?, ?, ?)').bind('platform', JSON.stringify(platform), new Date().toISOString()).run()
   setPlatformSettingsCache(platform)
+
+  await activateMaintenance(testEnv, 'R2 storage quota reached')
 
   expect((await SELF.fetch(`https://${hostname}/`)).status).toBe(503)
 
@@ -212,7 +214,6 @@ test('维护模式通知经真实 SMTP 会话投递', { timeout: 30_000 }, async
   }, { timeout: 10_000 }).toBe(1)
   const audit = await testEnv.DB.prepare("SELECT action, detail_json FROM audit_log WHERE action LIKE 'maintenance.email.%'").first<{ action: string; detail_json: string }>()
   expect(audit?.action).toBe('maintenance.email.sent')
-  expect(JSON.parse(audit?.detail_json ?? '{}')).toMatchObject({ reason: 'request quota reached' })
-  socket.close(1000, 'test complete')
+  expect(JSON.parse(audit?.detail_json ?? '{}')).toMatchObject({ reason: 'R2 storage quota reached' })
   setPlatformSettingsCache(defaultPlatformSettings)
 })

@@ -8,3 +8,4 @@ native-server/third_party/asio/
 .DS_Store
 .wrangler/
 Testing/
+test-results/

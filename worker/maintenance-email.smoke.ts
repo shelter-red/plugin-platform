@@ -55,11 +55,11 @@ async function createEnvironment() {
 {
   const { env, audits, settings, smtpPassword } = await createEnvironment()
   let attempts = 0
-  await activateMaintenance(env, 'request quota reached', async (smtp, to, reason) => {
+  await activateMaintenance(env, 'R2 storage quota reached', async (smtp, to, reason) => {
     attempts += 1
     assert.equal(smtp.password, smtpPassword)
     assert.equal(to, 'admin@example.test')
-    assert.equal(reason, 'request quota reached')
+    assert.equal(reason, 'R2 storage quota reached')
     if (attempts < 3) throw new Error('temporary SMTP failure')
   })
 
@@ -67,7 +67,7 @@ async function createEnvironment() {
   assert.equal(attempts, 3)
   assert.equal(audits.length, 1)
   assert.equal(audits[0].action, 'maintenance.email.sent')
-  assert.deepEqual(JSON.parse(audits[0].detail), { reason: 'request quota reached', administratorId: 'admin-1', attempts: 3 })
+  assert.deepEqual(JSON.parse(audits[0].detail), { reason: 'R2 storage quota reached', administratorId: 'admin-1', attempts: 3 })
   assert.equal(audits[0].detail.includes(smtpPassword), false)
 }
 
@@ -89,14 +89,14 @@ async function createEnvironment() {
 {
   const { env, audits, settings } = await createEnvironment()
   const withoutSecret = { DB: env.DB } as unknown as Env
-  await activateMaintenance(withoutSecret, 'request quota reached', async () => {
+  await activateMaintenance(withoutSecret, 'R2 storage quota reached', async () => {
     throw new Error('未配置 SESSION_SECRET 时不应尝试发送')
   })
 
   assert.equal(settings.maintenance, true)
   assert.equal(audits.length, 1)
   assert.equal(audits[0].action, 'maintenance.email.skipped')
-  assert.deepEqual(JSON.parse(audits[0].detail), { reason: 'request quota reached', error: 'SESSION_SECRET is not configured' })
+  assert.deepEqual(JSON.parse(audits[0].detail), { reason: 'R2 storage quota reached', error: 'SESSION_SECRET is not configured' })
 }
 
 console.log('maintenance email retry smoke test passed')

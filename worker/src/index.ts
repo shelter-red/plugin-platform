@@ -7,7 +7,7 @@ import type { AuthenticatedUser, Env } from './types'
 import { decryptSecret, encryptSecret } from './secrets'
 import { isEmail, parseSmtpSettings, publicSmtpSettings, sendInviteEmail, sendSmtpTest, validateSmtpSettings, type SmtpSettings } from './email'
 import { discoverCloudflareAccountId, exchangeCloudflareCode, readCloudflareCredential, refreshCloudflareCredential, revokeCloudflareToken, type CloudflareCredential } from './cloudflare-oauth'
-import { activateMaintenance, cloudflareQuotaReason, defaultPlatformSettings, getPlatformSettings, isMaintenanceMode, normalizePluginDomainSuffix, releaseR2Usage, reserveR2Usage, reserveRequest, setPlatformSettingsCache } from './usage'
+import { activateMaintenance, cloudflareQuotaReason, defaultPlatformSettings, getPlatformSettings, isMaintenanceMode, normalizePluginDomainSuffix, recordRequest, releaseR2Usage, reserveR2Usage, setPlatformSettingsCache } from './usage'
 import { findPluginRoute, invalidatePluginRoute } from './route-cache'
 import { selectPublicRequestMode } from './request-mode'
 import { resolvePublicRoute } from './public-route'
@@ -247,10 +247,7 @@ async function pluginDetailsApi(env: Env, workspace: Workspace, pluginInstanceId
 async function createBlob(request: Request, env: Env): Promise<Response> {
   const settings = await getPlatformSettings(env)
   if (settings.maintenance) return json({ error: 'Platform is in maintenance mode' }, 503)
-  if (!await reserveRequest(env, settings.quotas)) {
-    await activateMaintenance(env, 'request quota reached')
-    return json({ error: 'Platform quota reached' }, 503)
-  }
+  await recordRequest(env)
   await cleanupExpiredBlobs(env)
   if (!request.body) return json({ error: 'Request body is required' }, 400)
   if (!request.headers.has('content-length')) return json({ error: 'Content-Length header is required' }, 411)
@@ -810,11 +807,7 @@ async function proxyPublicHost(request: Request, env: Env, url: URL, ctx: Execut
   if (resolution.state === 'unavailable') return maintenanceResponse('插件暂时不可用', '公开入口尚未就绪、插件当前未启用或插件服务器当前离线。')
   const domain = resolution.route
   const startedAt = Date.now()
-  if (!await reserveRequest(env, settings.quotas)) {
-    await activateMaintenance(env, 'request quota reached')
-    ctx.waitUntil(recordAccessLog(env, { workspaceId: domain.workspace_id, userId: domain.user_id, domainId: domain.domain_id, pluginInstanceId: domain.plugin_instance_id, hostname: domain.hostname, method: request.method, path: url.pathname, status: 503, durationMs: Date.now() - startedAt, error: 'platform quota reached' }))
-    return maintenanceResponse()
-  }
+  await recordRequest(env)
   const mode = selectPublicRequestMode(request, domain.manifest_json)
   if (!mode) {
     ctx.waitUntil(recordAccessLog(env, { workspaceId: domain.workspace_id, userId: domain.user_id, domainId: domain.domain_id, pluginInstanceId: domain.plugin_instance_id, hostname: domain.hostname, method: request.method, path: url.pathname, status: 501, durationMs: Date.now() - startedAt, error: 'plugin capability unavailable' }))
@@ -845,7 +838,7 @@ async function platformSettingsApi(request: Request, env: Env, user: Authenticat
   const settings = await getPlatformSettings(env)
   if (request.method === 'GET') return json(settings)
   if (request.method !== 'PUT') return json({ error: 'Method not allowed' }, 405)
-  const body = await request.json().catch(() => null) as { maintenance?: boolean; pluginDomainSuffix?: string; quotas?: Partial<typeof defaultPlatformSettings.quotas> } | null
+  const body = await request.json().catch(() => null) as { maintenance?: boolean; pluginDomainSuffix?: string; quotas?: Partial<typeof defaultPlatformSettings.quotas>; cloudflareQuotas?: Partial<typeof defaultPlatformSettings.cloudflareQuotas> } | null
   const pluginDomainSuffix = body?.pluginDomainSuffix === undefined
     ? settings.pluginDomainSuffix
     : normalizePluginDomainSuffix(body.pluginDomainSuffix)
@@ -854,13 +847,19 @@ async function platformSettingsApi(request: Request, env: Env, user: Authenticat
     maintenance: Boolean(body?.maintenance ?? settings.maintenance),
     pluginDomainSuffix,
     quotas: {
-      requests: parsePositiveQuota(body?.quotas?.requests, settings.quotas.requests),
       activeConnections: parsePositiveQuota(body?.quotas?.activeConnections, settings.quotas.activeConnections),
       r2Bytes: parsePositiveQuota(body?.quotas?.r2Bytes, settings.quotas.r2Bytes),
       r2Objects: parsePositiveQuota(body?.quotas?.r2Objects, settings.quotas.r2Objects),
-      d1Queries: parsePositiveQuota(body?.quotas?.d1Queries, settings.quotas.d1Queries),
-      kvOperations: parsePositiveQuota(body?.quotas?.kvOperations, settings.quotas.kvOperations),
-      durableObjectRequests: parsePositiveQuota(body?.quotas?.durableObjectRequests, settings.quotas.durableObjectRequests),
+    },
+    cloudflareQuotas: {
+      workerRequests: parsePositiveQuota(body?.cloudflareQuotas?.workerRequests, settings.cloudflareQuotas.workerRequests),
+      d1RowsRead: parsePositiveQuota(body?.cloudflareQuotas?.d1RowsRead, settings.cloudflareQuotas.d1RowsRead),
+      d1RowsWritten: parsePositiveQuota(body?.cloudflareQuotas?.d1RowsWritten, settings.cloudflareQuotas.d1RowsWritten),
+      kvRead: parsePositiveQuota(body?.cloudflareQuotas?.kvRead, settings.cloudflareQuotas.kvRead),
+      kvWrite: parsePositiveQuota(body?.cloudflareQuotas?.kvWrite, settings.cloudflareQuotas.kvWrite),
+      kvDelete: parsePositiveQuota(body?.cloudflareQuotas?.kvDelete, settings.cloudflareQuotas.kvDelete),
+      kvList: parsePositiveQuota(body?.cloudflareQuotas?.kvList, settings.cloudflareQuotas.kvList),
+      doRequests: parsePositiveQuota(body?.cloudflareQuotas?.doRequests, settings.cloudflareQuotas.doRequests),
     },
   }
   await env.DB.prepare('INSERT INTO platform_settings (key, value_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at').bind('platform', JSON.stringify(next), new Date().toISOString()).run()
@@ -1142,7 +1141,7 @@ type CloudflareUsageResult = {
 async function enforceCloudflareUsageQuotas(env: Env, usage: CloudflareUsageResult): Promise<void> {
   const settings = await getPlatformSettings(env)
   if (settings.maintenance) return
-  const reason = cloudflareQuotaReason(usage, settings.quotas)
+  const reason = cloudflareQuotaReason(usage, settings.cloudflareQuotas)
   if (reason) await activateMaintenance(env, reason)
 }
 

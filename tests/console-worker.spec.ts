@@ -7,7 +7,8 @@ const defaultWorkspace = { id: 'ws_default', name: '默认工作区', slug: 'def
 const platformSettings = {
   maintenance: false,
   pluginDomainSuffix: '.plugins.example.com',
-  quotas: { requests: 1_000_000, activeConnections: 200, r2Bytes: 1_073_741_824, r2Objects: 1_000, d1Queries: 500_000, kvOperations: 100_000, durableObjectRequests: 500_000 },
+  quotas: { activeConnections: 200, r2Bytes: 1_073_741_824, r2Objects: 1_000 },
+  cloudflareQuotas: { workerRequests: 100_000, d1RowsRead: 5_000_000, d1RowsWritten: 100_000, kvRead: 100_000, kvWrite: 1_000, kvDelete: 1_000, kvList: 1_000, doRequests: 100_000 },
 }
 
 const oauthSettings = {
@@ -264,7 +265,8 @@ test('管理端显示 Worker 实时数据并在刷新后提示', async ({ page }
   await expect(page.getByText('平台运行中')).toBeVisible()
   await expect(page.getByText(/^官方 Analytics · 未连接$/)).toBeVisible()
   await expect(page.getByText(/^本地计数 · /)).toBeVisible()
-  const requestProgress = page.getByRole('progressbar', { name: '平台请求' })
+  // 平台请求只计数不设上限，进度条挂在有上限的「活跃连接」上。
+  const requestProgress = page.getByRole('progressbar', { name: '活跃连接' })
   expect(await requestProgress.evaluate((element) => Number.parseFloat((element.firstElementChild as HTMLElement).style.width))).toBeGreaterThan(0)
 
   await page.getByRole('button', { name: '刷新状态' }).click()
@@ -880,6 +882,18 @@ test('管理端窄窗口下表格、图表和详情弹窗可用', async ({ page 
     await expect(page.getByText(entry.row).first()).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
   }
+
+  // 用量页的两组额度卡与设置页的 11 个阈值输入都要能在 390px 内排下，不出现横向滚动。
+  await page.getByRole('button', { name: '打开导航' }).click()
+  await page.getByRole('menuitem', { name: '用量与配额', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Cloudflare 免费额度（每日）' })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
+
+  await page.getByRole('button', { name: '打开导航' }).click()
+  await page.getByRole('menuitem', { name: '系统设置', exact: true }).click()
+  await page.locator('#settings-maintenance').scrollIntoViewIfNeeded()
+  await expect(page.locator('#settings-maintenance')).toContainText('平台阈值')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
 
   await page.getByRole('button', { name: '打开导航' }).click()
   await page.getByRole('menuitem', { name: '插件实例', exact: true }).click()

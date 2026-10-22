@@ -257,18 +257,30 @@ export interface UsageSnapshot {
   r2_objects: number
 }
 
+/** 平台自身可拒绝的资源阈值：只限制本平台能拦下的连接与 R2 存储。 */
+export interface PlatformQuotas {
+  activeConnections: number
+  r2Bytes: number
+  r2Objects: number
+}
+
+/** Cloudflare 免费计划每日额度；平台请求数不设上限，这里只观察官方额度是否触顶。 */
+export interface CloudflareQuotas {
+  workerRequests: number
+  d1RowsRead: number
+  d1RowsWritten: number
+  kvRead: number
+  kvWrite: number
+  kvDelete: number
+  kvList: number
+  doRequests: number
+}
+
 export interface PlatformSettings {
   maintenance: boolean
   pluginDomainSuffix: string
-  quotas: {
-    requests: number
-    activeConnections: number
-    r2Bytes: number
-    r2Objects: number
-    d1Queries: number
-    kvOperations: number
-    durableObjectRequests: number
-  }
+  quotas: PlatformQuotas
+  cloudflareQuotas: CloudflareQuotas
 }
 
 export type SmtpAuthType = 'plain' | 'login' | 'cram-md5'
