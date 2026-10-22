@@ -1,4 +1,9 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
+
+async function selectAntOption(page: Page, selector: string, option: string) {
+  await page.locator(selector).click()
+  await page.getByRole('option', { name: option, exact: true }).click()
+}
 
 test('管理端桌面空态和主题切换可用', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 })
@@ -11,7 +16,7 @@ test('管理端桌面空态和主题切换可用', async ({ page }) => {
   await expect(page.locator('.app-shell')).toHaveClass(/theme-dark/)
   await expect(page).toHaveScreenshot('console-desktop-dark.png', { fullPage: true, animations: 'disabled' })
 
-  await page.getByLabel('选择主题').selectOption('light')
+  await selectAntOption(page, '.theme-menu:not(.language-menu) .ant-select', '浅色')
   await expect(page.locator('.app-shell')).toHaveClass(/theme-light/)
   expect(await page.evaluate(() => localStorage.getItem('plugmesh-theme'))).toBe('light')
 
@@ -39,7 +44,7 @@ test('管理端系统主题跟随系统偏好并持久化', async ({ page }) => 
   await page.emulateMedia({ colorScheme: 'light' })
   await page.goto('/')
 
-  await page.getByLabel('选择主题').selectOption('system')
+  await selectAntOption(page, '.theme-menu:not(.language-menu) .ant-select', '系统')
   await expect(page.locator('.app-shell')).toHaveClass(/theme-light/)
   expect(await page.evaluate(() => localStorage.getItem('plugmesh-theme'))).toBe('system')
 
@@ -47,7 +52,7 @@ test('管理端系统主题跟随系统偏好并持久化', async ({ page }) => 
   await expect(page.locator('.app-shell')).toHaveClass(/theme-dark/)
 
   await page.reload()
-  await expect(page.getByLabel('选择主题')).toHaveValue('system')
+  await expect(page.locator('.theme-menu:not(.language-menu) .ant-select-selection-item')).toHaveText('系统')
   await expect(page.locator('.app-shell')).toHaveClass(/theme-dark/)
 })
 
@@ -114,17 +119,17 @@ test('管理端中英切换并持久化', async ({ page }) => {
   await expect(page.getByRole('heading', { name: '总览', level: 1 })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.lang)).toBe('zh-CN')
 
-  await page.getByLabel('选择语言').selectOption('en')
+  await selectAntOption(page, '.theme-menu.language-menu .ant-select', 'English')
   await expect(page.getByRole('heading', { name: 'Overview', level: 1 })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Plugin instances', exact: true })).toBeVisible()
-  await expect(page.getByLabel('Select theme')).toBeVisible()
+  await expect(page.getByRole('combobox', { name: 'Select theme' })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.lang)).toBe('en')
   expect(await page.evaluate(() => localStorage.getItem('plugmesh-language'))).toBe('en')
 
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Overview', level: 1 })).toBeVisible()
 
-  await page.getByLabel('Select language').selectOption('zh-CN')
+  await selectAntOption(page, '.theme-menu.language-menu .ant-select', '中文')
   await expect(page.getByRole('heading', { name: '总览', level: 1 })).toBeVisible()
   expect(await page.evaluate(() => localStorage.getItem('plugmesh-language'))).toBe('zh-CN')
 })

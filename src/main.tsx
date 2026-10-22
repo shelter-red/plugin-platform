@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { createRoot } from 'react-dom/client'
+import { App as AntdApp, ConfigProvider, Select } from 'antd'
+import enUS from 'antd/locale/en_US'
+import zhCN from 'antd/locale/zh_CN'
+import '@ant-design/v5-patch-for-react-19'
 import {
   Activity,
   AlertCircle,
@@ -41,6 +45,7 @@ import {
 } from 'lucide-react'
 import './styles.css'
 import './i18n'
+import { createAppTheme, type AppThemeMode } from './app/theme'
 import i18n, { storeLanguage, type Language } from './i18n'
 import { ApiError, assignDomain, checkPluginHealth, commandPlugin, createInvite, createRegistrationCode, fetchAccessLogs, fetchAudit, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchInvites, fetchLocalUsage, fetchOauthSettings, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchPluginDetails, fetchServerDetails, fetchServers, fetchSmtpSettings, revokeCloudflareSettings, revokeInvite, revokeOauthSettings, syncServer, type ApiAccessLog, type ApiAudit, type ApiDomain, type ApiInvite, type ApiOverview, type ApiPlugin, type ApiPluginDetail, type ApiServer, type ApiServerDetail, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type OauthProvider, type OauthSettings, type PlatformSettings, type PluginAction, type PluginHealthResult, type SmtpSettings, type UsageBreakdownEntry, type UsageSnapshot, sendSmtpTest, updateOauthSettings, updatePlatformSettings, updateSmtpSettings } from './api'
 
@@ -138,7 +143,14 @@ function downloadCsv(filename: string, headers: string[], rows: Array<Array<stri
   URL.revokeObjectURL(url)
 }
 
-function App() {
+type ConsoleProps = {
+  theme: Theme
+  setTheme: (theme: Theme) => void
+  effectiveTheme: AppThemeMode
+  language: Language
+}
+
+function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
   const { t, i18n: translator } = useTranslation()
   const authEnabled = import.meta.env.VITE_AUTH_ENABLED !== 'false'
   const [authState, setAuthState] = useState<'loading' | 'authenticated' | 'anonymous'>(authEnabled ? 'loading' : 'authenticated')
@@ -166,11 +178,6 @@ function App() {
   const [oauthSettings, setOauthSettings] = useState<OauthSettings | null>(null)
   const [apiLive, setApiLive] = useState(false)
   const [page, setPage] = useState<Page>('overview')
-  const [theme, setTheme] = useState<Theme>(() => {
-    const savedTheme = window.localStorage.getItem('plugmesh-theme')
-    return savedTheme === 'light' || savedTheme === 'system' ? savedTheme : 'dark'
-  })
-  const [systemTheme, setSystemTheme] = useState<'dark' | 'light'>(() => window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
   const [search, setSearch] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [modal, setModal] = useState<'server' | 'domain' | 'plugin' | null>(null)
@@ -184,16 +191,13 @@ function App() {
   const [range, setRange] = useState<'24h' | '7d' | '30d'>('7d')
 
   const meta = { title: t(`pages.${page}.title`), description: t(`pages.${page}.description`) }
-  const language: Language = translator.resolvedLanguage === 'en' ? 'en' : 'zh-CN'
   const changeLanguage = (next: Language) => {
     storeLanguage(next)
     void translator.changeLanguage(next)
   }
-  const themeLabel = t(`theme.${theme}`)
   useEffect(() => {
     document.title = `${meta.title} · Plugmesh`
   }, [meta.title])
-  const effectiveTheme = theme === 'system' ? systemTheme : theme
   const userInitials = (authUser?.display_name ?? authUser?.email ?? '—').trim().slice(0, 2).toUpperCase()
 
   useEffect(() => {
@@ -291,17 +295,6 @@ function App() {
     if (!authEnabled && !import.meta.env.VITE_API_BASE) return
     fetchLocalUsage(range).then(setLocalUsage).catch(() => setLocalUsage(null))
   }, [authEnabled, range])
-
-  useEffect(() => {
-    window.localStorage.setItem('plugmesh-theme', theme)
-  }, [theme])
-
-  useEffect(() => {
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: light)')
-    const updateSystemTheme = (event: MediaQueryListEvent) => setSystemTheme(event.matches ? 'light' : 'dark')
-    mediaQuery.addEventListener('change', updateSystemTheme)
-    return () => mediaQuery.removeEventListener('change', updateSystemTheme)
-  }, [])
 
   const showToast = (message: string) => {
     setToast(message)
@@ -457,8 +450,8 @@ function App() {
           <div className="topbar-leading"><IconButton label={t('shell.openNav')} onClick={() => setSidebarOpen(true)}><Menu size={18} /></IconButton><div className="breadcrumbs"><span>{t('shell.console')}</span><span>/</span><strong>{meta.title}</strong></div></div>
           <div className="topbar-actions">
             <label className="search-box"><Search size={15} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('shell.search')} /><span className="shortcut"><Command size={11} /> K</span></label>
-            <div className="theme-menu"><IconButton label={t('theme.label', { label: themeLabel })}><Sun size={16} /><ChevronDown size={11} /></IconButton><select aria-label={t('theme.select')} value={theme} onChange={(e) => setTheme(e.target.value as Theme)}><option value="dark">{t('theme.dark')}</option><option value="light">{t('theme.light')}</option><option value="system">{t('theme.system')}</option></select></div>
-            <div className="theme-menu language-menu"><IconButton label={t('language.label')}><Globe2 size={16} /><ChevronDown size={11} /></IconButton><select aria-label={t('language.select')} value={language} onChange={(e) => changeLanguage(e.target.value as Language)}><option value="zh-CN">{t('language.zh')}</option><option value="en">{t('language.en')}</option></select></div>
+            <div className="theme-menu"><Sun size={16} aria-hidden="true" /><Select aria-label={t('theme.select')} value={theme} onChange={(value) => setTheme(value)} variant="borderless" popupMatchSelectWidth={false} options={[{ value: 'dark', label: t('theme.dark') }, { value: 'light', label: t('theme.light') }, { value: 'system', label: t('theme.system') }]} /></div>
+            <div className="theme-menu language-menu"><Globe2 size={16} aria-hidden="true" /><Select aria-label={t('language.select')} value={language} onChange={(value) => changeLanguage(value)} variant="borderless" popupMatchSelectWidth={false} options={[{ value: 'zh-CN', label: t('language.zh') }, { value: 'en', label: t('language.en') }]} /></div>
             <IconButton label={t('shell.auditEvents')} onClick={() => selectPage('audit')}><Activity size={16} /></IconButton>
             <div className="top-avatar" aria-label={authUser?.display_name ?? authUser?.email ?? t('shell.currentUser')}>{userInitials}</div>
           </div>
@@ -981,6 +974,28 @@ function Modal({ type, plugins, onClose, onConfirm }: { type: 'server' | 'domain
   return <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget && !submitting) onClose() }}><div className="modal" role="dialog" aria-modal="true" aria-label={content.title}><div className="modal-head"><div><h2>{content.title}</h2><p>{content.description}</p></div><IconButton label={t('modal.close')} onClick={onClose}><X size={17} /></IconButton></div>{result?.kind === 'registration' && <div className="code-callout"><span>{t('modal.codeExpires', { time: formatDateTime(result.expiresAt) })}</span><div className="code-value"><strong>{result.code}</strong><button className="row-action" onClick={() => void copyCode(result.code)} aria-label={t('modal.copyCode')} title={t('modal.copyCode')}><Copy size={15} /></button></div></div>}{result?.kind === 'plugin' && <div className="empty-panel"><div className="empty-illustration"><Check size={22} /></div><h3>{t('modal.loadConfirmed')}</h3><p>{t('modal.loadConfirmedState', { state: result.state })}</p></div>}{result?.kind === 'domain' && <div className="empty-panel"><div className="empty-illustration"><Check size={22} /></div><h3>{t('modal.domainAssigned')}</h3><p>{result.hostname}</p></div>}{!result && type === 'server' && <div className="empty-panel"><div className="empty-illustration"><LockKeyhole size={22} /></div><h3>{t('modal.generateCode')}</h3><p>{t('modal.codeHint')}</p></div>}{!result && type !== 'server' && <>{candidates.length > 0 ? <label className="modal-field">{t('modal.pluginInstance')}<select autoFocus value={selectedPluginId} onChange={(event) => setSelectedPluginId(event.target.value)}><option value="">{t('modal.selectPlugin')}</option>{candidates.map((plugin) => <option value={plugin.id} key={plugin.id}>{plugin.name} · {plugin.plugin_id} · {plugin.server_name}</option>)}</select></label> : <div className="empty-panel"><div className="empty-illustration"><AlertCircle size={22} /></div><h3>{type === 'plugin' ? t('modal.noLoadable') : t('modal.noAssignable')}</h3><p>{type === 'plugin' ? t('modal.noLoadableHint') : t('modal.noAssignableHint')}</p></div>}{type === 'domain' && candidates.length > 0 && <label className="modal-field">{t('modal.prefix')}<input autoFocus value={value} onChange={(event) => setValue(event.target.value)} placeholder={t('modal.prefixPlaceholder')} maxLength={48} /><span className="field-hint">{t('modal.prefixHint')}</span></label>}</>}{error && <div className="auth-error"><AlertCircle size={14} />{translateError(error)}</div>}<div className="modal-actions"><button className="button secondary" onClick={onClose} disabled={submitting}>{t('modal.closeAction')}</button>{!result && <button className="button primary" onClick={() => void submit()} disabled={submitting || (type !== 'server' && (!selectedPluginId || candidates.length === 0))}>{submitting ? t('common.submitting') : type === 'server' ? t('modal.submitServer') : type === 'domain' ? t('modal.submitDomain') : t('modal.submitPlugin')}<ArrowUpRight size={14} /></button>}</div></div></div>
 }
 
-export default App
+function Root() {
+  const { i18n: translator } = useTranslation()
+  const [theme, setTheme] = useState<Theme>(() => {
+    const savedTheme = window.localStorage.getItem('plugmesh-theme')
+    return savedTheme === 'light' || savedTheme === 'system' ? savedTheme : 'dark'
+  })
+  const [systemTheme, setSystemTheme] = useState<AppThemeMode>(() => window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+  const language: Language = translator.resolvedLanguage === 'en' ? 'en' : 'zh-CN'
+  const effectiveTheme: AppThemeMode = theme === 'system' ? systemTheme : theme
 
-createRoot(document.getElementById('root')!).render(<App />)
+  useEffect(() => {
+    window.localStorage.setItem('plugmesh-theme', theme)
+  }, [theme])
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: light)')
+    const updateSystemTheme = (event: MediaQueryListEvent) => setSystemTheme(event.matches ? 'light' : 'dark')
+    mediaQuery.addEventListener('change', updateSystemTheme)
+    return () => mediaQuery.removeEventListener('change', updateSystemTheme)
+  }, [])
+
+  return <ConfigProvider locale={language === 'en' ? enUS : zhCN} theme={createAppTheme(effectiveTheme)}><AntdApp><Console theme={theme} setTheme={setTheme} effectiveTheme={effectiveTheme} language={language} /></AntdApp></ConfigProvider>
+}
+
+createRoot(document.getElementById('root')!).render(<Root />)

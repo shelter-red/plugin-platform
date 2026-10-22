@@ -58,8 +58,10 @@ button { border: 0; cursor: pointer; }
 .search-box input { min-width: 0; flex: 1; border: 0; outline: 0; color: var(--text); background: transparent; font-size: 11px; }
 .search-box input::placeholder { color: var(--text-4); }
 .shortcut { display: flex; align-items: center; gap: 2px; padding: 3px 5px; border: 1px solid var(--line); border-radius: 4px; font: 10px 'IBM Plex Mono', monospace; color: var(--text-3); }
-.theme-menu { position: relative; display: flex; align-items: center; }
-.theme-menu select { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+.theme-menu { display: flex; align-items: center; gap: 2px; color: var(--text-2); }
+.theme-menu .ant-select { min-width: 84px; }
+.theme-menu.language-menu .ant-select { min-width: 72px; }
+.theme-menu .ant-select-selection-item { font-size: 11px; }
 .top-avatar { width: 28px; height: 28px; margin-left: 2px; }
 .page-scroll { height: calc(100vh - 62px); overflow-y: auto; }
 .page-content { width: min(1180px, 100%); margin: 0 auto; padding: 33px 30px 60px; }

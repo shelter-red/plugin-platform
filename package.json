@@ -54,12 +54,17 @@
     "stack:browser": "playwright test --config playwright.browser.config.ts"
   },
   "dependencies": {
+    "@ant-design/icons": "^5.6.1",
+    "@ant-design/v5-patch-for-react-19": "^1.0.3",
     "@vitejs/plugin-react": "latest",
+    "antd": "^5.29.3",
     "i18next": "^26.5.4",
     "lucide-react": "latest",
     "react": "latest",
     "react-dom": "latest",
     "react-i18next": "^17.1.0",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.18.4",
     "vite": "latest",
     "worker-mailer": "^1.2.1"
   },
