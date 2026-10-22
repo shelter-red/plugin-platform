@@ -1,6 +1,6 @@
 # Plugmesh 平台交接（HANDOFF）
 
-> 最后更新：2026-10-23 01:47（Asia/Shanghai）
+> 最后更新：2026-10-23 01:50（Asia/Shanghai）
 > 状态：**进行中，未完成**
 > 维护规则：每完成一个可验证步骤，先更新本文件，再提交一条可追溯的中文 Git 记录；未记录不得继续下一步。
 > 本文件是后续上下文的优先事实来源。若 README、验收矩阵、旧注释或聊天摘要与本文冲突，以用户最新要求和实际代码为准；旧文档需在实现完成后同步重写，不能把旧 OAuth 行为当成目标。
@@ -17,14 +17,14 @@ git rev-parse HEAD origin/main
 git diff
 ```
 
-当前权威快照（2026-10-23 01:47）：
+当前权威快照（2026-10-23 01:50）：
 
 - 仓库：`/home/tc/work/plugin-platform`
 - 分支：`main`
 - 当前实际 HEAD：执行 `git log -1 --oneline`；本文档自身的提交会自然晚于“最近已验收提交”，不要照抄旧值。
-- 最近已验收提交：`0a5075d docs: 更新交接快照与官方权限核对记录`
+- 最近已验收提交：`5373f87 docs: 固化最新交接验收快照`
 - `origin/main` 与本机 HEAD 一致；push 使用 `git@github-plugin-platform:shelter-red/plugin-platform.git`，fetch 使用 `https://github.com/shelter-red/plugin-platform.git`。
-- `0a5075d` 已推送，Actions“平台验收”run `39824622514`（run #38）已为 `completed/success`。上一提交 `0325530` 的 run `39823921091`（#37）成功，同 SHA 的并发 run `39823919519`（#36）被取消，属于重复触发，不是失败；`70f62e3` 的 run `39822695994`（#35）和 `abf05ca` 的 run `39820685855`（#34）也成功。恢复后仍需在每次推送时重复“本地验证 → 推送 → Actions 闭环”，不能沿用历史成功；本文档提交自身的 Actions run 不写入本文件，避免自我引用循环，推送后直接查 GitHub。
+- `5373f87` 已推送，Actions“平台验收”run `39825387738`（run #39）已为 `completed/success`；`0a5075d` 的 run `39824622514`（#38）、`0325530` 的 run `39823921091`（#37）也成功。`0325530` 同 SHA 的并发 run `39823919519`（#36）被取消，属于重复触发，不是失败。恢复后仍需在每次推送时重复“本地验证 → 推送 → Actions 闭环”，不能沿用历史成功；本文档提交自身的 Actions run 不写入本文件，避免自我引用循环，推送后直接查 GitHub。
 - 当前工作区只保留以下 5 个未提交文件，均与尚未完成的 Cloudflare 额度/旧 OAuth 文案有关：
   ```text
   M src/features/overview/UsageResourcesPanel.tsx
@@ -35,12 +35,12 @@ git diff
   ```
   这些改动包含有用的 8 项额度展示和“平台请求不限”方向，但仍依赖旧的 `settings.cloudflareQuotas`、`authorizationExpired` 和 OAuth 接口，**不能原样提交**；应在 Token + subscriptions 实现时整合、改写或删除。
 - 侧栏、账号、工作区组件拆分已经提交为 `abf05ca`；`HANDOFF.md` 本次整理是独立文档步骤。不要再重复拆分登录页/侧栏/账号/工作区。
-- Cloudflare Token 迁移目前只完成了代码审计、官方权限核对和验收契约，**尚未创建 `worker/src/cloudflare-token.ts`，后端仍完全是 OAuth**。不要根据“已有 Token 字段”误判迁移已开始或已完成。
+- Cloudflare Token 迁移目前只完成了代码审计、官方权限与 subscriptions 响应核对、验收契约，**尚未创建 `worker/src/cloudflare-token.ts`，后端仍完全是 OAuth**。不要根据“已有 Token 字段”误判迁移已开始或已完成。
 - **严禁用 `git reset --hard`、`git clean`、`git checkout -- .` 或任何批量覆盖操作处理这 5 个文件。**
 
 下一步（按顺序）：
 
-1. 继续核对 Cloudflare 官方文档中的 subscriptions 精确响应结构、Free 套餐识别字段，以及 Billing Read 与该端点的实际关系；不确定的结果不得写成代码常量或测试 mock。官方权限页已确认三项固定权限真实存在，但订阅响应仍待核对。
+1. ✅ 已核对 Cloudflare 官方 subscriptions 文档（2026-10-23）：响应为 `{ result: Subscription[], errors, messages }`，每个订阅包含 `rate_plan.id`、`rate_plan.public_name`、`state`；端点接受 `Billing Read` / `Billing Write`。只有 `result` 中存在 `rate_plan.id === "free"` 时才可确认 Free，空结果或结构不符必须视为未确认。
 2. 新建 `worker/src/cloudflare-token.ts`：Token verify、accounts 完整分页、指定账号校验、subscriptions 读取、Free 判定、新凭据加密类型、旧 OAuth 密文识别、稳定错误类型。
 3. 重写 `cloudflareSettingsApi` / `cloudflareUsageApi`：保存前验证，未配置立即短路，先凭据后缓存，DELETE 不 revoke；删除 Cloudflare auth routes、auth-result API/Cookie、refresh/revoke。
 4. 把 `oauth-settings.ts` 收缩到只服务 GitHub；从 `PlatformSettings` / `platformSettingsApi` / `usage.ts` 删除可编辑 `cloudflareQuotas`。
@@ -52,8 +52,9 @@ git diff
 
 ## 最近动作
 
-- 2026-10-23：核对分支、远端、工作区和 Actions；确认 `0a5075d` 已推送，平台验收 run `39824622514` 成功；此前 `0325530` run `39823921091` 成功，同 SHA 的并发 run `39823919519` 已取消（重复触发）。
-- 2026-10-23：核对 Cloudflare 官方 API Token 权限文档，确认 `Account Settings Read`、`Account Analytics Read`、`Billing Read` 三项权限真实存在，并记录文档地址、日期和 Billing Read 的说明；subscriptions 响应结构尚未确认，禁止猜测。
+- 2026-10-23：核对分支、远端、工作区和 Actions；确认 `5373f87` 已推送，平台验收 run `39825387738` 成功；`0a5075d` run `39824622514`、`0325530` run `39823921091` 也成功，同 SHA 的并发 run `39823919519` 已取消（重复触发）。
+- 2026-10-23：核对 Cloudflare 官方 subscriptions 方法文档，确认响应结构、`rate_plan.id` 的 `free` 枚举、`rate_plan.public_name` 和 `Billing Read` 接受权限；可以开始实现 `worker/src/cloudflare-token.ts`。
+- 2026-10-23：核对 Cloudflare 官方 API Token 权限文档，确认 `Account Settings Read`、`Account Analytics Read`、`Billing Read` 三项权限真实存在，并记录文档地址、日期和 Billing Read 的说明。
 - 2026-10-23：完成 Cloudflare OAuth→API Token 迁移的代码级审计，并把后端事实、固定接口契约、测试替换范围和实施顺序补入本 HANDOFF。本次是文档整理提交，不夹带 5 个未提交草稿文件。
 - 2026-10-23：确认 `abf05ca` 已推送且平台验收 run `39820685855` 成功。
 - 2026-10-23：当前 HEAD 完整 `npm run ci:local` 通过：UI 约定、CSS 审计、Worker 类型检查、管理端构建、Worker smoke 全部通过，Playwright 81/81 passed。
@@ -106,7 +107,7 @@ git diff
 | U17 | 配额少，D1 写入等所有有限制项目都要监控，显示次数和百分比 | Worker、D1 行读、D1 行写、KV 读/写/删/列表、DO 请求共 8 项；每项都有 used/limit/percentage | 🟡 部分静态基线/测试在未提交改动中出现；后台读取、响应 `limits`、8 项完整 UI 尚未完成。 |
 | U18 | 平台和监控分开；平台请求不限，CF 免费额度有限 | 平台请求只统计不设上限、不画上限百分比；Cloudflare 官方额度独立分组 | 🟡 文案/展示有部分调整；数据模型和最终 UI 尚未统一。 |
 | U19 | GitHub OAuth 没过期，为什么 CF OAuth 会过期；Token/API key 会不会过期；改成 Token | 不再暗示 OAuth 自然过期；改用 Cloudflare API Token（默认长期，可被撤销/策略限制）；界面、链接、错误文案同步改成 Token | 🟡 后端代码审计和固定契约已完成并写入本文件；前后端及文档全链路迁移尚未开始。 |
-| U20 | CF 免费额度为什么能在系统设置配置；应该从 CF 读取 | 删除 `cloudflareQuotas` 手填；调用 `GET /accounts/{account_id}/subscriptions`；只有明确 Free 才展示官方基线，否则“未读取” | ⬜ 当前仍存在设置字段、默认配额、旧测试和 UI；需整体删除。 |
+| U20 | CF 免费额度为什么能在系统设置配置；应该从 CF 读取 | 删除 `cloudflareQuotas` 手填；调用 `GET /accounts/{account_id}/subscriptions`；只有明确 Free 才展示官方基线，否则“未读取” | 🟡 subscriptions 官方响应和 Free 判定已确认；代码仍存在设置字段、默认配额、旧测试和 UI，需整体迁移。 |
 | U21 | 界面文案诡异、莫名卡片、同页多个按钮跳同一页面 | 通读中英文文案；清理重复说明、技术黑话、无信息量卡片和重复跳转；每个页面只保留必要主入口 | ⬜ 已知用量页至少三个刷新入口、概览卡片重复跳 `/usage`；尚需全站审计。 |
 | U22 | Actions 增加手动构建插件服务器：可选可执行文件/库文件、目标平台 | 新增仅 `workflow_dispatch` 的 workflow；构建真正共享库及可执行程序；目标平台/架构明确；artifact、SHA256、依赖说明完整；不与 tag release 冲突 | ⬜ 尚未新增。 |
 | U23 | 帮助中心说明二进制插件服务器/库文件怎么用 | 中英文帮助中心覆盖下载、SHA256、启动/注册、环境变量、插件目录/主机、库链接、OpenSSL 运行依赖、常见错误 | ⬜ 尚未新增；现有帮助仍偏旧 OAuth FAQ。 |
@@ -144,7 +145,8 @@ git diff
 - 账号订阅端点文档：https://developers.cloudflare.com/api/resources/accounts/subresources/subscriptions/
 - 该页的 Markdown 版本：https://developers.cloudflare.com/api/resources/accounts/subresources/subscriptions/index.md
 - 曾尝试 `https://api.cloudflare.com/client/v4/openapi.json`，返回 HTTP 400；**不能**把该地址当作官方 schema 依据。
-- 尚未确认 subscriptions 的精确响应结构、Free 套餐识别字段和真实 `Billing Read` 响应；在确认前只能写“未读取”，不能猜 `plan.id === 'free'` 或伪造 mock。
+- `GET /accounts/{account_id}/subscriptions` 已确认返回 `{ result: Subscription[], errors, messages }`；订阅模型包含 `id`、`currency`、`current_period_start/end`、`frequency`、`price`、`rate_plan`、`state`，其中 `rate_plan.id` 的官方枚举包含 `free`，`rate_plan.public_name` 是完整套餐名。
+- 该端点“Accepted Permissions”明确接受 `Billing Read` 或 `Billing Write`。Free 判定只允许在 `result` 中实际找到 `rate_plan.id === "free"` 时成立；空结果、缺少 `rate_plan` 或响应结构不可解析时都必须返回未确认，不能猜。
 
 ### 0.4 后续不得偏离的硬约束
 
@@ -233,12 +235,12 @@ git diff
 | 502 | `cloudflare_upstream_error` | Cloudflare 5xx、网络失败或响应结构无法解析 |
 | 503 | `secret_missing` | `SESSION_SECRET` 缺失，无法安全存取 Token |
 
-实现订阅读取前，必须先确认官方文档中的响应字段和 Free 识别方式，并把“已核对的文档/日期”写进代码注释或本文件；不得根据测试猜测 `plan.id === 'free'`。
+订阅响应字段和 Free 识别方式已于 2026-10-23 按官方文档确认：只认 `result[].rate_plan.id === "free"`；实现时仍需用真实响应边界测试空结果、非 Free 和结构错误，不能靠 mock 猜测。
 
 ### 1.2 Cloudflare 免费额度只能从 Cloudflare 读取
 
 - 用户不能在系统设置手填 Cloudflare 免费额度。
-- 从 `GET /accounts/{account_id}/subscriptions` 读取套餐；**只有明确确认是免费计划时**，才显示官方免费基线。
+- 从 `GET /accounts/{account_id}/subscriptions` 读取套餐；响应为 `{ result: Subscription[], errors, messages }`，**只有 `result[].rate_plan.id === "free"` 明确确认是免费计划时**，才显示官方免费基线。
 - 无法读取订阅、无法确认套餐或权限不足时显示“未读取”，不能把静态常量伪装成账号实时返回值。
 - 当前官方免费基线（2026-10 核对，显示时注明“官方免费基线，已确认 Free 套餐”）：
   - Worker 请求：100,000 / 日
@@ -565,7 +567,7 @@ curl -fsSL 'https://api.github.com/repos/shelter-red/plugin-platform/actions/run
 ## 8. 已知风险与边界
 
 - Cloudflare API Token 长期有效不等于永久有效：用户可撤销、Token 可被策略阻止、账号权限可变，因此运行时要稳定处理 401/403；但不要把它描述成 OAuth 自然过期。
-- `Billing Read` 是否可用于当前账号订阅端点要以实际 Cloudflare 响应为准；400/401/403 必须区分，不能统一报“授权过期”。
+- 官方 subscriptions 方法文档已确认接受 `Billing Read`；实际账号仍可能出现 401/403/404，必须区分 Token 无效、权限不足、账号不可见和上游错误，不能统一报“授权过期”。
 - 免费基线是官方公布值，可能随 Cloudflare 政策变化；只有在订阅明确为 Free 时展示，最好在 UI 标注核对日期和数据来源。
 - 账号发现与多账号场景要避免猜测：无法唯一确定且用户未填 Account ID 时返回 409，不要随便选第一个账号。
 - 迁移旧 OAuth 密文只能用于识别和提示重新录入，不能继续 refresh/revoke。
