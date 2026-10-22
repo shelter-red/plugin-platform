@@ -57,7 +57,7 @@ test('Cloudflare OAuth 回调兑换令牌、自动发现账号并加密保存', 
   expect(authorizeUrl.origin).toBe('https://dash.cloudflare.com')
   expect(authorizeUrl.searchParams.get('client_id')).toBe('cf-test-client')
   expect(authorizeUrl.searchParams.get('redirect_uri')).toBe('https://console.example.com/auth/cloudflare/callback')
-  expect(authorizeUrl.searchParams.get('scope')).toBe('account-settings.read account-analytics.read offline_access')
+  expect(authorizeUrl.searchParams.get('scope')).toBe('account-settings.read account-analytics.read')
   const state = authorizeUrl.searchParams.get('state') ?? ''
   expect(state).not.toBe('')
   const pendingStates = await testEnv.DB.prepare('SELECT COUNT(*) AS count FROM cloudflare_oauth_states').first<{ count: number }>()
@@ -120,18 +120,27 @@ test('Cloudflare Analytics 返回 401 时刷新令牌并重试一次', { timeout
   expect(audit?.count).toBe(1)
 })
 
-test('Cloudflare 令牌刷新失败时返回 502 且不改动已存凭据', { timeout: 20_000 }, async () => {
+test('Cloudflare 令牌刷新失败时提示重新授权且不改动已存凭据', { timeout: 20_000 }, async () => {
   await storeCredential({ accessToken: 'cf-access-old', refreshToken: 'refresh-bad', accountId: CLOUDFLARE_STUB_ACCOUNT_ID, expiresAt: new Date(Date.now() - 60_000).toISOString() })
   const calls: string[] = []
   const response = await cloudflareUsageApi(testEnv, admin, analyticsFetcher(calls))
-  expect(response.status).toBe(502)
-  expect((await response.json() as { error: string }).error).toBe('Cloudflare OAuth token refresh failed')
+  expect(response.status).toBe(200)
+  expect(await response.json()).toMatchObject({ configured: true, accountIdConfigured: true, authorizationExpired: true, cached: false })
   expect(calls).toEqual([])
   const credential = await readCredential()
   expect(credential.accessToken).toBe('cf-access-old')
   expect(credential.refreshToken).toBe('refresh-bad')
   const audit = await testEnv.DB.prepare("SELECT COUNT(*) AS count FROM audit_log WHERE action = 'cloudflare.oauth.refreshed'").first<{ count: number }>()
   expect(audit?.count).toBe(0)
+})
+
+test('没有 refresh_token 的过期凭据直接提示重新授权', { timeout: 20_000 }, async () => {
+  await storeCredential({ accessToken: 'cf-access-expired', refreshToken: null, accountId: CLOUDFLARE_STUB_ACCOUNT_ID, expiresAt: new Date(Date.now() - 60_000).toISOString() })
+  const calls: string[] = []
+  const response = await cloudflareUsageApi(testEnv, admin, analyticsFetcher(calls))
+  expect(response.status).toBe(200)
+  expect(await response.json()).toMatchObject({ configured: true, authorizationExpired: true, cached: false })
+  expect(calls).toEqual([])
 })
 
 test('授权结果经一次性 Cookie 读回并立即清除', { timeout: 20_000 }, async () => {

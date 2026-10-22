@@ -1037,7 +1037,8 @@ export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser, fetc
   let refreshed = false
   if (credential.expiresAt && Date.parse(credential.expiresAt) <= Date.now() + 60_000) {
     const next = await refreshCloudflareCredential(env, credential)
-    if (!next) return json({ error: 'Cloudflare OAuth token refresh failed' }, 502)
+    // Cloudflare OAuth 客户端没有 offline_access，token 响应未给 refresh_token 时只能重新授权。
+    if (!next) return json({ configured: true, accountIdConfigured: Boolean(credential.accountId), authorizationExpired: true, cached: false })
     credential = next
     refreshed = true
     await storeCloudflareCredential(env, credential)
@@ -1063,6 +1064,7 @@ export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser, fetc
       response = await analyticsRequest(credential.accessToken)
     }
   }
+  if (response.status === 401) return json({ configured: true, accountIdConfigured: true, authorizationExpired: true, cached: false })
   if (!response.ok) return json({ error: 'Cloudflare Analytics request failed', status: response.status }, 502)
   const payload = await response.json() as { errors?: unknown[]; data?: { viewer?: { accounts?: Array<{ workersInvocationsAdaptive?: Array<{ sum?: { requests?: number } }> }> } } }
   if (payload.errors?.length) return json({ error: 'Cloudflare Analytics returned errors', details: payload.errors }, 502)
@@ -1082,6 +1084,7 @@ export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser, fetc
       resourceResponse = await resourceAnalyticsRequest(credential.accessToken)
     }
   }
+  if (resourceResponse.status === 401) return json({ configured: true, accountIdConfigured: true, authorizationExpired: true, cached: false })
   if (!resourceResponse.ok) return json({ error: 'Cloudflare resource analytics request failed', status: resourceResponse.status }, 502)
   const resourcePayload = await resourceResponse.json() as {
     errors?: unknown[]
@@ -1157,6 +1160,8 @@ export async function localUsageApi(env: Env, user: AuthenticatedUser, url = new
     env.DB.prepare('SELECT hostname AS id, hostname AS label, COUNT(*) AS requests FROM request_logs WHERE created_at >= ? AND (? IS NULL OR workspace_id = ?) GROUP BY hostname ORDER BY requests DESC, label ASC LIMIT 5').bind(since, workspaceId, workspaceId).all<UsageBreakdownEntry>(),
   ])
   return json({
+    // 本地用量来自本平台 D1 中的请求日志，与 Cloudflare 授权无关，未配置 Cloudflare 时也应返回。
+    source: 'platform_local',
     requestCount: usage?.request_count ?? 0,
     requestWindowStartedAt: usage?.request_window_started_at ?? null,
     activeConnections: usage?.active_connections ?? 0,

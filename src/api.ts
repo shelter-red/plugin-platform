@@ -201,6 +201,7 @@ interface InviteCreation {
 export interface CloudflareUsage {
   configured?: boolean
   accountIdConfigured?: boolean
+  authorizationExpired?: boolean
   period?: { start: string; end: string }
   requests?: number
   source?: string
@@ -232,6 +233,8 @@ export interface UsageBreakdownEntry {
 }
 
 export interface LocalUsage {
+  /** 平台自身 D1 请求日志统计，与 Cloudflare 授权无关。 */
+  source?: 'platform_local'
   requestCount: number
   requestWindowStartedAt: string | null
   activeConnections: number
@@ -326,7 +329,6 @@ export interface CloudflareOauthSettings {
   responseType: string
   grantType: string
   tokenAuthMethod: string
-  pkce: boolean
 }
 
 export interface OauthSettings {

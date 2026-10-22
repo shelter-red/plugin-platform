@@ -26,5 +26,4 @@ export function diagnosisNeedsPermissions(code: string | null): boolean {
 export const CLOUDFLARE_SCOPE_FALLBACK: Record<string, string> = {
   'account-settings.read': 'Account Settings Read',
   'account-analytics.read': 'Account Analytics Read',
-  offline_access: 'Offline Access',
 }

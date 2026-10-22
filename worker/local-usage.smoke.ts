@@ -29,6 +29,7 @@ const member: AuthenticatedUser = { ...admin, id: 'member-1', role: 'member' }
 const response = await localUsageApi(env, admin, new URL('https://worker.invalid/api/usage/local?range=24h'))
 assert.equal(response.status, 200)
 assert.deepEqual(await response.json(), {
+  source: 'platform_local',
   requestCount: 18,
   requestWindowStartedAt: '2026-10-21T00:00:00.000Z',
   activeConnections: 3,

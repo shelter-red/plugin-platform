@@ -8,25 +8,26 @@ import type { AuthenticatedUser, Env } from './types'
  * ID 来自 Cloudflare 官方 GET /client/v4/oauth/scopes，名称与控制台 OAuth 客户端
  * 创建页的权限名称一致：
  * - Account Settings Read：读取账号与成员关系，用于识别唯一 Cloudflare 账号；
- * - Account Analytics Read：读取账号级 Analytics，用于 Worker/D1/KV/DO 用量；
- * - Offline Access：允许平台在 access token 过期后刷新，无需再次人工授权。
+ * - Account Analytics Read：读取账号级 Analytics，用于 Worker/D1/KV/DO 用量。
+ *
+ * 注意：Cloudflare 的 OAuth 客户端创建页只列出 API Token 权限，没有 `offline_access`。
+ * 请求该 Scope 会得到 invalid_scope，因此平台绝不请求它；刷新令牌仅使用 Cloudflare
+ * 在 token 响应中实际返回的 refresh_token，缺失时提示重新授权。
  *
  * 新增或删除权限必须同时修改这里与前端权限清单，历史配置和环境变量里的 scope 一律忽略。
  */
 export const CLOUDFLARE_OAUTH_SCOPE_NAMES: Record<string, string> = {
   'account-settings.read': 'Account Settings Read',
   'account-analytics.read': 'Account Analytics Read',
-  offline_access: 'Offline Access',
 }
 export const CLOUDFLARE_OAUTH_SCOPES = Object.keys(CLOUDFLARE_OAUTH_SCOPE_NAMES)
 export const DEFAULT_CLOUDFLARE_SCOPE = CLOUDFLARE_OAUTH_SCOPES.join(' ')
 
-/** Cloudflare OAuth 客户端固定使用授权码 + Basic 认证，不支持 PKCE；接口只读输出以便前端展示。 */
+/** Cloudflare OAuth 客户端固定使用授权码 + Basic 认证；接口只读输出以便前端展示。 */
 export const CLOUDFLARE_OAUTH_PROTOCOL = {
   responseType: 'code',
   grantType: 'authorization_code',
   tokenAuthMethod: 'client_secret_basic',
-  pkce: false,
 } as const
 
 export interface GithubOAuthConfig {

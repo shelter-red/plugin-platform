@@ -104,7 +104,7 @@ try {
   assert.equal(authorizeUrl.origin, 'https://dash.cloudflare.com')
   assert.equal(authorizeUrl.pathname, '/oauth2/auth')
   assert.equal(authorizeUrl.searchParams.get('client_id'), 'cf-client-id')
-  assert.equal(authorizeUrl.searchParams.get('scope'), 'account-settings.read account-analytics.read offline_access')
+  assert.equal(authorizeUrl.searchParams.get('scope'), 'account-settings.read account-analytics.read')
   assert.equal(authorizeUrl.searchParams.get('response_type'), 'code')
   assert.equal(authorizeUrl.searchParams.get('code_challenge'), null)
   const state = authorizeUrl.searchParams.get('state')!

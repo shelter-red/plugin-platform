@@ -6,7 +6,7 @@ import type { AuthenticatedUser, Env } from './src/types.ts'
 const admin: AuthenticatedUser = { id: 'admin-1', github_id: '1', email: 'admin@example.test', display_name: 'Admin', role: 'super_admin' }
 const member: AuthenticatedUser = { id: 'member-1', github_id: '2', email: 'member@example.test', display_name: 'Member', role: 'member' }
 const secret = 'oauth-settings-smoke-secret'
-const protocol = { responseType: 'code', grantType: 'authorization_code', tokenAuthMethod: 'client_secret_basic', pkce: false }
+const protocol = { responseType: 'code', grantType: 'authorization_code', tokenAuthMethod: 'client_secret_basic' }
 
 function createEnvironment(withCloudflare: boolean) {
   let stored: { ciphertext: string; iv: string; updated_at: string } | null = null
@@ -52,7 +52,7 @@ const request = (method: string, body?: unknown) => new Request('https://console
   assert.equal(response.status, 200)
   const body = await response.json() as { cloudflare: Record<string, unknown> }
   assert.equal(body.cloudflare.configured, false)
-  assert.deepEqual({ responseType: body.cloudflare.responseType, grantType: body.cloudflare.grantType, tokenAuthMethod: body.cloudflare.tokenAuthMethod, pkce: body.cloudflare.pkce }, protocol)
+  assert.deepEqual({ responseType: body.cloudflare.responseType, grantType: body.cloudflare.grantType, tokenAuthMethod: body.cloudflare.tokenAuthMethod }, protocol)
 }
 
 {
@@ -62,11 +62,11 @@ const request = (method: string, body?: unknown) => new Request('https://console
   assert.equal(body.cloudflare.configured, true)
   assert.equal(body.cloudflare.clientId, 'cf-client-id')
   // 环境变量里的旧 scope 一律忽略，授权范围由平台固定。
-  assert.equal(body.cloudflare.scope, 'account-settings.read account-analytics.read offline_access')
-  assert.deepEqual(body.cloudflare.scopeNames, { 'account-settings.read': 'Account Settings Read', 'account-analytics.read': 'Account Analytics Read', offline_access: 'Offline Access' })
+  assert.equal(body.cloudflare.scope, 'account-settings.read account-analytics.read')
+  assert.deepEqual(body.cloudflare.scopeNames, { 'account-settings.read': 'Account Settings Read', 'account-analytics.read': 'Account Analytics Read' })
   assert.equal(body.cloudflare.secretConfigured, true)
   assert.equal(body.cloudflare.source, 'environment')
-  assert.deepEqual({ responseType: body.cloudflare.responseType, grantType: body.cloudflare.grantType, tokenAuthMethod: body.cloudflare.tokenAuthMethod, pkce: body.cloudflare.pkce }, protocol)
+  assert.deepEqual({ responseType: body.cloudflare.responseType, grantType: body.cloudflare.grantType, tokenAuthMethod: body.cloudflare.tokenAuthMethod }, protocol)
 
   const forbidden = await oauthSettingsApi(request('GET'), env, member)
   assert.equal(forbidden.status, 403)
@@ -80,9 +80,9 @@ const request = (method: string, body?: unknown) => new Request('https://console
   const body = await response.json() as { cloudflare: Record<string, unknown> }
   assert.equal(body.cloudflare.clientId, 'cf-client-2')
   // 提交的 scope 字段被忽略，避免界面或旧配置把权限改坏。
-  assert.equal(body.cloudflare.scope, 'account-settings.read account-analytics.read offline_access')
+  assert.equal(body.cloudflare.scope, 'account-settings.read account-analytics.read')
   assert.equal(body.cloudflare.source, 'database')
-  assert.deepEqual({ responseType: body.cloudflare.responseType, grantType: body.cloudflare.grantType, tokenAuthMethod: body.cloudflare.tokenAuthMethod, pkce: body.cloudflare.pkce }, protocol)
+  assert.deepEqual({ responseType: body.cloudflare.responseType, grantType: body.cloudflare.grantType, tokenAuthMethod: body.cloudflare.tokenAuthMethod }, protocol)
   const stored = JSON.parse(await decryptSecret(secret, readStored()!.ciphertext, readStored()!.iv)) as { cloudflare: { clientSecret: string } }
   assert.equal(stored.cloudflare.clientSecret, 'cf-client-secret')
   assert.deepEqual(audits, ['oauth.settings.updated'])

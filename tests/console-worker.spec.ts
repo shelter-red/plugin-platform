@@ -12,7 +12,7 @@ const platformSettings = {
 
 const oauthSettings = {
   github: { configured: true, clientId: 'mock-github-client', redirectUri: 'https://console.example.test/auth/github/callback', allowlist: 'admin', secretConfigured: true, source: 'environment' },
-  cloudflare: { configured: true, clientId: 'mock-cloudflare-client', redirectUri: 'https://console.example.test/auth/cloudflare/callback', scope: 'account-settings.read account-analytics.read offline_access', scopeNames: { 'account-settings.read': 'Account Settings Read', 'account-analytics.read': 'Account Analytics Read', offline_access: 'Offline Access' }, secretConfigured: true, source: 'environment', responseType: 'code', grantType: 'authorization_code', tokenAuthMethod: 'client_secret_basic', pkce: false },
+  cloudflare: { configured: true, clientId: 'mock-cloudflare-client', redirectUri: 'https://console.example.test/auth/cloudflare/callback', scope: 'account-settings.read account-analytics.read', scopeNames: { 'account-settings.read': 'Account Settings Read', 'account-analytics.read': 'Account Analytics Read' }, secretConfigured: true, source: 'environment', responseType: 'code', grantType: 'authorization_code', tokenAuthMethod: 'client_secret_basic' },
   sessionSecretConfigured: true,
   updatedAt: null,
   unreadable: false,
@@ -303,11 +303,11 @@ test('Cloudflare 区块展示固定权限清单，并把授权失败诊断留在
   expect(new URL(page.url()).search).toBe('')
 
   const protocol = panel.locator('.protocol-facts')
-  await expect(protocol).toContainText('response_type')
+  await expect(protocol).toContainText('响应类型（response_type）')
   await expect(protocol).toContainText('code')
   await expect(protocol).toContainText('authorization_code')
   await expect(protocol).toContainText('client_secret_basic')
-  await expect(protocol).toContainText('关闭')
+  await expect(protocol).not.toContainText('PKCE')
   await expect(panel.getByRole('textbox', { name: '回调地址' })).toHaveValue('http://127.0.0.1:4184/auth/cloudflare/callback')
 
   const diagnosis = panel.getByTestId('cloudflare-diagnosis')
@@ -318,12 +318,12 @@ test('Cloudflare 区块展示固定权限清单，并把授权失败诊断留在
   await diagnosis.getByRole('button', { name: '关闭诊断' }).click()
   await expect(panel.getByTestId('cloudflare-diagnosis')).toHaveCount(0)
 
-  // 权限清单固定为三项且只读：没有可编辑的 scope 输入框，也不能移除单项。
+  // 权限清单固定为两项且只读：没有可编辑的 scope 输入框，也不能移除单项。
   const scopes = panel.getByTestId('cloudflare-scopes')
   await expect(scopes).toContainText('Account Settings Read')
   await expect(scopes).toContainText('Account Analytics Read')
-  await expect(scopes).toContainText('Offline Access')
-  await expect(scopes.locator('.scope-list li')).toHaveCount(3)
+  await expect(scopes.locator('.scope-list')).not.toContainText('Offline Access')
+  await expect(scopes.locator('.scope-list li')).toHaveCount(2)
   await expect(scopes.locator('input')).toHaveCount(0)
   await expect(scopes.getByRole('button')).toHaveCount(0)
   await expect(panel.getByRole('textbox', { name: '授权范围' })).toHaveCount(0)
@@ -372,7 +372,25 @@ test('用量页提供刷新按钮并提示读取官方数据所需权限', async
   await expect(page.locator('.ant-notification-notice').filter({ hasText: '用量数据已刷新' })).toBeVisible()
   expect(worker.usageRequests).toBeGreaterThan(before)
 
+  // 未配置 Cloudflare 时官方数据为空，但平台本地计数仍然有效：界面必须说明两者互不依赖。
+  worker.usage = { configured: false, cached: false }
+  await page.getByRole('button', { name: '刷新用量' }).first().click()
+  const unconfigured = page.getByRole('alert').filter({ hasText: '官方数据尚未连接' })
+  await expect(unconfigured).toBeVisible()
+  await expect(unconfigured).toContainText('不需要 Cloudflare 授权')
+  await expect(page.getByText('平台请求计数、R2 与活跃连接来自本平台自身统计').first()).toBeVisible()
+
+  // 没有 refresh_token 时 Cloudflare 授权会过期，界面应直接引导重新授权。
+  worker.usage = { configured: true, accountIdConfigured: true, authorizationExpired: true, cached: false }
+  await page.getByRole('button', { name: '刷新用量' }).first().click()
+  const expired = page.getByRole('alert').filter({ hasText: 'Cloudflare 授权已过期' })
+  await expect(expired).toBeVisible()
+  await expect(expired).toContainText('Offline Access')
+  await expired.getByRole('button', { name: '重新授权' }).click()
+  await expect(page.locator('#settings-cloudflare')).toBeVisible()
+
   // 缺少 Account Settings Read 时官方用量为空，需要明确告诉管理员要补哪项权限。
+  await page.getByRole('menuitem', { name: '用量与配额', exact: true }).click()
   worker.usage = { configured: true, accountIdConfigured: false }
   await page.getByRole('button', { name: '刷新用量' }).first().click()
   const alert = page.getByRole('alert').filter({ hasText: '已授权，但未识别到 Cloudflare 账号' })

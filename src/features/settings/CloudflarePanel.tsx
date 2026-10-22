@@ -15,7 +15,6 @@ import { OauthNotices } from './OauthNotices'
 const PERMISSION_DESCRIPTION_KEYS: Record<string, string> = {
   'account-settings.read': 'settings.cloudflare.permissions.accountSettings',
   'account-analytics.read': 'settings.cloudflare.permissions.accountAnalytics',
-  offline_access: 'settings.cloudflare.permissions.offlineAccess',
 }
 
 interface Props {
@@ -176,6 +175,17 @@ export function CloudflarePanel({ settings, onSettingsChange, oauth, onOauthChan
         <CopyField label={t('settings.oauth.redirectUri')} value={redirect} hint={t('settings.oauth.redirectHint')} />
       </div>
 
+      <div className="protocol-facts" aria-label={t('settings.cloudflare.protocolTitle')}>
+        {protocol
+          ? <>
+            <div><span>{t('settings.cloudflare.protocol.responseType')}（response_type）</span><code>{protocol.responseType}</code></div>
+            <div><span>{t('settings.cloudflare.protocol.grantType')}（grant_type）</span><code>{protocol.grantType}</code></div>
+            <div><span>{t('settings.cloudflare.protocol.tokenAuthMethod')}（token_endpoint_auth_method）</span><code>{protocol.tokenAuthMethod}</code></div>
+          </>
+          : <span className="field-hint">{t('settings.cloudflare.protocolUnavailable')}</span>}
+      </div>
+      <span className="field-hint">{t('settings.cloudflare.protocolHint')}</span>
+
       <div className="scope-permissions" id="settings-cloudflare-scopes" data-testid="cloudflare-scopes">
         <div className="scope-permissions-head">
           <span className="field-label">{t('settings.cloudflare.permissionsTitle')}</span>
@@ -195,15 +205,6 @@ export function CloudflarePanel({ settings, onSettingsChange, oauth, onOauthChan
         <p className="field-hint">{t('settings.cloudflare.permissionsApply')}</p>
       </div>
 
-      {protocol
-        ? <div className="protocol-facts" aria-label={t('settings.cloudflare.protocolTitle')}>
-          <div><span>response_type</span><code>{protocol.responseType}</code></div>
-          <div><span>grant_type</span><code>{protocol.grantType}</code></div>
-          <div><span>token_endpoint_auth_method</span><code>{protocol.tokenAuthMethod}</code></div>
-          <div><span>PKCE</span><code>{protocol.pkce ? t('settings.cloudflare.pkceOn') : t('settings.cloudflare.pkceOff')}</code></div>
-        </div>
-        : <span className="field-hint">{t('settings.cloudflare.protocolUnavailable')}</span>}
-      <span className="field-hint">{t('settings.cloudflare.protocolHint')}</span>
       <div className="settings-actions">
         <Button type="primary" onClick={() => void saveClient()} loading={saving === 'client'} disabled={!oauth || saving !== null}>{t('settings.oauth.save')}</Button>
         {protocol?.source === 'database' && <Button onClick={() => void resetClient()} disabled={saving !== null}>{t('settings.oauth.reset')}</Button>}
