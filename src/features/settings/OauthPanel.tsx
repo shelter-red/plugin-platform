@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { revokeOauthSettings, updateOauthSettings, type OauthSettings } from '../../api'
 import { CopyField } from '../../components/CopyField'
+import { Panel } from '../../components/Panel'
 import { StatusBadge } from '../../components/StatusBadge'
 import { TagListField } from '../../components/TagListField'
 import type { Notify } from '../../components/ToastProvider'
@@ -50,12 +51,13 @@ export function OauthPanel({ settings, onChange, onAction }: { settings: OauthSe
     }
   }
 
-  return <div className="panel settings-panel">
+  return <Panel className="settings-panel" padded heading={
     <div className="settings-heading">
       <div className="settings-icon"><LogIn size={18} /></div>
       <div><h2>{t('settings.oauth.githubTitle')}</h2><p>{t('settings.oauth.githubDescription')}</p></div>
       <StatusBadge tone={oauthSourceTone(settings?.github.source ?? null)}>{settings ? oauthSourceLabel(settings.github.source, t) : t('settings.oauth.unknown')}</StatusBadge>
     </div>
+  }>
     <OauthNotices settings={settings} />
     <div className="oauth-block">
       <div className="form-grid">
@@ -76,5 +78,5 @@ export function OauthPanel({ settings, onChange, onAction }: { settings: OauthSe
         {settings?.github.source === 'database' && <Button onClick={() => void reset()} disabled={saving}>{t('settings.oauth.reset')}</Button>}
       </div>
     </div>
-  </div>
+  </Panel>
 }

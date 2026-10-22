@@ -290,3 +290,9 @@ table { width: 100%; border-collapse: collapse; font-size: 11px; } th { padding:
 .detail-empty.ant-empty { margin: 0; padding: 14px; border: 1px dashed var(--line); border-radius: 6px; }
 .detail-empty .ant-empty-description { color: var(--text-3); font-size: 10px; }
 .modal-result.ant-result { padding: 12px 0; }
+
+/* Panel 已由 Card 提供内边距，避免与旧 .settings-panel 的 padding 叠加。 */
+.panel.settings-panel { padding: 0; }
+.alert-body { display: flex; flex-direction: column; gap: 4px; }
+.alert-body .ant-btn { align-self: flex-start; padding-inline: 0; height: auto; }
+.oauth-notice.ant-alert { margin-top: 16px; }

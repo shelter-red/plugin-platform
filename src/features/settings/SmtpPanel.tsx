@@ -3,6 +3,7 @@ import { ArrowUpRight, Check, Mail } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ApiError, sendSmtpTest, updateSmtpSettings, type SmtpAuthType, type SmtpSettings, type SmtpSettingsInput } from '../../api'
+import { Panel } from '../../components/Panel'
 import { StatusBadge } from '../../components/StatusBadge'
 import type { Notify } from '../../components/ToastProvider'
 import { errorMessage } from '../../errors'
@@ -114,12 +115,13 @@ export function SmtpPanel({ settings, onChange, onAction }: { settings: SmtpSett
 
   const canSave = Boolean(settings) && !saving && !testing && testedSignature === signatureOf(form)
 
-  return <div className="panel settings-panel">
+  return <Panel className="settings-panel" padded heading={
     <div className="settings-heading">
       <div className="settings-icon"><Mail size={18} /></div>
       <div><h2>{t('settings.smtp.title')}</h2><p>{settings ? t('settings.smtp.description') : t('settings.smtp.descriptionUnavailable')}</p></div>
       <StatusBadge tone={settings?.configured ? 'success' : 'neutral'}>{settings?.configured ? t('settings.smtp.configured') : settings ? t('settings.smtp.notConfigured') : t('settings.smtp.unknown')}</StatusBadge>
     </div>
+  }>
     <div className="form-grid">
       <div className="field">
         <span className="field-label">{t('settings.smtp.host')}</span>
@@ -167,5 +169,5 @@ export function SmtpPanel({ settings, onChange, onAction }: { settings: SmtpSett
       <Button type="primary" onClick={() => void save()} disabled={!canSave}>{saving ? t('common.saving') : t('settings.smtp.save')}<Check size={14} /></Button>
     </div>
     {settings && !canSave && !saving && <span className="field-hint smtp-save-hint">{t('settings.smtp.testFirst')}</span>}
-  </div>
+  </Panel>
 }

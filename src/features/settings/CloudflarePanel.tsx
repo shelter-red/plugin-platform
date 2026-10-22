@@ -1,9 +1,10 @@
-import { Button, Input } from 'antd'
+import { Alert, Button, Input } from 'antd'
 import { ArrowUpRight, Cloud, LockKeyhole, Plus, ShieldAlert } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { revokeCloudflareSettings, revokeOauthSettings, updateOauthSettings, type CloudflareSettings, type OauthSettings } from '../../api'
 import { CopyField } from '../../components/CopyField'
+import { Panel } from '../../components/Panel'
 import { StatusBadge } from '../../components/StatusBadge'
 import { TagListField } from '../../components/TagListField'
 import type { Notify } from '../../components/ToastProvider'
@@ -87,27 +88,29 @@ export function CloudflarePanel({ settings, onSettingsChange, oauth, onOauthChan
       ? t('settings.cloudflare.diagnosisInvalidClient')
       : t('settings.cloudflare.diagnosisGeneric')
 
-  return <div id="settings-cloudflare" className="panel settings-panel">
+  return <Panel id="settings-cloudflare" className="settings-panel" padded heading={
     <div className="settings-heading">
       <div className="settings-icon"><Cloud size={18} /></div>
       <div><h2>{t('settings.cloudflare.title')}</h2><p>{t('settings.cloudflare.description')}</p></div>
       <StatusBadge tone={settings?.configured ? 'success' : 'neutral'}>{settings?.configured ? t('settings.cloudflare.authorized') : settings ? t('settings.cloudflare.notConfigured') : apiLive ? t('settings.cloudflare.loadFailed') : t('settings.cloudflare.disconnected')}</StatusBadge>
     </div>
+  }>
     <OauthNotices settings={oauth} />
 
-    {diagnosis && <div className="notice-bar danger oauth-notice" role="alert" data-testid="cloudflare-diagnosis">
-      <div className="notice-icon"><ShieldAlert size={16} /></div>
-      <div>
-        <strong>{t('settings.cloudflare.diagnosisTitle')}</strong>
+    {diagnosis && <Alert
+      className="oauth-notice"
+      type="error"
+      showIcon
+      icon={<ShieldAlert size={16} />}
+      data-testid="cloudflare-diagnosis"
+      message={t('settings.cloudflare.diagnosisTitle')}
+      description={<div className="alert-body">
         <span>{diagnosis.message}</span>
         <span>{advice}</span>
-        <span>
-          {t('settings.cloudflare.diagnosisCode')}：{diagnosis.code ?? t('settings.cloudflare.diagnosisUnknownCode')}
-          {diagnosis.description ? ` · ${diagnosis.description}` : ''}
-        </span>
-      </div>
-      <button onClick={onDismissDiagnosis}>{t('settings.cloudflare.diagnosisDismiss')}</button>
-    </div>}
+        <span>{t('settings.cloudflare.diagnosisCode')}：{diagnosis.code ?? t('settings.cloudflare.diagnosisUnknownCode')}{diagnosis.description ? ` · ${diagnosis.description}` : ''}</span>
+        <Button type="link" size="small" onClick={onDismissDiagnosis}>{t('settings.cloudflare.diagnosisDismiss')}</Button>
+      </div>}
+    />}
 
     <div className="oauth-block">
       <div className="oauth-block-heading">
@@ -160,5 +163,5 @@ export function CloudflarePanel({ settings, onSettingsChange, oauth, onOauthChan
         <a className="field-link" href="https://developers.cloudflare.com/fundamentals/api/get-started/oauth/" target="_blank" rel="noreferrer">{t('settings.cloudflare.docs')}</a>
       </div>
     </div>
-  </div>
+  </Panel>
 }
