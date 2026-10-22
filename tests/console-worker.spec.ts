@@ -169,7 +169,7 @@ test('管理端显示 Worker 实时数据并在刷新后提示', async ({ page }
   expect(await requestProgress.evaluate((element) => Number.parseFloat((element.firstElementChild as HTMLElement).style.width))).toBeGreaterThan(0)
 
   await page.getByRole('button', { name: '刷新状态' }).click()
-  await expect(page.locator('.toast')).toHaveText('平台数据已刷新')
+  await expect(page.locator('.ant-notification-notice').filter({ hasText: '平台数据已刷新' })).toBeVisible()
 })
 
 test('管理端在后台保存 OAuth 配置且不回显密钥', async ({ page }) => {
@@ -276,7 +276,7 @@ test('管理端数据读取失败时显示错误并可重试恢复', async ({ pa
   worker.failData = false
   await page.getByRole('button', { name: '重试' }).click()
   await expect(page.getByText('数据读取失败')).toBeHidden()
-  await expect(page.locator('.toast')).toHaveText('平台数据已刷新')
+  await expect(page.locator('.ant-notification-notice').filter({ hasText: '平台数据已刷新' })).toBeVisible()
 })
 
 test('管理端设置页显示 Worker 维护状态', async ({ page }) => {

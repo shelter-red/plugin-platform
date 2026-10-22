@@ -46,6 +46,7 @@ import {
 import './styles.css'
 import './i18n'
 import { createAppTheme, type AppThemeMode } from './app/theme'
+import { useToast, type Notify } from './components/ToastProvider'
 import i18n, { storeLanguage, type Language } from './i18n'
 import { ApiError, assignDomain, checkPluginHealth, commandPlugin, createInvite, createRegistrationCode, fetchAccessLogs, fetchAudit, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchInvites, fetchLocalUsage, fetchOauthSettings, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchPluginDetails, fetchServerDetails, fetchServers, fetchSmtpSettings, revokeCloudflareSettings, revokeInvite, revokeOauthSettings, syncServer, type ApiAccessLog, type ApiAudit, type ApiDomain, type ApiInvite, type ApiOverview, type ApiPlugin, type ApiPluginDetail, type ApiServer, type ApiServerDetail, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type OauthProvider, type OauthSettings, type PlatformSettings, type PluginAction, type PluginHealthResult, type SmtpSettings, type UsageBreakdownEntry, type UsageSnapshot, sendSmtpTest, updateOauthSettings, updatePlatformSettings, updateSmtpSettings } from './api'
 
@@ -187,7 +188,6 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
   const [detailError, setDetailError] = useState<string | null>(null)
   const [healthPluginId, setHealthPluginId] = useState<string | null>(null)
   const [pluginActionLoading, setPluginActionLoading] = useState<{ id: string; action: Exclude<PluginAction, 'health'> } | null>(null)
-  const [toast, setToast] = useState<string | null>(null)
   const [range, setRange] = useState<'24h' | '7d' | '30d'>('7d')
 
   const meta = { title: t(`pages.${page}.title`), description: t(`pages.${page}.description`) }
@@ -231,10 +231,12 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
     const params = new URLSearchParams(window.location.search)
     const result = params.get('cloudflare')
     const error = params.get('cloudflare_error')
-    if (result === 'connected') setToast(t('toast.cloudflareConnected'))
-    if (result === 'connected_without_account') setToast(t('toast.cloudflareConnectedWithoutAccount'))
-    if (error) setToast(error)
+    if (result === 'connected') notify('success', t('toast.cloudflareConnected'))
+    if (result === 'connected_without_account') notify('info', t('toast.cloudflareConnectedWithoutAccount'))
+    if (error) notify('error', error)
     if (result || error) window.history.replaceState({}, '', `${window.location.pathname}${window.location.hash}`)
+    // 只在首次挂载时读取一次回调参数，避免通知实例变化导致重复弹窗。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -296,12 +298,9 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
     fetchLocalUsage(range).then(setLocalUsage).catch(() => setLocalUsage(null))
   }, [authEnabled, range])
 
-  const showToast = (message: string) => {
-    setToast(message)
-    window.setTimeout(() => setToast(null), 2600)
-  }
+  const notify = useToast()
 
-  const refreshData = async (notify = true) => {
+  const refreshData = async (announce = true) => {
     setDataLoading(true)
     try {
       const [nextOverview, nextServers, nextPlugins, nextDomains, nextLocalUsage] = await Promise.all([fetchOverview(), fetchServers(), fetchPlugins(), fetchDomains(), fetchLocalUsage(range).catch(() => null)])
@@ -312,10 +311,10 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
       if (nextLocalUsage) setLocalUsage(nextLocalUsage)
       setApiLive(true)
       setDataError(null)
-      if (notify) showToast(t('toast.refreshed'))
+      if (announce) notify('success', t('toast.refreshed'))
     } catch {
       setDataError('toast.dataUnavailable')
-      showToast(t('toast.refreshFailed'))
+      notify('error', t('toast.refreshFailed'))
     } finally {
       setDataLoading(false)
     }
@@ -358,11 +357,11 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
     setHealthPluginId(plugin.id)
     try {
       const result: PluginHealthResult = await checkPluginHealth(plugin.id)
-      showToast(t('toast.healthOk', { name: plugin.name, status: result.status, bodySize: result.bodySize }))
+      notify('success', t('toast.healthOk', { name: plugin.name, status: result.status, bodySize: result.bodySize }))
       await refreshData(false)
       if (detail?.kind === 'plugin' && detail.id === plugin.id) void openDetail('plugin', plugin.id)
     } catch (error) {
-      showToast(errorMessage(error, 'toast.healthFailed'))
+      notify('error', errorMessage(error, 'toast.healthFailed'))
     } finally {
       setHealthPluginId(null)
     }
@@ -373,11 +372,11 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
     setPluginActionLoading({ id: plugin.id, action })
     try {
       await commandPlugin(plugin.id, action)
-      showToast(t('toast.actionDone', { name: plugin.name, action: t(`pluginActionPast.${action}`) }))
+      notify('success', t('toast.actionDone', { name: plugin.name, action: t(`pluginActionPast.${action}`) }))
       await refreshData(false)
       if (detail?.kind === 'plugin' && detail.id === plugin.id) void openDetail('plugin', plugin.id)
     } catch (error) {
-      showToast(errorMessage(error, 'toast.actionFailed'))
+      notify('error', errorMessage(error, 'toast.actionFailed'))
     } finally {
       setPluginActionLoading(null)
     }
@@ -386,15 +385,15 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
   const syncManifests = async () => {
     const onlineServerIds = [...new Set((servers ?? []).filter((server) => server.status === 'online').map((server) => server.id))]
     if (onlineServerIds.length === 0) {
-      showToast(t('toast.noOnlineServers'))
+      notify('warning', t('toast.noOnlineServers'))
       return
     }
     try {
       await Promise.all(onlineServerIds.map((serverId) => syncServer(serverId)))
-      showToast(t('toast.syncRequested', { count: onlineServerIds.length }))
+      notify('success', t('toast.syncRequested', { count: onlineServerIds.length }))
       window.setTimeout(() => void refreshData(false), 500)
     } catch (error) {
-      showToast(errorMessage(error, 'toast.syncFailed'))
+      notify('error', errorMessage(error, 'toast.syncFailed'))
     }
   }
 
@@ -412,16 +411,16 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
 
   const exportAccessLogs = () => {
     const rows = accessLogs ?? []
-    if (rows.length === 0) return showToast(t('toast.noAccessLogs'))
+    if (rows.length === 0) return notify('info', t('toast.noAccessLogs'))
     downloadCsv(`plugmesh-access-logs-${new Date().toISOString().slice(0, 10)}.csv`, [t('csv.accessLogs.hostname'), t('csv.accessLogs.method'), t('csv.accessLogs.path'), t('csv.accessLogs.status'), t('csv.accessLogs.duration'), t('csv.accessLogs.error'), t('csv.accessLogs.createdAt')], rows.map((log) => [log.hostname, log.method, log.path, log.status, log.duration_ms, log.error, log.created_at]))
-    showToast(t('toast.accessLogsExported', { count: rows.length }))
+    notify('success', t('toast.accessLogsExported', { count: rows.length }))
   }
 
   const exportAudit = () => {
     const rows = audits ?? []
-    if (rows.length === 0) return showToast(t('toast.noAudit'))
+    if (rows.length === 0) return notify('info', t('toast.noAudit'))
     downloadCsv(`plugmesh-audit-${new Date().toISOString().slice(0, 10)}.csv`, [t('csv.audit.action'), t('csv.audit.detail'), t('csv.audit.actor'), t('csv.audit.actorEmail'), t('csv.audit.createdAt')], rows.map((item) => [item.action, item.detail_json, item.actor_name, item.actor_email, item.created_at]))
-    showToast(t('toast.auditExported', { count: rows.length }))
+    notify('success', t('toast.auditExported', { count: rows.length }))
   }
 
   if (authEnabled && authState === 'loading') return <AuthLoading />
@@ -463,17 +462,16 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
             {page === 'overview' && <Overview overview={overview} usage={usage} localUsage={localUsage} settings={platformSettings} audits={audits ?? []} accessLogs={accessLogs} accessLogsLoading={accessLogsLoading} accessLogsError={accessLogsError} servers={servers ?? []} range={range} setRange={setRange} onNavigate={selectPage} />}
             {page === 'servers' && <Servers servers={servers ?? []} loading={dataLoading} onRefresh={() => void refreshData()} onBind={() => setModal('server')} onDetail={(id) => void openDetail('server', id)} />}
             {page === 'plugins' && <Plugins plugins={filteredPlugins} loading={dataLoading} onAction={() => void syncManifests()} onLoad={() => setModal('plugin')} onDetail={(id) => void openDetail('plugin', id)} onHealth={(plugin) => void runHealthCheck(plugin)} />}
-            {page === 'domains' && <Domains domains={domains ?? []} loading={dataLoading} onAction={showToast} onRefresh={() => void refreshData()} onAssign={() => setModal('domain')} />}
+            {page === 'domains' && <Domains domains={domains ?? []} loading={dataLoading} onAction={notify} onRefresh={() => void refreshData()} onAssign={() => setModal('domain')} />}
             {page === 'usage' && <Usage settings={platformSettings} usage={usage} localUsage={localUsage} loading={usageLoading} error={usageError} onNavigate={selectPage} />}
             {page === 'logs' && <AccessLogs logs={accessLogs ?? []} loading={accessLogsLoading} error={accessLogsError} onExport={exportAccessLogs} />}
             {page === 'audit' && <Audit audits={audits ?? []} loading={auditLoading} error={auditError} onExport={exportAudit} />}
-            {page === 'settings' && <SettingsPage settings={platformSettings} apiLive={apiLive} onSettingsChange={setPlatformSettings} cloudflareSettings={cloudflareSettings} onCloudflareChange={setCloudflareSettings} smtpSettings={smtpSettings} onSmtpChange={setSmtpSettings} oauthSettings={oauthSettings} onOauthChange={setOauthSettings} invites={invites} onInvitesChange={setInvites} onAction={showToast} />}
+            {page === 'settings' && <SettingsPage settings={platformSettings} apiLive={apiLive} onSettingsChange={setPlatformSettings} cloudflareSettings={cloudflareSettings} onCloudflareChange={setCloudflareSettings} smtpSettings={smtpSettings} onSmtpChange={setSmtpSettings} oauthSettings={oauthSettings} onOauthChange={setOauthSettings} invites={invites} onInvitesChange={setInvites} onAction={notify} />}
           </div>
         </div>
       </main>
       {modal && <Modal type={modal} plugins={plugins ?? []} onClose={() => setModal(null)} onConfirm={(input) => confirmModal(modal, input)} />}
       {detail && <DetailModal detail={detail} data={detailData} loading={detailLoading} error={detailError} healthLoading={healthPluginId === detail.id} actionLoading={pluginActionLoading?.id === detail.id ? pluginActionLoading.action : null} onClose={() => setDetail(null)} onOpenPlugin={(id) => void openDetail('plugin', id)} onHealth={(plugin) => void runHealthCheck(plugin)} onAction={(plugin, action) => void runPluginAction(plugin, action)} />}
-      {toast && <div className="toast"><div className="toast-icon"><Check size={14} /></div>{toast}</div>}
     </div>
   )
 }
@@ -589,24 +587,24 @@ function Servers({ servers, loading, onRefresh, onBind, onDetail }: { servers: A
   return <div className="stack"><div className="panel table-panel"><div className="panel-header"><div><h2>{t('servers.title')}</h2><p>{t('servers.subtitle')}</p></div><button className="button secondary small" onClick={onRefresh} disabled={loading}><RefreshCw size={14} />{t('servers.refresh')}</button></div>{servers.length === 0 ? <div className="empty-panel"><div className="empty-illustration"><Server size={22} /></div><h3>{t('servers.emptyTitle')}</h3><p>{t('servers.emptyBody')}</p></div> : <div className="server-list">{servers.map((server) => <div className="server-row" key={server.id}><div className="server-symbol"><Server size={18} /></div><div className="server-main"><strong>{server.name}</strong><span>{server.id} · {t('common.protocolVersion')}</span></div><StatusBadge tone={server.status === 'online' ? 'success' : server.status === 'revoked' ? 'danger' : 'warning'}>{t(`status.${server.status}`, { defaultValue: server.status })}</StatusBadge><div className="server-meta"><span>{server.last_seen_at ? t('servers.lastSeen', { time: formatDateTime(server.last_seen_at) }) : t('servers.neverConnected')}</span><button className="row-action" onClick={() => onDetail(server.id)} aria-label={t('servers.view', { name: server.name })} title={t('servers.viewTitle')}><MoreHorizontal size={17} /></button></div></div>)}</div>}</div><div className="empty-panel"><div className="empty-illustration"><LockKeyhole size={22} /></div><h3>{t('servers.bindTitle')}</h3><p>{t('servers.bindBody')}</p><button className="button primary" onClick={onBind}><Plus size={15} />{t('servers.bind')}</button></div></div>
 }
 
-function Plugins({ plugins, loading, onAction, onLoad, onDetail, onHealth }: { plugins: ApiPlugin[]; loading: boolean; onAction: (message: string) => void; onLoad: () => void; onDetail: (id: string) => void; onHealth: (plugin: ApiPlugin) => void }) {
+function Plugins({ plugins, loading, onAction, onLoad, onDetail, onHealth }: { plugins: ApiPlugin[]; loading: boolean; onAction: Notify; onLoad: () => void; onDetail: (id: string) => void; onHealth: (plugin: ApiPlugin) => void }) {
   const { t } = useTranslation()
   const enabled = plugins.filter((plugin) => plugin.state === 'enabled').length
-  return <div className="stack"><div className="filter-row"><div className="filter-summary"><span className="filter-dot" />{t('plugins.enabled', { count: enabled })} <span className="divider" />{t('plugins.discovered', { count: plugins.length })}</div><button className="button secondary small" onClick={() => onAction(loading ? t('plugins.reading') : t('plugins.syncHint'))} disabled={loading}><RefreshCw size={14} />{t('plugins.sync')}</button></div>{plugins.length === 0 ? <div className="empty-panel"><div className="empty-illustration"><Code2 size={22} /></div><h3>{t('plugins.emptyTitle')}</h3><p>{t('plugins.emptyBody')}</p><button className="button primary" onClick={onLoad}><Plus size={15} />{t('plugins.load')}</button></div> : <div className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>{t('plugins.columnPlugin')}</th><th>{t('plugins.columnServer')}</th><th>{t('plugins.columnState')}</th><th>{t('plugins.columnCapability')}</th><th>{t('plugins.columnDomain')}</th><th /></tr></thead><tbody>{plugins.map((plugin) => <tr key={plugin.id}><td><div className="cell-title"><div className="table-icon"><Code2 size={15} /></div><div><strong>{plugin.name}</strong><small>{plugin.plugin_id} · v{plugin.version}</small></div></div></td><td>{plugin.server_name}</td><td><StatusBadge tone={plugin.state === 'enabled' ? 'success' : plugin.state === 'failed' ? 'danger' : 'neutral'}>{t(`status.${plugin.state}`, { defaultValue: plugin.state })}</StatusBadge></td><td><span className="capability">{capabilityLabel(plugin)}</span></td><td>{plugin.domain_hostname ? <a href={`https://${plugin.domain_hostname}`} target="_blank" rel="noreferrer">{plugin.domain_hostname}</a> : <span className="muted">{t('common.notAssigned')}</span>}</td><td className="row-actions"><>{plugin.state === 'enabled' && <button className="row-action" onClick={() => onHealth(plugin)} aria-label={t('plugins.health', { name: plugin.name })} title={t('plugins.healthTitle')}><Activity size={16} /></button>}<button className="row-action" onClick={() => onDetail(plugin.id)} aria-label={t('plugins.view', { name: plugin.name })} title={t('plugins.viewTitle')}><MoreHorizontal size={17} /></button></></td></tr>)}</tbody></table></div><div className="table-footer"><span>{t('plugins.footer', { count: plugins.length })}</span><button className="text-link" onClick={onLoad}>{t('plugins.load')} <Plus size={14} /> </button></div></div>}</div>
+  return <div className="stack"><div className="filter-row"><div className="filter-summary"><span className="filter-dot" />{t('plugins.enabled', { count: enabled })} <span className="divider" />{t('plugins.discovered', { count: plugins.length })}</div><button className="button secondary small" onClick={() => onAction('info', loading ? t('plugins.reading') : t('plugins.syncHint'))} disabled={loading}><RefreshCw size={14} />{t('plugins.sync')}</button></div>{plugins.length === 0 ? <div className="empty-panel"><div className="empty-illustration"><Code2 size={22} /></div><h3>{t('plugins.emptyTitle')}</h3><p>{t('plugins.emptyBody')}</p><button className="button primary" onClick={onLoad}><Plus size={15} />{t('plugins.load')}</button></div> : <div className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>{t('plugins.columnPlugin')}</th><th>{t('plugins.columnServer')}</th><th>{t('plugins.columnState')}</th><th>{t('plugins.columnCapability')}</th><th>{t('plugins.columnDomain')}</th><th /></tr></thead><tbody>{plugins.map((plugin) => <tr key={plugin.id}><td><div className="cell-title"><div className="table-icon"><Code2 size={15} /></div><div><strong>{plugin.name}</strong><small>{plugin.plugin_id} · v{plugin.version}</small></div></div></td><td>{plugin.server_name}</td><td><StatusBadge tone={plugin.state === 'enabled' ? 'success' : plugin.state === 'failed' ? 'danger' : 'neutral'}>{t(`status.${plugin.state}`, { defaultValue: plugin.state })}</StatusBadge></td><td><span className="capability">{capabilityLabel(plugin)}</span></td><td>{plugin.domain_hostname ? <a href={`https://${plugin.domain_hostname}`} target="_blank" rel="noreferrer">{plugin.domain_hostname}</a> : <span className="muted">{t('common.notAssigned')}</span>}</td><td className="row-actions"><>{plugin.state === 'enabled' && <button className="row-action" onClick={() => onHealth(plugin)} aria-label={t('plugins.health', { name: plugin.name })} title={t('plugins.healthTitle')}><Activity size={16} /></button>}<button className="row-action" onClick={() => onDetail(plugin.id)} aria-label={t('plugins.view', { name: plugin.name })} title={t('plugins.viewTitle')}><MoreHorizontal size={17} /></button></></td></tr>)}</tbody></table></div><div className="table-footer"><span>{t('plugins.footer', { count: plugins.length })}</span><button className="text-link" onClick={onLoad}>{t('plugins.load')} <Plus size={14} /> </button></div></div>}</div>
 }
 
-function Domains({ domains, loading, onAction, onRefresh, onAssign }: { domains: ApiDomain[]; loading: boolean; onAction: (message: string) => void; onRefresh: () => void; onAssign: () => void }) {
+function Domains({ domains, loading, onAction, onRefresh, onAssign }: { domains: ApiDomain[]; loading: boolean; onAction: Notify; onRefresh: () => void; onAssign: () => void }) {
   const { t } = useTranslation()
   const copyDomain = async (hostname: string) => {
     if (!navigator.clipboard) {
-      onAction(t('domains.clipboardUnsupported'))
+      onAction('warning', t('domains.clipboardUnsupported'))
       return
     }
     try {
       await navigator.clipboard.writeText(hostname)
-      onAction(t('domains.copied'))
+      onAction('success', t('domains.copied'))
     } catch {
-      onAction(t('domains.copyFailed'))
+      onAction('error', t('domains.copyFailed'))
     }
   }
   return <div className="stack"><div className="panel table-panel"><div className="panel-header"><div><h2>{t('domains.title')}</h2><p>{t('domains.subtitle')}</p></div><button className="button secondary small" onClick={onRefresh} disabled={loading}><RefreshCw size={14} />{t('servers.refresh')}</button></div>{domains.length === 0 ? <div className="empty-panel"><div className="empty-illustration"><Globe2 size={22} /></div><h3>{t('domains.emptyTitle')}</h3><p>{t('domains.emptyBody')}</p></div> : <div className="domain-list">{domains.map((domain) => <div className="domain-row" key={domain.id}><div className="domain-icon"><Globe2 size={17} /></div><div className="domain-main"><strong>{domain.hostname}</strong><span>{domain.plugin_name} · {domain.plugin_instance_id}</span></div><StatusBadge tone={domain.status === 'online' ? 'success' : 'warning'}>{t(`status.${domain.status}`, { defaultValue: domain.status })}</StatusBadge><span className="domain-latency">{domain.status === 'online' ? t('domains.available') : t('domains.waiting')}</span><button className="row-action" onClick={() => void copyDomain(domain.hostname)} aria-label={t('domains.copy', { hostname: domain.hostname })} title={t('domains.copy', { hostname: domain.hostname })}><Copy size={16} /></button></div>)}</div>}</div><div className="empty-panel"><div className="empty-illustration"><Globe2 size={22} /></div><h3>{t('domains.assignTitle')}</h3><p>{t('domains.assignBody')}</p><button className="button primary" onClick={onAssign}><Plus size={15} />{t('domains.assign')}</button></div></div>
@@ -689,7 +687,7 @@ function Audit({ audits, loading, error, onExport }: { audits: ApiAudit[]; loadi
   return <div className="stack">{error && <div className="notice-bar compact"><div className="notice-icon"><AlertCircle size={16} /></div><div><strong>{t('audit.loadFailed')}</strong><span>{translateError(error)}</span></div></div>}<div className="filter-row"><div className="filter-summary"><ListFilter size={15} />{t('audit.allEvents')} <span className="divider" />{t('audit.last180Days')}</div><button className="button secondary small" onClick={onExport} disabled={loading || audits.length === 0}><Download size={14} />{t('audit.export')}</button></div>{loading ? <div className="empty-panel"><div className="empty-illustration"><RefreshCw size={20} /></div><h3>{t('audit.loadingTitle')}</h3><p>{t('audit.loadingBody')}</p></div> : audits.length === 0 ? <div className="empty-panel"><div className="empty-illustration"><Activity size={20} /></div><h3>{t('audit.emptyTitle')}</h3><p>{t('audit.emptyBody')}</p></div> : <div className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>{t('audit.columnEvent')}</th><th>{t('audit.columnDetail')}</th><th>{t('audit.columnActor')}</th><th>{t('audit.columnTime')}</th></tr></thead><tbody>{audits.map((item) => <tr key={item.id}><td><div className="cell-title"><div className="audit-icon"><Activity size={14} /></div><strong>{auditActionLabel(item.action)}</strong></div></td><td>{auditDetail(item)}</td><td><span className="operator"><div className="mini-avatar">{(item.actor_name ?? t('common.system')).slice(0, 1)}</div><span>{item.actor_name ?? t('audit.systemEvent')}<small>{item.actor_email ?? t('audit.noIdentity')}</small></span></span></td><td className="muted">{formatDateTime(item.created_at)}</td></tr>)}</tbody></table></div></div>}</div>
 }
 
-function SettingsPage({ settings, onSettingsChange, apiLive, cloudflareSettings, onCloudflareChange, smtpSettings, onSmtpChange, oauthSettings, onOauthChange, invites, onInvitesChange, onAction }: { settings: PlatformSettings | null; onSettingsChange: (settings: PlatformSettings) => void; cloudflareSettings: CloudflareSettings | null; onCloudflareChange: (settings: CloudflareSettings) => void; smtpSettings: SmtpSettings | null; onSmtpChange: (settings: SmtpSettings) => void; oauthSettings: OauthSettings | null; onOauthChange: (settings: OauthSettings) => void; invites: ApiInvite[] | null; onInvitesChange: (invites: ApiInvite[]) => void; onAction: (message: string) => void; apiLive: boolean }) {
+function SettingsPage({ settings, onSettingsChange, apiLive, cloudflareSettings, onCloudflareChange, smtpSettings, onSmtpChange, oauthSettings, onOauthChange, invites, onInvitesChange, onAction }: { settings: PlatformSettings | null; onSettingsChange: (settings: PlatformSettings) => void; cloudflareSettings: CloudflareSettings | null; onCloudflareChange: (settings: CloudflareSettings) => void; smtpSettings: SmtpSettings | null; onSmtpChange: (settings: SmtpSettings) => void; oauthSettings: OauthSettings | null; onOauthChange: (settings: OauthSettings) => void; invites: ApiInvite[] | null; onInvitesChange: (invites: ApiInvite[]) => void; onAction: Notify; apiLive: boolean }) {
   const { t } = useTranslation()
   const [saving, setSaving] = useState(false)
   const [quotaSaving, setQuotaSaving] = useState(false)
@@ -705,15 +703,15 @@ function SettingsPage({ settings, onSettingsChange, apiLive, cloudflareSettings,
   }, [settings])
   const toggleMaintenance = async () => {
     if (!settings) {
-      onAction(t('settings.maintenance.notConnected'))
+      onAction('warning', t('settings.maintenance.notConnected'))
       return
     }
     setSaving(true)
     try {
       onSettingsChange(await updatePlatformSettings({ ...settings, maintenance: !maintenance }))
-      onAction(!maintenance ? t('settings.maintenance.enter') : t('settings.maintenance.resume'))
+      onAction('success', !maintenance ? t('settings.maintenance.enter') : t('settings.maintenance.resume'))
     } catch {
-      onAction(t('settings.maintenance.updateFailed'))
+      onAction('error', t('settings.maintenance.updateFailed'))
     } finally {
       setSaving(false)
     }
@@ -723,39 +721,39 @@ function SettingsPage({ settings, onSettingsChange, apiLive, cloudflareSettings,
     if (!cloudflareSettings?.configured || !window.confirm(t('settings.cloudflare.revokeConfirm'))) return
     try {
       onCloudflareChange(await revokeCloudflareSettings())
-      onAction(t('settings.cloudflare.revoked'))
+      onAction('success', t('settings.cloudflare.revoked'))
     } catch {
-      onAction(t('settings.cloudflare.revokeFailed'))
+      onAction('error', t('settings.cloudflare.revokeFailed'))
     }
   }
   const saveDomainSuffix = async () => {
-    if (!settings) return onAction(t('settings.domainSuffix.notConnected'))
-    if (!domainSuffix.trim()) return onAction(t('settings.domainSuffix.invalid'))
+    if (!settings) return onAction('warning', t('settings.domainSuffix.notConnected'))
+    if (!domainSuffix.trim()) return onAction('warning', t('settings.domainSuffix.invalid'))
     setSuffixSaving(true)
     try {
       const next = await updatePlatformSettings({ ...settings, pluginDomainSuffix: domainSuffix.trim() })
       onSettingsChange(next)
       setDomainSuffix(next.pluginDomainSuffix)
-      onAction(t('settings.domainSuffix.saved'))
+      onAction('success', t('settings.domainSuffix.saved'))
     } catch (error) {
-      onAction(error instanceof ApiError && error.status === 400 ? t('settings.domainSuffix.invalid') : t('settings.domainSuffix.saveFailed'))
+      onAction(error instanceof ApiError && error.status === 400 ? 'warning' : 'error', error instanceof ApiError && error.status === 400 ? t('settings.domainSuffix.invalid') : t('settings.domainSuffix.saveFailed'))
     } finally {
       setSuffixSaving(false)
     }
   }
   const saveQuotas = async () => {
-    if (!settings) return onAction(t('settings.quotas.notConnected'))
+    if (!settings) return onAction('warning', t('settings.quotas.notConnected'))
     const quotas = Object.fromEntries(Object.entries(quotaForm).map(([key, value]) => [key, Number(value)])) as PlatformSettings['quotas']
     if (Object.values(quotas).some((value) => !Number.isSafeInteger(value) || value <= 0)) {
-      onAction(t('settings.quotas.invalid'))
+      onAction('warning', t('settings.quotas.invalid'))
       return
     }
     setQuotaSaving(true)
     try {
       onSettingsChange(await updatePlatformSettings({ ...settings, quotas }))
-      onAction(t('settings.quotas.saved'))
+      onAction('success', t('settings.quotas.saved'))
     } catch {
-      onAction(t('settings.quotas.saveFailed'))
+      onAction('error', t('settings.quotas.saveFailed'))
     } finally {
       setQuotaSaving(false)
     }
@@ -768,7 +766,7 @@ function SettingsPage({ settings, onSettingsChange, apiLive, cloudflareSettings,
   return <div className="settings-layout"><div className="settings-nav"><button className={activeSection === 'cloudflare' ? 'selected' : ''} onClick={() => goToSection('cloudflare')} aria-current={activeSection === 'cloudflare' ? 'page' : undefined}><Cloud size={15} />Cloudflare</button><button className={activeSection === 'oauth' ? 'selected' : ''} onClick={() => goToSection('oauth')} aria-current={activeSection === 'oauth' ? 'page' : undefined}><KeyRound size={15} />{t('settings.nav.oauth')}</button><button className={activeSection === 'invites' ? 'selected' : ''} onClick={() => goToSection('invites')} aria-current={activeSection === 'invites' ? 'page' : undefined}><Users size={15} />{t('settings.nav.invites')}</button><button className={activeSection === 'smtp' ? 'selected' : ''} onClick={() => goToSection('smtp')} aria-current={activeSection === 'smtp' ? 'page' : undefined}><FileText size={15} />{t('settings.nav.smtp')}</button><button className={activeSection === 'maintenance' ? 'selected' : ''} onClick={() => goToSection('maintenance')} aria-current={activeSection === 'maintenance' ? 'page' : undefined}><ShieldCheck size={15} />{t('settings.nav.maintenance')}</button></div><div className="settings-content"><div id="settings-cloudflare" className="panel settings-panel"><div className="settings-heading"><div className="settings-icon"><Cloud size={18} /></div><div><h2>{t('settings.cloudflare.title')}</h2><p>{t('settings.cloudflare.description')}</p></div><StatusBadge tone={cloudflareSettings?.configured ? 'success' : 'neutral'}>{cloudflareSettings?.configured ? t('settings.cloudflare.authorized') : cloudflareSettings ? t('settings.cloudflare.notConfigured') : apiLive ? t('settings.cloudflare.loadFailed') : t('settings.cloudflare.disconnected')}</StatusBadge></div><div className="form-grid"><label>{t('settings.cloudflare.accountId')}<input value={cloudflareSettings?.accountId ?? ''} placeholder={cloudflareSettings?.configured ? t('settings.cloudflare.waitingAccount') : t('settings.cloudflare.notConnected')} disabled /></label><label>{t('settings.cloudflare.authStatus')}<input value={cloudflareSettings?.configured ? (cloudflareSettings.accountIdConfigured ? t('settings.cloudflare.oauthDone') : t('settings.cloudflare.oauthMissingAccount')) : ''} placeholder={cloudflareSettings ? t('settings.cloudflare.waitingAdmin') : t('settings.cloudflare.loading')} disabled /></label></div><div className="settings-actions"><button className="button primary" onClick={startCloudflareAuth} disabled={!cloudflareSettings}>{cloudflareSettings?.configured ? t('settings.cloudflare.reauthorize') : t('settings.cloudflare.start')} <ArrowUpRight size={14} /></button>{cloudflareSettings?.configured && <button className="button secondary" onClick={revokeCloudflare}>{t('settings.cloudflare.revoke')}</button>}<span className="form-hint"><LockKeyhole size={13} />{t('settings.cloudflare.hint')}</span></div></div><div id="settings-oauth"><OauthPanel settings={oauthSettings} onChange={onOauthChange} onAction={onAction} /></div><div id="settings-invites"><InvitePanel invites={invites} onChange={onInvitesChange} onAction={onAction} /></div><div id="settings-smtp"><SmtpPanel settings={smtpSettings} onChange={onSmtpChange} onAction={onAction} /></div><div id="settings-maintenance" className="panel settings-panel"><div className="settings-heading"><div className="settings-icon"><ShieldCheck size={18} /></div><div><h2>{t('settings.maintenance.title')}</h2><p>{settings ? t('settings.maintenance.description') : t('settings.maintenance.descriptionOffline')}</p></div><StatusBadge tone={maintenance ? 'warning' : settings ? 'success' : 'neutral'}>{maintenance ? t('settings.maintenance.on') : settings ? t('settings.maintenance.off') : t('settings.maintenance.unknown')}</StatusBadge></div><div className="maintenance-row"><div><strong>{settings ? (maintenance ? t('settings.maintenance.pause') : t('settings.maintenance.allow')) : t('settings.maintenance.unknownTitle')}</strong><span>{settings ? (maintenance ? t('settings.maintenance.pauseBody') : t('settings.maintenance.allowBody')) : t('settings.maintenance.unknownBody')}</span></div><button className={`toggle ${settings && !maintenance ? 'on' : ''}`} disabled={saving || !settings} onClick={toggleMaintenance}><span /></button></div><div className="quota-form domain-form"><div className="form-grid"><label>{t('settings.domainSuffix.label')}<input value={domainSuffix} onChange={(event) => setDomainSuffix(event.target.value)} placeholder="plugins.example.com" disabled={!settings || suffixSaving} /></label></div><div className="settings-actions quota-actions"><span className="form-hint">{t('settings.domainSuffix.hint')}</span><button className="button secondary" onClick={() => void saveDomainSuffix()} disabled={!settings || suffixSaving || quotaSaving}>{suffixSaving ? t('common.saving') : t('settings.domainSuffix.save')}<Check size={14} /></button></div></div><div className="quota-form"><div className="form-grid"><label>{t('settings.quotas.requests')}<input type="number" min="1" step="1" value={quotaForm.requests} onChange={(event) => updateQuota('requests', event.target.value)} disabled={!settings || quotaSaving} /></label><label>{t('settings.quotas.connections')}<input type="number" min="1" step="1" value={quotaForm.activeConnections} onChange={(event) => updateQuota('activeConnections', event.target.value)} disabled={!settings || quotaSaving} /></label><label>{t('settings.quotas.r2Bytes')}<input type="number" min="1" step="1" value={quotaForm.r2Bytes} onChange={(event) => updateQuota('r2Bytes', event.target.value)} disabled={!settings || quotaSaving} /></label><label>{t('settings.quotas.r2Objects')}<input type="number" min="1" step="1" value={quotaForm.r2Objects} onChange={(event) => updateQuota('r2Objects', event.target.value)} disabled={!settings || quotaSaving} /></label><label>{t('settings.quotas.d1')}<input type="number" min="1" step="1" value={quotaForm.d1Queries} onChange={(event) => updateQuota('d1Queries', event.target.value)} disabled={!settings || quotaSaving} /></label><label>{t('settings.quotas.kv')}<input type="number" min="1" step="1" value={quotaForm.kvOperations} onChange={(event) => updateQuota('kvOperations', event.target.value)} disabled={!settings || quotaSaving} /></label><label>{t('settings.quotas.durableObjects')}<input type="number" min="1" step="1" value={quotaForm.durableObjectRequests} onChange={(event) => updateQuota('durableObjectRequests', event.target.value)} disabled={!settings || quotaSaving} /></label></div><div className="settings-actions quota-actions"><span className="form-hint">{t('settings.quotas.hint')}</span><button className="button secondary" onClick={() => void saveQuotas()} disabled={!settings || quotaSaving || suffixSaving}>{quotaSaving ? t('common.saving') : t('settings.quotas.save')}<Check size={14} /></button></div></div></div></div></div>
 }
 
-function OauthPanel({ settings, onChange, onAction }: { settings: OauthSettings | null; onChange: (settings: OauthSettings) => void; onAction: (message: string) => void }) {
+function OauthPanel({ settings, onChange, onAction }: { settings: OauthSettings | null; onChange: (settings: OauthSettings) => void; onAction: Notify }) {
   const { t } = useTranslation()
   const [github, setGithub] = useState({ clientId: '', clientSecret: '', redirectUri: '', allowlist: '' })
   const [cloudflare, setCloudflare] = useState({ clientId: '', clientSecret: '', redirectUri: '', scope: '' })
@@ -781,7 +779,7 @@ function OauthPanel({ settings, onChange, onAction }: { settings: OauthSettings 
   const sourceLabel = (source: OauthSettings['github']['source']) => source === 'database' ? t('settings.oauth.sourceDatabase') : source === 'environment' ? t('settings.oauth.sourceEnvironment') : t('settings.oauth.sourceNone')
   const sourceTone = (source: OauthSettings['github']['source']) => source === 'database' ? 'success' : source === 'environment' ? 'warning' : 'neutral'
   const save = async (provider: OauthProvider) => {
-    if (!settings) return onAction(t('settings.oauth.notConnected'))
+    if (!settings) return onAction('warning', t('settings.oauth.notConnected'))
     setSaving(provider)
     try {
       const next = provider === 'github'
@@ -790,9 +788,9 @@ function OauthPanel({ settings, onChange, onAction }: { settings: OauthSettings 
       onChange(next)
       if (provider === 'github') setGithub((current) => ({ ...current, clientSecret: '' }))
       else setCloudflare((current) => ({ ...current, clientSecret: '' }))
-      onAction(t('settings.oauth.saved'))
+      onAction('success', t('settings.oauth.saved'))
     } catch {
-      onAction(t('settings.oauth.saveFailed'))
+      onAction('error', t('settings.oauth.saveFailed'))
     } finally {
       setSaving(null)
     }
@@ -802,9 +800,9 @@ function OauthPanel({ settings, onChange, onAction }: { settings: OauthSettings 
     setSaving(provider)
     try {
       onChange(await revokeOauthSettings(provider))
-      onAction(t('settings.oauth.resetDone'))
+      onAction('success', t('settings.oauth.resetDone'))
     } catch {
-      onAction(t('settings.oauth.resetFailed'))
+      onAction('error', t('settings.oauth.resetFailed'))
     } finally {
       setSaving(null)
     }
@@ -812,7 +810,7 @@ function OauthPanel({ settings, onChange, onAction }: { settings: OauthSettings 
   return <div className="panel settings-panel"><div className="settings-heading"><div className="settings-icon"><KeyRound size={18} /></div><div><h2>{t('settings.oauth.title')}</h2><p>{t('settings.oauth.description')}</p></div><StatusBadge tone={settings ? (settings.github.configured || settings.cloudflare.configured ? 'success' : 'neutral') : 'neutral'}>{settings ? t('settings.oauth.configuredCount', { count: Number(settings.github.configured) + Number(settings.cloudflare.configured) }) : t('settings.oauth.unknown')}</StatusBadge></div>{settings?.unreadable && <div className="notice-bar compact oauth-notice"><div className="notice-icon"><AlertCircle size={16} /></div><div><strong>{t('settings.oauth.unreadable')}</strong></div></div>}{settings && !settings.sessionSecretConfigured && <div className="notice-bar compact oauth-notice"><div className="notice-icon"><AlertCircle size={16} /></div><div><strong>{t('settings.oauth.sessionSecretMissing')}</strong></div></div>}<div className="oauth-block"><div className="oauth-block-heading"><div><h3>{t('settings.oauth.githubTitle')}</h3><p>{t('settings.oauth.githubDescription')}</p></div><StatusBadge tone={sourceTone(settings?.github.source ?? null)}>{sourceLabel(settings?.github.source ?? null)}</StatusBadge></div><div className="form-grid"><label>{t('settings.oauth.clientId')}<input value={github.clientId} onChange={(event) => setGithub((current) => ({ ...current, clientId: event.target.value }))} placeholder="Iv1.0123456789abcdef" disabled={!settings || saving !== null} /></label><label>{t('settings.oauth.clientSecret')}<input type="password" value={github.clientSecret} onChange={(event) => setGithub((current) => ({ ...current, clientSecret: event.target.value }))} placeholder={settings?.github.secretConfigured ? t('settings.oauth.secretPlaceholder') : t('settings.oauth.secretPlaceholderNew')} disabled={!settings || saving !== null} /></label><label>{t('settings.oauth.redirectUri')}<input value={github.redirectUri} onChange={(event) => setGithub((current) => ({ ...current, redirectUri: event.target.value }))} placeholder={`${window.location.origin}/auth/github/callback`} disabled={!settings || saving !== null} /></label><label>{t('settings.oauth.allowlist')}<input value={github.allowlist} onChange={(event) => setGithub((current) => ({ ...current, allowlist: event.target.value }))} placeholder="octocat, admin@example.com" disabled={!settings || saving !== null} /></label></div><p className="form-hint">{t('settings.oauth.allowlistHint')}</p><div className="settings-actions"><button className="button primary" onClick={() => void save('github')} disabled={!settings || saving !== null}>{saving === 'github' ? t('common.saving') : t('settings.oauth.save')}<Check size={14} /></button>{settings?.github.source === 'database' && <button className="button secondary" onClick={() => void reset('github')} disabled={saving !== null}>{t('settings.oauth.reset')}</button>}</div></div><div className="oauth-block"><div className="oauth-block-heading"><div><h3>{t('settings.oauth.cloudflareTitle')}</h3><p>{t('settings.oauth.cloudflareDescription')}</p></div><StatusBadge tone={sourceTone(settings?.cloudflare.source ?? null)}>{sourceLabel(settings?.cloudflare.source ?? null)}</StatusBadge></div><div className="form-grid"><label>{t('settings.oauth.clientId')}<input value={cloudflare.clientId} onChange={(event) => setCloudflare((current) => ({ ...current, clientId: event.target.value }))} disabled={!settings || saving !== null} /></label><label>{t('settings.oauth.clientSecret')}<input type="password" value={cloudflare.clientSecret} onChange={(event) => setCloudflare((current) => ({ ...current, clientSecret: event.target.value }))} placeholder={settings?.cloudflare.secretConfigured ? t('settings.oauth.secretPlaceholder') : t('settings.oauth.secretPlaceholderNew')} disabled={!settings || saving !== null} /></label><label>{t('settings.oauth.redirectUri')}<input value={cloudflare.redirectUri} onChange={(event) => setCloudflare((current) => ({ ...current, redirectUri: event.target.value }))} placeholder={`${window.location.origin}/auth/cloudflare/callback`} disabled={!settings || saving !== null} /></label><label>{t('settings.oauth.scope')}<input value={cloudflare.scope} onChange={(event) => setCloudflare((current) => ({ ...current, scope: event.target.value }))} disabled={!settings || saving !== null} /></label></div><div className="settings-actions"><button className="button primary" onClick={() => void save('cloudflare')} disabled={!settings || saving !== null}>{saving === 'cloudflare' ? t('common.saving') : t('settings.oauth.save')}<Check size={14} /></button>{settings?.cloudflare.source === 'database' && <button className="button secondary" onClick={() => void reset('cloudflare')} disabled={saving !== null}>{t('settings.oauth.reset')}</button>}</div></div></div>
 }
 
-function InvitePanel({ invites, onChange, onAction }: { invites: ApiInvite[] | null; onChange: (invites: ApiInvite[]) => void; onAction: (message: string) => void }) {
+function InvitePanel({ invites, onChange, onAction }: { invites: ApiInvite[] | null; onChange: (invites: ApiInvite[]) => void; onAction: Notify }) {
   const { t } = useTranslation()
   const [email, setEmail] = useState('')
   const [githubLogin, setGithubLogin] = useState('')
@@ -823,7 +821,7 @@ function InvitePanel({ invites, onChange, onAction }: { invites: ApiInvite[] | n
   const refresh = async () => onChange(await fetchInvites())
   const create = async () => {
     if (!email.trim() && !githubLogin.trim()) {
-      onAction(t('settings.invite.identityRequired'))
+      onAction('warning', t('settings.invite.identityRequired'))
       return
     }
     setSaving(true)
@@ -833,9 +831,9 @@ function InvitePanel({ invites, onChange, onAction }: { invites: ApiInvite[] | n
       setEmail('')
       setGithubLogin('')
       await refresh()
-      onAction(result.emailSent === false && email.trim() ? t('settings.invite.createdEmailFailed') : t('settings.invite.created'))
+      onAction(result.emailSent === false && email.trim() ? 'warning' : 'success', result.emailSent === false && email.trim() ? t('settings.invite.createdEmailFailed') : t('settings.invite.created'))
     } catch (error) {
-      onAction(errorMessage(error, 'settings.invite.createFailed'))
+      onAction('error', errorMessage(error, 'settings.invite.createFailed'))
     } finally {
       setSaving(false)
     }
@@ -845,20 +843,20 @@ function InvitePanel({ invites, onChange, onAction }: { invites: ApiInvite[] | n
     try {
       await revokeInvite(invite.id)
       await refresh()
-      onAction(t('settings.invite.revoked'))
+      onAction('success', t('settings.invite.revoked'))
     } catch (error) {
-      onAction(errorMessage(error, 'settings.invite.revokeFailed'))
+      onAction('error', errorMessage(error, 'settings.invite.revokeFailed'))
     }
   }
   const copy = async () => {
     if (!latestUrl) return
     await navigator.clipboard.writeText(latestUrl)
-    onAction(t('settings.invite.copied'))
+    onAction('success', t('settings.invite.copied'))
   }
   return <div className="panel settings-panel"><div className="settings-heading"><div className="settings-icon"><Users size={18} /></div><div><h2>{t('settings.invite.title')}</h2><p>{invites ? t('settings.invite.description') : t('settings.invite.descriptionUnavailable')}</p></div><StatusBadge tone={invites ? 'success' : 'neutral'}>{invites ? t('settings.invite.count', { count: invites.length }) : t('settings.invite.unknown')}</StatusBadge></div><div className="form-grid"><label>{t('settings.invite.email')}<input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="member@example.com" disabled={!invites || saving} /></label><label>{t('settings.invite.github')}<input value={githubLogin} onChange={(event) => setGithubLogin(event.target.value)} placeholder="github-login" disabled={!invites || saving} /></label><label>{t('settings.invite.expiresIn')}<input type="number" min="1" max="720" value={expiresInHours} onChange={(event) => setExpiresInHours(event.target.value)} disabled={!invites || saving} /></label></div><div className="settings-actions"><button className="button primary" onClick={() => void create()} disabled={!invites || saving}>{t('settings.invite.create')}<Plus size={14} /></button>{latestUrl && <><input className="invite-url" value={latestUrl} readOnly aria-label={t('settings.invite.newLink')} /><button className="button secondary" onClick={() => void copy()}><Copy size={14} />{t('settings.invite.copy')}</button></>}</div>{invites === null ? <div className="empty-panel"><div className="empty-illustration"><Users size={20} /></div><h3>{t('settings.invite.emptyTitle')}</h3><p>{t('settings.invite.emptyBody')}</p></div> : invites.length === 0 ? <div className="empty-panel"><div className="empty-illustration"><Users size={20} /></div><h3>{t('settings.invite.noInvitesTitle')}</h3><p>{t('settings.invite.noInvitesBody')}</p></div> : <div className="table-wrap"><table><thead><tr><th>{t('settings.invite.columnIdentity')}</th><th>{t('settings.invite.columnStatus')}</th><th>{t('settings.invite.columnExpires')}</th><th /></tr></thead><tbody>{invites.map((invite) => <tr key={invite.id}><td><div className="cell-title"><div className="table-icon"><Users size={15} /></div><div><strong>{invite.github_login || invite.email || t('settings.invite.noIdentity')}</strong><small>{invite.email || t('settings.invite.noEmail')}</small></div></div></td><td><StatusBadge tone={invite.status === 'pending' ? 'warning' : invite.status === 'used' ? 'success' : 'neutral'}>{t(`status.${invite.status}`, { defaultValue: invite.status })}</StatusBadge></td><td>{formatDateTime(invite.expires_at)}</td><td>{invite.status === 'pending' && <button className="row-action" onClick={() => void revoke(invite)} aria-label={t('settings.invite.revoke')} title={t('settings.invite.revoke')}><X size={15} /></button>}</td></tr>)}</tbody></table></div>}</div>
 }
 
-function SmtpPanel({ settings, onChange, onAction }: { settings: SmtpSettings | null; onChange: (settings: SmtpSettings) => void; onAction: (message: string) => void }) {
+function SmtpPanel({ settings, onChange, onAction }: { settings: SmtpSettings | null; onChange: (settings: SmtpSettings) => void; onAction: Notify }) {
   const { t } = useTranslation()
   const [form, setForm] = useState({ host: '', port: '587', secure: false, username: '', password: '', authType: 'plain' as 'plain' | 'login' | 'cram-md5', from: '', fromName: '', replyTo: '', testTo: '' })
   const [saving, setSaving] = useState(false)
@@ -869,18 +867,18 @@ function SmtpPanel({ settings, onChange, onAction }: { settings: SmtpSettings | 
   }, [settings])
   const update = (key: string, value: string | boolean) => setForm((current) => ({ ...current, [key]: value }))
   const save = async () => {
-    if (!settings) return onAction(t('settings.smtp.notConnectedSave'))
+    if (!settings) return onAction('warning', t('settings.smtp.notConnectedSave'))
     setSaving(true)
     try {
       onChange(await updateSmtpSettings({ host: form.host, port: Number(form.port), secure: form.secure, username: form.username, password: form.password, authType: form.authType, from: form.from, fromName: form.fromName, replyTo: form.replyTo }))
       update('password', '')
-      onAction(t('settings.smtp.saved'))
-    } catch { onAction(t('settings.smtp.saveFailed')) } finally { setSaving(false) }
+      onAction('success', t('settings.smtp.saved'))
+    } catch { onAction('error', t('settings.smtp.saveFailed')) } finally { setSaving(false) }
   }
   const test = async () => {
-    if (!settings) return onAction(t('settings.smtp.notConnectedTest'))
+    if (!settings) return onAction('warning', t('settings.smtp.notConnectedTest'))
     setTesting(true)
-    try { await sendSmtpTest(form.testTo); onAction(t('settings.smtp.sent')) } catch { onAction(t('settings.smtp.sendFailed')) } finally { setTesting(false) }
+    try { await sendSmtpTest(form.testTo); onAction('success', t('settings.smtp.sent')) } catch { onAction('error', t('settings.smtp.sendFailed')) } finally { setTesting(false) }
   }
   return <div className="panel settings-panel"><div className="settings-heading"><div className="settings-icon"><Mail size={18} /></div><div><h2>{t('settings.smtp.title')}</h2><p>{settings ? t('settings.smtp.description') : t('settings.smtp.descriptionUnavailable')}</p></div><StatusBadge tone={settings?.configured ? 'success' : 'neutral'}>{settings?.configured ? t('settings.smtp.configured') : settings ? t('settings.smtp.notConfigured') : t('settings.smtp.unknown')}</StatusBadge></div><div className="form-grid"><label>{t('settings.smtp.host')}<input value={form.host} onChange={(event) => update('host', event.target.value)} placeholder="smtp.example.com" disabled={!settings} /></label><label>{t('settings.smtp.port')}<input type="number" min="1" max="65535" value={form.port} onChange={(event) => update('port', event.target.value)} disabled={!settings} /></label><label>{t('settings.smtp.username')}<input value={form.username} onChange={(event) => update('username', event.target.value)} disabled={!settings} /></label><label>{t('settings.smtp.password')}<input type="password" value={form.password} onChange={(event) => update('password', event.target.value)} placeholder={settings?.configured ? t('settings.smtp.passwordPlaceholder') : t('settings.smtp.passwordPlaceholderNew')} disabled={!settings} /></label><label>{t('settings.smtp.authType')}<select value={form.authType} onChange={(event) => update('authType', event.target.value)} disabled={!settings}><option value="plain">PLAIN</option><option value="login">LOGIN</option><option value="cram-md5">CRAM-MD5</option></select></label><label>{t('settings.smtp.from')}<input type="email" value={form.from} onChange={(event) => update('from', event.target.value)} placeholder="noreply@example.com" disabled={!settings} /></label><label>{t('settings.smtp.fromName')}<input value={form.fromName} onChange={(event) => update('fromName', event.target.value)} disabled={!settings} /></label><label>{t('settings.smtp.replyTo')}<input type="email" value={form.replyTo} onChange={(event) => update('replyTo', event.target.value)} disabled={!settings} /></label></div><div className="smtp-options"><label className="check-row"><input type="checkbox" checked={form.secure} onChange={(event) => update('secure', event.target.checked)} disabled={!settings} />{t('settings.smtp.secure')}</label><span className="form-hint">{t('settings.smtp.hint')}</span></div><div className="settings-actions"><button className="button primary" onClick={save} disabled={saving || !settings}>{saving ? t('common.saving') : t('settings.smtp.save')}<Check size={14} /></button><div className="smtp-test"><input value={form.testTo} onChange={(event) => update('testTo', event.target.value)} placeholder={t('settings.smtp.testPlaceholder')} disabled={!settings} /><button className="button secondary" onClick={test} disabled={testing || !settings}>{testing ? t('common.sending') : t('settings.smtp.sendTest')}<ArrowUpRight size={14} /></button></div></div></div>
 }
