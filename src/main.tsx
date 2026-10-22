@@ -68,6 +68,7 @@ import { PAGE_PATHS, docFromPath, pageFromPath, type Page } from './app/routes'
 import i18n, { storeLanguage, type Language } from './i18n'
 import { fetchMe, fetchWorkspaces, setActiveWorkspace as applyActiveWorkspace, currentWorkspaceId, type ApiMe, type Workspace } from './api'
 import { WorkspacePage } from './features/workspaces/WorkspacePage'
+import { AuthLoadingScreen, LoginPage } from './features/auth/AuthScreen'
 import { ApiError, assignDomain, checkPluginHealth, commandPlugin, createInvite, createRegistrationCode, fetchAccessLogs, fetchAudit, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchInvites, fetchLocalUsage, fetchOauthSettings, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchPluginDetails, fetchServerDetails, fetchServers, fetchSmtpSettings, revokeInvite, syncServer, type ApiAccessLog, type ApiAudit, type ApiDomain, type ApiInvite, type ApiOverview, type ApiPlugin, type ApiPluginDetail, type ApiServer, type ApiServerDetail, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type OauthSettings, type PlatformSettings, type PluginAction, type PluginHealthResult, type SmtpSettings, type UsageBreakdownEntry, type UsageSnapshot, type WorkspaceRole, updatePlatformSettings } from './api'
 
 type Theme = 'dark' | 'light' | 'system'
@@ -110,27 +111,6 @@ const formatDateTime = (value: string) => new Date(value).toLocaleString(current
 const formatNumber = (value: number) => value.toLocaleString(currentLocale())
 function IconButton({ label, children, onClick }: { label: string; children: React.ReactNode; onClick?: () => void }) {
   return <button className="icon-button" aria-label={label} title={label} onClick={onClick}>{children}</button>
-}
-
-function GithubMark({ size = 16 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
-      <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z" />
-    </svg>
-  )
-}
-
-function AuthLoading() {
-  const { t } = useTranslation()
-  return <div className="auth-screen"><div className="auth-card"><div className="brand-mark"><Network size={17} strokeWidth={2.4} /></div><h1>{t('auth.checkingTitle')}</h1><p>{t('auth.checkingBody')}</p><div className="loading-line" /></div></div>
-}
-
-function LoginPage() {
-  const { t } = useTranslation()
-  const invite = new URLSearchParams(window.location.search).get('invite')
-  const authError = new URLSearchParams(window.location.search).get('auth_error')
-  const startUrl = `/auth/github/start${invite ? `?invite=${encodeURIComponent(invite)}` : ''}`
-  return <div className="auth-screen"><div className="auth-card"><div className="auth-brand"><div className="brand-mark"><Network size={17} strokeWidth={2.4} /></div><div><strong>Plugmesh</strong><span>{t('brand.caption')}</span></div></div><div className="auth-icon"><Code2 size={22} /></div><h1>{invite ? t('auth.inviteTitle') : t('auth.loginTitle')}</h1><p>{invite ? t('auth.inviteBody') : t('auth.loginBody')}</p>{authError && <div className="auth-error"><AlertCircle size={14} />{authError}</div>}<a className="github-button" href={startUrl}><GithubMark size={16} />{t('auth.github')}<ArrowUpRight size={14} /></a><span className="auth-note"><LockKeyhole size={13} />{t('auth.note')}</span></div></div>
 }
 
 function downloadCsv(filename: string, headers: string[], rows: Array<Array<string | number | null>>) {
@@ -543,8 +523,8 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
     notify('success', t('toast.auditExported', { count: rows.length }))
   }
 
-  if (authEnabled && authState === 'loading') return <AuthLoading />
-  if (authEnabled && authState === 'anonymous') return <LoginPage />
+  if (authEnabled && authState === 'loading') return <AuthLoadingScreen mode={effectiveTheme} />
+  if (authEnabled && authState === 'anonymous') return <LoginPage mode={effectiveTheme} />
   if (!page && !docPage) return <Navigate to="/" replace />
 
   return (
@@ -991,7 +971,7 @@ function DetailModal({ detail, data, loading, error, healthLoading, actionLoadin
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [onClose])
-  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><div className="modal detail-modal" role="dialog" aria-modal="true" aria-label={title}><div className="modal-head"><div><h2>{title}</h2><p>{t('detail.subtitle')}</p></div><IconButton label={t('detail.close')} onClick={onClose}><X size={17} /></IconButton></div>{loading && <div className="detail-loading"><RefreshCw size={18} className="spin" />{t('detail.loading')}</div>}{error && <div className="auth-error"><AlertCircle size={14} />{translateError(error)}</div>}{!loading && !error && data?.kind === 'server' && <ServerDetailContent value={data.value} onOpenPlugin={onOpenPlugin} />}{!loading && !error && data?.kind === 'plugin' && <PluginDetailContent value={data.value} healthLoading={healthLoading} actionLoading={actionLoading} onHealth={onHealth} onAction={onAction} />}</div></div>
+  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><div className="modal detail-modal" role="dialog" aria-modal="true" aria-label={title}><div className="modal-head"><div><h2>{title}</h2><p>{t('detail.subtitle')}</p></div><IconButton label={t('detail.close')} onClick={onClose}><X size={17} /></IconButton></div>{loading && <div className="detail-loading"><RefreshCw size={18} className="spin" />{t('detail.loading')}</div>}{error && <div className="inline-error"><AlertCircle size={14} />{translateError(error)}</div>}{!loading && !error && data?.kind === 'server' && <ServerDetailContent value={data.value} onOpenPlugin={onOpenPlugin} />}{!loading && !error && data?.kind === 'plugin' && <PluginDetailContent value={data.value} healthLoading={healthLoading} actionLoading={actionLoading} onHealth={onHealth} onAction={onAction} />}</div></div>
 }
 
 function ServerDetailContent({ value, onOpenPlugin }: { value: ApiServerDetail; onOpenPlugin: (id: string) => void }) {
@@ -1067,7 +1047,7 @@ function Modal({ type, plugins, onClose, onConfirm }: { type: 'server' | 'domain
     }
   }
 
-  return <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget && !submitting) onClose() }}><div className="modal" role="dialog" aria-modal="true" aria-label={content.title}><div className="modal-head"><div><h2>{content.title}</h2><p>{content.description}</p></div><IconButton label={t('modal.close')} onClick={onClose}><X size={17} /></IconButton></div>{result?.kind === 'registration' && <div className="code-callout"><span>{t('modal.codeExpires', { time: formatDateTime(result.expiresAt) })}</span><div className="code-value"><strong>{result.code}</strong><button className="row-action" onClick={() => void copyCode(result.code)} aria-label={t('modal.copyCode')} title={t('modal.copyCode')}><Copy size={15} /></button></div></div>}{result?.kind === 'plugin' && <div className="empty-panel"><div className="empty-illustration"><Check size={22} /></div><h3>{t('modal.loadConfirmed')}</h3><p>{t('modal.loadConfirmedState', { state: result.state })}</p></div>}{result?.kind === 'domain' && <div className="empty-panel"><div className="empty-illustration"><Check size={22} /></div><h3>{t('modal.domainAssigned')}</h3><p>{result.hostname}</p></div>}{!result && type === 'server' && <div className="empty-panel"><div className="empty-illustration"><LockKeyhole size={22} /></div><h3>{t('modal.generateCode')}</h3><p>{t('modal.codeHint')}</p></div>}{!result && type !== 'server' && <>{candidates.length > 0 ? <label className="modal-field">{t('modal.pluginInstance')}<Select autoFocus aria-label={t('modal.pluginInstance')} value={selectedPluginId || undefined} onChange={setSelectedPluginId} placeholder={t('modal.selectPlugin')} options={candidates.map((plugin) => ({ value: plugin.id, label: `${plugin.name} · ${plugin.plugin_id} · ${plugin.server_name}` }))} showSearch optionFilterProp="label" style={{ width: '100%' }} /></label> : <div className="empty-panel"><div className="empty-illustration"><AlertCircle size={22} /></div><h3>{type === 'plugin' ? t('modal.noLoadable') : t('modal.noAssignable')}</h3><p>{type === 'plugin' ? t('modal.noLoadableHint') : t('modal.noAssignableHint')}</p></div>}{type === 'domain' && candidates.length > 0 && <label className="modal-field">{t('modal.prefix')}<input autoFocus value={value} onChange={(event) => setValue(event.target.value)} placeholder={t('modal.prefixPlaceholder')} maxLength={48} /><span className="field-hint">{t('modal.prefixHint')}</span></label>}</>}{error && <div className="auth-error"><AlertCircle size={14} />{translateError(error)}</div>}<div className="modal-actions"><button className="button secondary" onClick={onClose} disabled={submitting}>{t('modal.closeAction')}</button>{!result && <button className="button primary" onClick={() => void submit()} disabled={submitting || (type !== 'server' && (!selectedPluginId || candidates.length === 0))}>{submitting ? t('common.submitting') : type === 'server' ? t('modal.submitServer') : type === 'domain' ? t('modal.submitDomain') : t('modal.submitPlugin')}<ArrowUpRight size={14} /></button>}</div></div></div>
+  return <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget && !submitting) onClose() }}><div className="modal" role="dialog" aria-modal="true" aria-label={content.title}><div className="modal-head"><div><h2>{content.title}</h2><p>{content.description}</p></div><IconButton label={t('modal.close')} onClick={onClose}><X size={17} /></IconButton></div>{result?.kind === 'registration' && <div className="code-callout"><span>{t('modal.codeExpires', { time: formatDateTime(result.expiresAt) })}</span><div className="code-value"><strong>{result.code}</strong><button className="row-action" onClick={() => void copyCode(result.code)} aria-label={t('modal.copyCode')} title={t('modal.copyCode')}><Copy size={15} /></button></div></div>}{result?.kind === 'plugin' && <div className="empty-panel"><div className="empty-illustration"><Check size={22} /></div><h3>{t('modal.loadConfirmed')}</h3><p>{t('modal.loadConfirmedState', { state: result.state })}</p></div>}{result?.kind === 'domain' && <div className="empty-panel"><div className="empty-illustration"><Check size={22} /></div><h3>{t('modal.domainAssigned')}</h3><p>{result.hostname}</p></div>}{!result && type === 'server' && <div className="empty-panel"><div className="empty-illustration"><LockKeyhole size={22} /></div><h3>{t('modal.generateCode')}</h3><p>{t('modal.codeHint')}</p></div>}{!result && type !== 'server' && <>{candidates.length > 0 ? <label className="modal-field">{t('modal.pluginInstance')}<Select autoFocus aria-label={t('modal.pluginInstance')} value={selectedPluginId || undefined} onChange={setSelectedPluginId} placeholder={t('modal.selectPlugin')} options={candidates.map((plugin) => ({ value: plugin.id, label: `${plugin.name} · ${plugin.plugin_id} · ${plugin.server_name}` }))} showSearch optionFilterProp="label" style={{ width: '100%' }} /></label> : <div className="empty-panel"><div className="empty-illustration"><AlertCircle size={22} /></div><h3>{type === 'plugin' ? t('modal.noLoadable') : t('modal.noAssignable')}</h3><p>{type === 'plugin' ? t('modal.noLoadableHint') : t('modal.noAssignableHint')}</p></div>}{type === 'domain' && candidates.length > 0 && <label className="modal-field">{t('modal.prefix')}<input autoFocus value={value} onChange={(event) => setValue(event.target.value)} placeholder={t('modal.prefixPlaceholder')} maxLength={48} /><span className="field-hint">{t('modal.prefixHint')}</span></label>}</>}{error && <div className="inline-error"><AlertCircle size={14} />{translateError(error)}</div>}<div className="modal-actions"><button className="button secondary" onClick={onClose} disabled={submitting}>{t('modal.closeAction')}</button>{!result && <button className="button primary" onClick={() => void submit()} disabled={submitting || (type !== 'server' && (!selectedPluginId || candidates.length === 0))}>{submitting ? t('common.submitting') : type === 'server' ? t('modal.submitServer') : type === 'domain' ? t('modal.submitDomain') : t('modal.submitPlugin')}<ArrowUpRight size={14} /></button>}</div></div></div>
 }
 
 function Root() {
@@ -1083,6 +1063,11 @@ function Root() {
   useEffect(() => {
     window.localStorage.setItem('plugmesh-theme', theme)
   }, [theme])
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('theme-light', effectiveTheme === 'light')
+    document.documentElement.style.colorScheme = effectiveTheme
+  }, [effectiveTheme])
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: light)')

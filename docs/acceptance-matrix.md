@@ -85,9 +85,9 @@
 在当前 Linux 环境中已通过：
 
 ```text
-npm run ui:conventions                 13 个 TSX 文件，0 处违规
+npm run ui:conventions                 14 个 TSX 文件，0 处违规
 npm run build
-npm run ui:smoke                         75 passed（preview 7 + worker-mock 24 + a11y 26 + screenshots 18）
+npm run ui:smoke                         80 passed（preview 7 + worker-mock 24 + a11y 26 + screenshots 18 + auth 5）
 npm run native-ui:smoke                  5 passed
 npm run native-ui:smoke:wine -- /tmp/build-win
                                          5 passed（Wine 5.0，指向 Windows 交叉编译产物；默认目录为 native-server/build-win）

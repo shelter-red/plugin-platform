@@ -30,8 +30,8 @@ for (const file of files) {
     if (name === 'button' && !isLiveButton(text) && !inRanges(offset, dropdownRanges)) {
       report(at, 'dead-control', '原生 <button> 必须有 onClick/disabled/type="submit"，或作为 Dropdown 触发器')
     }
-    if (name === 'Button' && !isLiveButton(text) && !inRanges(offset, dropdownRanges)) {
-      report(at, 'dead-control', 'AntD <Button> 必须有 onClick/disabled/htmlType="submit"，或作为 Dropdown 触发器')
+    if (name === 'Button' && !isLiveButton(text) && !hasAttr(text, 'href') && !inRanges(offset, dropdownRanges)) {
+      report(at, 'dead-control', 'AntD <Button> 必须有 onClick/href/disabled/htmlType="submit"，或作为 Dropdown 触发器')
     }
     if (name === 'Link' && !hasAttr(text, 'to') && !hasAttr(text, 'href') && !hasAttr(text, 'onClick')) {
       report(at, 'dead-link', '<Link> 必须有 to/href/onClick')

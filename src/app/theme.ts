@@ -30,6 +30,8 @@ export function createAppTheme(mode: AppThemeMode): ThemeConfig {
       Menu: { itemBg: 'transparent', itemHeight: 34, itemBorderRadius: 6, itemMarginInline: 0, subMenuItemBg: 'transparent' },
       Select: { optionSelectedBg: dark ? 'rgba(16,185,129,.16)' : 'rgba(5,150,105,.12)' },
       Table: { headerBg: 'transparent' },
+      // 主按钮实心背景统一用可满足 4.5:1 对比度的深绿，与 --primary-solid 保持一致。
+      Button: { colorPrimary: '#047857', colorPrimaryHover: '#065f46', colorPrimaryActive: '#064e3b' },
     },
   }
 }
