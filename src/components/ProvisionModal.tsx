@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { AlertCircle, ArrowUpRight, Check, Copy, LockKeyhole, X } from 'lucide-react'
-import { Select } from 'antd'
+import { Alert, Button, Input, Modal, Result, Select, Typography } from 'antd'
+import { AlertCircle, Copy, LockKeyhole } from 'lucide-react'
 import type { ApiPlugin } from '../api'
 import { errorMessage, translateError } from '../errors'
 import { formatDateTime } from '../lib/format'
-import { IconButton } from './IconButton'
 
 export type ModalInput = { prefix?: string; pluginInstanceId?: string }
 export type ModalResult = { kind: 'registration'; code: string; expiresAt: string } | { kind: 'plugin'; state: string } | { kind: 'domain'; hostname: string }
@@ -60,5 +59,38 @@ export function ProvisionModal({ type, plugins, onClose, onConfirm }: { type: 's
     }
   }
 
-  return <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget && !submitting) onClose() }}><div className="modal" role="dialog" aria-modal="true" aria-label={content.title}><div className="modal-head"><div><h2>{content.title}</h2><p>{content.description}</p></div><IconButton label={t('modal.close')} onClick={onClose}><X size={17} /></IconButton></div>{result?.kind === 'registration' && <div className="code-callout"><span>{t('modal.codeExpires', { time: formatDateTime(result.expiresAt) })}</span><div className="code-value"><strong>{result.code}</strong><button className="row-action" onClick={() => void copyCode(result.code)} aria-label={t('modal.copyCode')} title={t('modal.copyCode')}><Copy size={15} /></button></div></div>}{result?.kind === 'plugin' && <div className="empty-panel"><div className="empty-illustration"><Check size={22} /></div><h3>{t('modal.loadConfirmed')}</h3><p>{t('modal.loadConfirmedState', { state: result.state })}</p></div>}{result?.kind === 'domain' && <div className="empty-panel"><div className="empty-illustration"><Check size={22} /></div><h3>{t('modal.domainAssigned')}</h3><p>{result.hostname}</p></div>}{!result && type === 'server' && <div className="empty-panel"><div className="empty-illustration"><LockKeyhole size={22} /></div><h3>{t('modal.generateCode')}</h3><p>{t('modal.codeHint')}</p></div>}{!result && type !== 'server' && <>{candidates.length > 0 ? <label className="modal-field">{t('modal.pluginInstance')}<Select autoFocus aria-label={t('modal.pluginInstance')} value={selectedPluginId || undefined} onChange={setSelectedPluginId} placeholder={t('modal.selectPlugin')} options={candidates.map((plugin) => ({ value: plugin.id, label: `${plugin.name} · ${plugin.plugin_id} · ${plugin.server_name}` }))} showSearch optionFilterProp="label" style={{ width: '100%' }} /></label> : <div className="empty-panel"><div className="empty-illustration"><AlertCircle size={22} /></div><h3>{type === 'plugin' ? t('modal.noLoadable') : t('modal.noAssignable')}</h3><p>{type === 'plugin' ? t('modal.noLoadableHint') : t('modal.noAssignableHint')}</p></div>}{type === 'domain' && candidates.length > 0 && <label className="modal-field">{t('modal.prefix')}<input autoFocus value={value} onChange={(event) => setValue(event.target.value)} placeholder={t('modal.prefixPlaceholder')} maxLength={48} /><span className="field-hint">{t('modal.prefixHint')}</span></label>}</>}{error && <div className="inline-error"><AlertCircle size={14} />{translateError(error)}</div>}<div className="modal-actions"><button className="button secondary" onClick={onClose} disabled={submitting}>{t('modal.closeAction')}</button>{!result && <button className="button primary" onClick={() => void submit()} disabled={submitting || (type !== 'server' && (!selectedPluginId || candidates.length === 0))}>{submitting ? t('common.submitting') : type === 'server' ? t('modal.submitServer') : type === 'domain' ? t('modal.submitDomain') : t('modal.submitPlugin')}<ArrowUpRight size={14} /></button>}</div></div></div>
+  return (
+    <Modal
+      open
+      className="provision-modal"
+      width={560}
+      maskClosable={!submitting}
+      keyboard={!submitting}
+      onCancel={onClose}
+      destroyOnHidden
+      title={<div className="modal-head"><div><h2>{content.title}</h2><p>{content.description}</p></div></div>}
+      footer={<div className="modal-actions">
+        <Button onClick={onClose} disabled={submitting}>{t('modal.closeAction')}</Button>
+        {!result && <Button type="primary" onClick={() => void submit()} loading={submitting} disabled={type !== 'server' && (!selectedPluginId || candidates.length === 0)}>{submitting ? t('common.submitting') : type === 'server' ? t('modal.submitServer') : type === 'domain' ? t('modal.submitDomain') : t('modal.submitPlugin')}</Button>}
+      </div>}
+    >
+      {result?.kind === 'registration' && <div className="code-callout">
+        <span>{t('modal.codeExpires', { time: formatDateTime(result.expiresAt) })}</span>
+        <div className="code-value">
+          <Typography.Text strong copyable={{ text: result.code, icon: <Copy size={15} />, tooltips: [t('modal.copyCode'), t('modal.copyCode')] }}>{result.code}</Typography.Text>
+        </div>
+        <Button size="small" onClick={() => void copyCode(result.code)} aria-label={t('modal.copyCode')} icon={<Copy size={15} />}>{t('modal.copyCode')}</Button>
+      </div>}
+      {result?.kind === 'plugin' && <Result status="success" title={t('modal.loadConfirmed')} subTitle={t('modal.loadConfirmedState', { state: result.state })} />}
+      {result?.kind === 'domain' && <Result status="success" title={t('modal.domainAssigned')} subTitle={result.hostname} />}
+      {!result && type === 'server' && <Result icon={<LockKeyhole size={40} />} title={t('modal.generateCode')} subTitle={t('modal.codeHint')} />}
+      {!result && type !== 'server' && <>
+        {candidates.length > 0
+          ? <label className="modal-field">{t('modal.pluginInstance')}<Select autoFocus aria-label={t('modal.pluginInstance')} value={selectedPluginId || undefined} onChange={setSelectedPluginId} placeholder={t('modal.selectPlugin')} options={candidates.map((plugin) => ({ value: plugin.id, label: `${plugin.name} · ${plugin.plugin_id} · ${plugin.server_name}` }))} showSearch optionFilterProp="label" style={{ width: '100%' }} /></label>
+          : <Result status="info" icon={<AlertCircle size={40} />} title={type === 'plugin' ? t('modal.noLoadable') : t('modal.noAssignable')} subTitle={type === 'plugin' ? t('modal.noLoadableHint') : t('modal.noAssignableHint')} />}
+        {type === 'domain' && candidates.length > 0 && <label className="modal-field">{t('modal.prefix')}<Input autoFocus value={value} onChange={(event) => setValue(event.target.value)} placeholder={t('modal.prefixPlaceholder')} maxLength={48} /><span className="field-hint">{t('modal.prefixHint')}</span></label>}
+      </>}
+      {error && <Alert className="modal-error" type="error" showIcon message={translateError(error)} />}
+    </Modal>
+  )
 }

@@ -277,3 +277,16 @@ table { width: 100%; border-collapse: collapse; font-size: 11px; } th { padding:
 .activity-list .ant-list-item + .ant-list-item { border-top: 1px solid var(--line); }
 .resource-card.ant-card .ant-card-body { padding: 15px; }
 .resource-card .ant-progress { margin-top: 16px; }
+
+/* Ant Design 弹窗外壳：保留原有标题/内容排版，去掉自绘遮罩与容器。 */
+.ant-modal .modal-head { margin-bottom: 4px; }
+.ant-modal .modal-head h2 { margin: 0; color: var(--text); font-size: 15px; }
+.ant-modal .modal-head p { margin: 6px 0 0; color: var(--text-3); font-size: 10px; line-height: 1.5; }
+.ant-modal .ant-modal-body { padding-top: 16px; }
+.ant-modal .ant-modal-footer { margin-top: 16px; }
+.ant-modal-footer .modal-actions { margin-top: 0; }
+.ant-modal .modal-error { margin-top: 14px; }
+.detail-modal .ant-modal-content { max-height: calc(100vh - 40px); overflow: auto; }
+.detail-empty.ant-empty { margin: 0; padding: 14px; border: 1px dashed var(--line); border-radius: 6px; }
+.detail-empty .ant-empty-description { color: var(--text-3); font-size: 10px; }
+.modal-result.ant-result { padding: 12px 0; }
