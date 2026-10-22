@@ -1,6 +1,9 @@
 import { useTranslation } from 'react-i18next'
+import { Button, Table, type TableProps } from 'antd'
 import { Copy, Globe2, Plus, RefreshCw } from 'lucide-react'
 import type { ApiDomain } from '../../api'
+import { EmptyState } from '../../components/EmptyState'
+import { Panel } from '../../components/Panel'
 import { StatusBadge } from '../../components/StatusBadge'
 import type { Notify } from '../../components/ToastProvider'
 
@@ -18,5 +21,35 @@ export function DomainsPage({ domains, loading, onAction, onRefresh, onAssign }:
       onAction('error', t('domains.copyFailed'))
     }
   }
-  return <div className="stack"><div className="panel table-panel"><div className="panel-header"><div><h2>{t('domains.title')}</h2><p>{t('domains.subtitle')}</p></div><button className="button secondary small" onClick={onRefresh} disabled={loading}><RefreshCw size={14} />{t('servers.refresh')}</button></div>{domains.length === 0 ? <div className="empty-panel"><div className="empty-illustration"><Globe2 size={22} /></div><h3>{t('domains.emptyTitle')}</h3><p>{t('domains.emptyBody')}</p></div> : <div className="domain-list">{domains.map((domain) => <div className="domain-row" key={domain.id}><div className="domain-icon"><Globe2 size={17} /></div><div className="domain-main"><strong>{domain.hostname}</strong><span>{domain.plugin_name} · {domain.plugin_instance_id}</span></div><StatusBadge tone={domain.status === 'online' ? 'success' : 'warning'}>{t(`status.${domain.status}`, { defaultValue: domain.status })}</StatusBadge><span className="domain-latency">{domain.status === 'online' ? t('domains.available') : t('domains.waiting')}</span><button className="row-action" onClick={() => void copyDomain(domain.hostname)} aria-label={t('domains.copy', { hostname: domain.hostname })} title={t('domains.copy', { hostname: domain.hostname })}><Copy size={16} /></button></div>)}</div>}</div><div className="empty-panel"><div className="empty-illustration"><Globe2 size={22} /></div><h3>{t('domains.assignTitle')}</h3><p>{t('domains.assignBody')}</p><button className="button primary" onClick={onAssign}><Plus size={15} />{t('domains.assign')}</button></div></div>
+  const columns: TableProps<ApiDomain>['columns'] = [
+    {
+      title: t('domains.columnDomain'),
+      dataIndex: 'hostname',
+      render: (_, domain) => <div className="cell-title"><div className="domain-icon"><Globe2 size={15} /></div><div><strong>{domain.hostname}</strong><small>{domain.plugin_name} · {domain.plugin_instance_id}</small></div></div>,
+    },
+    {
+      title: t('domains.columnStatus'),
+      dataIndex: 'status',
+      render: (status: ApiDomain['status']) => <StatusBadge tone={status === 'online' ? 'success' : 'warning'}>{t(`status.${status}`, { defaultValue: status })}</StatusBadge>,
+    },
+    {
+      title: t('domains.columnAvailability'),
+      dataIndex: 'status',
+      render: (status: ApiDomain['status']) => <span className="domain-latency">{status === 'online' ? t('domains.available') : t('domains.waiting')}</span>,
+    },
+    {
+      title: '',
+      key: 'actions',
+      width: 64,
+      render: (_, domain) => <Button type="text" size="small" onClick={() => void copyDomain(domain.hostname)} aria-label={t('domains.copy', { hostname: domain.hostname })} title={t('domains.copy', { hostname: domain.hostname })} icon={<Copy size={16} />} />,
+    },
+  ]
+  return <div className="stack">
+    <Panel className="table-panel" title={t('domains.title')} subtitle={t('domains.subtitle')} extra={<Button size="small" onClick={onRefresh} loading={loading} icon={<RefreshCw size={14} />}>{t('servers.refresh')}</Button>}>
+      {domains.length === 0
+        ? <EmptyState icon={<Globe2 size={22} />} title={t('domains.emptyTitle')} body={t('domains.emptyBody')} />
+        : <Table<ApiDomain> rowKey="id" size="small" columns={columns} dataSource={domains} loading={loading} pagination={false} scroll={{ x: 640 }} rowClassName={() => 'domain-row'} />}
+    </Panel>
+    <EmptyState icon={<Globe2 size={22} />} title={t('domains.assignTitle')} body={t('domains.assignBody')}><Button type="primary" onClick={onAssign} icon={<Plus size={15} />}>{t('domains.assign')}</Button></EmptyState>
+  </div>
 }

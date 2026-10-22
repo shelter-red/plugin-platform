@@ -255,6 +255,9 @@ export default {
     bindTitle: 'Bind a new plugin server',
     bindBody: 'Generate a one-time registration code from the console and finish binding in the server local web UI.',
     bind: 'Generate code',
+    columnServer: 'Server',
+    columnStatus: 'Status',
+    columnLastSeen: 'Last heartbeat',
   },
   plugins: {
     enabled: '{{count}} plugin(s) enabled',
@@ -288,6 +291,9 @@ export default {
     assignTitle: 'Assign a new public domain',
     assignBody: 'The prefix must be unique, at most 48 characters and must not be a reserved word.',
     assign: 'Assign public domain',
+    columnDomain: 'Domain',
+    columnStatus: 'Status',
+    columnAvailability: 'Availability',
   },
   usage: {
     loadFailed: 'Could not read usage',

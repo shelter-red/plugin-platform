@@ -255,6 +255,9 @@ export default {
     bindTitle: '绑定新的插件服务器',
     bindBody: '从管理端生成一次性注册码，在服务器本地 Web UI 中完成绑定。',
     bind: '生成注册码',
+    columnServer: '服务器',
+    columnStatus: '状态',
+    columnLastSeen: '最近心跳',
   },
   plugins: {
     enabled: '已启用 {{count}} 个插件',
@@ -288,6 +291,9 @@ export default {
     assignTitle: '分配新的公开域名',
     assignBody: '域名前缀需要唯一、长度不超过 48 个字符，并避开平台保留字。',
     assign: '分配公开域名',
+    columnDomain: '域名',
+    columnStatus: '状态',
+    columnAvailability: '可用性',
   },
   usage: {
     loadFailed: '用量读取失败',
