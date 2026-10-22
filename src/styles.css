@@ -300,21 +300,24 @@ button {
   margin-left: auto;
   display: none;
 }
+/* AntD Button 默认被内容高度撑不开（32px 固定高），两行文案 37px 会溢出压住文字，
+   这里改回由内容决定高度，并把「头像 + 文案 + 菜单按钮」左对齐排开。 */
 .workspace-switcher {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 9px;
+  height: auto;
+  min-height: 44px;
+  padding: 7px 9px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255,255,255,.035);
-  margin: 0 2px 18px;
   color: var(--text-2);
-  justify-content: center;
-  margin-left: 0;
-  margin-right: 0;
+  justify-content: flex-start;
+  margin: 0 0 18px;
   width: 100%;
   font: inherit;
+  line-height: 1.35;
   text-align: left;
   cursor: pointer;
 }
@@ -338,13 +341,19 @@ button {
   gap: 2px;
 }
 .workspace-copy strong {
+  overflow: hidden;
   font-size: 11px;
   color: var(--text);
   font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .workspace-copy span {
+  overflow: hidden;
   font-size: 10px;
   color: var(--text-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .nav-area {
   display: flex;
@@ -456,12 +465,15 @@ button {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 8px 0;
+  height: auto;
+  min-height: 44px;
+  padding: 7px 9px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255,255,255,.035);
-  justify-content: center;
+  justify-content: flex-start;
   width: 100%;
+  line-height: 1.35;
   text-align: left;
   color: var(--text-2);
 }
@@ -485,8 +497,11 @@ button {
   gap: 2px;
 }
 .user-copy strong {
+  overflow: hidden;
   font-size: 11px;
   font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .user-copy span {
   overflow: hidden;
@@ -1894,6 +1909,10 @@ input:disabled {
     padding-left: 0;
     padding-right: 0;
   }
+  .workspace-switcher, .user-card {
+    justify-content: center;
+    padding: 8px 0;
+  }
   .brand-link > div:last-child, .workspace-copy, .workspace-switcher > svg, .support-link span, .support-link svg:last-child, .user-copy, .user-card > svg {
     display: none;
   }
@@ -2482,6 +2501,13 @@ input:disabled {
 }
 .oauth-notice.ant-alert {
   margin-top: 16px;
+}
+/* AntD 把图标包进 .ant-btn-icon（display:block），里面的 <svg> 仍是 inline-flex 按基线落位，
+   在 20px 行盒里整体比文字高约 2px；改成 flex 容器后由居中决定位置。 */
+.ant-btn > .ant-btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 /* 浅色主题下 AntD 链接按钮使用更深的品牌绿，满足 4.5:1 对比度。 */
 .theme-light .ant-btn-link.ant-btn-color-link.ant-btn-variant-link {
