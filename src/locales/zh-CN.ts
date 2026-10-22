@@ -135,6 +135,10 @@ export default {
     more: '帮助与协议',
     logout: '退出登录',
     roles: { superAdmin: '超级管理员', member: '成员' },
+    workspaces: '所属工作区',
+    workspacesHint: '你在每个工作区中的角色决定可执行的操作。',
+    workspacesLinkHint: '切换或管理成员请进入工作区页面。',
+    noWorkspaces: '当前账号还没有加入任何工作区。',
   },
   common: {
     notRead: '未读取',

@@ -591,6 +591,9 @@ test('管理端入口可跳转并展示账号与协议页', async ({ page }) => 
   await expect(page.getByRole('heading', { name: 'E2E Admin' })).toBeVisible()
   await expect(page.getByText('超级管理员')).toBeVisible()
   await expect(page.getByText('e2e@example.com').first()).toBeVisible()
+  await expect(page.getByRole('heading', { name: '所属工作区' })).toBeVisible()
+  await expect(page.getByRole('link', { name: /默认工作区/ })).toBeVisible()
+  await expect(page.getByText('所有者').first()).toBeVisible()
 
   await page.getByRole('button', { name: '打开账号菜单' }).click()
   await expect(page.getByRole('menuitem', { name: '退出登录' }).last()).toBeVisible()

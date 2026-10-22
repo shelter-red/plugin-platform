@@ -135,6 +135,10 @@ export default {
     more: 'Help & terms',
     logout: 'Sign out',
     roles: { superAdmin: 'Super admin', member: 'Member' },
+    workspaces: 'Workspaces',
+    workspacesHint: 'Your role in each workspace decides what you can do.',
+    workspacesLinkHint: 'Switch workspaces or manage members from the workspace page.',
+    noWorkspaces: 'This account has not joined any workspace yet.',
   },
   common: {
     notRead: 'Not available',

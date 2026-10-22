@@ -1,6 +1,8 @@
-import { ArrowUpRight, Globe2, KeyRound, LogOut, Mail, UserRound } from 'lucide-react'
+import { ArrowUpRight, Building2, Check, Globe2, KeyRound, LogOut, Mail, UserRound } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import type { Workspace } from '../../api'
+import { StatusBadge } from '../../components/StatusBadge'
 
 export interface AccountUser {
   display_name: string
@@ -8,7 +10,7 @@ export interface AccountUser {
   role?: string
 }
 
-export function AccountPage({ user }: { user: AccountUser | null }) {
+export function AccountPage({ user, workspaces, activeWorkspaceId }: { user: AccountUser | null; workspaces: Workspace[]; activeWorkspaceId: string | null }) {
   const { t } = useTranslation()
   const role = user?.role === 'super_admin' ? t('account.roles.superAdmin') : user?.role === 'member' ? t('account.roles.member') : t('shell.unknownIdentity')
   return <div className="account-page">
@@ -23,6 +25,20 @@ export function AccountPage({ user }: { user: AccountUser | null }) {
         <div><dt><KeyRound size={14} />{t('account.role')}</dt><dd>{role}</dd></div>
         <div><dt><Globe2 size={14} />{t('account.provider')}</dt><dd>{t('account.githubProvider')}</dd></div>
       </dl>
+    </section>
+    <section className="panel account-card">
+      <div className="settings-heading">
+        <div className="settings-icon"><Building2 size={18} /></div>
+        <div><h2>{t('account.workspaces')}</h2><p>{t('account.workspacesHint')}</p></div>
+        <StatusBadge tone="neutral">{t('workspace.count', { count: workspaces.length })}</StatusBadge>
+      </div>
+      {workspaces.length === 0
+        ? <p className="form-hint">{t('account.noWorkspaces')}</p>
+        : <div className="workspace-list">{workspaces.map((workspace) => <Link key={workspace.id} className={`workspace-row ${workspace.id === activeWorkspaceId ? 'selected' : ''}`} to="/workspaces"><span className="workspace-row-name"><Building2 size={15} />{workspace.name}</span><span className="workspace-row-meta">{t(`workspace.roles.${workspace.role}`)}<small>{workspace.slug}</small></span>{workspace.id === activeWorkspaceId && <Check size={15} />}</Link>)}</div>}
+      <div className="settings-actions quota-actions">
+        <span className="form-hint">{t('account.workspacesLinkHint')}</span>
+        <Link className="button secondary" to="/workspaces">{t('workspace.manage')}<ArrowUpRight size={14} /></Link>
+      </div>
     </section>
     <section className="panel account-links">
       <h2>{t('account.more')}</h2>
