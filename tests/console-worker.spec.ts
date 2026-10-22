@@ -459,6 +459,45 @@ test('管理端命令面板跨实体搜索并跳转', async ({ page }) => {
   await expect(palette).toBeHidden()
 })
 
+test('管理端移除背景模糊与背景过渡并使用本地字体', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await mockWorker(page)
+  await page.goto('/')
+  await expect(page.getByText('Worker 数据已连接')).toBeVisible()
+  await page.evaluate(() => document.fonts.ready)
+
+  const audit = await page.evaluate(() => {
+    const blurred = [...document.querySelectorAll<HTMLElement>('*')]
+      .filter((element) => getComputedStyle(element).backdropFilter !== 'none')
+      .map((element) => element.className)
+    const shell = getComputedStyle(document.querySelector('.app-shell')!)
+    const sidebar = getComputedStyle(document.querySelector('.sidebar')!)
+    const externalFonts = performance.getEntriesByType('resource')
+      .map((entry) => entry.name)
+      .filter((name) => /fonts\.(googleapis|gstatic)\.com/.test(name))
+    return {
+      blurred,
+      shellTransition: shell.transitionDuration,
+      sidebarTransition: sidebar.transitionProperty,
+      externalFonts,
+      dmSans: document.fonts.check('12px "DM Sans"'),
+      plexMono: document.fonts.check('12px "IBM Plex Mono"'),
+    }
+  })
+  expect(audit.blurred).toEqual([])
+  expect(audit.shellTransition).toBe('0s')
+  expect(audit.sidebarTransition).toBe('transform')
+  expect(audit.externalFonts).toEqual([])
+  expect(audit.dmSans).toBe(true)
+  expect(audit.plexMono).toBe(true)
+
+  const topbar = page.locator('.topbar')
+  const first = await topbar.screenshot()
+  await page.waitForTimeout(150)
+  const second = await topbar.screenshot()
+  expect(second.equals(first)).toBe(true)
+})
+
 const enabledPlugin = {
   id: 'plugin-1',
   plugin_id: 'demo',
@@ -529,7 +568,7 @@ test('管理端域名分配失败时在弹窗内显示服务端校验错误', as
   await dialog.getByLabel('域名前缀').fill('Bad Prefix')
   await dialog.getByRole('button', { name: '分配域名' }).click()
 
-  await expect(dialog.getByText('域名前缀仅允许小写字母、数字和连字符')).toBeVisible()
+  await expect(dialog.getByText('域名前缀仅允许小写字母、数字和连字符', { exact: true })).toBeVisible()
   await expect(dialog).toBeVisible()
   await expect(dialog.getByRole('button', { name: '分配域名' })).toBeEnabled()
   expect(worker.domainRequests).toEqual([{ pluginInstanceId: 'plugin-1', prefix: 'Bad Prefix' }])

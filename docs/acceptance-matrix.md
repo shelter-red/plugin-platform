@@ -64,6 +64,7 @@
 | 下拉控件统一 Ant Design 主题 | 本地已验证 | `rg "<select" src` 无结果，代码库不再含原生 `select`/`option`；弹窗插件选择、SMTP 认证方式、主题与语言切换统一使用 AntD `Select`，配色由 `ConfigProvider` 的 `darkAlgorithm`/`defaultAlgorithm` 决定，`styles.css` 同步删除原生 `select` 皮肤。`console-worker` 用例在默认暗色主题下打开插件下拉、选择候选并完成加载与域名分配提交，证明下拉在暗色下可见可用；`ui:conventions` 静态审计尚未接入，留待后续步骤。 |
 | 设置页导航滚动联动 | 本地已验证 | 设置分区导航改为 `nav` 语义并 `position: sticky`；`IntersectionObserver` 以 `.page-scroll` 为根同步高亮，滚到底部时兜底高亮最后一项。`console-worker` 用例断言顶部高亮 Cloudflare、滚动到 SMTP 分区高亮「邮件 SMTP」、滚到底部高亮「维护、域名与配额」，且导航始终位于 800px 视口内。 |
 | 命令面板与跨实体搜索跳转 | 本地已验证 | 顶部搜索框改为打开命令面板的按钮，移除了只过滤插件列表的假搜索；`⌘K`/`Ctrl+K` 全局打开，↑↓ 选择、Enter 跳转、Esc 关闭。面板聚合页面、设置分区、服务器、插件、域名、访问日志和审计事件，实体条目同时检索名称与次要信息。`console-worker` 用例断言空查询列出「页面」「设置」与服务器实体，输入「示例插件」命中插件并回车跳到插件实例页，输入「维护」跳到系统设置且导航高亮「维护、域名与配额」，最后按 Esc 关闭。 |
+| 闪烁治理与字体本地打包 | 本地已验证 | 移除 `.auth-card`、`.sidebar`、`.topbar`、`.panel`、`.modal-backdrop` 五处 `backdrop-filter`，删除 `.app-shell` 的背景/前景色过渡、侧栏背景与边框过渡，顶栏改用纯 `var(--bg)`；DM Sans 与 IBM Plex Mono 由 `@fontsource` 按 latin 字重本地打包，`styles.css` 不再 `@import` Google Fonts；`prefers-reduced-motion: reduce` 下动画与过渡压缩到 `.001ms` 并禁用平滑滚动，设置分区跳转同步改用 `scrollBehavior()`。`console-worker` 用例断言全页无任何元素带 `backdrop-filter`、`.app-shell` 过渡时长为 `0s`、侧栏只过渡 `transform`、页面未请求 `fonts.googleapis/gstatic`、`document.fonts.check` 能命中两种本地字体，并断言顶栏间隔 150ms 的两帧截图逐字节一致。 |
 | Cloudflare 授权区块与诊断 | 本地已验证 | `console-worker` 用例断言 Cloudflare 面板拆分为「授权」「OAuth 客户端」两区：账号标识可复制、回调只读可复制、协议参数只读展示 `response_type=code`、`grant_type=authorization_code`、`token_endpoint_auth_method=client_secret_basic`、PKCE 关闭，客户端未配置时授权按钮禁用并说明原因；回调 `access_denied` 与 `invalid_client` 展示不同建议并保留 Cloudflare 原始描述，关闭诊断后卡片消失且 URL 参数已清理；保存客户端只提交 `cloudflare` 分支。 |
 | 服务器、插件、域名、用量和维护空态 | 本地已验证 | 页面使用真实 API 空数据，不注入伪造业务数据；管理端 Playwright 在桌面和 390px 窄窗口逐页断言服务器、插件实例、公开域名、访问日志、审计日志、用量与系统设置的空态，并校验设置页维护/授权状态在未连接时显示“未读取/未连接”。 |
 | 总览维护状态、数据更新时间与最近错误 | 本地已验证 | `console-worker` Playwright 项目用拦截的 Worker 响应验证总览：维护状态徽标随 `/api/settings/platform` 显示“平台运行中/平台维护中”，未连接时为“维护状态未读取”；资源面板展示 Cloudflare 官方 Analytics 与平台本地计数的更新时间，未连接时显示真实缺失态；请求、R2、D1、KV 与 Durable Object 进度统一由 `usagePercent()` 按实际用量和配置配额计算并带 `role=progressbar`/ARIA 数值，`console-worker` 用例断言平台请求进度条宽度大于 0，避免仅更新文字而进度条固定为 0；错误面板先展示非在线服务器（离线/撤销，最近 3 台，含最近心跳或“尚未连接”），再展示最近 30 天访问日志中状态码 ≥ 500 的前 3 条（入口、路径、方法、错误类型、状态码、时间），4xx 不计入，加载态、空态和 5xx 数据态均有覆盖，“查看访问日志”可跳转到完整日志页。`console-real-stack` 第四条用例在本地真实栈上用真实 D1 访问日志复核该面板：对只声明 `http`/`websocket` 能力的 `lifecycle.plugin` 域名发起文件流请求，Worker 返回 `501` 并写入 `request_logs`（`error=plugin capability unavailable`），总览展示该入口、方法、错误文案与 `501` 徽标；访问日志页同样读到该行与「错误 N 条」统计，「导出日志」下载的 CSV 含该入口与 `plugin capability unavailable`；随后停掉真实 C++ 服务器并等到 `servers.status=offline`，刷新后总览出现该服务器行与“离线”徽标，覆盖连接异常分支；从插件服务器列表打开该服务器的详情弹窗，真实 `/api/servers/:id` 返回的状态徽标为“离线”、插件行状态为“服务器离线”、最近错误区列出该 501 请求。边界：`console-worker` 部分数据来自 Worker 响应夹具，官方用量时间为响应中的 `updatedAt`，不代表 Cloudflare 侧采集时刻；真实栈为本地 miniflare/workerd，未连接已部署 Worker。 |
@@ -80,7 +81,7 @@
 
 ```text
 npm run build
-npm run ui:smoke                         27 passed（preview 7 + worker-mock 20）
+npm run ui:smoke                         28 passed（preview 7 + worker-mock 21）
 npm run native-ui:smoke                  5 passed
 npm run native-ui:smoke:wine -- /tmp/build-win
                                          5 passed（Wine 5.0，指向 Windows 交叉编译产物；默认目录为 native-server/build-win）
