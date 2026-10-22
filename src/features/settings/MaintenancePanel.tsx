@@ -9,7 +9,7 @@ import { MaintenanceToggle } from './MaintenanceToggle'
 import { QuotaSettings } from './QuotaSettings'
 import { useMaintenanceSettings } from './useMaintenanceSettings'
 
-/** 维护开关、插件域名后缀与两组阈值：都写同一个平台设置接口，因此放在一起维护。 */
+/** 维护开关、插件域名后缀与平台自身阈值；Cloudflare 官方额度在用量页只读展示。 */
 export function MaintenancePanel({ settings, onChange, onAction }: {
   settings: PlatformSettings | null
   onChange: (settings: PlatformSettings) => void
@@ -28,12 +28,10 @@ export function MaintenancePanel({ settings, onChange, onAction }: {
     <MaintenanceToggle settings={settings} maintenance={state.maintenance} saving={state.saving} onToggle={() => void state.toggleMaintenance()} />
     <DomainSuffixForm enabled={Boolean(settings)} value={state.domainSuffix} saving={state.suffixSaving} disabled={state.quotaSaving} onChange={state.setDomainSuffix} onSave={() => void state.saveDomainSuffix()} />
     <QuotaSettings
-      platformValues={state.quotaForm}
-      cloudflareValues={state.cloudflareForm}
+      values={state.quotaForm}
       saving={state.quotaSaving}
       disabled={!settings || state.suffixSaving || state.quotaSaving}
-      onPlatformChange={(key, value) => state.setQuotaForm((current) => ({ ...current, [key]: value }))}
-      onCloudflareChange={(key, value) => state.setCloudflareForm((current) => ({ ...current, [key]: value }))}
+      onChange={(key, value) => state.setQuotaForm((current) => ({ ...current, [key]: value }))}
       onSave={() => void state.saveQuotas()}
     />
   </Panel>

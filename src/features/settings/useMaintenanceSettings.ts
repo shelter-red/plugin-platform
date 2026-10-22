@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ApiError, updatePlatformSettings, type CloudflareQuotas, type PlatformQuotas, type PlatformSettings } from '../../api'
+import { ApiError, updatePlatformSettings, type PlatformQuotas, type PlatformSettings } from '../../api'
 import type { Notify } from '../../components/ToastProvider'
 
 export const PLATFORM_QUOTA_FIELDS = [
@@ -9,31 +9,17 @@ export const PLATFORM_QUOTA_FIELDS = [
   ['r2Objects', 'settings.quotas.r2Objects'],
 ] as const
 
-export const CLOUDFLARE_QUOTA_FIELDS = [
-  ['workerRequests', 'settings.cloudflareQuotas.workerRequests'],
-  ['d1RowsRead', 'settings.cloudflareQuotas.d1RowsRead'],
-  ['d1RowsWritten', 'settings.cloudflareQuotas.d1RowsWritten'],
-  ['kvRead', 'settings.cloudflareQuotas.kvRead'],
-  ['kvWrite', 'settings.cloudflareQuotas.kvWrite'],
-  ['kvDelete', 'settings.cloudflareQuotas.kvDelete'],
-  ['kvList', 'settings.cloudflareQuotas.kvList'],
-  ['doRequests', 'settings.cloudflareQuotas.doRequests'],
-] as const
-
 type PlatformQuotaForm = Record<keyof PlatformQuotas, string>
-type CloudflareQuotaForm = Record<keyof CloudflareQuotas, string>
 
 const EMPTY_PLATFORM_FORM: PlatformQuotaForm = { activeConnections: '', r2Bytes: '', r2Objects: '' }
-const EMPTY_CLOUDFLARE_FORM: CloudflareQuotaForm = { workerRequests: '', d1RowsRead: '', d1RowsWritten: '', kvRead: '', kvWrite: '', kvDelete: '', kvList: '', doRequests: '' }
 
-/** 维护、域名后缀和两组阈值的本地表单与保存动作；所有写操作仍共用平台设置接口。 */
+/** 维护、域名后缀和平台自身阈值的本地表单；Cloudflare 官方额度只读，不在这里保存。 */
 export function useMaintenanceSettings(settings: PlatformSettings | null, onChange: (settings: PlatformSettings) => void, onAction: Notify) {
   const { t } = useTranslation()
   const [saving, setSaving] = useState(false)
   const [quotaSaving, setQuotaSaving] = useState(false)
   const [suffixSaving, setSuffixSaving] = useState(false)
   const [quotaForm, setQuotaForm] = useState(EMPTY_PLATFORM_FORM)
-  const [cloudflareForm, setCloudflareForm] = useState(EMPTY_CLOUDFLARE_FORM)
   const [domainSuffix, setDomainSuffix] = useState('')
   const maintenance = settings?.maintenance ?? false
 
@@ -43,16 +29,6 @@ export function useMaintenanceSettings(settings: PlatformSettings | null, onChan
       activeConnections: String(settings.quotas.activeConnections),
       r2Bytes: String(settings.quotas.r2Bytes),
       r2Objects: String(settings.quotas.r2Objects),
-    })
-    setCloudflareForm({
-      workerRequests: String(settings.cloudflareQuotas.workerRequests),
-      d1RowsRead: String(settings.cloudflareQuotas.d1RowsRead),
-      d1RowsWritten: String(settings.cloudflareQuotas.d1RowsWritten),
-      kvRead: String(settings.cloudflareQuotas.kvRead),
-      kvWrite: String(settings.cloudflareQuotas.kvWrite),
-      kvDelete: String(settings.cloudflareQuotas.kvDelete),
-      kvList: String(settings.cloudflareQuotas.kvList),
-      doRequests: String(settings.cloudflareQuotas.doRequests),
     })
     setDomainSuffix(settings.pluginDomainSuffix)
   }, [settings])
@@ -106,23 +82,13 @@ export function useMaintenanceSettings(settings: PlatformSettings | null, onChan
       r2Bytes: Number(quotaForm.r2Bytes),
       r2Objects: Number(quotaForm.r2Objects),
     }
-    const cloudflareQuotas: CloudflareQuotas = {
-      workerRequests: Number(cloudflareForm.workerRequests),
-      d1RowsRead: Number(cloudflareForm.d1RowsRead),
-      d1RowsWritten: Number(cloudflareForm.d1RowsWritten),
-      kvRead: Number(cloudflareForm.kvRead),
-      kvWrite: Number(cloudflareForm.kvWrite),
-      kvDelete: Number(cloudflareForm.kvDelete),
-      kvList: Number(cloudflareForm.kvList),
-      doRequests: Number(cloudflareForm.doRequests),
-    }
-    if ([...Object.values(quotas), ...Object.values(cloudflareQuotas)].some((value) => !Number.isSafeInteger(value) || value <= 0)) {
+    if (Object.values(quotas).some((value) => !Number.isSafeInteger(value) || value <= 0)) {
       onAction('warning', t('settings.quotas.invalid'))
       return
     }
     setQuotaSaving(true)
     try {
-      onChange(await updatePlatformSettings({ ...settings, quotas, cloudflareQuotas }))
+      onChange(await updatePlatformSettings({ ...settings, quotas }))
       onAction('success', t('settings.quotas.saved'))
     } catch {
       onAction('error', t('settings.quotas.saveFailed'))
@@ -133,8 +99,8 @@ export function useMaintenanceSettings(settings: PlatformSettings | null, onChan
 
   return {
     maintenance, saving, quotaSaving, suffixSaving,
-    quotaForm, cloudflareForm, domainSuffix,
-    setQuotaForm, setCloudflareForm, setDomainSuffix,
+    quotaForm, domainSuffix,
+    setQuotaForm, setDomainSuffix,
     toggleMaintenance, saveDomainSuffix, saveQuotas,
   }
 }

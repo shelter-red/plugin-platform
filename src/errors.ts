@@ -22,3 +22,15 @@ export function errorMessage(error: unknown, fallbackKey: string): string {
   if (error instanceof Error && i18n.exists(error.message)) return i18n.t(error.message)
   return i18n.t(fallbackKey)
 }
+
+/** 用量错误需要保留 HTTP 状态、稳定错误码和服务端消息，便于用户定位 Token/权限问题。 */
+export function detailedErrorMessage(error: unknown, fallbackKey: string): string {
+  if (error instanceof ApiError) {
+    const parts = [`HTTP ${error.status}`]
+    if (error.code) parts.push(error.code)
+    const message = translateError(error.message)
+    if (message) parts.push(message)
+    return parts.join(' · ')
+  }
+  return errorMessage(error, fallbackKey)
+}

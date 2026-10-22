@@ -271,7 +271,7 @@ test('管理端总览展示真实 5xx 访问日志与连接异常', async ({ pag
 
 test('管理端维护开关与配额保存落到真实平台状态并写入审计', async ({ page }) => {
   const { call } = createStackApi(page.request, sessionToken)
-  const original = (await (await call('/api/settings/platform')).json()) as { maintenance: boolean; quotas: Record<string, number>; cloudflareQuotas: Record<string, number> }
+  const original = (await (await call('/api/settings/platform')).json()) as { maintenance: boolean; quotas: Record<string, number> }
   expect(original.maintenance, '真实栈应处于运行状态').toBe(false)
   try {
     await page.goto('/')
@@ -299,24 +299,9 @@ test('管理端维护开关与配额保存落到真实平台状态并写入审�
     const resumed = await getPublic(baseURL!, 'maintenance-check.plugins.example.com')
     expect(resumed.status).toBe(404)
 
-    // 平台请求不设上限，可调的是 Cloudflare 免费额度逐项阈值；这里下调 D1 行读取。
-    const raisedQuota = 4_000_000
-    const quotaInput = panel.getByLabel('D1 行读取 / 日')
-    await quotaInput.fill(String(raisedQuota))
-    await panel.getByRole('button', { name: '保存配额' }).first().click()
-    await expect(page.getByText('平台配额已保存')).toBeVisible()
-    const saved = (await (await call('/api/settings/platform')).json()) as { cloudflareQuotas: { d1RowsRead: number } }
-    expect(saved.cloudflareQuotas.d1RowsRead).toBe(raisedQuota)
-
-    await page.getByRole('menuitem', { name: '用量与配额', exact: true }).click()
-    await expect(page.locator('.resource-card').filter({ hasText: 'D1 行读取' }))
-      .toContainText(`上限 ${raisedQuota.toLocaleString('zh-CN')}`)
-
-    // 配额必须回源 D1：整页重载后表单仍显示新值，而不是只存在内存状态里。
-    await page.reload()
-    await page.getByRole('menuitem', { name: '系统设置', exact: true }).click()
-    await page.getByRole('button', { name: '维护与配额' }).click()
-    await expect(page.locator('#settings-maintenance').getByLabel('D1 行读取 / 日')).toHaveValue(String(raisedQuota))
+    // Cloudflare 免费额度只能从 subscriptions 读取，系统设置里不能再出现手填的 D1/KV 上限。
+    await expect(panel.getByLabel('D1 行读取 / 日')).toHaveCount(0)
+    await expect(panel.getByRole('button', { name: '保存配额' })).toHaveCount(0)
 
     await page.getByRole('menuitem', { name: '审计日志', exact: true }).click()
     await expect(page.getByRole('row', { name: /更新平台设置/ }).first()).toBeVisible()
@@ -331,7 +316,7 @@ test('管理端维护开关与配额保存落到真实平台状态并写入审�
     expect(csv).toContain('E2E Admin')
     expect(csv).toContain('e2e@example.com')
   } finally {
-    await call('/api/settings/platform', { method: 'PUT', data: { maintenance: false, quotas: original.quotas, cloudflareQuotas: original.cloudflareQuotas } })
+    await call('/api/settings/platform', { method: 'PUT', data: { maintenance: false, quotas: original.quotas } })
   }
 })
 

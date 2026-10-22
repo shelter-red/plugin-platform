@@ -1,32 +1,38 @@
 import { useTranslation } from 'react-i18next'
 import { ArrowDownToLine, ArrowUpFromLine, Cloud, Database, List, PenLine, Search, Trash2 } from 'lucide-react'
-import type { CloudflareUsage, PlatformSettings } from '../../api'
+import type { CloudflareUsage, CloudflareUsageLimits } from '../../api'
 import { formatBytes, formatNumber } from '../../lib/format'
 import { usagePercent } from '../../lib/usage'
 import { UsageResourceCard } from './UsageResourceCard'
 import { UsageSection } from './UsageSection'
 
-/** Cloudflare 免费计划每日额度：Worker、D1、KV、Durable Objects 逐项显示用量与百分比。 */
-export function CloudflareUsageSection({ settings, usage }: { settings: PlatformSettings | null; usage: CloudflareUsage | null }) {
+type LimitKey = keyof CloudflareUsageLimits
+
+/** Cloudflare 免费计划每日额度：只使用 Worker 从 subscriptions 读取并确认的 limits。 */
+export function CloudflareUsageSection({ usage }: { usage: CloudflareUsage | null }) {
   const { t } = useTranslation()
   const notRead = t('common.notRead')
   const requests = usage?.requests
   const d1 = usage?.d1
   const kv = usage?.kv
   const durableObjects = usage?.durableObjects
-  const cfQuotas = settings?.cloudflareQuotas
-  const connected = usage?.configured === true && typeof requests === 'number'
-  const percent = (current: number | null | undefined, limit: number | undefined) => settings && current != null && limit != null ? usagePercent(current, limit) : undefined
-  const limit = (value: number | undefined) => settings && value !== undefined ? formatNumber(value) : notRead
+  const limits = usage?.limits
+  const limitsConfirmed = usage?.limitSource === 'cloudflare_subscriptions_free_baseline' && limits != null
+  const connected = usage?.configured === true
+  const limit = (key: LimitKey) => limitsConfirmed ? formatNumber(limits[key]) : notRead
+  const percent = (current: number | null | undefined, key: LimitKey) => limitsConfirmed && current != null ? usagePercent(current, limits[key]) : undefined
+  const hint = usage?.plan?.confirmed && usage.plan.free
+    ? t('usage.groups.cloudflareFreeHint')
+    : connected ? t('usage.groups.cloudflareUnconfirmedHint') : t('usage.groups.cloudflareHint')
 
-  return <UsageSection title={t('usage.groups.cloudflare')} hint={t('usage.groups.cloudflareHint')}>
-    <UsageResourceCard title={t('usage.card.workerRequests')} current={typeof requests === 'number' ? formatNumber(requests) : '—'} limit={limit(cfQuotas?.workerRequests)} unit={connected ? t('usage.card.officialPeriod') : t('usage.card.notConnected')} percent={percent(typeof requests === 'number' ? requests : null, cfQuotas?.workerRequests)} icon={Cloud} />
-    <UsageResourceCard title={t('usage.card.d1RowsRead')} current={d1 ? formatNumber(d1.rowsRead) : '—'} limit={limit(cfQuotas?.d1RowsRead)} unit={d1 ? t('usage.card.readQueries', { count: formatNumber(d1.readQueries) }) : t('usage.card.notConnected')} percent={percent(d1?.rowsRead, cfQuotas?.d1RowsRead)} icon={ArrowDownToLine} />
-    <UsageResourceCard title={t('usage.card.d1RowsWritten')} current={d1 ? formatNumber(d1.rowsWritten) : '—'} limit={limit(cfQuotas?.d1RowsWritten)} unit={d1 ? t('usage.card.writeQueries', { count: formatNumber(d1.writeQueries) }) : t('usage.card.notConnected')} percent={percent(d1?.rowsWritten, cfQuotas?.d1RowsWritten)} icon={ArrowUpFromLine} />
-    <UsageResourceCard title={t('usage.card.kvRead')} current={kv ? formatNumber(kv.read) : '—'} limit={limit(cfQuotas?.kvRead)} unit={kv ? t('usage.card.daily') : t('usage.card.notConnected')} percent={percent(kv?.read, cfQuotas?.kvRead)} icon={Search} />
-    <UsageResourceCard title={t('usage.card.kvWrite')} current={kv ? formatNumber(kv.write) : '—'} limit={limit(cfQuotas?.kvWrite)} unit={kv ? t('usage.card.daily') : t('usage.card.notConnected')} percent={percent(kv?.write, cfQuotas?.kvWrite)} icon={PenLine} />
-    <UsageResourceCard title={t('usage.card.kvDelete')} current={kv ? formatNumber(kv.delete) : '—'} limit={limit(cfQuotas?.kvDelete)} unit={kv ? t('usage.card.daily') : t('usage.card.notConnected')} percent={percent(kv?.delete, cfQuotas?.kvDelete)} icon={Trash2} />
-    <UsageResourceCard title={t('usage.card.kvList')} current={kv ? formatNumber(kv.list) : '—'} limit={limit(cfQuotas?.kvList)} unit={kv ? t('usage.card.daily') : t('usage.card.notConnected')} percent={percent(kv?.list, cfQuotas?.kvList)} icon={List} />
-    <UsageResourceCard title={t('usage.card.durableObjects')} current={durableObjects ? formatNumber(durableObjects.requests) : '—'} limit={limit(cfQuotas?.doRequests)} unit={durableObjects ? t('usage.card.daily') : t('usage.card.notConnected')} percent={percent(durableObjects?.requests, cfQuotas?.doRequests)} icon={Database} note={durableObjects ? t('usage.card.storage', { size: formatBytes(durableObjects.storedBytes) ?? '—' }) : undefined} />
+  return <UsageSection title={t('usage.groups.cloudflare')} hint={hint}>
+    <UsageResourceCard title={t('usage.card.workerRequests')} current={typeof requests === 'number' ? formatNumber(requests) : '—'} limit={limit('workerRequests')} unit={connected ? t('usage.card.officialPeriod') : t('usage.card.notConnected')} percent={percent(requests, 'workerRequests')} icon={Cloud} />
+    <UsageResourceCard title={t('usage.card.d1RowsRead')} current={d1 ? formatNumber(d1.rowsRead) : '—'} limit={limit('d1RowsRead')} unit={d1 ? t('usage.card.readQueries', { count: formatNumber(d1.readQueries) }) : t('usage.card.notConnected')} percent={percent(d1?.rowsRead, 'd1RowsRead')} icon={ArrowDownToLine} />
+    <UsageResourceCard title={t('usage.card.d1RowsWritten')} current={d1 ? formatNumber(d1.rowsWritten) : '—'} limit={limit('d1RowsWritten')} unit={d1 ? t('usage.card.writeQueries', { count: formatNumber(d1.writeQueries) }) : t('usage.card.notConnected')} percent={percent(d1?.rowsWritten, 'd1RowsWritten')} icon={ArrowUpFromLine} />
+    <UsageResourceCard title={t('usage.card.kvRead')} current={kv ? formatNumber(kv.read) : '—'} limit={limit('kvRead')} unit={kv ? t('usage.card.daily') : t('usage.card.notConnected')} percent={percent(kv?.read, 'kvRead')} icon={Search} />
+    <UsageResourceCard title={t('usage.card.kvWrite')} current={kv ? formatNumber(kv.write) : '—'} limit={limit('kvWrite')} unit={kv ? t('usage.card.daily') : t('usage.card.notConnected')} percent={percent(kv?.write, 'kvWrite')} icon={PenLine} />
+    <UsageResourceCard title={t('usage.card.kvDelete')} current={kv ? formatNumber(kv.delete) : '—'} limit={limit('kvDelete')} unit={kv ? t('usage.card.daily') : t('usage.card.notConnected')} percent={percent(kv?.delete, 'kvDelete')} icon={Trash2} />
+    <UsageResourceCard title={t('usage.card.kvList')} current={kv ? formatNumber(kv.list) : '—'} limit={limit('kvList')} unit={kv ? t('usage.card.daily') : t('usage.card.notConnected')} percent={percent(kv?.list, 'kvList')} icon={List} />
+    <UsageResourceCard title={t('usage.card.durableObjects')} current={durableObjects ? formatNumber(durableObjects.requests) : '—'} limit={limit('doRequests')} unit={durableObjects ? t('usage.card.daily') : t('usage.card.notConnected')} percent={percent(durableObjects?.requests, 'doRequests')} icon={Database} note={durableObjects ? t('usage.card.storage', { size: formatBytes(durableObjects.storedBytes) ?? '—' }) : undefined} />
   </UsageSection>
 }

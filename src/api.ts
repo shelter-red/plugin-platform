@@ -58,18 +58,33 @@ function apiRequest(path: string, init: RequestInit = {}): Promise<Response> {
   return fetch(`${apiBase}${path}`, { ...init, credentials: 'include', headers })
 }
 
+/** 服务端稳定错误码、面向用户的 message 和可选字段名都保留到调用方。 */
 export class ApiError extends Error {
-  constructor(readonly status: number, message: string, readonly field?: string) {
+  constructor(
+    readonly status: number,
+    message: string,
+    readonly field?: string,
+    readonly code?: string,
+  ) {
     super(message)
     this.name = 'ApiError'
   }
 }
 
+type ApiErrorBody = { error?: string; message?: string; code?: string; field?: string }
+
+async function readApiError(response: Response): Promise<ApiErrorBody | null> {
+  return response.json().catch(() => null) as Promise<ApiErrorBody | null>
+}
+
+function errorFromBody(response: Response, body: ApiErrorBody | null, fallback: string): ApiError {
+  return new ApiError(response.status, body?.message ?? body?.error ?? fallback, body?.field, body?.code)
+}
+
 /** 保留服务端错误码与字段名，便于表单把错误定位到具体输入框。 */
 async function assertOk(response: Response, fallback: string): Promise<void> {
   if (response.ok) return
-  const body = await response.json().catch(() => null) as { error?: string; field?: string } | null
-  throw new ApiError(response.status, body?.error ?? fallback, body?.field)
+  throw errorFromBody(response, await readApiError(response), fallback)
 }
 
 export interface ApiOverview {
@@ -198,10 +213,30 @@ interface InviteCreation {
   emailSent: boolean | null
 }
 
+/** Cloudflare 免费计划的只读每日额度，来源必须是 subscriptions。 */
+export interface CloudflareUsageLimits {
+  workerRequests: number
+  d1RowsRead: number
+  d1RowsWritten: number
+  kvRead: number
+  kvWrite: number
+  kvDelete: number
+  kvList: number
+  doRequests: number
+}
+
+export interface CloudflarePlanSummary {
+  id: string | null
+  name: string | null
+  free: boolean
+  confirmed: boolean
+}
+
 export interface CloudflareUsage {
   configured?: boolean
   accountIdConfigured?: boolean
-  authorizationExpired?: boolean
+  legacyCredential?: boolean
+  error?: string
   period?: { start: string; end: string }
   requests?: number
   source?: string
@@ -224,6 +259,9 @@ export interface CloudflareUsage {
     cpuTime: number
     storedBytes: number
   }
+  plan?: CloudflarePlanSummary
+  limitSource?: 'cloudflare_subscriptions_free_baseline' | 'unavailable'
+  limits?: CloudflareUsageLimits | null
 }
 
 export interface UsageBreakdownEntry {
@@ -264,23 +302,10 @@ export interface PlatformQuotas {
   r2Objects: number
 }
 
-/** Cloudflare 免费计划每日额度；平台请求数不设上限，这里只观察官方额度是否触顶。 */
-export interface CloudflareQuotas {
-  workerRequests: number
-  d1RowsRead: number
-  d1RowsWritten: number
-  kvRead: number
-  kvWrite: number
-  kvDelete: number
-  kvList: number
-  doRequests: number
-}
-
 export interface PlatformSettings {
   maintenance: boolean
   pluginDomainSuffix: string
   quotas: PlatformQuotas
-  cloudflareQuotas: CloudflareQuotas
 }
 
 export type SmtpAuthType = 'plain' | 'login' | 'cram-md5'
@@ -312,9 +337,18 @@ export interface SmtpSettingsInput {
 
 export interface CloudflareSettings {
   configured: boolean
+  credentialKind: 'api_token' | 'legacy_oauth' | null
   accountIdConfigured: boolean
   accountId: string | null
+  permissions: string[]
   updatedAt: string | null
+  lastVerifiedAt: string | null
+  legacyCredential: boolean
+}
+
+export interface CloudflareSettingsInput {
+  apiToken: string
+  accountId?: string
 }
 
 export type OauthSource = 'database' | 'environment' | null
@@ -328,24 +362,8 @@ export interface GithubOauthSettings {
   source: OauthSource
 }
 
-export interface CloudflareOauthSettings {
-  configured: boolean
-  clientId: string | null
-  redirectUri: string | null
-  /** 平台固定的 OAuth 权限，只读；界面不得允许用户增删。 */
-  scope: string
-  scopeNames: Record<string, string>
-  secretConfigured: boolean
-  source: OauthSource
-  /** 以下协议参数由 Worker 只读输出，前端不允许修改。 */
-  responseType: string
-  grantType: string
-  tokenAuthMethod: string
-}
-
 export interface OauthSettings {
   github: GithubOauthSettings
-  cloudflare: CloudflareOauthSettings
   sessionSecretConfigured: boolean
   updatedAt: string | null
   unreadable: boolean
@@ -353,15 +371,9 @@ export interface OauthSettings {
 
 export interface OauthSettingsInput {
   github?: { clientId: string; clientSecret: string; redirectUri: string; allowlist: string }
-  cloudflare?: { clientId: string; clientSecret: string; redirectUri: string }
 }
 
-/** Cloudflare 授权回跳结果：经一次性 HttpOnly Cookie 传递，不占用 URL 查询参数。 */
-export type CloudflareAuthResult =
-  | { kind: 'success'; accountConfigured: boolean }
-  | { kind: 'error'; code: string; description: string | null }
-
-export type OauthProvider = 'github' | 'cloudflare'
+export type OauthProvider = 'github'
 
 export async function fetchOverview(): Promise<ApiOverview> {
   const response = await apiRequest(`/api/overview`, { credentials: 'include' })
@@ -429,8 +441,7 @@ export async function fetchInvites(): Promise<ApiInvite[]> {
 }
 
 async function apiError(response: Response, fallback: string): Promise<ApiError> {
-  const data = await response.json().catch(() => null) as { error?: string } | null
-  return new ApiError(response.status, data?.error || fallback)
+  return errorFromBody(response, await readApiError(response), fallback)
 }
 
 export async function createRegistrationCode(): Promise<RegistrationCode> {
@@ -474,13 +485,6 @@ export async function assignDomain(pluginInstanceId: string, prefix: string): Pr
   return response.json() as Promise<DomainAssignmentResult>
 }
 
-export async function fetchCloudflareAuthResult(): Promise<CloudflareAuthResult | null> {
-  const response = await apiRequest(`/api/settings/cloudflare/auth-result`, { credentials: 'include' })
-  if (!response.ok) throw new ApiError(response.status, 'cloudflare auth result request failed')
-  const data = await response.json() as { result?: CloudflareAuthResult | null }
-  return data.result ?? null
-}
-
 export async function fetchCloudflareUsage(): Promise<CloudflareUsage> {
   const response = await apiRequest(`/api/usage/cloudflare`, { credentials: 'include' })
   if (!response.ok) throw await apiError(response, 'cloudflare usage request failed')
@@ -495,19 +499,26 @@ export async function fetchLocalUsage(range: '24h' | '7d' | '30d' = '7d'): Promi
 
 export async function updatePlatformSettings(settings: PlatformSettings): Promise<PlatformSettings> {
   const response = await apiRequest(`/api/settings/platform`, { method: 'PUT', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(settings) })
-  if (!response.ok) throw new ApiError(response.status, 'platform settings update request failed')
+  await assertOk(response, 'platform settings update request failed')
   return response.json() as Promise<PlatformSettings>
 }
 
 export async function fetchCloudflareSettings(): Promise<CloudflareSettings> {
   const response = await apiRequest(`/api/settings/cloudflare`, { credentials: 'include' })
-  if (!response.ok) throw new ApiError(response.status, 'cloudflare settings request failed')
+  await assertOk(response, 'cloudflare settings request failed')
+  return response.json() as Promise<CloudflareSettings>
+}
+
+/** 保存前由 Worker 验证 Token、账号可见性与订阅权限；不会回显 Token。 */
+export async function updateCloudflareSettings(input: CloudflareSettingsInput): Promise<CloudflareSettings> {
+  const response = await apiRequest(`/api/settings/cloudflare`, { method: 'PUT', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input) })
+  await assertOk(response, 'cloudflare settings update request failed')
   return response.json() as Promise<CloudflareSettings>
 }
 
 export async function revokeCloudflareSettings(): Promise<CloudflareSettings> {
   const response = await apiRequest(`/api/settings/cloudflare`, { method: 'DELETE', credentials: 'include' })
-  if (!response.ok) throw new ApiError(response.status, 'cloudflare settings revoke request failed')
+  await assertOk(response, 'cloudflare settings revoke request failed')
   return response.json() as Promise<CloudflareSettings>
 }
 

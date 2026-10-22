@@ -8,15 +8,25 @@ const platformSettings = {
   maintenance: false,
   pluginDomainSuffix: '.plugins.example.com',
   quotas: { activeConnections: 200, r2Bytes: 1_073_741_824, r2Objects: 1_000 },
-  cloudflareQuotas: { workerRequests: 100_000, d1RowsRead: 5_000_000, d1RowsWritten: 100_000, kvRead: 100_000, kvWrite: 1_000, kvDelete: 1_000, kvList: 1_000, doRequests: 100_000 },
 }
 
 const oauthSettings = {
   github: { configured: true, clientId: 'mock-github-client', redirectUri: 'https://console.example.test/auth/github/callback', allowlist: 'admin', secretConfigured: true, source: 'environment' },
-  cloudflare: { configured: true, clientId: 'mock-cloudflare-client', redirectUri: 'https://console.example.test/auth/cloudflare/callback', scope: 'account-settings.read account-analytics.read', scopeNames: { 'account-settings.read': 'Account Settings Read', 'account-analytics.read': 'Account Analytics Read' }, secretConfigured: true, source: 'environment', responseType: 'code', grantType: 'authorization_code', tokenAuthMethod: 'client_secret_basic' },
   sessionSecretConfigured: true,
   updatedAt: null,
   unreadable: false,
+}
+
+const cloudflarePermissions = ['Account Settings Read', 'Account Analytics Read', 'Billing Read']
+const cloudflareSettings = {
+  configured: false,
+  credentialKind: null,
+  accountIdConfigured: false,
+  accountId: null,
+  permissions: cloudflarePermissions,
+  updatedAt: null,
+  lastVerifiedAt: null,
+  legacyCredential: false,
 }
 
 const localUsage = {
@@ -28,6 +38,31 @@ const localUsage = {
   updatedAt: '2026-10-21T00:00:00.000Z',
   snapshots: [],
   breakdown: { users: [], plugins: [], domains: [] },
+}
+
+const cloudflareFreeUsage = {
+  configured: true,
+  accountIdConfigured: true,
+  legacyCredential: false,
+  cached: false,
+  updatedAt: '2026-10-21T00:00:00.000Z',
+  period: { start: '2026-10-21T00:00:00.000Z', end: '2026-10-22T00:00:00.000Z' },
+  requests: 50_000,
+  d1: { readQueries: 2_000, writeQueries: 500, rowsRead: 1_250_000, rowsWritten: 50_000 },
+  kv: { read: 50_000, write: 500, delete: 200, list: 100 },
+  durableObjects: { requests: 25_000, cpuTime: 10, storedBytes: 2_048 },
+  plan: { id: 'free', name: 'Free', free: true, confirmed: true },
+  limitSource: 'cloudflare_subscriptions_free_baseline',
+  limits: {
+    workerRequests: 100_000,
+    d1RowsRead: 5_000_000,
+    d1RowsWritten: 100_000,
+    kvRead: 100_000,
+    kvWrite: 1_000,
+    kvDelete: 1_000,
+    kvList: 1_000,
+    doRequests: 100_000,
+  },
 }
 
 type WorkerMock = {
@@ -53,16 +88,22 @@ type WorkerMock = {
   smtpUpdates: unknown[]
   smtpTests: unknown[]
   smtpTestError: { error: string; field?: string } | null
-  cloudflareAuthResult: { kind: 'error'; code: string; description: string | null } | { kind: 'success'; accountConfigured: boolean } | null
-  authResultRequests: number
-  cloudflareSettings: Record<string, unknown>
+  cloudflareUpdates: unknown[]
+  cloudflareUpdateError: { status: number; code: string; message: string } | null
+  cloudflareSettings: typeof cloudflareSettings
   usage: Record<string, unknown>
-  usageRequests: number
+  usageFault: { status: number; code: string; message: string } | null
+  cloudflareUsageRequests: number
+  localUsageRequests: number
+  holdNextCloudflareUsage: boolean
+  releaseCloudflareUsage: () => void
 }
 
 async function mockWorker(page: Page): Promise<WorkerMock> {
   let releaseLogs = () => {}
+  let releaseUsageRequest = () => {}
   const logsGate = new Promise<void>((resolve) => { releaseLogs = resolve })
+  const usageGate = new Promise<void>((resolve) => { releaseUsageRequest = resolve })
   const state: WorkerMock = {
     failData: false,
     releaseLogs: () => releaseLogs(),
@@ -86,18 +127,22 @@ async function mockWorker(page: Page): Promise<WorkerMock> {
     smtpUpdates: [],
     smtpTests: [],
     smtpTestError: null,
-    cloudflareAuthResult: null,
-    authResultRequests: 0,
-    cloudflareSettings: { configured: false, accountIdConfigured: false, accountId: null, updatedAt: null },
-    usage: { configured: false },
-    usageRequests: 0,
+    cloudflareUpdates: [],
+    cloudflareUpdateError: null,
+    cloudflareSettings: { ...cloudflareSettings },
+    usage: { configured: false, cached: false },
+    usageFault: null,
+    cloudflareUsageRequests: 0,
+    localUsageRequests: 0,
+    holdNextCloudflareUsage: false,
+    releaseCloudflareUsage: () => releaseUsageRequest(),
   }
 
-  await page.route('**/api/**', (route) => handleApi(route, state, logsGate))
+  await page.route('**/api/**', (route) => handleApi(route, state, logsGate, usageGate))
   return state
 }
 
-async function handleApi(route: Route, state: WorkerMock, logsGate: Promise<void>): Promise<void> {
+async function handleApi(route: Route, state: WorkerMock, logsGate: Promise<void>, usageGate: Promise<void>): Promise<void> {
   const { pathname } = new URL(route.request().url())
   const method = route.request().method()
   if (method === 'POST' && pathname === '/api/registration-codes') {
@@ -137,15 +182,39 @@ async function handleApi(route: Route, state: WorkerMock, logsGate: Promise<void
   }
   if (pathname === '/api/settings/oauth') {
     if (method === 'PUT') {
-      const body = route.request().postDataJSON() as { github?: { clientId: string }; cloudflare?: { clientId: string } }
+      const body = route.request().postDataJSON() as { github?: { clientId: string } }
       state.oauthUpdates.push(body)
       return route.fulfill({ json: {
         ...oauthSettings,
         github: body.github ? { ...oauthSettings.github, clientId: body.github.clientId, source: 'database' } : oauthSettings.github,
-        cloudflare: body.cloudflare ? { ...oauthSettings.cloudflare, clientId: body.cloudflare.clientId, source: 'database' } : oauthSettings.cloudflare,
       } })
     }
     return route.fulfill({ json: oauthSettings })
+  }
+  if (pathname === '/api/settings/cloudflare') {
+    if (method === 'PUT') {
+      const body = route.request().postDataJSON() as { apiToken: string; accountId?: string }
+      state.cloudflareUpdates.push(body)
+      if (state.cloudflareUpdateError) {
+        const { status, ...error } = state.cloudflareUpdateError
+        return route.fulfill({ status, json: error })
+      }
+      state.cloudflareSettings = {
+        ...cloudflareSettings,
+        configured: true,
+        credentialKind: 'api_token',
+        accountIdConfigured: true,
+        accountId: '0123...cdef',
+        updatedAt: '2026-10-21T00:00:00.000Z',
+        lastVerifiedAt: '2026-10-21T00:00:00.000Z',
+      }
+      return route.fulfill({ json: state.cloudflareSettings })
+    }
+    if (method === 'DELETE') {
+      state.cloudflareSettings = { ...cloudflareSettings }
+      return route.fulfill({ json: state.cloudflareSettings })
+    }
+    return route.fulfill({ json: state.cloudflareSettings })
   }
   if (pathname === '/api/settings/smtp') {
     if (method === 'PUT') {
@@ -235,17 +304,21 @@ async function handleApi(route: Route, state: WorkerMock, logsGate: Promise<void
     case '/api/domains':
       return route.fulfill({ json: { results: state.domains } })
     case '/api/usage/cloudflare':
-      state.usageRequests += 1
+      state.cloudflareUsageRequests += 1
+      if (state.holdNextCloudflareUsage) {
+        state.holdNextCloudflareUsage = false
+        await usageGate
+      }
+      if (state.usageFault) {
+        const { status, ...body } = state.usageFault
+        return route.fulfill({ status, json: body })
+      }
       return route.fulfill({ json: state.usage })
     case '/api/usage/local':
+      state.localUsageRequests += 1
       return route.fulfill({ json: { ...localUsage, snapshots: state.snapshots } })
-    case '/api/settings/cloudflare/auth-result':
-      state.authResultRequests += 1
-      return route.fulfill({ json: { result: state.cloudflareAuthResult } })
     case '/api/settings/platform':
       return route.fulfill({ json: { ...platformSettings, maintenance: state.maintenance } })
-    case '/api/settings/cloudflare':
-      return route.fulfill({ json: state.cloudflareSettings })
     case '/api/settings/smtp':
       return route.fulfill({ json: { configured: false } })
     default:
@@ -293,131 +366,164 @@ test('管理端在后台保存 OAuth 配置且不回显密钥', async ({ page })
   await expect(panel).toContainText('后台配置')
 })
 
-test('Cloudflare 区块展示固定权限清单，并把授权失败诊断留在系统设置页', async ({ page }) => {
-  // 授权回跳诊断只存在于「页面加载时读回一次性结果」这条路径上，所以本用例要完整加载
-  // 两次管理端。CI 上四个 project 并行时，Vite 每次冷启动都要重新下发全部模块，单次
-  // 加载能到 8s 以上，整例很容易顶到默认 30s 上限；它验证的是状态分支，显式放宽三倍。
-  test.slow()
+test('Cloudflare 使用固定只读权限和 API Token 直达链接', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 })
   const worker = await mockWorker(page)
-  // 回调结果改为一次性 Cookie：页面加载后主动读回并自动打开 Cloudflare 面板。
-  worker.cloudflareAuthResult = { kind: 'error', code: 'access_denied', description: 'User denied access' }
   await page.goto('/')
+  await page.getByRole('menuitem', { name: '系统设置', exact: true }).click()
+  await page.getByRole('navigation', { name: '系统设置' }).getByRole('menuitem', { name: 'Cloudflare' }).click()
   const panel = page.locator('#settings-cloudflare')
   await expect(panel).toBeVisible()
   expect(new URL(page.url()).pathname).toBe('/settings')
-  expect(new URL(page.url()).search).toBe('')
 
-  const protocol = panel.locator('.protocol-facts')
-  await expect(protocol).toContainText('响应类型（response_type）')
-  await expect(protocol).toContainText('code')
-  await expect(protocol).toContainText('authorization_code')
-  await expect(protocol).toContainText('client_secret_basic')
-  await expect(protocol).not.toContainText('PKCE')
-  await expect(panel.getByRole('textbox', { name: '回调地址' })).toHaveValue('http://127.0.0.1:4184/auth/cloudflare/callback')
-
-  const diagnosis = panel.getByTestId('cloudflare-diagnosis')
-  await expect(diagnosis).toContainText('授权诊断')
-  await expect(diagnosis).toContainText('access_denied')
-  await expect(diagnosis).toContainText('User denied access')
-  await expect(diagnosis).toContainText('你拒绝了授权请求')
-  await diagnosis.getByRole('button', { name: '关闭诊断' }).click()
-  await expect(panel.getByTestId('cloudflare-diagnosis')).toHaveCount(0)
-
-  // 权限清单固定为两项且只读：没有可编辑的 scope 输入框，也不能移除单项。
-  const scopes = panel.getByTestId('cloudflare-scopes')
-  await expect(scopes).toContainText('Account Settings Read')
-  await expect(scopes).toContainText('Account Analytics Read')
-  await expect(scopes.locator('.scope-list')).not.toContainText('Offline Access')
-  await expect(scopes.locator('.scope-list li')).toHaveCount(2)
-  await expect(scopes.locator('input')).toHaveCount(0)
-  await expect(scopes.getByRole('button')).toHaveCount(0)
+  // Cloudflare 已改为长期 API Token：OAuth 客户端、响应类型、PKCE 和可编辑 scope 都必须消失。
+  await expect(panel.getByText('响应类型（response_type）')).toHaveCount(0)
+  await expect(panel.getByText('PKCE')).toHaveCount(0)
+  await expect(panel.getByText('Client ID')).toHaveCount(0)
+  await expect(panel.getByText('Client Secret')).toHaveCount(0)
+  await expect(panel.getByRole('textbox', { name: '回调地址' })).toHaveCount(0)
   await expect(panel.getByRole('textbox', { name: '授权范围' })).toHaveCount(0)
 
-  await panel.getByLabel('Client ID').fill('mock-cloudflare-client-new')
-  await panel.getByRole('button', { name: '保存配置' }).click()
-  await expect(page.locator('.ant-notification-notice').filter({ hasText: 'Cloudflare 客户端配置已保存' })).toBeVisible()
-  // 保存客户端不再提交 scope，授权范围完全由 Worker 固定。
-  expect(worker.oauthUpdates).toEqual([{ cloudflare: { clientId: 'mock-cloudflare-client-new', clientSecret: '', redirectUri: 'http://127.0.0.1:4184/auth/cloudflare/callback' } }])
+  const permissions = panel.getByTestId('cloudflare-permissions')
+  await expect(permissions).toContainText('Account Settings Read')
+  await expect(permissions).toContainText('Account Analytics Read')
+  await expect(permissions).toContainText('Billing Read')
+  await expect(permissions.locator('.scope-list li')).toHaveCount(3)
+  await expect(permissions.locator('input')).toHaveCount(0)
+  await expect(permissions.getByRole('button')).toHaveCount(0)
 
-  worker.cloudflareAuthResult = { kind: 'error', code: 'invalid_client', description: null }
-  await page.goto('/')
-  const invalidClient = page.locator('#settings-cloudflare').getByTestId('cloudflare-diagnosis')
-  // 每次加载都会读回一次一次性结果（第一次是 access_denied）：先确认这次读回确实发生，
-  // 再把「诊断没渲染」和「页面还在冷启动、请求都没发出」区分开。
-  await expect.poll(() => worker.authResultRequests, { timeout: 15_000 }).toBeGreaterThan(1)
-  await expect(invalidClient).toContainText('invalid_client', { timeout: 15_000 })
-  await expect(invalidClient).toContainText('Client ID 或 Secret')
-  await expect(invalidClient).not.toContainText('你拒绝了授权请求')
+  const createToken = panel.getByRole('link', { name: /创建 API Token/ })
+  await expect(createToken).toHaveAttribute('href', 'https://dash.cloudflare.com/profile/api-tokens')
+
+  await panel.getByLabel('API Token').fill('mock-cloudflare-token')
+  await panel.getByLabel('Account ID（可选）').fill('0123456789abcdef0123456789abcdef')
+  await panel.getByRole('button', { name: '验证并保存' }).click()
+  await expect(page.locator('.ant-notification-notice').filter({ hasText: 'Cloudflare API Token 已验证并保存' })).toBeVisible()
+  expect(worker.cloudflareUpdates).toEqual([{ apiToken: 'mock-cloudflare-token', accountId: '0123456789abcdef0123456789abcdef' }])
+  await expect(panel.getByLabel('API Token')).toHaveValue('')
+  await expect(panel).toContainText('0123...cdef')
+  await expect(panel).toContainText('最后验证')
 })
 
-test('Cloudflare 未识别账号时提示缺少 Account Settings Read 权限', async ({ page }) => {
+test('Cloudflare Token 权限不足时保留真实 HTTP 状态并停留在设置页', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 })
   const worker = await mockWorker(page)
-  worker.cloudflareSettings = { configured: true, accountIdConfigured: false, accountId: null, updatedAt: '2026-10-21T00:00:00.000Z' }
-  worker.cloudflareAuthResult = { kind: 'success', accountConfigured: false }
-  await page.goto('/')
+  worker.cloudflareUpdateError = { status: 403, code: 'token_permission_denied', message: 'Cloudflare Token is missing a required permission' }
+  await page.goto('/settings')
   const panel = page.locator('#settings-cloudflare')
-  await expect.poll(() => worker.authResultRequests).toBeGreaterThan(0)
   await expect(panel).toBeVisible()
-  const missingAccount = panel.locator('.ant-alert').filter({ hasText: '授权已完成，但没有识别到唯一账号' })
-  await expect(missingAccount).toBeVisible()
-  await expect(missingAccount).toContainText('Account Settings Read')
-  await page.getByRole('button', { name: '查看所需权限' }).click()
-  await expect(panel.getByTestId('cloudflare-scopes')).toBeInViewport()
+  await panel.getByLabel('API Token').fill('mock-cloudflare-token')
+  await panel.getByRole('button', { name: '验证并保存' }).click()
+  const failure = panel.getByRole('alert').filter({ hasText: 'Cloudflare 请求失败（HTTP 403）' })
+  await expect(failure).toBeVisible()
+  await expect(failure).toContainText('token_permission_denied')
+  await expect(failure).toContainText('Cloudflare Token is missing a required permission')
+  expect(new URL(page.url()).pathname).toBe('/settings')
 })
 
-test('用量页提供刷新按钮并提示读取官方数据所需权限', async ({ page }) => {
-  // 这个用例连续验证四种用量状态（已连接 / 未授权 / 授权过期 / 缺账号），每轮都要
-  // 重新点一次刷新并等接口回包，CI 上并行跑满时整体很容易贴近默认 30s 上限；
-  // 它验证的是状态分支而不是性能，所以显式放宽为该用例的三倍时长。
-  test.slow()
+test('用量自动加载期间刷新按钮可用，并重新请求官方与本地数据', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 })
   const worker = await mockWorker(page)
-  worker.usage = { configured: true, accountIdConfigured: true, requests: 1200, period: { start: '2026-10-20T00:00:00.000Z', end: '2026-10-21T00:00:00.000Z' }, updatedAt: '2026-10-21T00:00:00.000Z', cached: false }
-  await page.goto('/')
-  await page.getByRole('menuitem', { name: '用量与配额', exact: true }).click()
-  await expect(page.getByRole('heading', { name: '用量与配额', level: 1 })).toBeVisible()
-  // 刷新按钮在自动加载期间必须保持可点击，点击后要真的发出一次请求。
-  // 页面里有多处「刷新用量」（顶栏、状态提示、数据源行），用 testid 固定指向顶栏那颗，
-  // 避免同名按钮的 nth 顺序随布局变化。
+  worker.usage = cloudflareFreeUsage
+  worker.holdNextCloudflareUsage = true
+  await page.goto('/usage')
+
   const refresh = page.getByTestId('usage-refresh')
-  const clickRefresh = async () => {
-    const before = worker.usageRequests
-    await expect(refresh).toBeEnabled()
-    await refresh.click()
-    await expect.poll(() => worker.usageRequests).toBeGreaterThan(before)
+  await expect(page.getByText('正在读取官方数据')).toBeVisible()
+  await expect(refresh).toBeEnabled()
+  await expect.poll(() => worker.cloudflareUsageRequests).toBe(1)
+  await expect.poll(() => worker.localUsageRequests).toBe(1)
+
+  await refresh.click()
+  await expect.poll(() => worker.cloudflareUsageRequests).toBe(2)
+  await expect.poll(() => worker.localUsageRequests).toBe(2)
+  worker.releaseCloudflareUsage()
+  await expect(page.getByText('Cloudflare Analytics 已连接')).toBeVisible()
+})
+
+test('用量页只保留一个刷新入口', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await mockWorker(page)
+  await page.goto('/usage')
+
+  await expect(page.getByTestId('usage-refresh')).toHaveCount(1)
+  await expect(page.getByRole('button', { name: '刷新用量' })).toHaveCount(1)
+})
+
+test('Cloudflare 免费额度显示八项已用量、上限和百分比', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  const worker = await mockWorker(page)
+  worker.usage = cloudflareFreeUsage
+  await page.goto('/usage')
+
+  const section = page.locator('.usage-section').filter({ hasText: 'Cloudflare 免费额度（每日）' })
+  await expect(section.locator('.resource-card')).toHaveCount(8)
+  const expected = [
+    ['Worker 请求', '50,000', '100,000', '已用 50%'],
+    ['D1 行读取', '1,250,000', '5,000,000', '已用 25%'],
+    ['D1 行写入', '50,000', '100,000', '已用 50%'],
+    ['KV 读取', '50,000', '100,000', '已用 50%'],
+    ['KV 写入', '500', '1,000', '已用 50%'],
+    ['KV 删除', '200', '1,000', '已用 20%'],
+    ['KV 列举', '100', '1,000', '已用 10%'],
+    ['Durable Object 请求', '25,000', '100,000', '已用 25%'],
+  ] as const
+  for (const [title, current, limit, percent] of expected) {
+    const card = section.locator('.resource-card').filter({ hasText: title })
+    await expect(card).toContainText(current)
+    await expect(card).toContainText(`上限 ${limit}`)
+    await expect(card).toContainText(percent)
+    await expect(card.locator('.resource-card-percent')).toHaveCount(1)
   }
-  await expect(refresh).toBeVisible()
-  await clickRefresh()
-  await expect(page.locator('.ant-notification-notice').filter({ hasText: '用量数据已刷新' })).toBeVisible()
+})
 
-  // 未配置 Cloudflare 时官方数据为空，但平台本地计数仍然有效：界面必须说明两者互不依赖。
-  worker.usage = { configured: false, cached: false }
-  await clickRefresh()
-  const unconfigured = page.getByRole('alert').filter({ hasText: '官方数据尚未连接' })
-  await expect(unconfigured).toBeVisible()
-  await expect(unconfigured).toContainText('不需要 Cloudflare 授权')
-  await expect(page.getByText('平台请求计数、R2 与活跃连接来自本平台自身统计').first()).toBeVisible()
+test('未配置 Cloudflare 时官方用量为空但平台本地计数仍显示', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await mockWorker(page)
+  await page.goto('/usage')
 
-  // 没有 refresh_token 时 Cloudflare 授权会过期，界面应直接引导重新授权。
-  worker.usage = { configured: true, accountIdConfigured: true, authorizationExpired: true, cached: false }
-  await clickRefresh()
-  const expired = page.getByRole('alert').filter({ hasText: 'Cloudflare 授权已过期' })
-  await expect(expired).toBeVisible()
-  await expect(expired).toContainText('Offline Access')
-  await expired.getByRole('button', { name: '重新授权' }).click()
-  await expect(page.locator('#settings-cloudflare')).toBeVisible()
+  const official = page.locator('.usage-section').filter({ hasText: 'Cloudflare 免费额度（每日）' })
+  const workerCard = official.locator('.resource-card').filter({ hasText: 'Worker 请求' })
+  await expect(workerCard).toContainText('—')
+  await expect(workerCard).toContainText('未读取')
+  await expect(workerCard.locator('.resource-card-percent')).toHaveCount(0)
 
-  // 缺少 Account Settings Read 时官方用量为空，需要明确告诉管理员要补哪项权限。
-  await page.getByRole('menuitem', { name: '用量与配额', exact: true }).click()
-  worker.usage = { configured: true, accountIdConfigured: false }
-  await clickRefresh()
-  const alert = page.getByRole('alert').filter({ hasText: '已授权，但未识别到 Cloudflare 账号' })
+  const platform = page.locator('.usage-section').filter({ hasText: '平台统计' })
+  await expect(platform.locator('.resource-card').filter({ hasText: '平台请求计数' })).toContainText('1,200')
+})
+
+test('旧 Cloudflare 凭据提示保留在用量页且不跳转首页', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  const worker = await mockWorker(page)
+  worker.usage = {
+    configured: false,
+    cached: false,
+    legacyCredential: true,
+    error: 'Cloudflare 旧版 OAuth 凭据已停用，请重新录入 API Token',
+  }
+  await page.goto('/usage')
+
+  const alert = page.getByRole('alert').filter({ hasText: '需要重新录入 Cloudflare API Token' })
   await expect(alert).toBeVisible()
-  await expect(alert).toContainText('Account Settings Read')
-  await alert.getByRole('button', { name: '检查配置' }).click()
-  await expect(page.locator('#settings-cloudflare')).toBeVisible()
+  await expect(alert).toContainText('旧凭据不会刷新或查询')
+  expect(new URL(page.url()).pathname).toBe('/usage')
+})
+
+test('用量接口 401/403 在用量页显示 HTTP 状态、错误码和消息', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  const worker = await mockWorker(page)
+  for (const failure of [
+    { status: 401, code: 'token_invalid', message: 'Invalid Cloudflare API Token' },
+    { status: 403, code: 'token_permission_denied', message: 'Cloudflare Token is missing a required permission' },
+  ]) {
+    worker.usageFault = failure
+    await page.goto('/usage')
+    const alert = page.locator('.ant-alert').filter({ hasText: `HTTP ${failure.status}` })
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText(failure.code)
+    await expect(alert).toContainText(failure.message)
+    expect(new URL(page.url()).pathname).toBe('/usage')
+  }
 })
 
 test('管理端测试 SMTP 通过后才能保存并清空密码', async ({ page }) => {
@@ -582,6 +688,7 @@ test('管理端设置导航随滚动联动并保持可见', async ({ page }) => 
   await scroller.evaluate((element) => element.scrollTo({ top: document.getElementById('settings-smtp')!.getBoundingClientRect().top + element.scrollTop - 8 }))
   await expect(nav.getByRole('menuitem', { name: '邮件 SMTP' })).toHaveClass(/ant-menu-item-selected/)
 
+  // 末尾分区通常不足一屏；滚到底触发 hook 的最后分区兜底高亮。
   await scroller.evaluate((element) => element.scrollTo({ top: element.scrollHeight }))
   await expect(nav.getByRole('menuitem', { name: '维护、域名与配额' })).toHaveClass(/ant-menu-item-selected/)
   const box = (await nav.boundingBox())!
@@ -883,7 +990,7 @@ test('管理端窄窗口下表格、图表和详情弹窗可用', async ({ page 
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
   }
 
-  // 用量页的两组额度卡与设置页的 11 个阈值输入都要能在 390px 内排下，不出现横向滚动。
+  // 用量页的两组额度卡与设置页的平台 3 项阈值输入都要能在 390px 内排下，不出现横向滚动。
   await page.getByRole('button', { name: '打开导航' }).click()
   await page.getByRole('menuitem', { name: '用量与配额', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Cloudflare 免费额度（每日）' })).toBeVisible()

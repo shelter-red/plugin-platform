@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 const scrollBehavior = (): ScrollBehavior => window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
 
@@ -12,6 +12,7 @@ const scrollToSection = (section: string) => {
  */
 export function useSettingsSections(ids: string[], focusSection: { section: string; nonce: number } | null) {
   const [activeSection, setActiveSection] = useState(ids[0] ?? '')
+  const atBottom = useRef(false)
 
   const goToSection = (section: string) => {
     setActiveSection(section)
@@ -30,6 +31,9 @@ export function useSettingsSections(ids: string[], focusSection: { section: stri
     if (!scroller || sections.length === 0) return
     const visible = new Set<string>()
     const observer = new IntersectionObserver((entries) => {
+      // 滚到底后由 scroll 监听固定高亮最后一项；同一次滚动触发的观察回调
+      // 可能仍携带有旧可见集合，必须先让兜底规则拥有最终决定权。
+      if (atBottom.current) return
       for (const entry of entries) {
         if (entry.isIntersecting) visible.add(entry.target.id)
         else visible.delete(entry.target.id)
@@ -40,7 +44,8 @@ export function useSettingsSections(ids: string[], focusSection: { section: stri
     sections.forEach((section) => observer.observe(section))
     // 末尾区块通常不足视口高度，滚到底时直接高亮最后一项，避免高亮停在上一节。
     const onScroll = () => {
-      if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 8) setActiveSection(ids[ids.length - 1])
+      atBottom.current = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 8
+      if (atBottom.current) setActiveSection(ids[ids.length - 1])
     }
     scroller.addEventListener('scroll', onScroll)
     return () => {

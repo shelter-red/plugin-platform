@@ -2,7 +2,6 @@ import { useTranslation } from 'react-i18next'
 import type { ApiInvite, CloudflareSettings, OauthSettings, PlatformSettings, SmtpSettings, Workspace } from '../../api'
 import type { Notify } from '../../components/ToastProvider'
 import { CloudflarePanel } from './CloudflarePanel'
-import type { CloudflareDiagnosis } from './cloudflare-auth'
 import { InvitePanel } from './InvitePanel'
 import { MaintenancePanel } from './MaintenancePanel'
 import { OauthPanel } from './OauthPanel'
@@ -22,8 +21,6 @@ export interface SettingsPageProps {
   workspaces: Workspace[]
   cloudflareSettings: CloudflareSettings | null
   onCloudflareChange: (settings: CloudflareSettings) => void
-  cloudflareDiagnosis: CloudflareDiagnosis | null
-  onDismissCloudflareDiagnosis: () => void
   smtpSettings: SmtpSettings | null
   onSmtpChange: (settings: SmtpSettings) => void
   oauthSettings: OauthSettings | null
@@ -36,8 +33,8 @@ export interface SettingsPageProps {
 /** 设置页只做权限过滤与分区装配，各区自己的状态留在各自的组件里。 */
 export function SettingsPage({
   focusSection, settings, onSettingsChange, apiLive, isSuperAdmin, canManageInvites,
-  activeWorkspaceId, workspaces, cloudflareSettings, onCloudflareChange, cloudflareDiagnosis,
-  onDismissCloudflareDiagnosis, smtpSettings, onSmtpChange, oauthSettings, onOauthChange,
+  activeWorkspaceId, workspaces, cloudflareSettings, onCloudflareChange,
+  smtpSettings, onSmtpChange, oauthSettings, onOauthChange,
   invites, onInvitesChange, onAction,
 }: SettingsPageProps) {
   const { t } = useTranslation()
@@ -48,7 +45,7 @@ export function SettingsPage({
   return <div className="settings-layout">
     <SettingsNav items={navItems} activeSection={activeSection} onSelect={goToSection} />
     <div className="settings-content">
-      {isSuperAdmin && <CloudflarePanel settings={cloudflareSettings} onSettingsChange={onCloudflareChange} oauth={oauthSettings} onOauthChange={onOauthChange} diagnosis={cloudflareDiagnosis} onDismissDiagnosis={onDismissCloudflareDiagnosis} apiLive={apiLive} onAction={onAction} />}
+      {isSuperAdmin && <CloudflarePanel settings={cloudflareSettings} onSettingsChange={onCloudflareChange} apiLive={apiLive} onAction={onAction} />}
       {isSuperAdmin && <div id="settings-oauth"><OauthPanel settings={oauthSettings} onChange={onOauthChange} onAction={onAction} /></div>}
       {canManageInvites && <div id="settings-invites"><InvitePanel invites={invites} onChange={onInvitesChange} onAction={onAction} isSuperAdmin={isSuperAdmin} activeWorkspaceId={activeWorkspaceId} workspaces={workspaces} /></div>}
       {isSuperAdmin && <div id="settings-smtp"><SmtpPanel settings={smtpSettings} onChange={onSmtpChange} onAction={onAction} /></div>}

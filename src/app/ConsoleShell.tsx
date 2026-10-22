@@ -67,13 +67,13 @@ export function ConsoleShell({ theme, setTheme, effectiveTheme, language }: Cons
     setSettingsFocus({ section, nonce: Date.now() })
   }
   // 数据层与 UI 层分离：拉取与刷新在 useConsoleData，弹窗/详情/命令面板仍由本组件持有。
-  const data = useConsoleData({ notify, openSettingsSection })
+  const data = useConsoleData({ notify })
   const {
     authEnabled, authState, authUser, workspaces, activeWorkspaceId, activeWorkspace, canWrite, isSuperAdmin,
     overview, servers, plugins, domains, audits, accessLogs, invites, setInvites, usage, localUsage,
     dataLoading, dataError, auditLoading, auditError, accessLogsLoading, accessLogsError, usageLoading, usageRefreshing, usageError,
     platformSettings, setPlatformSettings, cloudflareSettings, setCloudflareSettings, smtpSettings, setSmtpSettings, oauthSettings, setOauthSettings,
-    cloudflareDiagnosis, setCloudflareDiagnosis, apiLive, range, setRange, refreshData, refreshUsage, reloadWorkspaces,
+    apiLive, range, setRange, refreshData, refreshUsage, reloadWorkspaces,
   } = data
   const { detail, detailData, detailLoading, detailError, openDetail, closeDetail, healthPluginId, pluginActionLoading, runHealthCheck, runPluginAction } = usePluginActions({ notify, refreshData })
   const { exportAccessLogs, exportAudit } = useConsoleExports({ accessLogs, audits, notify })
@@ -202,11 +202,11 @@ export function ConsoleShell({ theme, setTheme, effectiveTheme, language }: Cons
             {page === 'servers' && <ServersPage servers={servers ?? []} loading={dataLoading} onRefresh={() => void refreshData()} onBind={() => setModal('server')} onDetail={(id) => void openDetail('server', id)} />}
             {page === 'plugins' && <PluginsPage plugins={plugins ?? []} loading={dataLoading} onSync={() => void syncManifests()} onLoad={() => setModal('plugin')} onDetail={(id) => void openDetail('plugin', id)} onHealth={(plugin) => void runHealthCheck(plugin)} />}
             {page === 'domains' && <DomainsPage domains={domains ?? []} loading={dataLoading} onAction={notify} onRefresh={() => void refreshData()} onAssign={() => setModal('domain')} />}
-            {page === 'usage' && <UsagePage settings={platformSettings} usage={usage} localUsage={localUsage} loading={usageLoading} refreshing={usageRefreshing} error={usageError} onRefresh={() => void refreshUsage()} onOpenCloudflareSettings={() => openSettingsSection('cloudflare')} />}
+            {page === 'usage' && <UsagePage settings={platformSettings} usage={usage} localUsage={localUsage} loading={usageLoading} error={usageError} onOpenCloudflareSettings={() => openSettingsSection('cloudflare')} />}
             {page === 'logs' && <AccessLogsPage logs={accessLogs ?? []} loading={accessLogsLoading} error={accessLogsError} onExport={exportAccessLogs} />}
             {page === 'audit' && <AuditPage audits={audits ?? []} loading={auditLoading} error={auditError} onExport={exportAudit} />}
             {page === 'workspaces' && <WorkspacePage workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} onSwitch={switchWorkspace} onWorkspacesChange={reloadWorkspaces} onAction={notify} />}
-            {page === 'settings' && <SettingsPage focusSection={settingsFocus} settings={platformSettings} apiLive={apiLive} isSuperAdmin={isSuperAdmin} canManageInvites={isSuperAdmin || activeWorkspace?.role === 'owner'} activeWorkspaceId={activeWorkspaceId} workspaces={workspaces} onSettingsChange={setPlatformSettings} cloudflareSettings={cloudflareSettings} onCloudflareChange={setCloudflareSettings} cloudflareDiagnosis={cloudflareDiagnosis} onDismissCloudflareDiagnosis={() => setCloudflareDiagnosis(null)} smtpSettings={smtpSettings} onSmtpChange={setSmtpSettings} oauthSettings={oauthSettings} onOauthChange={setOauthSettings} invites={invites} onInvitesChange={setInvites} onAction={notify} />}
+            {page === 'settings' && <SettingsPage focusSection={settingsFocus} settings={platformSettings} apiLive={apiLive} isSuperAdmin={isSuperAdmin} canManageInvites={isSuperAdmin || activeWorkspace?.role === 'owner'} activeWorkspaceId={activeWorkspaceId} workspaces={workspaces} onSettingsChange={setPlatformSettings} cloudflareSettings={cloudflareSettings} onCloudflareChange={setCloudflareSettings} smtpSettings={smtpSettings} onSmtpChange={setSmtpSettings} oauthSettings={oauthSettings} onOauthChange={setOauthSettings} invites={invites} onInvitesChange={setInvites} onAction={notify} />}
             {docPage && (docPage === 'account' ? <AccountPage user={authUser} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} /> : <DocPage page={docPage} />)}
           </div>
         </div>

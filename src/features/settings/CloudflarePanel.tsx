@@ -1,38 +1,57 @@
 import { Cloud } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import type { CloudflareSettings, OauthSettings } from '../../api'
+import type { CloudflareSettings } from '../../api'
 import { Panel } from '../../components/Panel'
 import { StatusBadge } from '../../components/StatusBadge'
 import type { Notify } from '../../components/ToastProvider'
-import type { CloudflareDiagnosis } from './cloudflare-auth'
-import { CloudflareAuthorizeSection } from './CloudflareAuthorizeSection'
-import { CloudflareClientSection } from './CloudflareClientSection'
-import { OauthNotices } from './OauthNotices'
+import { CloudflarePermissionList } from './CloudflarePermissionList'
+import { CloudflareTokenForm } from './CloudflareTokenForm'
+import { CloudflareTokenStatus } from './CloudflareTokenStatus'
+import { useCloudflareTokenForm } from './useCloudflareTokenForm'
 
 interface Props {
   settings: CloudflareSettings | null
   onSettingsChange: (settings: CloudflareSettings) => void
-  oauth: OauthSettings | null
-  onOauthChange: (settings: OauthSettings) => void
-  diagnosis: CloudflareDiagnosis | null
-  onDismissDiagnosis: () => void
   apiLive: boolean
   onAction: Notify
 }
 
-/** 系统设置 → Cloudflare：授权与 OAuth 客户端两区，授权诊断由授权区承载。 */
-export function CloudflarePanel({ settings, onSettingsChange, oauth, onOauthChange, diagnosis, onDismissDiagnosis, apiLive, onAction }: Props) {
+/** 系统设置 → Cloudflare：长期 API Token 的录入、验证状态和固定只读权限。 */
+export function CloudflarePanel({ settings, onSettingsChange, apiLive, onAction }: Props) {
   const { t } = useTranslation()
-  const redirect = `${window.location.origin}/auth/cloudflare/callback`
+  const form = useCloudflareTokenForm(settings, onSettingsChange, onAction)
+  const configured = settings?.configured === true
+  const tone = configured ? 'success' : settings?.legacyCredential ? 'warning' : 'neutral'
+  const status = configured
+    ? t('settings.cloudflare.configured')
+    : settings?.legacyCredential
+      ? t('settings.cloudflare.legacy')
+      : settings
+        ? t('settings.cloudflare.notConfigured')
+        : apiLive
+          ? t('settings.cloudflare.loadFailed')
+          : t('settings.cloudflare.disconnected')
+
   return <Panel id="settings-cloudflare" className="settings-panel" padded heading={
     <div className="settings-heading">
       <div className="settings-icon"><Cloud size={18} /></div>
       <div><h2>{t('settings.cloudflare.title')}</h2><p>{t('settings.cloudflare.description')}</p></div>
-      <StatusBadge tone={settings?.configured ? 'success' : 'neutral'}>{settings?.configured ? t('settings.cloudflare.authorized') : settings ? t('settings.cloudflare.notConfigured') : apiLive ? t('settings.cloudflare.loadFailed') : t('settings.cloudflare.disconnected')}</StatusBadge>
+      <StatusBadge tone={tone}>{status}</StatusBadge>
     </div>
   }>
-    <OauthNotices settings={oauth} />
-    <CloudflareAuthorizeSection settings={settings} onSettingsChange={onSettingsChange} oauth={oauth} diagnosis={diagnosis} onDismissDiagnosis={onDismissDiagnosis} onAction={onAction} />
-    <CloudflareClientSection oauth={oauth} onOauthChange={onOauthChange} redirect={redirect} onAction={onAction} />
+    <CloudflareTokenStatus settings={settings} apiLive={apiLive} />
+    <CloudflareTokenForm
+      settings={settings}
+      apiToken={form.apiToken}
+      accountId={form.accountId}
+      saving={form.saving}
+      revoking={form.revoking}
+      failure={form.failure}
+      onApiTokenChange={form.setApiToken}
+      onAccountIdChange={form.setAccountId}
+      onSave={() => void form.saveToken()}
+      onRevoke={() => void form.revokeToken()}
+    />
+    <CloudflarePermissionList permissions={settings?.permissions} />
   </Panel>
 }
