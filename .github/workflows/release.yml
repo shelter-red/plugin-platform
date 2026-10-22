@@ -55,9 +55,12 @@ jobs:
         run: |
           $vcpkg = $env:VCPKG_INSTALLATION_ROOT
           if (-not $vcpkg) { $vcpkg = 'C:\vcpkg' }
+          # 与 platform-ci.yml 一致：关闭 vcpkg applocal，避免并行构建时多个目标
+          # 同时复制同名 OpenSSL DLL 而失败；运行库在打包步骤里显式复制。
           cmake -S native-server -B native-server/build-win -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="$vcpkg\scripts\buildsystems\vcpkg.cmake" `
-            -DVCPKG_TARGET_TRIPLET=x64-windows
+            -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -DVCPKG_APPLOCAL_DEPS=OFF
 
       - name: 配置（macOS）
         if: runner.os == 'macOS'

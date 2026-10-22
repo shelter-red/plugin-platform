@@ -132,9 +132,14 @@ jobs:
           $vcpkg = $env:VCPKG_INSTALLATION_ROOT
           if (-not $vcpkg) { $vcpkg = 'C:\vcpkg' }
           & "$vcpkg\vcpkg.exe" install openssl:x64-windows
+          # vcpkg 会给每个目标挂 applocal PostBuild 事件，MSBuild 并行构建时多个目标
+          # 同时往同一个输出目录复制同名 OpenSSL DLL，偶发共享冲突后以 MSB3073 失败
+          # （run 39773741408 的 plugmesh-lifecycle-sample 即此原因，原生代码与全绿
+          # 的 run 39770782201 完全一致）。关掉 applocal，改为构建完成后单进程部署一次。
           cmake -S native-server -B native-server/build-win -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="$vcpkg\scripts\buildsystems\vcpkg.cmake" `
-            -DVCPKG_TARGET_TRIPLET=x64-windows
+            -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -DVCPKG_APPLOCAL_DEPS=OFF
       - name: 构建
         shell: pwsh
         run: |
@@ -145,6 +150,14 @@ jobs:
           cmake --build native-server/build-win --config Release --parallel 2>&1 |
             Tee-Object -FilePath $log | Out-Host
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: 部署 OpenSSL 运行库
+        shell: pwsh
+        run: |
+          $vcpkg = $env:VCPKG_INSTALLATION_ROOT
+          if (-not $vcpkg) { $vcpkg = 'C:\vcpkg' }
+          # applocal 已关闭，这里一次性把运行库放到可执行文件旁；ctest 另有 PATH 兜底。
+          Get-ChildItem "$vcpkg\installed\x64-windows\bin\*.dll" -ErrorAction SilentlyContinue |
+            Copy-Item -Destination native-server/build-win/Release -Force
       - name: 测试
         shell: pwsh
         working-directory: native-server/build-win
