@@ -14,9 +14,14 @@ export default defineConfig({
   use: {
     trace: 'retain-on-failure',
   },
-  // 像素基线在不同 Ubuntu/字体环境下会有 1%-3% 的抗锯齿差异（CJK 回退字体不同），
-  // 放任 0 容差会让 CI 频繁误报；结构性回归仍然远高于该比例。
+  // CI 容器里 Playwright 会并行跑多个 project，共用一台 Vite dev server 做冷启动，
+  // 加上 AntD 首屏渲染，实测单次页面加载能到 6s 以上，断言偶发在 5s 内还等不到 DOM。
+  // 这些断言检查的是「最终呈现什么」而不是「多快出现」，所以 CI 放宽到 15s：慢不再
+  // 误报成坏，缺功能或状态错仍然会失败。
   expect: {
+    timeout: process.env.CI ? 15_000 : 5_000,
+    // 像素基线在不同 Ubuntu/字体环境下会有 1%-3% 的抗锯齿差异（CJK 回退字体不同），
+    // 放任 0 容差会让 CI 频繁误报；结构性回归仍然远高于该比例。
     toHaveScreenshot: { maxDiffPixelRatio: 0.05, threshold: 0.3 },
   },
   projects: [

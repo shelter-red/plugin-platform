@@ -292,6 +292,10 @@ test('管理端在后台保存 OAuth 配置且不回显密钥', async ({ page })
 })
 
 test('Cloudflare 区块展示固定权限清单，并把授权失败诊断留在系统设置页', async ({ page }) => {
+  // 授权回跳诊断只存在于「页面加载时读回一次性结果」这条路径上，所以本用例要完整加载
+  // 两次管理端。CI 上四个 project 并行时，Vite 每次冷启动都要重新下发全部模块，单次
+  // 加载能到 8s 以上，整例很容易顶到默认 30s 上限；它验证的是状态分支，显式放宽三倍。
+  test.slow()
   await page.setViewportSize({ width: 1440, height: 1000 })
   const worker = await mockWorker(page)
   // 回调结果改为一次性 Cookie：页面加载后主动读回并自动打开 Cloudflare 面板。
@@ -337,7 +341,10 @@ test('Cloudflare 区块展示固定权限清单，并把授权失败诊断留在
   worker.cloudflareAuthResult = { kind: 'error', code: 'invalid_client', description: null }
   await page.goto('/')
   const invalidClient = page.locator('#settings-cloudflare').getByTestId('cloudflare-diagnosis')
-  await expect(invalidClient).toContainText('invalid_client')
+  // 每次加载都会读回一次一次性结果（第一次是 access_denied）：先确认这次读回确实发生，
+  // 再把「诊断没渲染」和「页面还在冷启动、请求都没发出」区分开。
+  await expect.poll(() => worker.authResultRequests, { timeout: 15_000 }).toBeGreaterThan(1)
+  await expect(invalidClient).toContainText('invalid_client', { timeout: 15_000 })
   await expect(invalidClient).toContainText('Client ID 或 Secret')
   await expect(invalidClient).not.toContainText('你拒绝了授权请求')
 })
@@ -359,6 +366,10 @@ test('Cloudflare 未识别账号时提示缺少 Account Settings Read 权限', a
 })
 
 test('用量页提供刷新按钮并提示读取官方数据所需权限', async ({ page }) => {
+  // 这个用例连续验证四种用量状态（已连接 / 未授权 / 授权过期 / 缺账号），每轮都要
+  // 重新点一次刷新并等接口回包，CI 上并行跑满时整体很容易贴近默认 30s 上限；
+  // 它验证的是状态分支而不是性能，所以显式放宽为该用例的三倍时长。
+  test.slow()
   await page.setViewportSize({ width: 1440, height: 1000 })
   const worker = await mockWorker(page)
   worker.usage = { configured: true, accountIdConfigured: true, requests: 1200, period: { start: '2026-10-20T00:00:00.000Z', end: '2026-10-21T00:00:00.000Z' }, updatedAt: '2026-10-21T00:00:00.000Z', cached: false }
@@ -366,13 +377,15 @@ test('用量页提供刷新按钮并提示读取官方数据所需权限', async
   await page.getByRole('menuitem', { name: '用量与配额', exact: true }).click()
   await expect(page.getByRole('heading', { name: '用量与配额', level: 1 })).toBeVisible()
   // 刷新按钮在自动加载期间必须保持可点击，点击后要真的发出一次请求。
+  // 页面里有多处「刷新用量」（顶栏、状态提示、数据源行），用 testid 固定指向顶栏那颗，
+  // 避免同名按钮的 nth 顺序随布局变化。
+  const refresh = page.getByTestId('usage-refresh')
   const clickRefresh = async () => {
     const before = worker.usageRequests
-    await expect(page.getByRole('button', { name: '刷新用量' }).first()).toBeEnabled()
-    await page.getByRole('button', { name: '刷新用量' }).first().click()
+    await expect(refresh).toBeEnabled()
+    await refresh.click()
     await expect.poll(() => worker.usageRequests).toBeGreaterThan(before)
   }
-  const refresh = page.getByRole('button', { name: '刷新用量' }).first()
   await expect(refresh).toBeVisible()
   await clickRefresh()
   await expect(page.locator('.ant-notification-notice').filter({ hasText: '用量数据已刷新' })).toBeVisible()

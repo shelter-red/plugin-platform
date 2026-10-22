@@ -25,11 +25,13 @@ step 'Worker smoke'
 npm run --silent worker:smoke
 
 step '管理端 UI smoke（含双主题×三视口像素基线）'
+# CI=1 不只影响报告：playwright.config.ts 里的重试次数和断言超时都按 CI 取值，
+# 不设这个变量跑出来的「全绿」并不等于 Actions 上的行为。
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-  docker run --rm --ipc=host -v "$PWD:/w" -w /w mcr.microsoft.com/playwright:v1.55.1-noble npm run ui:smoke
+  docker run --rm --ipc=host -e CI=1 -v "$PWD:/w" -w /w mcr.microsoft.com/playwright:v1.55.1-noble npm run ui:smoke
 else
   echo '未检测到可用的 docker，改为在宿主机执行；像素基线可能与 CI 有差异。' >&2
-  npm run ui:smoke
+  CI=1 npm run ui:smoke
 fi
 
 printf '\n全部通过：可以推送（CI 的 web job 与本脚本同序）。\n'

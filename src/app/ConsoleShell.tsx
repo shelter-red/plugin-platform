@@ -585,7 +585,7 @@ export function ConsoleShell({ theme, setTheme, effectiveTheme, language }: Cons
               </div>
               <div className="header-actions">
                 {page === 'overview' && <Button icon={<RefreshCw size={15} />} onClick={() => void refreshData()} disabled={dataLoading}>{t('shell.refresh')}</Button>}
-                {page === 'usage' && <Button icon={<RefreshCw size={15} />} onClick={() => void refreshUsage()} loading={usageRefreshing}>{t('usage.refresh')}</Button>}
+                {page === 'usage' && <Button data-testid="usage-refresh" icon={<RefreshCw size={15} />} onClick={() => void refreshUsage()} loading={usageRefreshing}>{t('usage.refresh')}</Button>}
                 {page === 'servers' && <Button type="primary" icon={<Plus size={16} />} onClick={() => setModal('server')} disabled={!canWrite} title={canWrite ? undefined : t('workspace.readOnlyHint')}>{t('shell.bindServer')}</Button>}
                 {page === 'domains' && <Button type="primary" icon={<Plus size={16} />} onClick={() => setModal('domain')} disabled={!canWrite} title={canWrite ? undefined : t('workspace.readOnlyHint')}>{t('shell.assignDomain')}</Button>}
                 {page === 'plugins' && <Button type="primary" icon={<Plus size={16} />} onClick={() => setModal('plugin')} disabled={!canWrite} title={canWrite ? undefined : t('workspace.readOnlyHint')}>{t('shell.loadPlugin')}</Button>}
