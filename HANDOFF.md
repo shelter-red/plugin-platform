@@ -10,17 +10,20 @@
 - 2026-10-23：核对分支、远端、未提交组件化文件和最近 Actions；建立本 HANDOFF。此步只整理事实与实施计划，未开始 Cloudflare Token / 原生构建实现。
 - 2026-10-23：整理用户从组件化、登录错误、setup、D1、Cloudflare OAuth/Token、额度监控、UI 文案到原生构建/帮助中心的全部反馈，补充“用户问题总账”，供压缩上下文后直接恢复工作。
 - 2026-10-23：`1e5fec7 docs: 记录平台迁移与组件化交接清单` 已推送；平台验收 run `39816813766` 为 `completed/success`。此前 `1e4fd10`、`fd80fa4` 的失败仍作为反例，后续每推一次必须重新查 Actions。
+- 2026-10-23：`4cc1b72 docs: 整理会话遗留问题与验收总账` 已推送；平台验收 run `39817786882` 为 `completed/success`。本文件后续若只有文档更新，功能验收仍以最近一次包含代码的提交为准。
 - 当前工作区仍保留上一轮未提交的侧栏、账号、工作区组件拆分及额度文案/测试改动；本 HANDOFF 更新不会覆盖或回滚这些文件。
 
 ## 0. 先读这里：工作区与 Git 状态
 
 - 仓库：`/home/tc/work/plugin-platform`
 - 当前分支：`main`
-- 当前 HEAD / `origin/main`：`1e5fec7 docs: 记录平台迁移与组件化交接清单`
+- 最近已验证提交：`4cc1b72 docs: 整理会话遗留问题与验收总账`
+- 精确 HEAD 不要抄本文档，执行 `git log -1 --oneline`；本文档自身提交可能晚于该已验证提交。
 - fetch remote：`https://github.com/shelter-red/plugin-platform.git`
 - push remote：`git@github-plugin-platform:shelter-red/plugin-platform.git`
-- 2026-10-23 通过 GitHub API 查询时，`1e5fec7` 的“平台验收”已成功（run `39816813766`）；用户指出的 `1e4fd10`、`fd80fa4` 是更早的失败提交。**不要因此认为后续改动不会让 Actions 失败。**
+- 2026-10-23 通过 GitHub API 查询时，`4cc1b72` 的“平台验收”已成功（run `39817786882`）；`1e5fec7` 也成功（run `39816813766`）；用户指出的 `1e4fd10`、`fd80fa4` 是更早的失败提交。**不要因此认为后续改动不会让 Actions 失败。**
 - 当前环境没有安装 `gh`。可先用 GitHub API 查询 run；需要看日志时再安装/配置 GitHub CLI，或使用已认证的 GitHub API。
+- 未认证 GitHub REST API 限额为每小时 60 次；2026-10-23 已因 15 秒高频轮询触发 403。后续轮询间隔至少 1 分钟，优先在预计完成后查询；额度耗尽时等 `X-RateLimit-Reset`，或用浏览器/`git` 侧信息，不要把 403 误判为 Actions 失败。
 - **工作区有上一轮组件化改动，严禁 `git reset --hard`、`git clean -fd`、`git checkout -- .` 或覆盖这些文件。** 修改前先看 `git status` 和 `git diff`。
 
 当前未提交改动：
