@@ -114,11 +114,11 @@ test('管理端在真实 C++ 服务器上加载、启停插件并分配域名', 
     const pluginRow = page.getByRole('row', { name: new RegExp(`Sample Plugin.*${server.name}`) })
     await expect(pluginRow).toContainText('已发现')
 
+    const pluginId = (await (await page.request.get('/api/plugins')).json() as { results: Array<{ id: string; plugin_id: string; server_name: string }> }).results.find((item) => item.plugin_id === 'sample.plugin' && item.server_name === server.name)!.id
     await page.locator('.header-actions').getByRole('button', { name: '加载插件' }).click()
     const loadDialog = page.getByRole('dialog', { name: '加载插件' })
-    const loadOption = loadDialog.locator('option').filter({ hasText: 'sample.plugin' }).filter({ hasText: server.name })
-    const pluginId = (await loadOption.getAttribute('value'))!
-    await loadDialog.locator('select').selectOption(pluginId)
+    await loadDialog.getByRole('combobox').click()
+    await page.locator('.ant-select-item-option').filter({ hasText: 'sample.plugin' }).filter({ hasText: server.name }).click()
     await loadDialog.getByRole('button', { name: '加载插件', exact: true }).click()
     await expect(loadDialog.getByRole('heading', { name: '加载命令已确认' })).toBeVisible()
     await expect(loadDialog.getByText('插件当前状态：loaded')).toBeVisible()
@@ -144,8 +144,8 @@ test('管理端在真实 C++ 服务器上加载、启停插件并分配域名', 
     const domainDialog = page.getByRole('dialog', { name: '分配公开域名' })
     const prefix = `console-${Date.now().toString(36)}`
     const hostname = `${prefix}.plugins.example.com`
-    const domainOption = domainDialog.locator('option').filter({ hasText: 'sample.plugin' }).filter({ hasText: server.name })
-    await domainDialog.locator('select').selectOption((await domainOption.getAttribute('value'))!)
+    await domainDialog.getByRole('combobox').click()
+    await page.locator('.ant-select-item-option').filter({ hasText: 'sample.plugin' }).filter({ hasText: server.name }).click()
     await domainDialog.getByPlaceholder('例如：my-plugin').fill(prefix)
     await domainDialog.getByRole('button', { name: '分配域名', exact: true }).click()
     await expect(domainDialog.getByRole('heading', { name: '公开域名已分配' })).toBeVisible()

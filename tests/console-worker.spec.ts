@@ -436,7 +436,8 @@ test('管理端分配域名时先校验前缀再提交并展示结果', async ({
   await page.getByRole('button', { name: '分配域名' }).click()
 
   const dialog = page.getByRole('dialog', { name: '分配公开域名' })
-  await dialog.getByRole('combobox').selectOption('plugin-1')
+  await dialog.getByRole('combobox').click()
+  await page.locator('.ant-select-item-option').filter({ hasText: '示例插件' }).click()
   const prefix = dialog.getByLabel('域名前缀')
   await expect(prefix).toHaveAttribute('maxlength', '48')
   await dialog.getByRole('button', { name: '分配域名' }).click()
@@ -460,7 +461,8 @@ test('管理端域名分配失败时在弹窗内显示服务端校验错误', as
   await page.getByRole('button', { name: '分配域名' }).click()
 
   const dialog = page.getByRole('dialog', { name: '分配公开域名' })
-  await dialog.getByRole('combobox').selectOption('plugin-1')
+  await dialog.getByRole('combobox').click()
+  await page.locator('.ant-select-item-option').filter({ hasText: '示例插件' }).click()
   await dialog.getByLabel('域名前缀').fill('Bad Prefix')
   await dialog.getByRole('button', { name: '分配域名' }).click()
 
@@ -480,7 +482,8 @@ test('管理端把英文服务端错误替换为本地化提示', async ({ page 
   await page.getByRole('button', { name: '分配域名' }).click()
 
   const dialog = page.getByRole('dialog', { name: '分配公开域名' })
-  await dialog.getByRole('combobox').selectOption('plugin-1')
+  await dialog.getByRole('combobox').click()
+  await page.locator('.ant-select-item-option').filter({ hasText: '示例插件' }).click()
   await dialog.getByLabel('域名前缀').fill('Bad Prefix')
   await dialog.getByRole('button', { name: '分配域名' }).click()
 
@@ -497,7 +500,8 @@ test('管理端从发现态插件提交加载命令', async ({ page }) => {
   await page.locator('.header-actions').getByRole('button', { name: '加载插件' }).click()
 
   const dialog = page.getByRole('dialog', { name: '加载插件' })
-  await dialog.getByRole('combobox').selectOption('plugin-1')
+  await dialog.getByRole('combobox').click()
+  await page.locator('.ant-select-item-option').filter({ hasText: '示例插件' }).click()
   await dialog.getByRole('button', { name: '加载插件' }).click()
 
   await expect(dialog.getByText('加载命令已确认')).toBeVisible()
