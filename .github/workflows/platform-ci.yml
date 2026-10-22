@@ -91,14 +91,23 @@ jobs:
         run: |
           log="$RUNNER_TEMP/native-build.log"
           [ -f "$log" ] || exit 0
-          grep -E "error:|错误|FAILED:" "$log" | head -10 | while IFS= read -r line; do echo "::error::${line}"; done
+          # 没有匹配行时 grep 返回 1；本步骤只在失败时运行，不能因为“没摘要”再失败一次。
+          grep -E "error:|fatal error|错误|FAILED:" "$log" | head -10 | while IFS= read -r line; do echo "::error::${line}"; done || true
+          exit 0
       - name: 测试失败摘要
         if: failure()
         shell: bash
         run: |
-          log=native-server/build/Testing/Temporary/LastTestsFailed.log
-          [ -f "$log" ] || exit 0
-          head -10 "$log" | while IFS= read -r line; do echo "::error::ctest ${line}"; done
+          failed=native-server/build/Testing/Temporary/LastTestsFailed.log
+          detail=native-server/build/Testing/Temporary/LastTest.log
+          if [ -f "$failed" ]; then
+            head -10 "$failed" | while IFS= read -r line; do echo "::error::ctest ${line}"; done || true
+          fi
+          # 用例名不够定位问题时，把日志里的断言/错误行也贴到 check-run 上。
+          if [ -f "$detail" ]; then
+            grep -nE "Failed|FAILED|error|Error|Expected|Actual|assert" "$detail" | head -20 | while IFS= read -r line; do echo "::error::${line}"; done || true
+          fi
+          exit 0
       - name: 上传失败日志
         if: failure()
         uses: actions/upload-artifact@v4
@@ -127,8 +136,13 @@ jobs:
       - name: 构建
         shell: pwsh
         run: |
+          # MSBuild 会把进度和告警写到 stderr，PowerShell 在 $ErrorActionPreference=Stop
+          # 下会把它当成终止错误，从而丢掉真实退出码；这里显式以 cmake 的退出码为准。
+          $ErrorActionPreference = 'Continue'
+          $log = "$env:RUNNER_TEMP\native-build.log"
           cmake --build native-server/build-win --config Release --parallel 2>&1 |
-            Tee-Object -FilePath "$env:RUNNER_TEMP\native-build.log"
+            Tee-Object -FilePath $log | Out-Host
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: 测试
         shell: pwsh
         working-directory: native-server/build-win
@@ -143,16 +157,24 @@ jobs:
         run: |
           $log = "$env:RUNNER_TEMP\native-build.log"
           if (-not (Test-Path $log)) { exit 0 }
-          Select-String -Path $log -Pattern 'error (C|LNK|MSB)\d+' | Select-Object -First 10 |
-            ForEach-Object { Write-Host "::error::$($_.Line)" }
+          Select-String -Path $log -Pattern 'error [A-Z]+\d+|fatal error|CMake Error|error LNK' |
+            Select-Object -First 10 | ForEach-Object { Write-Host "::error::$($_.Line)" }
+          exit 0
       - name: 测试失败摘要
         if: failure()
         shell: pwsh
         run: |
-          $log = 'native-server/build-win/Testing/Temporary/LastTestsFailed.log'
-          if (-not (Test-Path $log)) { exit 0 }
-          Get-Content $log | Select-Object -First 10 |
-            ForEach-Object { Write-Host "::error::ctest $_" }
+          $failed = 'native-server/build-win/Testing/Temporary/LastTestsFailed.log'
+          $detail = 'native-server/build-win/Testing/Temporary/LastTest.log'
+          if (Test-Path $failed) {
+            Get-Content $failed | Select-Object -First 10 |
+              ForEach-Object { Write-Host "::error::ctest $_" }
+          }
+          if (Test-Path $detail) {
+            Select-String -Path $detail -Pattern 'Failed|FAILED|error|Expected|Actual|assert' |
+              Select-Object -First 20 | ForEach-Object { Write-Host "::error::$($_.Line)" }
+          }
+          exit 0
       - name: 上传失败日志
         if: failure()
         uses: actions/upload-artifact@v4
@@ -199,14 +221,23 @@ jobs:
         run: |
           log="$RUNNER_TEMP/native-build.log"
           [ -f "$log" ] || exit 0
-          grep -E "error:|错误|FAILED:" "$log" | head -10 | while IFS= read -r line; do echo "::error::${line}"; done
+          # 没有匹配行时 grep 返回 1；本步骤只在失败时运行，不能因为“没摘要”再失败一次。
+          grep -E "error:|fatal error|错误|FAILED:" "$log" | head -10 | while IFS= read -r line; do echo "::error::${line}"; done || true
+          exit 0
       - name: 测试失败摘要
         if: failure()
         shell: bash
         run: |
-          log=native-server/build/Testing/Temporary/LastTestsFailed.log
-          [ -f "$log" ] || exit 0
-          head -10 "$log" | while IFS= read -r line; do echo "::error::ctest ${line}"; done
+          failed=native-server/build/Testing/Temporary/LastTestsFailed.log
+          detail=native-server/build/Testing/Temporary/LastTest.log
+          if [ -f "$failed" ]; then
+            head -10 "$failed" | while IFS= read -r line; do echo "::error::ctest ${line}"; done || true
+          fi
+          # 用例名不够定位问题时，把日志里的断言/错误行也贴到 check-run 上。
+          if [ -f "$detail" ]; then
+            grep -nE "Failed|FAILED|error|Error|Expected|Actual|assert" "$detail" | head -20 | while IFS= read -r line; do echo "::error::${line}"; done || true
+          fi
+          exit 0
       - name: 上传失败日志
         if: failure()
         uses: actions/upload-artifact@v4
