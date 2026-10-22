@@ -396,6 +396,29 @@ test('管理端设置页显示 Worker 维护状态', async ({ page }) => {
   await expect(page.getByText('允许新连接')).toBeVisible()
 })
 
+test('管理端设置导航随滚动联动并保持可见', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 800 })
+  await mockWorker(page)
+  await page.goto('/')
+  await page.getByRole('button', { name: '系统设置', exact: true }).click()
+
+  const nav = page.getByRole('navigation', { name: '系统设置' })
+  const scroller = page.locator('.page-scroll')
+  await expect(nav.getByRole('button', { name: 'Cloudflare', exact: true })).toHaveAttribute('aria-current', 'page')
+
+  await scroller.evaluate((element) => element.scrollTo({ top: document.getElementById('settings-smtp')!.getBoundingClientRect().top + element.scrollTop - 8 }))
+  await expect(nav.getByRole('button', { name: '邮件 SMTP' })).toHaveAttribute('aria-current', 'page')
+
+  await scroller.evaluate((element) => element.scrollTo({ top: element.scrollHeight }))
+  await expect(nav.getByRole('button', { name: '维护、域名与配额' })).toHaveAttribute('aria-current', 'page')
+  const box = (await nav.boundingBox())!
+  expect(box.y).toBeGreaterThanOrEqual(0)
+  expect(box.y + box.height).toBeLessThanOrEqual(800)
+
+  await scroller.evaluate((element) => element.scrollTo({ top: 0 }))
+  await expect(nav.getByRole('button', { name: 'Cloudflare', exact: true })).toHaveAttribute('aria-current', 'page')
+})
+
 const enabledPlugin = {
   id: 'plugin-1',
   plugin_id: 'demo',
