@@ -1,77 +1,79 @@
 # Plugmesh 平台交接（HANDOFF）
 
-> 最后更新：2026-10-23 00:52（Asia/Shanghai）
+> 最后更新：2026-10-23 01:26（Asia/Shanghai）
 > 状态：**进行中，未完成**
 > 维护规则：每完成一个可验证步骤，先更新本文件，再提交一条可追溯的中文 Git 记录；未记录不得继续下一步。
-> 本文件是后续上下文的优先事实来源。若 README、验收矩阵或旧注释与本文冲突，以用户最新要求和实际代码为准；旧文档需要在实现完成后同步重写，不能把旧 OAuth 行为当成现状。
+> 本文件是后续上下文的优先事实来源。若 README、验收矩阵、旧注释或聊天摘要与本文冲突，以用户最新要求和实际代码为准；旧文档需在实现完成后同步重写，不能把旧 OAuth 行为当成目标。
+
+## 压缩恢复速查
+
+恢复工作先执行：
+
+```bash
+cd /home/tc/work/plugin-platform
+git status --short
+git log -1 --oneline --decorate
+git rev-parse HEAD origin/main
+git diff
+```
+
+当前权威快照（2026-10-23 01:26）：
+
+- 仓库：`/home/tc/work/plugin-platform`
+- 分支：`main`
+- HEAD：`abf05ca refactor(ui): 完成侧栏账号与工作区组件拆分`
+- `origin/main` 与本机 HEAD 一致；push 使用 `git@github-plugin-platform:shelter-red/plugin-platform.git`，fetch 使用 `https://github.com/shelter-red/plugin-platform.git`。
+- `abf05ca` 已推送，Actions“平台验收”run `39820685855`（run #34）已为 `completed/success`。恢复后仍需在未来每次推送时重复“本地完整 CI → 推送 → Actions 闭环”，不能沿用这次成功。
+- 当前工作区只保留以下 5 个未提交文件，均与尚未完成的 Cloudflare 额度/旧 OAuth 文案有关：
+  ```text
+  M src/features/overview/UsageResourcesPanel.tsx
+  M src/features/usage/PlatformUsageSection.tsx
+  M src/locales/en.ts
+  M src/locales/zh-CN.ts
+  M tests/console-worker.spec.ts
+  ```
+  这些改动包含有用的 8 项额度展示和“平台请求不限”方向，但仍依赖旧的 `settings.cloudflareQuotas`、`authorizationExpired` 和 OAuth 接口，**不能原样提交**；应在 Token + subscriptions 实现时整合、改写或删除。
+- 侧栏、账号、工作区组件拆分已经提交为 `abf05ca`；`HANDOFF.md` 本次整理是独立文档步骤。不要再重复拆分登录页/侧栏/账号/工作区。
+- **严禁用 `git reset --hard`、`git clean`、`git checkout -- .` 或任何批量覆盖操作处理这 5 个文件。**
+
+下一步（按顺序）：
+
+1. `abf05ca` 的 Actions 已成功（run `39820685855`），当前 HEAD 的完整 `npm run ci:local` 也已通过（81 Playwright 用例）。下一步直接进入 Cloudflare Token 后端迁移。
+2. 实现 Cloudflare API Token 后端：`verify → accounts（分页）→ subscriptions`、旧 OAuth 密文识别、未配置短路、真实 HTTP 错误、删除不 revoke。
+3. 重写测试和前端 Token 表单，删除 OAuth callback/Cookie/scope/response_type/PKCE/offline_access 流程。
+4. 把 8 项官方额度和百分比改为从 usage 响应 `limits` 读取；删除设置页可编辑 `cloudflareQuotas`。
+5. 清理重复刷新入口、异常文案、重复跳转、图标对齐，并做双主题 × 多视口实际检查。
+6. 核验 Workers Builds 实际 Deploy command 和 migration，关闭 D1 `no such table: workspaces` 风险。
+7. 新增仅手动触发的原生可执行文件/共享库构建 workflow，并在中英文帮助中心补使用教程。
+8. 完整本地 CI、中文提交、推送、Actions 闭环。
 
 ## 最近动作
 
-- 2026-10-23：核对分支、远端、未提交组件化文件和最近 Actions；建立本 HANDOFF。此步只整理事实与实施计划，未开始 Cloudflare Token / 原生构建实现。
-- 2026-10-23：整理用户从组件化、登录错误、setup、D1、Cloudflare OAuth/Token、额度监控、UI 文案到原生构建/帮助中心的全部反馈，补充“用户问题总账”，供压缩上下文后直接恢复工作。
-- 2026-10-23：`1e5fec7 docs: 记录平台迁移与组件化交接清单` 已推送；平台验收 run `39816813766` 为 `completed/success`。此前 `1e4fd10`、`fd80fa4` 的失败仍作为反例，后续每推一次必须重新查 Actions。
-- 2026-10-23：`4cc1b72 docs: 整理会话遗留问题与验收总账` 已推送；平台验收 run `39817786882` 为 `completed/success`。本文件后续若只有文档更新，功能验收仍以最近一次包含代码的提交为准。
-- 当前工作区仍保留上一轮未提交的侧栏、账号、工作区组件拆分及额度文案/测试改动；本 HANDOFF 更新不会覆盖或回滚这些文件。
-- 2026-10-23：开始执行组件化收尾步骤。先只审阅、验证并提交侧栏/账号/工作区组件拆分；额度文案、locale 与 `tests/console-worker.spec.ts` 中混入的 Cloudflare 配额改动留给下一步单独处理，避免把未完成的 OAuth/额度接口假设固化进组件提交。
-- 2026-10-23：组件化收尾验证通过：`npm run ui:conventions`、`npm run ui:css-audit`、`npm run build`，以及账号页/工作区页两项 Playwright 用例均通过。下一步提交纯组件拆分，不夹带配额接口改动。
+- 2026-10-23：核对分支、远端、工作区和 Actions；确认 `abf05ca` 已推送，平台验收 run `39820685855` 已成功。
+- 2026-10-23：当前 HEAD 完整 `npm run ci:local` 通过：UI 约定、CSS 审计、Worker 类型检查、管理端构建、Worker smoke 全部通过，Playwright 81/81 passed。
+- 2026-10-23：建立并持续整理本 HANDOFF，把用户从组件化、登录错误、setup、D1、Cloudflare OAuth/Token、额度监控、UI 文案到原生构建/帮助中心的全部反馈固化为用户问题总账和最终验收口径。
+- 2026-10-23：`1e5fec7 docs: 记录平台迁移与组件化交接清单` 已推送，Actions run `39816813766` 成功；`4cc1b72 docs: 整理会话遗留问题与验收总账` 已推送，run `39817786882` 成功；`e4b8179 docs: 更新交接验收状态与 Actions 轮询说明` 已推送，run `39818997739` 成功。
+- 2026-10-23：组件化收尾验证通过：`npm run ui:conventions`、`npm run ui:css-audit`、`npm run build`，以及账号页/工作区页两项 Playwright 用例（2 passed）。随后提交并推送 `abf05ca`，未夹带额度/OAuth 残留改动。
+- 用户指出的 `1e4fd10`、`fd80fa4` 是更早的失败提交，保留为“推送后必须查 Actions”的反例；历史成功不能替代后续每次推送后的检查。
 
 ## 0. 先读这里：工作区与 Git 状态
 
-- 仓库：`/home/tc/work/plugin-platform`
-- 当前分支：`main`
-- 最近已验证提交：`4cc1b72 docs: 整理会话遗留问题与验收总账`
-- 精确 HEAD 不要抄本文档，执行 `git log -1 --oneline`；本文档自身提交可能晚于该已验证提交。
-- fetch remote：`https://github.com/shelter-red/plugin-platform.git`
-- push remote：`git@github-plugin-platform:shelter-red/plugin-platform.git`
-- 2026-10-23 通过 GitHub API 查询时，`4cc1b72` 的“平台验收”已成功（run `39817786882`）；`1e5fec7` 也成功（run `39816813766`）；用户指出的 `1e4fd10`、`fd80fa4` 是更早的失败提交。**不要因此认为后续改动不会让 Actions 失败。**
-- 当前环境没有安装 `gh`。可先用 GitHub API 查询 run；需要看日志时再安装/配置 GitHub CLI，或使用已认证的 GitHub API。
-- 未认证 GitHub REST API 限额为每小时 60 次；2026-10-23 已因 15 秒高频轮询触发 403。后续轮询间隔至少 1 分钟，优先在预计完成后查询；额度耗尽时等 `X-RateLimit-Reset`，或用浏览器/`git` 侧信息，不要把 403 误判为 Actions 失败。
-- **工作区有上一轮组件化改动，严禁 `git reset --hard`、`git clean -fd`、`git checkout -- .` 或覆盖这些文件。** 修改前先看 `git status` 和 `git diff`。
+- 精确 HEAD 不要抄本文档，执行 `git log -1 --oneline`；本文档自身提交可能晚于最近的功能提交。
+- 当前环境没有 `gh`。使用 GitHub API 查询 run；需要日志时安装/配置 GitHub CLI 或使用已认证 GitHub API。
+- 未认证 GitHub REST API 限额为每小时 60 次；曾因 15 秒高频轮询触发 403。轮询间隔至少 1 分钟，优先在预计完成后查询；额度耗尽时等 `X-RateLimit-Reset`，不要把 403 误判为 Actions 失败。
+- 查询示例：
+  ```bash
+  curl -fsSL 'https://api.github.com/repos/shelter-red/plugin-platform/actions/runs?per_page=5' |
+    node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{for(const r of JSON.parse(s).workflow_runs)console.log(r.head_sha.slice(0,7),r.status,r.conclusion??'-',r.id,r.display_title)})"
+  ```
+- 工作区存在未提交额度改动时，修改前先看 `git status` 和 `git diff`；不要用批量回滚命令掩盖或丢弃已有工作。
 
-本轮开始时的未提交改动如下；组件相关文件随本步提交，剩余项继续保留到 Cloudflare 配额步骤：
+### 0.0 当前未提交改动的审查结论
 
-```text
-M src/app/Sidebar.tsx
-M src/app/palette.ts
-M src/features/account/AccountPage.tsx
-M src/features/overview/UsageResourcesPanel.tsx
-M src/features/usage/PlatformUsageSection.tsx
-M src/features/workspaces/WorkspaceDangerPanel.tsx
-M src/features/workspaces/WorkspaceSwitcherPanel.tsx
-M src/locales/en.ts
-M src/locales/zh-CN.ts
-M tests/console-worker.spec.ts
-
-?? src/app/SidebarBrand.tsx
-?? src/app/SidebarFooter.tsx
-?? src/app/SidebarNavigation.tsx
-?? src/app/SidebarWorkspaceSwitcher.tsx
-?? src/app/sidebar-nav.ts
-?? src/features/account/AccountIdentityCard.tsx
-?? src/features/account/AccountLinksCard.tsx
-?? src/features/account/AccountLogoutButton.tsx
-?? src/features/account/AccountWorkspacesCard.tsx
-?? src/features/account/account.ts
-?? src/features/workspaces/WorkspaceCreateForm.tsx
-?? src/features/workspaces/WorkspaceDangerActions.tsx
-?? src/features/workspaces/WorkspaceList.tsx
-?? src/features/workspaces/WorkspaceRenameForm.tsx
-?? src/features/workspaces/useWorkspaceDangerActions.ts
-```
-
-建议先审阅、跑测试并把这一批组件化改动提交，再开始 Cloudflare 大改；不要把它们和 Token 迁移混成一个无法审查的巨型提交。
-
-本次组件化收尾的提交边界：
-
-- 提交：`Sidebar` 拆分、`palette` 导入迁移、账号页拆分、工作区页拆分，以及对应 HANDOFF 记录。
-- 暂不提交：`UsageResourcesPanel`、`PlatformUsageSection`、locale 和配额测试改动；这些内容属于 Cloudflare 额度/旧 OAuth 清理，等接口与 Token 方案完成后统一验收。
-- 验证：`npm run ui:conventions`、`npm run ui:css-audit`、`npm run build`；若组件拆分改变交互路径，再跑相关 Playwright 用例。
-
-提交这批未提交改动时要注意：
-
-- `src/locales/en.ts`、`src/locales/zh-CN.ts` 里仍有旧 Cloudflare OAuth 文案（如 `authorizationExpired`、`reauthorize`）。如果本次提交只做组件化，不要盲目把这部分旧文案当成最终实现；Token 迁移时删除或改写。
-- 当前 `UsageResourcesPanel` / `PlatformUsageSection` 改动只是额度展示的一部分，不能据此把“8 项 Cloudflare 免费额度、从 subscriptions 读取、所有项目显示百分比”标记为完成。
-- 当前 `tests/console-worker.spec.ts` 新增了 Cloudflare 限额断言，提交前要确认它们与随后 Token 响应结构一致，避免先固定错误接口再返工。
+- `UsageResourcesPanel` / `PlatformUsageSection` 已把平台请求改为“不限”，并补上 KV 删除/列举方向；这是最终需求的一部分。
+- `src/locales/*` 仍混有 `authorizationExpired`、`reauthorize` 等应删除的 OAuth 文案；不能原样提交为最终 Token 实现。
+- `tests/console-worker.spec.ts` 新增了 8 项额度与百分比断言，但仍基于旧 `cloudflareQuotas`、旧 OAuth mock 和 `authorizationExpired`；必须随 Token/usage 响应重写。
+- 处理原则：保留其中有用的 UI 意图，不等同于保留旧接口假设；最终以本文件第 1 节验收口径为准。
 
 ## 0.1 用户问题总账（按会话反馈整理）
 
@@ -80,8 +82,8 @@ M tests/console-worker.spec.ts
 | ID | 用户反馈或目标 | 必须达到的效果 | 当前状态 |
 | --- | --- | --- | --- |
 | U01 | “不是说全部重构成组件吗？登录页还是旧的” | 登录页及全站页面有清晰组件边界；登录页不重复重写；实际看视觉结果 | 🟡 登录页、侧栏、账号、工作区已完成组件拆分，构建与相关交互测试通过；多主题/多视口视觉检查仍未完成。 |
-| U02 | 自行从会话历史读分支、提交、推送 | 每步有中文 Git 记录；不靠聊天上下文猜分支 | 🟡 `main` 已跟踪远端；本 HANDOFF 需提交。后续每个代码步骤继续更新本文件再提交。 |
-| U03 | 推送时 Actions 老是失败 | 推送前跑完整本地 CI；推送后查 run；失败读日志/失败产物并修到成功 | 🟡 `1e5fec7` 当前成功；仍须对后续提交重复验收。`1e4fd10`、`fd80fa4` 是已知失败反例；CI 失败产物上传要求仍要保留。 |
+| U02 | 自行从会话历史读分支、提交、推送 | 每步有中文 Git 记录；不靠聊天上下文猜分支 | 🟡 `main` 已跟踪远端，`abf05ca` 已推送；本次 HANDOFF 整理尚需单独提交。后续每个代码步骤继续更新本文件再提交。 |
+| U03 | 推送时 Actions 老是失败 | 推送前跑完整本地 CI；推送后查 run；失败读日志/失败产物并修到成功 | 🟡 `abf05ca` run `39820685855` 已成功；`1e4fd10`、`fd80fa4` 是已知失败反例，后续每次推送仍须闭环，失败产物上传要求必须保留。 |
 | U04 | 错误状态为什么是 `/?auth_error=` | 授权/配置错误使用真实 HTTP status + JSON；不靠 URL 查询参数；不跳首页 | 🟡 GitHub 登录错误路径已改为 HTTP 错误页；Cloudflare 设置/授权仍存在旧 OAuth 跳转，Token 迁移后必须全部改为当前设置面板展示。 |
 | U05 | setup 失效为何单独返回 “Setup is not available” | `setupApi` 返回 `null` 时与其他非路由请求一致，不发明特殊响应 | ✅ 已按普通非路由路径处理；保留回归测试，Cloudflare 改造不能破坏。 |
 | U06 | `D1_ERROR: no such table: workspaces` | 生产部署必须先应用 `0008_workspaces.sql` 及全部 migrations；pending migration 时构建失败 | 🟡 `scripts/deploy-worker.sh` 已包含 migration 检查；仍需核对 Workers Builds 实际 Deploy command 和生产接口，不能只修脚本。 |
@@ -93,8 +95,8 @@ M tests/console-worker.spec.ts
 | U12 | OAuth 里没有 `offline_access` | 彻底移除 `offline_access`、OAuth refresh 和“过期/重新授权”文案 | ⬜ Token 迁移时删除。 |
 | U13 | `configured:false` 为什么还能查 `/api/usage/local`，且返回 200 | 分清接口语义：未配置 Cloudflare 时 `/api/usage/cloudflare` 立即 `{"configured":false,"cached":false}`，不读缓存、不发外部请求；本地统计 `/api/usage/local?range=7d` 仍应 200 | 🟡 目标已写入验收；Cloudflare 缓存顺序和未配置短路仍需代码及测试修复。 |
 | U14 | `response_type` 等字段放错位置；CF OAuth 没有 PKCE 选项 | 旧 OAuth UI 中 `response_type` 若短暂保留也只能属于 OAuth 配置、值为 `code`；最终 Token 方案应直接移除 response_type/grant_type/PKCE 等全部客户端字段 | ⬜ 最终以“所有 OAuth 客户端字段消失”为验收，避免继续维护错误表单。 |
-| U15 | `1e4fd10`、`fd80fa4` 两个提交 Actions 失败 | 每次修复后本地 CI、推送、Actions、失败产物全部闭环 | 🟡 当前 HEAD 已成功，但目标功能尚未完成；不能把历史一次成功当作后验证。 |
-| U16 | 图标没对齐；左上角“默认工作区”很矮挡住文字 | 统一图标尺寸、按钮高度、gap、行高和垂直居中；双主题/多视口实际检查 | 🟡 已有未提交侧栏/工作区拆分，需视觉验证后提交。 |
+| U15 | `1e4fd10`、`fd80fa4` 两个提交 Actions 失败 | 每次修复后本地 CI、推送、Actions、失败产物全部闭环 | 🟡 `abf05ca` 的 run `39820685855` 已成功；后续每次推送仍须重复当前提交验收。 |
+| U16 | 图标没对齐；左上角“默认工作区”很矮挡住文字 | 统一图标尺寸、按钮高度、gap、行高和垂直居中；双主题/多视口实际检查 | 🟡 侧栏/工作区组件已随 `abf05ca` 提交；图标与“默认工作区”遮挡仍需实际视觉检查和修正。 |
 | U17 | 配额少，D1 写入等所有有限制项目都要监控，显示次数和百分比 | Worker、D1 行读、D1 行写、KV 读/写/删/列表、DO 请求共 8 项；每项都有 used/limit/percentage | 🟡 部分静态基线/测试在未提交改动中出现；后台读取、响应 `limits`、8 项完整 UI 尚未完成。 |
 | U18 | 平台和监控分开；平台请求不限，CF 免费额度有限 | 平台请求只统计不设上限、不画上限百分比；Cloudflare 官方额度独立分组 | 🟡 文案/展示有部分调整；数据模型和最终 UI 尚未统一。 |
 | U19 | GitHub OAuth 没过期，为什么 CF OAuth 会过期；Token/API key 会不会过期；改成 Token | 不再暗示 OAuth 自然过期；改用 Cloudflare API Token（默认长期，可被撤销/策略限制）；界面、链接、错误文案同步改成 Token | ⬜ 前后端及文档全链路迁移尚未开始。 |
@@ -272,7 +274,7 @@ M tests/console-worker.spec.ts
 
 - 总览、列表、工作区、Cloudflare 设置、用量页做过一轮组件拆分。
 - 平台统计与 Cloudflare 免费额度在 UI 上已尝试分组。
-- 侧栏工作区切换曾修复遮挡和图标对齐，但当前仍有未提交的进一步拆分，需要完成验证。
+- 侧栏/账号/工作区已在 `abf05ca` 完成进一步拆分并提交；“默认工作区”高度、文字遮挡和全站图标对齐仍需实际视觉验收。
 - GitHub 登录错误已使用 HTTP 错误页，不再使用 `?auth_error=`。
 - `setupApi` 当前返回 `null` 后会继续普通请求处理。
 - `scripts/deploy-worker.sh` 已包含构建、D1/R2 准备、migrations apply、pending migration 检查和发布。
@@ -439,7 +441,7 @@ ctest --test-dir native-server/build --output-on-failure
 推送要求：
 - 不要把未验证的代码直接推 `main`。
 - 提交信息按逻辑拆分，例如：
-  1. `refactor(ui): 完成登录、侧栏、账号与工作区组件化`
+  1. `refactor(ui): 完成登录、侧栏、账号与工作区组件化`（已实现，登录页仅剩视觉检查）
   2. `feat(cloudflare): 迁移到 API Token 并移除 OAuth 配置`
   3. `feat(usage): 从 Cloudflare 订阅读取免费额度并展示百分比`
   4. `ci(native): 增加可执行文件与库文件手动构建`
