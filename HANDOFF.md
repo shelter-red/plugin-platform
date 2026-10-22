@@ -2,7 +2,7 @@
 
 > 最后整理：2026-10-23（Asia/Shanghai）
 >
-> 当前状态：**Cloudflare API Token 后端已提交；前端 Token/8 项用量迁移大体完成但仍未提交；完整回归、文档清理、视觉验收、原生二进制/共享库手动构建尚未收口。禁止在完整本地 CI 通过前 push。**
+> 当前状态：**Cloudflare API Token 前端/后端与 8 项用量迁移已提交；构建、完整 UI smoke 与设置导航稳定性已通过。文档清理、视觉验收、原生二进制/共享库手动构建、帮助中心、完整本地 CI 和 push 后 Actions 闭环尚未收口。禁止在完整本地 CI 通过前 push。**
 >
 > 本文件是上下文压缩后的第一事实源。README、旧方案、旧测试、聊天摘要或历史提交说明与本文冲突时，以用户最新要求、当前代码和本文为准。恢复后先执行第 0 节的核验命令，再按第 8 节顺序继续。
 
@@ -13,16 +13,18 @@
 ```text
 仓库：/home/tc/work/plugin-platform
 分支：main
-当前 HEAD：45efad3 docs: 固化完整上下文交接台账
+当前 HEAD：850928e feat(console): 完成 Cloudflare Token 与八项用量迁移
 origin/main：579eb1f docs: 校正交接基线与最新 Actions 结果
-本地关系：ahead origin/main 6 个提交
+本地关系：ahead origin/main 8 个提交
 fetch remote：https://github.com/shelter-red/plugin-platform.git
 push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 ```
 
-本地领先远端的 6 个提交：
+本地领先远端的 8 个提交：
 
 ```text
+850928e feat(console): 完成 Cloudflare Token 与八项用量迁移
+653beac docs: 校正交接台账实时恢复基线
 45efad3 docs: 固化完整上下文交接台账
 649ed66 docs: 重建压缩恢复交接台账
 609ba8f docs: 校正 HANDOFF 当前构建阻塞与恢复基线
@@ -31,10 +33,11 @@ push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 9882c76 fix(worker): 收口 Cloudflare API Token 与只读额度契约
 ```
 
-- 这 6 个提交尚未 push，**没有对应 Actions 结果**。
+- 这 8 个提交尚未 push，**没有对应 Actions 结果**。
 - 最新已知远端成功 Actions：`579eb1f`，run `39840532476`（#52），`completed/success`。
 - 仓库内未发现 `AGENTS.md`，无额外仓库级代理指令。
-- `45efad3` 是本次实现工作的代码/文档基线；后续校正本文件的 docs-only 提交会改变 HEAD，但不会改变代码工作区。恢复时始终以实际 `git log -1` 和 `git status` 为准。
+- `850928e` 已提交 35 个前端/测试路径；代码工作区在该提交后应为干净。本 HANDOFF 更新会单独形成 docs-only 提交。
+- 恢复时始终以实际 `git log -1`、`git status` 和 `git rev-parse HEAD origin/main` 为准。
 
 恢复时先运行：
 
@@ -48,93 +51,75 @@ git diff --check
 find .. -name AGENTS.md -print
 ```
 
-### 0.2 当前工作区（提交 `45efad3` 后为 33 个路径）
+### 0.2 当前工作区
 
-`HANDOFF.md` 已由 `45efad3` 单独提交，因此不在当前脏路径中。实时状态为：29 个已跟踪改动（19 个修改、10 个删除）+ 4 个未跟踪新文件，共 33 个脏路径。不要据此代替实时 `git status`。
+`850928e` 已收口此前 35 个脏路径（21 个修改、10 个删除、4 个新增）。本文件更新前代码工作区干净；不要把历史脏路径清单当成当前状态。
 
-已修改：
-
-```text
-M src/api.ts
-M src/app/ConsoleShell.tsx
-M src/app/useConsoleData.ts
-M src/features/overview/UsageResourcesPanel.tsx
-M src/features/settings/CloudflarePanel.tsx
-M src/features/settings/MaintenancePanel.tsx
-M src/features/settings/QuotaSettings.tsx
-M src/features/settings/SettingsPage.tsx
-M src/features/settings/useMaintenanceSettings.ts
-M src/features/usage/CloudflareUsageSection.tsx
-M src/features/usage/PlatformUsageSection.tsx
-M src/features/usage/UsagePage.tsx
-M src/features/usage/UsageSourcesPanel.tsx
-M src/features/usage/UsageStatusAlert.tsx
-M src/locales/en.ts
-M src/locales/zh-CN.ts
-M src/styles.css
-M tests/console-real-stack.spec.ts
-M tests/console-worker.spec.ts
-```
-
-已删除的旧 Cloudflare OAuth 文件：
+本次已提交的核心文件：
 
 ```text
-D src/features/settings/CloudflareAccountCard.tsx
-D src/features/settings/CloudflareAuthDiagnostics.tsx
-D src/features/settings/CloudflareAuthorizeSection.tsx
-D src/features/settings/CloudflareClientFields.tsx
-D src/features/settings/CloudflareClientSection.tsx
-D src/features/settings/CloudflareProtocolFields.tsx
-D src/features/settings/CloudflareScopeList.tsx
-D src/features/settings/cloudflare-auth.ts
-D src/features/settings/useCloudflareAuthorization.ts
-D src/features/settings/useCloudflareClientForm.ts
+src/api.ts
+src/errors.ts
+src/app/ConsoleShell.tsx
+src/app/useConsoleData.ts
+src/features/settings/CloudflarePanel.tsx
+src/features/settings/CloudflarePermissionList.tsx
+src/features/settings/CloudflareTokenForm.tsx
+src/features/settings/CloudflareTokenStatus.tsx
+src/features/settings/useCloudflareTokenForm.ts
+src/features/settings/useSettingsSections.ts
+src/features/settings/MaintenancePanel.tsx
+src/features/settings/QuotaSettings.tsx
+src/features/settings/useMaintenanceSettings.ts
+src/features/usage/CloudflareUsageSection.tsx
+src/features/usage/PlatformUsageSection.tsx
+src/features/usage/UsagePage.tsx
+src/features/usage/UsageSourcesPanel.tsx
+src/features/usage/UsageStatusAlert.tsx
+src/features/overview/UsageResourcesPanel.tsx
+src/locales/zh-CN.ts
+src/locales/en.ts
+tests/console-worker.spec.ts
+tests/console-real-stack.spec.ts
 ```
 
-新增未跟踪的 Token 组件：
-
-```text
-?? src/features/settings/CloudflarePermissionList.tsx
-?? src/features/settings/CloudflareTokenForm.tsx
-?? src/features/settings/CloudflareTokenStatus.tsx
-?? src/features/settings/useCloudflareTokenForm.ts
-```
-
-禁止 `git reset --hard`、`git clean`、批量 checkout、`git add .`。提交时必须逐文件显式 stage，按逻辑分组，中文提交信息。
+旧 Cloudflare OAuth 前端组件和 hook 已删除。禁止 `git reset --hard`、`git clean`、批量 checkout、`git add .`；后续提交仍须逐文件显式 stage，中文提交信息。
 
 ### 0.3 当前验证状态
 
-最近实测：
+2026-10-23 在 `850928e` 提交前实测：
 
 ```text
-npm run build              PASS（2026-10-23，提交 45efad3 前、当前前端草稿实测）
-git diff --check           PASS（2026-10-23，提交 45efad3 前实测）
-npm run ui:smoke           80 passed（最近一次实测，约 1.3 分钟）
-npm run worker:typecheck   PASS（最近一次已记录实测）
-npm run worker:smoke       PASS（最近一次已记录实测）
-npm run ui:conventions     89 TSX / 0 违规（最近一次已记录实测）
-npm run ui:css-audit       476 规则 / 0 死代码（最近一次已记录实测）
+git diff --check                                      PASS
+npm run build                                         PASS
+npm run ui:smoke                                      86 passed（约 1.5 分钟）
+设置导航滚动联动 --repeat-each=3                       3 passed
+Cloudflare/用量定向 worker-mock 回归                 8 passed
 ```
+
+设置导航曾出现 2/3 偶发失败：滚到底的 shell 已高亮最后一项，但随后 `IntersectionObserver` 用旧可见集合覆盖。`850928e` 通过 `atBottom` 引用让滚到底兜底拥有最终决定权；未放宽或删除断言。
 
 尚未完成/不能宣称通过：
 
 ```text
-npm run ci:local           本轮完整改动后未跑
-worker runtime Docker      最近修改后未重跑
-npm run deploy:worker:test 最近修改后未重跑
-原生 CMake / ctest         新共享库与 workflow 尚未实现
-真实 Cloudflare API        未联调
-真实 GitHub OAuth         未联调
-Workers Builds 控制台配置   未核对
+npm run worker:typecheck     本轮前端提交后未重跑
+npm run worker:smoke         本轮前端提交后未重跑
+npm run ui:conventions       本轮前端提交后未重跑
+npm run ui:css-audit         本轮前端提交后未重跑
+npm run deploy:worker:test   本轮前端提交后未重跑
+npm run ci:local             本轮完整改动后未跑
+worker runtime Docker        最近修改后未重跑
+原生 CMake / ctest           新共享库与 workflow 尚未实现
+真实 Cloudflare API          未联调
+真实 GitHub OAuth            未联调
+Workers Builds 控制台配置     未核对
 ```
-
-`npm run build` 已不再是阻塞项，但 **build 绿不等于功能完成**。当前真正的阻塞是：补用量回归测试、清文档/旧文案、完成视觉截图验收、实现原生手动构建、跑完整验收后再 push。
 
 ### 0.4 恢复后的第一动作
 
 1. 执行 0.1 的 Git 核验，不凭记忆判断 HEAD 或工作区。
 2. 阅读第 1、2 节，确认用户硬约束，尤其不要恢复任何 Cloudflare OAuth 字段。
-3. 按第 8 节顺序继续，不要先 push。
+3. 从第 8.2 节继续：先清理旧文档/文案，再做视觉验收，最后实现原生手动构建与帮助中心。
 4. 每次压缩恢复后都更新本文件，不把“计划”写成“已完成”。
 
 ## 1. 用户硬约束与最终产品决策
@@ -643,9 +628,9 @@ fd80fa4  run 39754896119  #11  管理端 UI smoke 失败
 
 ## 8. 严格按顺序执行的剩余任务
 
-### 8.1 补用量回归测试并修旧注释
+### 8.1 补用量回归测试并修旧注释（已完成，`850928e`）
 
-在 `tests/console-worker.spec.ts` 完成第 3.3 节 6 项测试，修正“11 个阈值输入”旧注释。优先跑定向 UI smoke，确认刷新按钮、8 项额度、HTTP 错误与当前页行为。
+已新增并通过 6 项用量回归：加载期间刷新可用、唯一刷新入口、8 项额度、未配置时官方为空、旧凭据留在用量页、401/403 保留 HTTP/错误码/消息。同步修正窄屏测试里的“11 个阈值输入”旧注释。定向 worker-mock 8/8、完整 UI smoke 86/86 通过。
 
 ### 8.2 清理旧文档与文案
 
@@ -702,21 +687,21 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 
 - [ ] 登录页实际视觉检查通过，结构为新组件且无旧页面残留。
 - [ ] “默认工作区”文字不遮挡，图标/文字对齐。
-- [ ] 系统设置只出现 Cloudflare API Token 和可选 Account ID。
-- [ ] 不出现 Client ID/Secret、回调、scope 编辑、PKCE、`response_type`、`grant_type`。
-- [ ] 固定权限为 Account Settings Read / Account Analytics Read / Billing Read，只读不可取消。
-- [ ] “创建 Token”跳到 `https://dash.cloudflare.com/profile/api-tokens`。
+- [x] 系统设置只出现 Cloudflare API Token 和可选 Account ID。
+- [x] 活跃 Cloudflare 流程不出现 Client ID/Secret、回调、scope 编辑、PKCE、`response_type`、`grant_type`。
+- [x] 固定权限为 Account Settings Read / Account Analytics Read / Billing Read，只读不可取消。
+- [x] “创建 Token”跳到 `https://dash.cloudflare.com/profile/api-tokens`。
 - [ ] Token 保存前完成 verify、账号发现、subscriptions 校验；失败用 HTTP 状态并在当前面板显示。
 - [ ] 旧 Cloudflare OAuth 路由、Cookie、refresh/revoke、state、smoke 和用户文案全部删除。
-- [ ] setup 返回 null 时没有 “Setup is not available” 特例。
-- [ ] 未配置 `/api/usage/cloudflare` 返回 `{"configured":false,"cached":false}`，无外部请求、无旧缓存命中。
-- [ ] `/api/usage/local?range=7d` 仍返回 200。
+- [x] setup 返回 null 时没有 “Setup is not available” 特例。
+- [x] 未配置 `/api/usage/cloudflare` 返回 `{"configured":false,"cached":false}`，无外部请求、无旧缓存命中。
+- [x] `/api/usage/local?range=7d` 仍返回 200。
 - [ ] Cloudflare 免费额度只从 subscriptions 读取；只有确认 Free 才显示官方基线。
-- [ ] 8 项都显示次数和百分比，包含 D1 行写入、KV 删除、KV 列举。
-- [ ] 平台统计与 Cloudflare 额度分组；平台请求不设上限。
-- [ ] 设置页无手填 Cloudflare 免费额度，只剩平台 3 项阈值。
-- [ ] 用量页只有一个刷新入口；自动加载时刷新按钮不禁用且点击会再次请求。
-- [ ] 概览无同目的重复按钮；异常文案/空卡片已清理。
+- [x] 8 项都显示次数和百分比，包含 D1 行写入、KV 删除、KV 列举。
+- [x] 平台统计与 Cloudflare 额度分组；平台请求不设上限。
+- [x] 设置页无手填 Cloudflare 免费额度，只剩平台 3 项阈值。
+- [x] 用量页只有一个刷新入口；自动加载时刷新按钮不禁用且点击会再次请求。
+- [x] 概览已移除与右上箭头重复的“查看全部额度”入口；其他页面文案/空卡片仍待视觉验收。
 - [ ] 生产部署应用 0008 及全部 migrations，Workers Builds 实际入口为 `npm run deploy`。
 - [ ] 手动 Actions 可选可执行程序/库文件、目标平台，并上传 artifact + SHA256。
 - [ ] 帮助中心中英文都有二进制/共享库插件服务器完整说明。
@@ -756,3 +741,6 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - 2026-10-23：确认免费额度只从 subscriptions 读取，只有 `rate_plan.id === "free"` 才展示 8 项官方基线。
 - 2026-10-23：确认错误必须真实 HTTP + JSON，留在当前系统设置/用量页，不跳首页。
 - 2026-10-23：确认 setup 失效走普通非路由行为，不返回 “Setup is not available”。
+- 2026-10-23：提交 `850928e`（`feat(console): 完成 Cloudflare Token 与八项用量迁移`），显式 stage 35 个路径；前端 Token 表单、固定三项权限、8 项额度、HTTP 错误与设置导航竞态修复一并收口。
+- 2026-10-23：`850928e` 提交前 `npm run build` PASS；`npm run ui:smoke` 86/86 PASS；设置导航 `--repeat-each=3` 3/3 PASS；`git diff --check` PASS。
+- 2026-10-23：HANDOFF 实时基线更新为 HEAD `850928e`、ahead 8；下一严格步骤为 8.2 文档/文案清理。
