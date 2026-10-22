@@ -30,7 +30,8 @@ import { PageHeader } from './PageHeader'
 import { auditActionLabel } from '../lib/audit'
 import { downloadCsv } from '../lib/csv'
 import { useMediaQuery } from '../lib/useMediaQuery'
-import { AuthLoadingScreen, LoginPage } from '../features/auth/AuthScreen'
+import { AuthLoadingScreen } from '../features/auth/AuthLoadingScreen'
+import { LoginPage } from '../features/auth/LoginPage'
 import { assignDomain, checkPluginHealth, commandPlugin, createRegistrationCode, fetchPluginDetails, fetchServerDetails, syncServer, type ApiPlugin, type ApiPluginDetail, type ApiServerDetail, type PluginAction, type PluginHealthResult } from '../api'
 
 export type ConsoleProps = {
