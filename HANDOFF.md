@@ -1,6 +1,6 @@
 # Plugmesh 平台交接（HANDOFF）
 
-> 最后更新：2026-10-23 01:50（Asia/Shanghai）
+> 最后更新：2026-10-23 01:54（Asia/Shanghai）
 > 状态：**进行中，未完成**
 > 维护规则：每完成一个可验证步骤，先更新本文件，再提交一条可追溯的中文 Git 记录；未记录不得继续下一步。
 > 本文件是后续上下文的优先事实来源。若 README、验收矩阵、旧注释或聊天摘要与本文冲突，以用户最新要求和实际代码为准；旧文档需在实现完成后同步重写，不能把旧 OAuth 行为当成目标。
@@ -17,14 +17,16 @@ git rev-parse HEAD origin/main
 git diff
 ```
 
-当前权威快照（2026-10-23 01:50）：
+当前权威快照（2026-10-23 01:54）：
 
 - 仓库：`/home/tc/work/plugin-platform`
 - 分支：`main`
 - 当前实际 HEAD：执行 `git log -1 --oneline`；本文档自身的提交会自然晚于“最近已验收提交”，不要照抄旧值。
-- 最近已验收提交：`5373f87 docs: 固化最新交接验收快照`
-- `origin/main` 与本机 HEAD 一致；push 使用 `git@github-plugin-platform:shelter-red/plugin-platform.git`，fetch 使用 `https://github.com/shelter-red/plugin-platform.git`。
-- `5373f87` 已推送，Actions“平台验收”run `39825387738`（run #39）已为 `completed/success`；`0a5075d` 的 run `39824622514`（#38）、`0325530` 的 run `39823921091`（#37）也成功。`0325530` 同 SHA 的并发 run `39823919519`（#36）被取消，属于重复触发，不是失败。恢复后仍需在每次推送时重复“本地验证 → 推送 → Actions 闭环”，不能沿用历史成功；本文档提交自身的 Actions run 不写入本文件，避免自我引用循环，推送后直接查 GitHub。
+- 最近已验收 HEAD：`e3cdb05 docs: 确认 Cloudflare 订阅响应与免费套餐判定`；本次 HANDOFF 整理提交会紧随其后。恢复时以 `git log -1 --oneline` 和 `git rev-parse HEAD origin/main` 为准。push 使用 `git@github-plugin-platform:shelter-red/plugin-platform.git`，fetch 使用 `https://github.com/shelter-red/plugin-platform.git`。
+- 最近已验收提交：`e3cdb05`，平台验收 run `39826112664`（run #40）已为 `completed/success`；上一提交 `5373f87` 的 run `39825387738`（#39）也成功。
+- `0a5075d` 的 run `39824622514`（#38）、`0325530` 的 run `39823921091`（#37）、`70f62e3` 的 run `39822695994`（#35）、`abf05ca` 的 run `39820685855`（#34）均成功。`0325530` 同 SHA 的并发 run `39823919519`（#36）被取消，属于重复触发，不是失败。
+- 已知失败反例（不能重复）：`fd80fa4` 的 run `39754896119`（#11）失败，web 的“管理端 UI smoke”失败；`1e4fd10` 的 run `39756824624`（#12）失败，web 的“管理端 UI smoke”失败，且该提交改动 workflow 后触发了 native 构建，linux/windows/macos 构建也失败。后续修复已由更晚提交覆盖，但历史失败不能从记录里删除。
+- 恢复后仍须在每次推送时重复“本地验证 → 推送 → Actions 闭环”，不能沿用历史成功；本文档提交自身的 Actions run 不写入本文件，避免自我引用循环，推送后直接查 GitHub。
 - 当前工作区只保留以下 5 个未提交文件，均与尚未完成的 Cloudflare 额度/旧 OAuth 文案有关：
   ```text
   M src/features/overview/UsageResourcesPanel.tsx
@@ -34,7 +36,8 @@ git diff
   M tests/console-worker.spec.ts
   ```
   这些改动包含有用的 8 项额度展示和“平台请求不限”方向，但仍依赖旧的 `settings.cloudflareQuotas`、`authorizationExpired` 和 OAuth 接口，**不能原样提交**；应在 Token + subscriptions 实现时整合、改写或删除。
-- 侧栏、账号、工作区组件拆分已经提交为 `abf05ca`；`HANDOFF.md` 本次整理是独立文档步骤。不要再重复拆分登录页/侧栏/账号/工作区。
+- 登录页组件拆分已在 `775384e`，侧栏/账号/工作区进一步拆分已在 `abf05ca`；`HANDOFF.md` 本次整理是独立文档步骤。不要再重复拆分登录页/侧栏/账号/工作区，先做视觉与交互验收。
+- “默认工作区”过矮和按钮图标基线偏移已在 `1b39960` 修复：工作区/用户卡片改为内容自适应高度，图标容器改 flex 居中；当时用 18 张双主题三视口截图基线验证。后续仍要检查新增 UI 是否回归。
 - Cloudflare Token 迁移目前只完成了代码审计、官方权限与 subscriptions 响应核对、验收契约，**尚未创建 `worker/src/cloudflare-token.ts`，后端仍完全是 OAuth**。不要根据“已有 Token 字段”误判迁移已开始或已完成。
 - **严禁用 `git reset --hard`、`git clean`、`git checkout -- .` 或任何批量覆盖操作处理这 5 个文件。**
 
@@ -52,12 +55,13 @@ git diff
 
 ## 最近动作
 
-- 2026-10-23：核对分支、远端、工作区和 Actions；确认 `5373f87` 已推送，平台验收 run `39825387738` 成功；`0a5075d` run `39824622514`、`0325530` run `39823921091` 也成功，同 SHA 的并发 run `39823919519` 已取消（重复触发）。
+- 2026-10-23：核对分支、远端、工作区和 Actions；确认 `e3cdb05` 已推送，平台验收 run `39826112664`（#40）最终 `completed/success`；`5373f87` run `39825387738`、`0a5075d` run `39824622514`、`0325530` run `39823921091` 也成功。
+- 2026-10-23：复核历史失败 run：`fd80fa4` run `39754896119`（#11）与 `1e4fd10` run `39756824624`（#12）均为真实失败；后者因改动 workflow 触发 native jobs，web 与三平台原生构建均失败。后续提交已覆盖修复，但保留为每次推送必须核对 Actions 的教训。
 - 2026-10-23：核对 Cloudflare 官方 subscriptions 方法文档，确认响应结构、`rate_plan.id` 的 `free` 枚举、`rate_plan.public_name` 和 `Billing Read` 接受权限；可以开始实现 `worker/src/cloudflare-token.ts`。
 - 2026-10-23：核对 Cloudflare 官方 API Token 权限文档，确认 `Account Settings Read`、`Account Analytics Read`、`Billing Read` 三项权限真实存在，并记录文档地址、日期和 Billing Read 的说明。
 - 2026-10-23：完成 Cloudflare OAuth→API Token 迁移的代码级审计，并把后端事实、固定接口契约、测试替换范围和实施顺序补入本 HANDOFF。本次是文档整理提交，不夹带 5 个未提交草稿文件。
 - 2026-10-23：确认 `abf05ca` 已推送且平台验收 run `39820685855` 成功。
-- 2026-10-23：当前 HEAD 完整 `npm run ci:local` 通过：UI 约定、CSS 审计、Worker 类型检查、管理端构建、Worker smoke 全部通过，Playwright 81/81 passed。
+- 2026-10-23：`abf05ca` 当时完整 `npm run ci:local` 通过：UI 约定、CSS 审计、Worker 类型检查、管理端构建、Worker smoke 全部通过，Playwright 81/81 passed；之后新增文档提交仍以各 run 的 web job 成功为证据，不能把旧本地结果冒充新代码结果。
 - 2026-10-23：建立并持续整理本 HANDOFF，把用户从组件化、登录错误、setup、D1、Cloudflare OAuth/Token、额度监控、UI 文案到原生构建/帮助中心的全部反馈固化为用户问题总账和最终验收口径。
 - 2026-10-23：`1e5fec7 docs: 记录平台迁移与组件化交接清单` 已推送，Actions run `39816813766` 成功；`4cc1b72 docs: 整理会话遗留问题与验收总账` 已推送，run `39817786882` 成功；`e4b8179 docs: 更新交接验收状态与 Actions 轮询说明` 已推送，run `39818997739` 成功。
 - 2026-10-23：组件化收尾验证通过：`npm run ui:conventions`、`npm run ui:css-audit`、`npm run build`，以及账号页/工作区页两项 Playwright 用例（2 passed）。随后提交并推送 `abf05ca`，未夹带额度/OAuth 残留改动。
@@ -77,7 +81,7 @@ git diff
 
 ### 0.0 当前未提交改动的审查结论
 
-- `UsageResourcesPanel` / `PlatformUsageSection` 已把平台请求改为“不限”，并补上 KV 删除/列举方向；这是最终需求的一部分。
+- `UsageResourcesPanel` / `PlatformUsageSection` 已把平台请求改为“不限”，并补上 KV 删除/列举方向；提交版 `CloudflareUsageSection` 已经展示 8 项官方额度，但上限来源仍是 `settings.cloudflareQuotas`。未提交改动只是补齐总览与测试，不等于 Cloudflare subscriptions 迁移完成。
 - `src/locales/*` 仍混有 `authorizationExpired`、`reauthorize` 等应删除的 OAuth 文案；不能原样提交为最终 Token 实现。
 - `tests/console-worker.spec.ts` 新增了 8 项额度与百分比断言，但仍基于旧 `cloudflareQuotas`、旧 OAuth mock 和 `authorizationExpired`；必须随 Token/usage 响应重写。
 - 处理原则：保留其中有用的 UI 意图，不等同于保留旧接口假设；最终以本文件第 1 节验收口径为准。
@@ -89,8 +93,8 @@ git diff
 | ID | 用户反馈或目标 | 必须达到的效果 | 当前状态 |
 | --- | --- | --- | --- |
 | U01 | “不是说全部重构成组件吗？登录页还是旧的” | 登录页及全站页面有清晰组件边界；登录页不重复重写；实际看视觉结果 | 🟡 登录页、侧栏、账号、工作区已完成组件拆分，构建与相关交互测试通过；多主题/多视口视觉检查仍未完成。 |
-| U02 | 自行从会话历史读分支、提交、推送 | 每步有中文 Git 记录；不靠聊天上下文猜分支 | 🟡 `main` 已跟踪远端，`0a5075d` 已推送；后续每个代码步骤继续先更新本文件再提交。 |
-| U03 | 推送时 Actions 老是失败 | 推送前跑完整本地 CI；推送后查 run；失败读日志/失败产物并修到成功 | 🟡 `0a5075d` run `39824622514`、`0325530` run `39823921091`、`70f62e3` run `39822695994` 与 `abf05ca` run `39820685855` 均成功；`1e4fd10`、`fd80fa4` 是已知失败反例，后续每次推送仍须闭环，失败产物上传要求必须保留。 |
+| U02 | 自行从会话历史读分支、提交、推送 | 每步有中文 Git 记录；不靠聊天上下文猜分支 | 🟡 `main` 已跟踪远端，最新文档提交 `e3cdb05` 已推送且 run #40 成功；后续每个代码步骤继续先更新本文件再提交。 |
+| U03 | 推送时 Actions 老是失败 | 推送前跑完整本地 CI；推送后查 run；失败读日志/失败产物并修到成功 | 🟡 `e3cdb05` run #40、`5373f87` #39、`0a5075d` #38、`0325530` #37、`70f62e3` #35 与 `abf05ca` #34 均成功；`fd80fa4` #11、`1e4fd10` #12 是已知失败反例，后续每次推送仍须闭环，失败产物上传要求必须保留。 |
 | U04 | 错误状态为什么是 `/?auth_error=` | 授权/配置错误使用真实 HTTP status + JSON；不靠 URL 查询参数；不跳首页 | 🟡 GitHub 登录错误路径已改为 HTTP 错误页；Cloudflare 设置/授权仍存在旧 OAuth 跳转，Token 迁移后必须全部改为当前设置面板展示。 |
 | U05 | setup 失效为何单独返回 “Setup is not available” | `setupApi` 返回 `null` 时与其他非路由请求一致，不发明特殊响应 | ✅ 已按普通非路由路径处理；保留回归测试，Cloudflare 改造不能破坏。 |
 | U06 | `D1_ERROR: no such table: workspaces` | 生产部署必须先应用 `0008_workspaces.sql` 及全部 migrations；pending migration 时构建失败 | 🟡 `scripts/deploy-worker.sh` 已包含 migration 检查；仍需核对 Workers Builds 实际 Deploy command 和生产接口，不能只修脚本。 |
@@ -102,10 +106,10 @@ git diff
 | U12 | OAuth 里没有 `offline_access` | 彻底移除 `offline_access`、OAuth refresh 和“过期/重新授权”文案 | ⬜ Token 迁移时删除。 |
 | U13 | `configured:false` 为什么还能查 `/api/usage/local`，且返回 200 | 分清接口语义：未配置 Cloudflare 时 `/api/usage/cloudflare` 立即 `{"configured":false,"cached":false}`，不读缓存、不发外部请求；本地统计 `/api/usage/local?range=7d` 仍应 200 | 🟡 目标已写入验收；Cloudflare 缓存顺序和未配置短路仍需代码及测试修复。 |
 | U14 | `response_type` 等字段放错位置；CF OAuth 没有 PKCE 选项 | 旧 OAuth UI 中 `response_type` 若短暂保留也只能属于 OAuth 配置、值为 `code`；最终 Token 方案应直接移除 response_type/grant_type/PKCE 等全部客户端字段 | ⬜ 最终以“所有 OAuth 客户端字段消失”为验收，避免继续维护错误表单。 |
-| U15 | `1e4fd10`、`fd80fa4` 两个提交 Actions 失败 | 每次失败修复后本地 CI、推送、Actions、失败产物全部闭环 | 🟡 `0a5075d` 的 run `39824622514` 已成功；后续每次推送仍须重复当前提交验收，并保留失败产物上传。 |
-| U16 | 图标没对齐；左上角“默认工作区”很矮挡住文字 | 统一图标尺寸、按钮高度、gap、行高和垂直居中；双主题/多视口实际检查 | 🟡 侧栏/工作区组件已随 `abf05ca` 提交；图标与“默认工作区”遮挡仍需实际视觉检查和修正。 |
-| U17 | 配额少，D1 写入等所有有限制项目都要监控，显示次数和百分比 | Worker、D1 行读、D1 行写、KV 读/写/删/列表、DO 请求共 8 项；每项都有 used/limit/percentage | 🟡 部分静态基线/测试在未提交改动中出现；后台读取、响应 `limits`、8 项完整 UI 尚未完成。 |
-| U18 | 平台和监控分开；平台请求不限，CF 免费额度有限 | 平台请求只统计不设上限、不画上限百分比；Cloudflare 官方额度独立分组 | 🟡 文案/展示有部分调整；数据模型和最终 UI 尚未统一。 |
+| U15 | `1e4fd10`、`fd80fa4` 两个提交 Actions 失败 | 每次失败修复后本地 CI、推送、Actions、失败产物全部闭环 | 🟡 已核对失败 run 的真实编号与失败 job；最新 `e3cdb05` #40 成功，后续每次推送仍须重复当前提交验收，并保留失败产物上传。 |
+| U16 | 图标没对齐；左上角“默认工作区”很矮挡住文字 | 统一图标尺寸、按钮高度、gap、行高和垂直居中；双主题/多视口实际检查 | 🟡 `1b39960` 已修复工作区开关高度、文字裁切和 AntD 按钮图标基线，并用 18 张双主题三视口基线验证；新增页面/控件仍需最终回归审计。 |
+| U17 | 配额少，D1 写入等所有有限制项目都要监控，显示次数和百分比 | Worker、D1 行读、D1 行写、KV 读/写/删/列表、DO 请求共 8 项；每项都有 used/limit/percentage | 🟡 提交版已展示 8 项和百分比，未提交改动补了总览与测试；但上限仍来自手填 `settings.cloudflareQuotas`，必须改为 subscriptions 的只读 `limits` 才算完成。 |
+| U18 | 平台和监控分开；平台请求不限，CF 免费额度有限 | 平台请求只统计不设上限、不画上限百分比；Cloudflare 官方额度独立分组 | 🟡 平台/Cloudflare 分组和“不限”已实现；上限来源仍是手填设置，需和 U17/U20 一起改为 Cloudflare 读取。 |
 | U19 | GitHub OAuth 没过期，为什么 CF OAuth 会过期；Token/API key 会不会过期；改成 Token | 不再暗示 OAuth 自然过期；改用 Cloudflare API Token（默认长期，可被撤销/策略限制）；界面、链接、错误文案同步改成 Token | 🟡 后端代码审计和固定契约已完成并写入本文件；前后端及文档全链路迁移尚未开始。 |
 | U20 | CF 免费额度为什么能在系统设置配置；应该从 CF 读取 | 删除 `cloudflareQuotas` 手填；调用 `GET /accounts/{account_id}/subscriptions`；只有明确 Free 才展示官方基线，否则“未读取” | 🟡 subscriptions 官方响应和 Free 判定已确认；代码仍存在设置字段、默认配额、旧测试和 UI，需整体迁移。 |
 | U21 | 界面文案诡异、莫名卡片、同页多个按钮跳同一页面 | 通读中英文文案；清理重复说明、技术黑话、无信息量卡片和重复跳转；每个页面只保留必要主入口 | ⬜ 已知用量页至少三个刷新入口、概览卡片重复跳 `/usage`；尚需全站审计。 |
@@ -158,6 +162,27 @@ git diff
 - 不能恢复 `/?auth_error=`、Cloudflare auth-result Cookie、跳首页或 “Setup is not available” 等特例。
 - 不能用牺牲测试覆盖、删除断言、只改文案或手写 mock 的方式制造绿色；每个稳定错误码和未配置短路都要有真实请求边界测试。
 - 不要批量回滚当前 5 个未提交草稿；它们包含 8 项额度展示和平台请求“不限”的有用 UI 意图，应在 Token/limits 数据模型落地时改写整合。
+
+### 0.5 关键提交地图（避免重复劳动）
+
+| 提交 | 已证明的内容 | 恢复时不要重复做什么 |
+| --- | --- | --- |
+| `775384e` | 登录页拆成 `LoginPage` / `AuthFrame` / 品牌 / 加载页 | 不要再把登录页整体重写一遍 |
+| `7ab4c90` | 侧栏与顶栏从外壳拆出 | 不要重新拆分基础外壳 |
+| `cc42ddb` | Cloudflare 面板拆成授权区与 OAuth 客户端区 | 这是旧 OAuth 结构，迁移 Token 时要替换下半区，不是继续加字段 |
+| `1b39960` | 工作区开关高度、文字遮挡、AntD 按钮图标基线修复；18 张双主题三视口基线通过 | 不要回退成固定 32px 高或重做旧的像素基线 |
+| `742640e` | 平台请求不限；Cloudflare 8 项额度与百分比；平台/Cloudflare 分组 | 不要重新引入平台请求上限，也不要漏掉 D1 写入/KV 删除/列举 |
+| `12e7aae` | 用量页拆为状态提示、额度分组、数据源、分布部件 | 不要继续把页面逻辑堆回 `UsagePage` |
+| `abf05ca` | 侧栏品牌、工作区切换、导航、页脚、账号/工作区页进一步组件化 | 不要再重复拆同名组件 |
+| `70f62e3` → `e3cdb05` | HANDOFF 固化、Cloudflare 官方权限与 subscriptions 响应核对 | 不要把旧 OAuth 事实当成当前目标 |
+
+### 0.6 Actions 失败与排查台账
+
+- `fd80fa4`（run `39754896119`，#11，`failure`）：web job 的“管理端 UI smoke”失败；native jobs 本次为 skipped。该提交属于旧 OAuth 修复尝试，不能拿来做最终方案。
+- `1e4fd10`（run `39756824624`，#12，`failure`）：web job 的“管理端 UI smoke”失败；linux/windows/macos native 构建也失败。提交信息包含“刷新按钮不被自动加载禁用，并补上 CI 失败产物上传”，但失败本身证明只改 UI/测试/工作流还不够。
+- `e3cdb05`（run `39826112664`，#40）：`changes` 与 `web` job 均为 success，最终 run 为 `completed/success`；native jobs 按路径过滤 skipped，这是预期行为。
+- 排查顺序：先看最新 run 的 `status/conclusion`，再看 `/actions/runs/{id}/jobs` 的失败 step；未认证环境下载完整日志可能返回 403，不能把 403 当成代码失败，改用 `gh run view --log-failed` 或带认证的 GitHub API。失败产物必须检查，不能只看 job 名称。
+- 推送前至少执行 `git diff --check`；涉及运行时代码时必须跑第 6 节完整命令。改动 `.github/workflows/platform-ci.yml` 会触发 native 路径过滤，必须预计并验证三平台 job，而不是只盯 web。
 
 ## 1. 用户最新要求（验收口径）
 
