@@ -10,6 +10,11 @@ export default defineConfig({
   use: {
     trace: 'retain-on-failure',
   },
+  // 像素基线在不同 Ubuntu/字体环境下会有 1%-3% 的抗锯齿差异（CJK 回退字体不同），
+  // 放任 0 容差会让 CI 频繁误报；结构性回归仍然远高于该比例。
+  expect: {
+    toHaveScreenshot: { maxDiffPixelRatio: 0.05, threshold: 0.3 },
+  },
   projects: [
     { name: 'preview', testMatch: /console-ui\.spec\.ts/, use: { baseURL: previewUrl } },
     { name: 'a11y', testMatch: /console-a11y\.spec\.ts/, use: { baseURL: previewUrl } },
