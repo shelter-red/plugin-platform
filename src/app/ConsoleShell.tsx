@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { Alert, App, Button, Drawer, Typography } from 'antd'
-import { CircleHelp, LogOut, Plus, RefreshCw, ShieldCheck, UserRound } from 'lucide-react'
+import { App, Drawer } from 'antd'
+import { CircleHelp, LogOut, UserRound } from 'lucide-react'
 import { type AppThemeMode, type ThemePreference } from '../app/theme'
 import { useToast } from '../components/ToastProvider'
 import { diagnosisMessageKey, type CloudflareDiagnosis } from '../features/settings/cloudflare-auth'
-import { errorMessage, translateError } from '../errors'
+import { errorMessage } from '../errors'
 import { DetailModal } from '../components/DetailModal'
 import { ProvisionModal, type ModalInput, type ModalResult } from '../components/ProvisionModal'
 import { CommandPalette, type CommandItem } from '../components/CommandPalette'
@@ -26,6 +26,7 @@ import { AuditPage } from '../features/audit/AuditPage'
 import { SettingsPage, settingsSections } from '../features/settings/SettingsPage'
 import { Sidebar, sidebarNavGroups } from './Sidebar'
 import { Topbar } from './Topbar'
+import { PageHeader } from './PageHeader'
 import { auditActionLabel } from '../lib/audit'
 import { downloadCsv } from '../lib/csv'
 import { useMediaQuery } from '../lib/useMediaQuery'
@@ -501,22 +502,7 @@ export function ConsoleShell({ theme, setTheme, effectiveTheme, language }: Cons
         <Topbar title={meta.title} theme={theme} onThemeChange={setTheme} language={language} onLanguageChange={changeLanguage} userInitials={userInitials} userMenuItems={userMenuItems} onUserMenu={onUserMenu} onOpenPalette={() => setPaletteOpen(true)} onOpenNav={() => setSidebarOpen(true)} onOpenAudit={() => selectPage('audit')} />
         <div className="page-scroll">
           <div className="page-content">
-            <div className="page-header">
-              <div>
-                <div className="eyebrow"><span className="live-pulse" />{apiLive ? t('shell.live') : t('shell.waitingData')}</div>
-                <Typography.Title level={1}>{meta.title}</Typography.Title>
-                <Typography.Paragraph type="secondary">{meta.description}</Typography.Paragraph>
-              </div>
-              <div className="header-actions">
-                {page === 'overview' && <Button icon={<RefreshCw size={15} />} onClick={() => void refreshData()} disabled={dataLoading}>{t('shell.refresh')}</Button>}
-                {page === 'usage' && <Button data-testid="usage-refresh" icon={<RefreshCw size={15} />} onClick={() => void refreshUsage()} loading={usageRefreshing}>{t('usage.refresh')}</Button>}
-                {page === 'servers' && <Button type="primary" icon={<Plus size={16} />} onClick={() => setModal('server')} disabled={!canWrite} title={canWrite ? undefined : t('workspace.readOnlyHint')}>{t('shell.bindServer')}</Button>}
-                {page === 'domains' && <Button type="primary" icon={<Plus size={16} />} onClick={() => setModal('domain')} disabled={!canWrite} title={canWrite ? undefined : t('workspace.readOnlyHint')}>{t('shell.assignDomain')}</Button>}
-                {page === 'plugins' && <Button type="primary" icon={<Plus size={16} />} onClick={() => setModal('plugin')} disabled={!canWrite} title={canWrite ? undefined : t('workspace.readOnlyHint')}>{t('shell.loadPlugin')}</Button>}
-              </div>
-            </div>
-            {dataError && <Alert className="page-alert" type="error" showIcon message={t('shell.loadFailed')} description={translateError(dataError)} action={<Button size="small" type="link" onClick={() => void refreshData()}>{t('shell.retry')}</Button>} />}
-            {activeWorkspace && !canWrite && page !== 'settings' && page !== 'workspaces' && <Alert className="page-alert" type="info" showIcon icon={<ShieldCheck size={16} />} message={t('workspace.readOnly')} description={t('workspace.readOnlyHint')} />}
+            <PageHeader title={meta.title} description={meta.description} apiLive={apiLive} page={page} canWrite={canWrite} activeWorkspace={activeWorkspace} dataLoading={dataLoading} dataError={dataError} usageRefreshing={usageRefreshing} onRefreshData={() => void refreshData()} onRefreshUsage={() => void refreshUsage()} onOpenProvision={setModal} />
             {page === 'overview' && <OverviewPage overview={overview} usage={usage} localUsage={localUsage} settings={platformSettings} audits={audits ?? []} accessLogs={accessLogs} accessLogsLoading={accessLogsLoading} accessLogsError={accessLogsError} servers={servers ?? []} range={range} setRange={setRange} onNavigate={selectPage} />}
             {page === 'servers' && <ServersPage servers={servers ?? []} loading={dataLoading} onRefresh={() => void refreshData()} onBind={() => setModal('server')} onDetail={(id) => void openDetail('server', id)} />}
             {page === 'plugins' && <PluginsPage plugins={plugins ?? []} loading={dataLoading} onSync={() => void syncManifests()} onLoad={() => setModal('plugin')} onDetail={(id) => void openDetail('plugin', id)} onHealth={(plugin) => void runHealthCheck(plugin)} />}
