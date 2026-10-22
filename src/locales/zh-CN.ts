@@ -201,8 +201,6 @@ export default {
   plugins: {
     enabled: '已启用 {{count}} 个插件',
     discovered: '共发现 {{count}} 个',
-    reading: '正在读取插件状态',
-    syncHint: 'manifest 会在服务器心跳时同步',
     sync: '同步 manifest',
     emptyTitle: '暂无插件 manifest',
     emptyBody: '服务器连接并完成 manifest 同步后，插件会显示在这里。',

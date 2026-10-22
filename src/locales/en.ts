@@ -201,8 +201,6 @@ export default {
   plugins: {
     enabled: '{{count}} plugin(s) enabled',
     discovered: '{{count}} discovered',
-    reading: 'Reading plugin status',
-    syncHint: 'Manifests sync on server heartbeat',
     sync: 'Sync manifests',
     emptyTitle: 'No plugin manifests',
     emptyBody: 'Plugins appear here once a server connects and completes manifest sync.',

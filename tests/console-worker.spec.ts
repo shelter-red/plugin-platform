@@ -41,6 +41,7 @@ type WorkerMock = {
   registrationCodeRequests: number
   domainRequests: { pluginInstanceId: string; prefix: string }[]
   commandRequests: string[]
+  syncRequests: string[]
   oauthUpdates: unknown[]
   platformUpdates: unknown[]
   smtpUpdates: unknown[]
@@ -65,6 +66,7 @@ async function mockWorker(page: Page): Promise<WorkerMock> {
     registrationCodeRequests: 0,
     domainRequests: [],
     commandRequests: [],
+    syncRequests: [],
     oauthUpdates: [],
     platformUpdates: [],
     smtpUpdates: [],
@@ -94,6 +96,11 @@ async function handleApi(route: Route, state: WorkerMock, logsGate: Promise<void
     const id = decodeURIComponent(command[1])
     state.commandRequests.push(`${id}:${command[2]}`)
     return route.fulfill({ json: { id, state: command[2] === 'load' ? 'loaded' : 'enabled', accepted: true } })
+  }
+  const sync = pathname.match(/^\/api\/servers\/([^/]+)\/sync$/)
+  if (method === 'POST' && sync) {
+    state.syncRequests.push(decodeURIComponent(sync[1]))
+    return route.fulfill({ json: { accepted: true } })
   }
   const serverDetail = pathname.match(/^\/api\/servers\/([^/]+)$/)
   if (method === 'GET' && serverDetail) {
@@ -663,6 +670,19 @@ const trendSnapshots = [
   { captured_at: '2026-10-20T00:00:00.000Z', request_count: 600, active_connections: 3, r2_bytes: 0, r2_objects: 0 },
   { captured_at: '2026-10-21T00:00:00.000Z', request_count: 1200, active_connections: 4, r2_bytes: 2048, r2_objects: 2 },
 ]
+
+test('管理端同步 manifest 调用服务器接口并提示结果', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  const worker = await mockWorker(page)
+  worker.servers = [onlineServer]
+  await page.goto('/')
+  await page.getByRole('button', { name: '插件实例', exact: true }).click()
+
+  await page.getByRole('button', { name: '同步 manifest' }).click()
+
+  await expect(page.locator('.ant-notification-notice').filter({ hasText: '已请求 1 台服务器同步 manifest' })).toBeVisible()
+  expect(worker.syncRequests).toEqual(['server-1'])
+})
 
 test('管理端窄窗口下表格、图表和详情弹窗可用', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
