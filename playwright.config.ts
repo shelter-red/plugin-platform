@@ -8,7 +8,9 @@ export default defineConfig({
   outputDir: '/tmp/plugmesh-playwright',
   // CI 上偶发的超时/竞态用 1 次重试兜底；同时保留 HTML 报告与 trace 便于定位。
   retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? [['line'], ['html', { outputFolder: '/tmp/plugmesh-playwright-report', open: 'never' }]] : 'line',
+  reporter: process.env.CI
+    ? [['line'], ['html', { outputFolder: '/tmp/plugmesh-playwright-report', open: 'never' }], ['json', { outputFile: '/tmp/plugmesh-playwright-report/results.json' }]]
+    : 'line',
   use: {
     trace: 'retain-on-failure',
   },

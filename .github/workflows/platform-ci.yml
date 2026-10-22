@@ -31,6 +31,11 @@ jobs:
   web:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # 固定到与 package-lock 中 @playwright/test 1.55.1 对应的官方镜像：
+    # ubuntu-latest 的系统字体与浏览器版本会随镜像迁移漂移，导致像素基线与 CI 不一致。
+    container:
+      image: mcr.microsoft.com/playwright:v1.55.1-noble
+      options: --ipc=host
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -47,10 +52,11 @@ jobs:
         run: npm run build
       - name: Worker smoke
         run: npm run worker:smoke
-      - name: 安装 Playwright 浏览器
-        run: npx playwright install --with-deps chromium
       - name: 管理端 UI smoke
         run: npm run ui:smoke
+      - name: 汇总失败用例
+        if: failure()
+        run: node scripts/playwright-failures.mjs /tmp/plugmesh-playwright-report/results.json
       - name: 上传 UI smoke 失败产物
         if: failure()
         uses: actions/upload-artifact@v4
