@@ -1,9 +1,27 @@
 # Plugmesh 平台交接（HANDOFF）
 
-> 最后更新：2026-10-23 02:02（Asia/Shanghai）
+> 最后更新：2026-10-23（Asia/Shanghai）
 > 状态：**进行中，未完成**
 > 维护规则：每完成一个可验证步骤，先更新本文件，再提交一条可追溯的中文 Git 记录；未记录不得继续下一步。
 > 本文件是后续上下文的优先事实来源。若 README、验收矩阵、旧注释或聊天摘要与本文冲突，以用户最新要求和实际代码为准；旧文档需在实现完成后同步重写，不能把旧 OAuth 行为当成目标。
+
+## 一页恢复卡（压缩后先看这里）
+
+- 仓库固定为 `/home/tc/work/plugin-platform`，分支固定为 `main`；不要从聊天猜仓库、分支或远端。
+- 已完成基线提交 `a0539fb feat(cloudflare): 增加 API Token 校验与凭据基础模块`，本地与 `origin/main` 一致；平台验收 run `39827872017`（#42）为 `completed/success`。
+- 本轮只整理交接文档。除本文件自身外，工作区仍有且只能保留以下 5 个**未提交代码草稿**；其中的 8 项额度展示和“平台请求不限”意图要保留，但旧 OAuth/`cloudflareQuotas` 假设不能提交：
+  ```text
+  M src/features/overview/UsageResourcesPanel.tsx
+  M src/features/usage/PlatformUsageSection.tsx
+  M src/locales/en.ts
+  M src/locales/zh-CN.ts
+  M tests/console-worker.spec.ts
+  ```
+- **严禁** `git reset --hard`、`git clean`、`git checkout -- .` 或任何批量覆盖工作区命令；也严禁为了提交 HANDOFF 而 `git add .` 把这 5 个半成品一起带上。
+- 已提交的基础模块是 `worker/src/cloudflare-token.ts`：固定三项只读权限、Token verify、accounts 完整分页、账号唯一性校验、subscriptions/Free 判定、稳定 HTTP 错误、API Token 密文存取、旧 OAuth 密文识别均已实现，runtime 测试 8/8 通过。
+- **迁移尚未完成**：`worker/src/index.ts` 仍走旧 Cloudflare OAuth；设置/用量 API、前端表单、类型、缓存顺序、测试和文档都还没切换。看到 Token 基础模块不能误判成 Cloudflare 已迁移。
+- 下一步第一优先级：重写 `cloudflareSettingsApi` / `cloudflareUsageApi`，删除 `/auth/cloudflare/*`、auth-result Cookie、refresh/revoke，并把 `oauth-settings.ts` 收缩为仅 GitHub；随后删除 `cloudflareQuotas`、接入只读 `limits`，最后改前端并跑完整 CI。
+- 用户反馈已完整归入下方 U01–U23 总账；若后续摘要只记得一句话，就记住：**Cloudflare 用长期 API Token、权限固定只读、免费额度从 subscriptions 读取、错误用 HTTP 留在设置页、平台统计不限、推送后必须盯 Actions 到成功。**
 
 ## 压缩恢复速查
 
@@ -17,17 +35,17 @@ git rev-parse HEAD origin/main
 git diff
 ```
 
-当前权威快照（2026-10-23 02:02）：
+当前权威快照（2026-10-23）：
 
 - 仓库：`/home/tc/work/plugin-platform`
 - 分支：`main`
 - 当前实际 HEAD：执行 `git log -1 --oneline`；本文档自身的提交会自然晚于“最近已验收提交”，不要照抄旧值。
-- 最近已验收 HEAD：`e3cdb05 docs: 确认 Cloudflare 订阅响应与免费套餐判定`；本次 HANDOFF 整理提交会紧随其后。恢复时以 `git log -1 --oneline` 和 `git rev-parse HEAD origin/main` 为准。push 使用 `git@github-plugin-platform:shelter-red/plugin-platform.git`，fetch 使用 `https://github.com/shelter-red/plugin-platform.git`。
-- 最近已验收提交：`c32a587`，平台验收 run `39826901281`（run #41）已为 `completed/success`；上一提交 `e3cdb05` 的 run `39826112664`（#40）也成功。
+- 最近已验收功能提交：`a0539fb feat(cloudflare): 增加 API Token 校验与凭据基础模块`；平台验收 run `39827872017`（#42）已为 `completed/success`。本次 HANDOFF 整理提交会紧随其后，恢复时以 `git log -1 --oneline` 和 `git rev-parse HEAD origin/main` 为准。push 使用 `git@github-plugin-platform:shelter-red/plugin-platform.git`，fetch 使用 `https://github.com/shelter-red/plugin-platform.git`。
+- 最近文档与功能成功链：`c32a587` 的 run `39826901281`（#41）、`e3cdb05` 的 run `39826112664`（#40）均为 `completed/success`。
 - `0a5075d` 的 run `39824622514`（#38）、`0325530` 的 run `39823921091`（#37）、`70f62e3` 的 run `39822695994`（#35）、`abf05ca` 的 run `39820685855`（#34）均成功。`0325530` 同 SHA 的并发 run `39823919519`（#36）被取消，属于重复触发，不是失败。
 - 已知失败反例（不能重复）：`fd80fa4` 的 run `39754896119`（#11）失败，web 的“管理端 UI smoke”失败；`1e4fd10` 的 run `39756824624`（#12）失败，web 的“管理端 UI smoke”失败，且该提交改动 workflow 后触发了 native 构建，linux/windows/macos 构建也失败。后续修复已由更晚提交覆盖，但历史失败不能从记录里删除。
 - 恢复后仍须在每次推送时重复“本地验证 → 推送 → Actions 闭环”，不能沿用历史成功；本文档提交自身的 Actions run 不写入本文件，避免自我引用循环，推送后直接查 GitHub。
-- 当前工作区只保留以下 5 个未提交文件，均与尚未完成的 Cloudflare 额度/旧 OAuth 文案有关：
+- 除本 HANDOFF 自身外，当前工作区只保留以下 5 个未提交代码文件，均与尚未完成的 Cloudflare 额度/旧 OAuth 文案有关：
   ```text
   M src/features/overview/UsageResourcesPanel.tsx
   M src/features/usage/PlatformUsageSection.tsx
@@ -55,6 +73,7 @@ git diff
 
 ## 最近动作
 
+- 2026-10-23：整理 HANDOFF 的一页恢复卡、最新 HEAD/Actions 快照、5 个未提交草稿保护和 U01–U23 总账；确认 `a0539fb` 已与 `origin/main` 一致，平台验收 run `39827872017`（#42）最终 `completed/success`，`changes`/`web` 成功，native 按路径过滤 skipped。本次只提交本文件。
 - 2026-10-23：Cloudflare Token 基础模块完成并验证：`worker/src/cloudflare-token.ts` 实现固定只读权限常量、Token verify、accounts 完整分页、`account_missing`/`account_ambiguous`、subscriptions/Free 判定、真实 HTTP 稳定错误、API Token 密文存取和旧 OAuth 密文识别；`worker/runtime/cloudflare-token.test.ts` 8 项全部通过。宿主 GLIBC 2.31 无法启动当前 `workerd`，因此 runtime 测试通过 `node:22-bookworm` Docker 执行；`npm run worker:typecheck` 同时通过。本步骤尚未接线路由。
 - 2026-10-23：开始实施下一步“Cloudflare API Token 后端模块”：新增 `worker/src/cloudflare-token.ts`，先完成 Token verify、accounts 完整分页、账号唯一性校验、subscriptions/Free 判定、稳定错误类型、新密文格式与旧 OAuth 密文识别，并用 runtime 测试验证；本步骤不改 API 路由和前端。
 - 2026-10-23：核对分支、远端、工作区和 Actions；确认 `e3cdb05` 已推送，平台验收 run `39826112664`（#40）最终 `completed/success`；`5373f87` run `39825387738`、`0a5075d` run `39824622514`、`0325530` run `39823921091` 也成功。
@@ -95,8 +114,8 @@ git diff
 | ID | 用户反馈或目标 | 必须达到的效果 | 当前状态 |
 | --- | --- | --- | --- |
 | U01 | “不是说全部重构成组件吗？登录页还是旧的” | 登录页及全站页面有清晰组件边界；登录页不重复重写；实际看视觉结果 | 🟡 登录页、侧栏、账号、工作区已完成组件拆分，构建与相关交互测试通过；多主题/多视口视觉检查仍未完成。 |
-| U02 | 自行从会话历史读分支、提交、推送 | 每步有中文 Git 记录；不靠聊天上下文猜分支 | 🟡 `main` 已跟踪远端，最新文档提交 `e3cdb05` 已推送且 run #40 成功；后续每个代码步骤继续先更新本文件再提交。 |
-| U03 | 推送时 Actions 老是失败 | 推送前跑完整本地 CI；推送后查 run；失败读日志/失败产物并修到成功 | 🟡 `e3cdb05` run #40、`5373f87` #39、`0a5075d` #38、`0325530` #37、`70f62e3` #35 与 `abf05ca` #34 均成功；`fd80fa4` #11、`1e4fd10` #12 是已知失败反例，后续每次推送仍须闭环，失败产物上传要求必须保留。 |
+| U02 | 自行从会话历史读分支、提交、推送 | 每步有中文 Git 记录；不靠聊天上下文猜分支 | 🟡 `main` 已跟踪远端，功能提交 `a0539fb` 已推送且 run #42 成功；后续每个代码步骤继续先更新本文件再提交。 |
+| U03 | 推送时 Actions 老是失败 | 推送前跑完整本地 CI；推送后查 run；失败读日志/失败产物并修到成功 | 🟡 `a0539fb` #42、`c32a587` #41、`e3cdb05` #40、`5373f87` #39、`0a5075d` #38、`0325530` #37、`70f62e3` #35 与 `abf05ca` #34 均成功；`fd80fa4` #11、`1e4fd10` #12 是已知失败反例，后续每次推送仍须闭环，失败产物上传要求必须保留。 |
 | U04 | 错误状态为什么是 `/?auth_error=` | 授权/配置错误使用真实 HTTP status + JSON；不靠 URL 查询参数；不跳首页 | 🟡 GitHub 登录错误路径已改为 HTTP 错误页；Cloudflare 设置/授权仍存在旧 OAuth 跳转，Token 迁移后必须全部改为当前设置面板展示。 |
 | U05 | setup 失效为何单独返回 “Setup is not available” | `setupApi` 返回 `null` 时与其他非路由请求一致，不发明特殊响应 | ✅ 已按普通非路由路径处理；保留回归测试，Cloudflare 改造不能破坏。 |
 | U06 | `D1_ERROR: no such table: workspaces` | 生产部署必须先应用 `0008_workspaces.sql` 及全部 migrations；pending migration 时构建失败 | 🟡 `scripts/deploy-worker.sh` 已包含 migration 检查；仍需核对 Workers Builds 实际 Deploy command 和生产接口，不能只修脚本。 |
@@ -108,7 +127,7 @@ git diff
 | U12 | OAuth 里没有 `offline_access` | 彻底移除 `offline_access`、OAuth refresh 和“过期/重新授权”文案 | ⬜ Token 迁移时删除。 |
 | U13 | `configured:false` 为什么还能查 `/api/usage/local`，且返回 200 | 分清接口语义：未配置 Cloudflare 时 `/api/usage/cloudflare` 立即 `{"configured":false,"cached":false}`，不读缓存、不发外部请求；本地统计 `/api/usage/local?range=7d` 仍应 200 | 🟡 目标已写入验收；Cloudflare 缓存顺序和未配置短路仍需代码及测试修复。 |
 | U14 | `response_type` 等字段放错位置；CF OAuth 没有 PKCE 选项 | 旧 OAuth UI 中 `response_type` 若短暂保留也只能属于 OAuth 配置、值为 `code`；最终 Token 方案应直接移除 response_type/grant_type/PKCE 等全部客户端字段 | ⬜ 最终以“所有 OAuth 客户端字段消失”为验收，避免继续维护错误表单。 |
-| U15 | `1e4fd10`、`fd80fa4` 两个提交 Actions 失败 | 每次失败修复后本地 CI、推送、Actions、失败产物全部闭环 | 🟡 已核对失败 run 的真实编号与失败 job；最新 `e3cdb05` #40 成功，后续每次推送仍须重复当前提交验收，并保留失败产物上传。 |
+| U15 | `1e4fd10`、`fd80fa4` 两个提交 Actions 失败 | 每次失败修复后本地 CI、推送、Actions、失败产物全部闭环 | 🟡 已核对失败 run 的真实编号与失败 job；最新 `a0539fb` #42 成功，后续每次推送仍须重复当前提交验收，并保留失败产物上传。 |
 | U16 | 图标没对齐；左上角“默认工作区”很矮挡住文字 | 统一图标尺寸、按钮高度、gap、行高和垂直居中；双主题/多视口实际检查 | 🟡 `1b39960` 已修复工作区开关高度、文字裁切和 AntD 按钮图标基线，并用 18 张双主题三视口基线验证；新增页面/控件仍需最终回归审计。 |
 | U17 | 配额少，D1 写入等所有有限制项目都要监控，显示次数和百分比 | Worker、D1 行读、D1 行写、KV 读/写/删/列表、DO 请求共 8 项；每项都有 used/limit/percentage | 🟡 提交版已展示 8 项和百分比，未提交改动补了总览与测试；但上限仍来自手填 `settings.cloudflareQuotas`，必须改为 subscriptions 的只读 `limits` 才算完成。 |
 | U18 | 平台和监控分开；平台请求不限，CF 免费额度有限 | 平台请求只统计不设上限、不画上限百分比；Cloudflare 官方额度独立分组 | 🟡 平台/Cloudflare 分组和“不限”已实现；上限来源仍是手填设置，需和 U17/U20 一起改为 Cloudflare 读取。 |
@@ -117,6 +136,8 @@ git diff
 | U21 | 界面文案诡异、莫名卡片、同页多个按钮跳同一页面 | 通读中英文文案；清理重复说明、技术黑话、无信息量卡片和重复跳转；每个页面只保留必要主入口 | ⬜ 已知用量页至少三个刷新入口、概览卡片重复跳 `/usage`；尚需全站审计。 |
 | U22 | Actions 增加手动构建插件服务器：可选可执行文件/库文件、目标平台 | 新增仅 `workflow_dispatch` 的 workflow；构建真正共享库及可执行程序；目标平台/架构明确；artifact、SHA256、依赖说明完整；不与 tag release 冲突 | ⬜ 尚未新增。 |
 | U23 | 帮助中心说明二进制插件服务器/库文件怎么用 | 中英文帮助中心覆盖下载、SHA256、启动/注册、环境变量、插件目录/主机、库链接、OpenSSL 运行依赖、常见错误 | ⬜ 尚未新增；现有帮助仍偏旧 OAuth FAQ。 |
+
+> 总账完整性：以上 U01–U23 已覆盖本会话中用户提出的组件化、登录页、HTTP 错误、setup、D1、Cloudflare OAuth/Token、固定权限、账号识别、刷新按钮、`configured:false`、`response_type`/PKCE、用量 8 项与百分比、平台/Cloudflare 分组、设置来源、诡异文案/重复卡片/重复跳转、图标对齐、Actions、原生手动构建和帮助中心要求。后续若新增反馈，继续追加编号，不覆盖旧条目。
 
 ### 0.2 当前不能误判为“已完成”的事项
 
@@ -183,6 +204,7 @@ git diff
 
 - `fd80fa4`（run `39754896119`，#11，`failure`）：web job 的“管理端 UI smoke”失败；native jobs 本次为 skipped。该提交属于旧 OAuth 修复尝试，不能拿来做最终方案。
 - `1e4fd10`（run `39756824624`，#12，`failure`）：web job 的“管理端 UI smoke”失败；linux/windows/macos native 构建也失败。提交信息包含“刷新按钮不被自动加载禁用，并补上 CI 失败产物上传”，但失败本身证明只改 UI/测试/工作流还不够。
+- `c32a587`（run `39826901281`，#41）与 `a0539fb`（run `39827872017`，#42）：`changes` 与 `web` job 均为 success，最终 run 为 `completed/success`；native jobs 按路径过滤 skipped，这是预期行为。
 - `e3cdb05`（run `39826112664`，#40）：`changes` 与 `web` job 均为 success，最终 run 为 `completed/success`；native jobs 按路径过滤 skipped，这是预期行为。
 - 排查顺序：先看最新 run 的 `status/conclusion`，再看 `/actions/runs/{id}/jobs` 的失败 step；未认证环境下载完整日志可能返回 403，不能把 403 当成代码失败，改用 `gh run view --log-failed` 或带认证的 GitHub API。失败产物必须检查，不能只看 job 名称。
 - 推送前至少执行 `git diff --check`；涉及运行时代码时必须跑第 6 节完整命令。改动 `.github/workflows/platform-ci.yml` 会触发 native 路径过滤，必须预计并验证三平台 job，而不是只盯 web。
@@ -387,6 +409,7 @@ git diff
 
 ### 已完成/已提交
 
+- `a0539fb` 新增 `worker/src/cloudflare-token.ts` 及 8 项 runtime 测试：固定权限常量、Token verify、accounts 全分页、账号唯一性、subscriptions/Free 判定、稳定错误和 API Token 密文存取均已验证；`npm run worker:typecheck` 通过，平台验收 #42 成功。
 - 总览、列表、工作区、Cloudflare 设置、用量页做过一轮组件拆分。
 - 平台统计与 Cloudflare 免费额度在 UI 上已尝试分组。
 - 侧栏/账号/工作区已在 `abf05ca` 完成进一步拆分并提交；“默认工作区”高度、文字遮挡和全站图标对齐仍需实际视觉验收。
@@ -397,7 +420,7 @@ git diff
 
 ### 尚未完成
 
-- Cloudflare Token 基础模块已完成，但后端 API 仍是 OAuth exchange/refresh/revoke，仍会请求不存在/不合适的 OAuth scope。
+- Cloudflare Token 基础模块已完成，但 `worker/src/index.ts` 尚未导入/接入；后端 API 仍是 OAuth exchange/refresh/revoke，仍会请求不存在/不合适的 OAuth scope。
 - Cloudflare 设置页仍要求 OAuth Client ID/Secret、回调地址、协议字段和 scope。
 - `cloudflareQuotas` 仍存在 PlatformSettings、编辑表单、测试和本地统计 UI 中。
 - Cloudflare 未配置时 `cloudflareUsageApi` 仍可能先读缓存。
@@ -412,7 +435,7 @@ git diff
 
 - `worker/src/cloudflare-oauth.ts`
   - 当前是 OAuth exchange/refresh/revoke。
-  - 建议替换为 `cloudflare-token.ts` 或同等模块：verify、accounts、subscriptions、credential 类型、稳定错误类型。
+  - `cloudflare-token.ts` 已提供 verify、accounts、subscriptions、credential 类型和稳定错误类型；下一步把调用方全部切过去，再删除旧 OAuth 模块。
 - `worker/src/index.ts`
   - 删除 `/auth/cloudflare/start`、`/auth/cloudflare/callback` 的导入和路由。
   - 删除 `/api/settings/cloudflare/auth-result`。
