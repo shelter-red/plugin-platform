@@ -2,7 +2,7 @@
 
 > 最后整理：2026-10-23（Asia/Shanghai）
 >
-> 当前状态：**Cloudflare API Token 前端/后端与 8 项用量迁移已提交；构建、完整 UI smoke 与设置导航稳定性已通过。旧文档/文案已完成盘点但尚未修改；视觉验收、原生二进制/共享库手动构建、帮助中心、完整本地 CI 和 push 后 Actions 闭环尚未收口。禁止在完整本地 CI 通过前 push。**
+> 当前状态：**Cloudflare API Token 前端/后端与 8 项用量迁移已提交；完整本地 CI（含 86/86 UI smoke）已通过。旧文档/文案已完成盘点但尚未修改；视觉验收、原生二进制/共享库手动构建、帮助中心和最终 Actions 闭环尚未收口。当前基线可在 Actions 通过后用 `git push` 推送，但不是最终完成版本。**
 >
 > 本文件是上下文压缩后的第一事实源。README、旧方案、旧测试、聊天摘要或历史提交说明与本文冲突时，以用户最新要求、当前代码和本文为准。恢复后先执行第 0 节的核验命令，再按第 8 节顺序继续。
 
@@ -13,16 +13,17 @@
 ```text
 仓库：/home/tc/work/plugin-platform
 分支：main
-最近核验 HEAD：d1c9f3d docs: 补齐旧文档清理交接清单
+最近核验 HEAD：87e88dd docs: 校订交接恢复基线
 origin/main：579eb1f docs: 校正交接基线与最新 Actions 结果
-本地关系：ahead origin/main 10 个提交（本 HANDOFF 自身提交后会再增加 1 个 docs-only 提交）
+本地关系：ahead origin/main 11 个提交（本 HANDOFF 自身提交后会再增加 1 个 docs-only 提交）
 fetch remote：https://github.com/shelter-red/plugin-platform.git
 push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 ```
 
-本地领先远端的 10 个提交：
+本地领先远端的 11 个提交：
 
 ```text
+87e88dd docs: 校订交接恢复基线
 d1c9f3d docs: 补齐旧文档清理交接清单
 a02871a docs: 更新 Token 与用量验收交接基线
 850928e feat(console): 完成 Cloudflare Token 与八项用量迁移
@@ -104,12 +105,8 @@ Cloudflare/用量定向 worker-mock 回归                 8 passed
 尚未完成/不能宣称通过：
 
 ```text
-npm run worker:typecheck     本轮前端提交后未重跑
-npm run worker:smoke         本轮前端提交后未重跑
-npm run ui:conventions       本轮前端提交后未重跑
-npm run ui:css-audit         本轮前端提交后未重跑
+npm run ci:local             PASS（2026-10-23，含 86/86 UI smoke）
 npm run deploy:worker:test   本轮前端提交后未重跑
-npm run ci:local             本轮完整改动后未跑
 worker runtime Docker        最近修改后未重跑
 原生 CMake / ctest           新共享库与 workflow 尚未实现
 真实 Cloudflare API          未联调
@@ -244,7 +241,7 @@ doRequests        100,000
 | --- | --- | --- | --- |
 | U01 | “不是说全部重构成组件吗？登录页还是旧的” | 清晰组件边界；登录页实际视觉验收 | 🟡 登录页/侧栏/账号/工作区已拆；最终截图验收未完成 |
 | U02 | “自己从会话历史里读 Git 分支，自行提交推送” | 每步有中文 Git 记录；不靠聊天猜 | 🟡 `main` 领先 10+ 个未推送提交；本地完整 CI 与 Actions 闭环仍未完成 |
-| U03 | “推送时注意 Actions，老是错误” | 本地完整 CI + push 后追踪到成功 | 🟡 最新远端 #52 成功；本地 10+ 个提交未跑完整 CI，禁止 push |
+| U03 | “推送时注意 Actions，老是错误” | 本地完整 CI + push 后追踪到成功 | 🟡 本地 `npm run ci:local` 已通过；本地提交尚未 push，Actions 结果待追踪 |
 | U04 | 为什么错误状态靠 `/?auth_error=` | 真实 HTTP + JSON，留在当前页 | 🟡 Cloudflare 跳转/auth-result 链路已删；GitHub 失败页已是 HTTP；仍需统一测试与旧文案清理 |
 | U05 | setup 失效为什么单独返回 `Setup is not available` | 返回 null 后走普通非路由行为 | ✅ 已实现并有测试 |
 | U06 | `D1_ERROR: no such table: workspaces` | 先应用全部 migrations 再部署 | 🟡 deploy 脚本已实现并测试；Workers Builds 控制台配置待核对 |
@@ -763,3 +760,4 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - 2026-10-23：完成第 8.2 节全仓盘点：README、方案、验收矩阵、local-e2e、help、privacy、部署提示、setup 文案、locale 和两处注释仍有过期 Cloudflare OAuth/手填额度描述；本次仅记录，尚未修改。
 - 2026-10-23：确认当前工作区干净；下一严格步骤是第 8.2 节文档/文案清理，之后做视觉验收与原生手动构建。
 - 2026-10-23：提交 `d1c9f3d`（`docs: 补齐旧文档清理交接清单`），将下一个严格动作固定为 8.2；本 HANDOFF 再校订一次以避免把“整理前 HEAD”误当成实时 HEAD。
+- 2026-10-23：在 HEAD `87e88dd` 实测 `npm run ci:local` 全绿：UI 约定、样式审计、Worker 类型检查、构建、全部 Worker smoke 与 86/86 UI smoke 通过；当前基线满足推送前 web CI 门槛。
