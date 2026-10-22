@@ -61,6 +61,7 @@ import { readCloudflareDiagnosis, type CloudflareDiagnosis } from './features/se
 import { SmtpPanel } from './features/settings/SmtpPanel'
 import { errorMessage, translateError } from './errors'
 import { StatusBadge } from './components/StatusBadge'
+import { IconButton } from './components/IconButton'
 import { CommandPalette, type CommandItem } from './components/CommandPalette'
 import { DocPage } from './components/DocPage'
 import { AccountPage } from './features/account/AccountPage'
@@ -68,8 +69,13 @@ import { PAGE_PATHS, docFromPath, pageFromPath, type Page } from './app/routes'
 import i18n, { storeLanguage, type Language } from './i18n'
 import { fetchMe, fetchWorkspaces, setActiveWorkspace as applyActiveWorkspace, currentWorkspaceId, type ApiMe, type Workspace } from './api'
 import { WorkspacePage } from './features/workspaces/WorkspacePage'
+import { OverviewPage } from './features/overview/OverviewPage'
+import { auditActionLabel, auditDetail } from './lib/audit'
+import { downloadCsv } from './lib/csv'
+import { formatBytes, formatDateTime, formatNumber } from './lib/format'
+import { usagePercent } from './lib/usage'
 import { AuthLoadingScreen, LoginPage } from './features/auth/AuthScreen'
-import { ApiError, assignDomain, checkPluginHealth, commandPlugin, createInvite, createRegistrationCode, fetchAccessLogs, fetchAudit, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchInvites, fetchLocalUsage, fetchOauthSettings, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchPluginDetails, fetchServerDetails, fetchServers, fetchSmtpSettings, revokeInvite, syncServer, type ApiAccessLog, type ApiAudit, type ApiDomain, type ApiInvite, type ApiOverview, type ApiPlugin, type ApiPluginDetail, type ApiServer, type ApiServerDetail, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type OauthSettings, type PlatformSettings, type PluginAction, type PluginHealthResult, type SmtpSettings, type UsageBreakdownEntry, type UsageSnapshot, type WorkspaceRole, updatePlatformSettings } from './api'
+import { ApiError, assignDomain, checkPluginHealth, commandPlugin, createInvite, createRegistrationCode, fetchAccessLogs, fetchAudit, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchInvites, fetchLocalUsage, fetchOauthSettings, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchPluginDetails, fetchServerDetails, fetchServers, fetchSmtpSettings, revokeInvite, syncServer, type ApiAccessLog, type ApiAudit, type ApiDomain, type ApiInvite, type ApiOverview, type ApiPlugin, type ApiPluginDetail, type ApiServer, type ApiServerDetail, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type OauthSettings, type PlatformSettings, type PluginAction, type PluginHealthResult, type SmtpSettings, type UsageBreakdownEntry, type WorkspaceRole, updatePlatformSettings } from './api'
 
 type Theme = 'dark' | 'light' | 'system'
 type ModalInput = { prefix?: string; pluginInstanceId?: string }
@@ -106,27 +112,6 @@ const settingsSections: { id: string; labelKey: string; icon: typeof Cloud }[] =
 ]
 
 const scrollBehavior = (): ScrollBehavior => window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
-const currentLocale = () => i18n.resolvedLanguage ?? 'zh-CN'
-const formatDateTime = (value: string) => new Date(value).toLocaleString(currentLocale())
-const formatNumber = (value: number) => value.toLocaleString(currentLocale())
-function IconButton({ label, children, onClick }: { label: string; children: React.ReactNode; onClick?: () => void }) {
-  return <button className="icon-button" aria-label={label} title={label} onClick={onClick}>{children}</button>
-}
-
-function downloadCsv(filename: string, headers: string[], rows: Array<Array<string | number | null>>) {
-  const escape = (value: string | number | null) => `"${String(value ?? '').replaceAll('"', '""')}"`
-  const csv = '\uFEFF' + [headers, ...rows].map((row) => row.map(escape).join(',')).join('\r\n')
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  URL.revokeObjectURL(url)
-}
-
 type ConsoleProps = {
   theme: Theme
   setTheme: (theme: Theme) => void
@@ -580,7 +565,7 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
             <div className="page-header"><div><div className="eyebrow"><span className="live-pulse" />{apiLive ? t('shell.live') : t('shell.waitingData')}</div><h1>{meta.title}</h1><p>{meta.description}</p></div><div className="header-actions">{page === 'overview' && <button className="button secondary" onClick={() => void refreshData()} disabled={dataLoading}><RefreshCw size={15} />{t('shell.refresh')}</button>}{page === 'servers' && <button className="button primary" onClick={() => setModal('server')} disabled={!canWrite} title={canWrite ? undefined : t('workspace.readOnlyHint')}><Plus size={16} />{t('shell.bindServer')}</button>}{page === 'domains' && <button className="button primary" onClick={() => setModal('domain')} disabled={!canWrite} title={canWrite ? undefined : t('workspace.readOnlyHint')}><Plus size={16} />{t('shell.assignDomain')}</button>}{page === 'plugins' && <button className="button primary" onClick={() => setModal('plugin')} disabled={!canWrite} title={canWrite ? undefined : t('workspace.readOnlyHint')}><Plus size={16} />{t('shell.loadPlugin')}</button>}</div></div>
             {dataError && <div className="notice-bar compact"><div className="notice-icon"><AlertCircle size={16} /></div><div><strong>{t('shell.loadFailed')}</strong><span>{translateError(dataError ?? '')}</span></div><button onClick={() => void refreshData()}>{t('shell.retry')} <RefreshCw size={14} /></button></div>}
             {activeWorkspace && !canWrite && page !== 'settings' && page !== 'workspaces' && <div className="notice-bar compact" role="status"><div className="notice-icon"><ShieldCheck size={16} /></div><div><strong>{t('workspace.readOnly')}</strong><span>{t('workspace.readOnlyHint')}</span></div></div>}
-            {page === 'overview' && <Overview overview={overview} usage={usage} localUsage={localUsage} settings={platformSettings} audits={audits ?? []} accessLogs={accessLogs} accessLogsLoading={accessLogsLoading} accessLogsError={accessLogsError} servers={servers ?? []} range={range} setRange={setRange} onNavigate={selectPage} />}
+            {page === 'overview' && <OverviewPage overview={overview} usage={usage} localUsage={localUsage} settings={platformSettings} audits={audits ?? []} accessLogs={accessLogs} accessLogsLoading={accessLogsLoading} accessLogsError={accessLogsError} servers={servers ?? []} range={range} setRange={setRange} onNavigate={selectPage} />}
             {page === 'servers' && <Servers servers={servers ?? []} loading={dataLoading} onRefresh={() => void refreshData()} onBind={() => setModal('server')} onDetail={(id) => void openDetail('server', id)} />}
             {page === 'plugins' && <Plugins plugins={plugins ?? []} loading={dataLoading} onSync={() => void syncManifests()} onLoad={() => setModal('plugin')} onDetail={(id) => void openDetail('plugin', id)} onHealth={(plugin) => void runHealthCheck(plugin)} />}
             {page === 'domains' && <Domains domains={domains ?? []} loading={dataLoading} onAction={notify} onRefresh={() => void refreshData()} onAssign={() => setModal('domain')} />}
@@ -600,83 +585,6 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
   )
 }
 
-function Overview({ overview, usage, localUsage, settings, audits, accessLogs, accessLogsLoading, accessLogsError, servers, range, setRange, onNavigate }: { overview: ApiOverview | null; usage: CloudflareUsage | null; localUsage: LocalUsage | null; settings: PlatformSettings | null; audits: ApiAudit[]; accessLogs: ApiAccessLog[] | null; accessLogsLoading: boolean; accessLogsError: string | null; servers: ApiServer[]; range: '24h' | '7d' | '30d'; setRange: (value: '24h' | '7d' | '30d') => void; onNavigate: (page: Page) => void }) {
-  const { t } = useTranslation()
-  const notRead = t('common.notRead')
-  const onlineServers = overview ? String(overview.onlineServers) : '—'
-  const enabledPlugins = overview ? String(overview.enabledPlugins) : '—'
-  const domains = overview ? String(overview.domains) : '—'
-  const activeConnections = localUsage ? formatNumber(localUsage.activeConnections) : '—'
-  const requestCount = localUsage ? formatNumber(localUsage.requestCount) : '—'
-  const requestLimit = settings ? formatNumber(settings.quotas.requests) : notRead
-  const r2Value = localUsage ? formatBytes(localUsage.r2Bytes) ?? notRead : '—'
-  const r2Limit = settings ? formatBytes(settings.quotas.r2Bytes) ?? notRead : notRead
-  const d1Queries = usage?.d1 ? usage.d1.readQueries + usage.d1.writeQueries : null
-  const kvOperations = usage?.kv ? usage.kv.read + usage.kv.write + usage.kv.delete + usage.kv.list : null
-  const durableObjectRequests = usage?.durableObjects?.requests ?? null
-  const d1Limit = settings ? formatNumber(settings.quotas.d1Queries) : notRead
-  const kvLimit = settings ? formatNumber(settings.quotas.kvOperations) : notRead
-  const durableObjectLimit = settings ? formatNumber(settings.quotas.durableObjectRequests) : notRead
-  const requestPercent = usagePercent(localUsage?.requestCount, settings?.quotas.requests)
-  const r2Percent = usagePercent(localUsage?.r2Bytes, settings?.quotas.r2Bytes)
-  const d1Percent = usagePercent(d1Queries, settings?.quotas.d1Queries)
-  const kvPercent = usagePercent(kvOperations, settings?.quotas.kvOperations)
-  const durableObjectPercent = usagePercent(durableObjectRequests, settings?.quotas.durableObjectRequests)
-  const apiNote = overview ? t('overview.note.fromApi') : t('common.noData')
-  const localNote = localUsage ? t('overview.note.localCount') : t('overview.note.noLocalCount')
-  const recentErrors = (accessLogs ?? []).filter((log) => log.status >= 500).slice(0, 3)
-  const connectionIssues = servers.filter((server) => server.status !== 'online').slice(0, 3)
-  return <>
-    <div className="notice-bar"><div className="notice-icon"><ShieldCheck size={16} /></div><div><strong>{overview ? t('overview.noticeConnected') : t('overview.noticeWaiting')}</strong><span>{overview ? t('overview.noticeConnectedBody') : t('overview.noticeWaitingBody')}</span></div><StatusBadge tone={settings ? settings.maintenance ? 'warning' : 'success' : 'neutral'}>{settings ? settings.maintenance ? t('overview.maintenance.on') : t('overview.maintenance.off') : t('overview.maintenance.unknown')}</StatusBadge><button onClick={() => onNavigate('settings')}>{t('overview.configure')} <ArrowUpRight size={14} /></button></div>
-    <section className="metric-grid">
-      <Metric label={t('overview.metric.onlineServers')} value={onlineServers} suffix="" note={apiNote} icon={Server} tone="green" onClick={() => onNavigate('servers')} />
-      <Metric label={t('overview.metric.enabledPlugins')} value={enabledPlugins} suffix="" note={apiNote} icon={Box} tone="blue" onClick={() => onNavigate('plugins')} />
-      <Metric label={t('overview.metric.domains')} value={domains} suffix="" note={apiNote} icon={Globe2} tone="purple" onClick={() => onNavigate('domains')} />
-      <Metric label={t('overview.metric.connections')} value={activeConnections} suffix="" note={localNote} icon={Zap} tone="amber" onClick={() => onNavigate('usage')} />
-    </section>
-    <section className="content-grid two-thirds">
-      <div className="panel chart-panel"><div className="panel-header"><div><h2>{t('overview.trend.title')}</h2><p>{t('overview.trend.subtitle')}</p></div><div className="segmented">{(['24h', '7d', '30d'] as const).map((item) => <button className={range === item ? 'selected' : ''} key={item} onClick={() => setRange(item)}>{item}</button>)}</div></div><RequestTrend range={range} snapshots={localUsage?.snapshots ?? []} /></div>
-      <div className="panel"><div className="panel-header"><div><h2>{t('overview.resources.title')}</h2><p>{t('overview.resources.subtitle')}</p></div><IconButton label={t('overview.resources.detail')} onClick={() => onNavigate('usage')}><ArrowUpRight size={15} /></IconButton></div><div className="resource-list"><Resource label={t('overview.resources.requests')} value={requestCount} limit={requestLimit} percent={requestPercent} icon={Cloud} /><Resource label={t('overview.resources.r2')} value={r2Value} limit={r2Limit} percent={r2Percent} icon={HardDrive} /><Resource label={t('overview.resources.d1')} value={d1Queries === null ? '—' : formatNumber(d1Queries)} limit={d1Limit} percent={d1Percent} icon={Database} /><Resource label={t('overview.resources.kv')} value={kvOperations === null ? '—' : formatNumber(kvOperations)} limit={kvLimit} percent={kvPercent} icon={HardDrive} /><Resource label={t('overview.resources.durableObjects')} value={durableObjectRequests === null ? '—' : formatNumber(durableObjectRequests)} limit={durableObjectLimit} percent={durableObjectPercent} icon={Activity} /></div><div className="resource-sources"><span>{usage?.updatedAt ? t('overview.resources.officialUpdated', { time: formatDateTime(usage.updatedAt) }) : t('overview.resources.officialMissing')}</span><span>{localUsage?.updatedAt ? t('overview.resources.localUpdated', { time: formatDateTime(localUsage.updatedAt) }) : t('overview.resources.localMissing')}</span></div><button className="text-link" onClick={() => onNavigate('usage')}>{t('overview.resources.allQuotas')} <ArrowUpRight size={14} /></button></div>
-    </section>
-    <section className="content-grid two-thirds bottom-grid"><div className="panel"><div className="panel-header"><div><h2>{t('overview.activity.title')}</h2><p>{t('overview.activity.subtitle')}</p></div><button className="text-link" onClick={() => onNavigate('audit')}>{t('overview.activity.viewAll')} <ArrowUpRight size={14} /></button></div>{audits.length > 0 ? <div className="activity-list">{audits.slice(0, 3).map((item) => <div className="activity-item" key={item.id}><div className="activity-mark success"><Check size={13} /></div><div className="activity-copy"><strong>{auditActionLabel(item.action)}</strong><span>{auditDetail(item)}</span></div><time>{formatDateTime(item.created_at)}</time></div>)}</div> : <div className="empty-panel"><div className="empty-illustration"><Activity size={20} /></div><h3>{t('overview.activity.emptyTitle')}</h3><p>{t('overview.activity.emptyBody')}</p></div>}</div><div className="panel quick-panel"><div className="panel-header"><div><h2>{t('overview.quick.title')}</h2><p>{t('overview.quick.subtitle')}</p></div></div><QuickStep number="01" title={t('overview.quick.bindTitle')} detail={t('overview.quick.bindDetail')} onClick={() => onNavigate('servers')} /><QuickStep number="02" title={t('overview.quick.loadTitle')} detail={t('overview.quick.loadDetail')} onClick={() => onNavigate('plugins')} /><QuickStep number="03" title={t('overview.quick.domainTitle')} detail={t('overview.quick.domainDetail')} onClick={() => onNavigate('domains')} /></div></section>
-    <section className="panel bottom-grid"><div className="panel-header"><div><h2>{t('overview.errors.title')}</h2><p>{t('overview.errors.subtitle')}</p></div><button className="text-link" onClick={() => onNavigate('logs')}>{t('overview.errors.viewAll')} <ArrowUpRight size={14} /></button></div>{connectionIssues.length > 0 || (!accessLogsError && !accessLogsLoading && recentErrors.length > 0) ? <div className="activity-list">{connectionIssues.map((server) => <div className="activity-item" key={server.id}><div className="activity-mark danger"><Server size={13} /></div><div className="activity-copy"><strong>{server.name}</strong><span>{server.last_seen_at ? t('servers.lastSeen', { time: formatDateTime(server.last_seen_at) }) : t('servers.neverConnected')}</span></div><StatusBadge tone="danger">{t(`status.${server.status}`, { defaultValue: server.status })}</StatusBadge></div>)}{recentErrors.map((log) => <div className="activity-item" key={log.id}><div className="activity-mark danger"><AlertCircle size={13} /></div><div className="activity-copy"><strong>{log.hostname}{log.path}</strong><span>{log.method} · {log.error ?? t('overview.errors.unknownError')}</span></div><StatusBadge tone="danger">{log.status}</StatusBadge><time>{formatDateTime(log.created_at)}</time></div>)}</div> : accessLogsError ? <div className="notice-bar compact"><div className="notice-icon"><AlertCircle size={16} /></div><div><strong>{t('overview.errors.loadFailed')}</strong><span>{translateError(accessLogsError)}</span></div></div> : accessLogsLoading ? <div className="empty-panel"><div className="empty-illustration"><RefreshCw size={20} /></div><h3>{t('overview.errors.loadingTitle')}</h3><p>{t('overview.errors.loadingBody')}</p></div> : <div className="empty-panel"><div className="empty-illustration"><ShieldCheck size={20} /></div><h3>{t('overview.errors.emptyTitle')}</h3><p>{t('overview.errors.emptyBody')}</p></div>}</section>
-  </>
-}
-
-function Metric({ label, value, suffix, note, icon: Icon, tone, onClick }: { label: string; value: string; suffix: string; note: string; icon: typeof Server; tone: string; onClick: () => void }) { return <button className="metric-card" onClick={onClick}><div className={`metric-icon ${tone}`}><Icon size={17} /></div><div className="metric-label">{label}<ArrowUpRight size={13} /></div><div className="metric-number">{value}<small>{suffix}</small></div><div className="metric-note"><span className="status-dot green" />{note}</div></button> }
-
-function RequestTrend({ range, snapshots }: { range: '24h' | '7d' | '30d'; snapshots: UsageSnapshot[] }) {
-  const { t } = useTranslation()
-  const sampled = sampleUsageSnapshots(snapshots)
-  if (sampled.length === 0) return <div className="empty-chart chart-empty-state"><Activity size={20} /><strong>{t('overview.trend.emptyTitle')}</strong><span>{t('overview.trend.emptyBody')}</span></div>
-  const maximum = Math.max(...sampled.map((snapshot) => snapshot.request_count), 1)
-  const first = sampled[0]
-  const last = sampled[sampled.length - 1]
-  return <div className="empty-chart" role="img" aria-label={t('overview.trend.aria', { range })}><div className="chart-grid-lines"><span /><span /><span /><span /></div><div className="chart-bars">{sampled.map((snapshot) => <div className="bar-wrap" key={snapshot.captured_at}><div className="chart-bar accent" style={{ height: `${Math.max(6, snapshot.request_count / maximum * 100)}%` }} title={t('overview.trend.tooltip', { time: formatTrendTime(snapshot.captured_at), count: formatNumber(snapshot.request_count) })} /></div>)}</div><div className="chart-axis"><span>{formatTrendTime(first.captured_at)}</span><span>{formatTrendTime(last.captured_at)}</span></div><div className="chart-footnote"><span><span className="legend-dot" />{t('overview.trend.series')}</span><span>{t('overview.trend.summary', { range, count: formatNumber(last.request_count) })}</span></div></div>
-}
-
-function sampleUsageSnapshots(snapshots: UsageSnapshot[], limit = 24): UsageSnapshot[] {
-  if (snapshots.length <= limit) return snapshots
-  const bucketSize = Math.ceil(snapshots.length / limit)
-  return Array.from({ length: Math.ceil(snapshots.length / bucketSize) }, (_, index) => snapshots[Math.min((index + 1) * bucketSize - 1, snapshots.length - 1)])
-}
-
-function formatTrendTime(value: string): string {
-  return new Date(value).toLocaleString(currentLocale(), { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
-
-function Resource({ label, value, limit, percent, icon: Icon }: { label: string; value: string; limit: string; percent: number; icon: typeof Cloud }) {
-  const { t } = useTranslation()
-  return <div className="resource"><div className="resource-top"><div className="resource-label"><Icon size={15} />{label}</div><strong>{value}</strong></div><div className="progress" role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(percent)}><span style={{ width: `${percent}%` }} /></div><div className="resource-bottom"><span>{t('common.currentUsage')}</span><span>{limit}</span></div></div>
-}
-
-function usagePercent(current: number | null | undefined, limit: number | null | undefined): number {
-  if (current == null || limit == null || !Number.isFinite(current) || !Number.isFinite(limit) || current < 0 || limit <= 0) return 0
-  return Math.min(100, (current / limit) * 100)
-}
-
-function QuickStep({ number, title, detail, done, onClick }: { number: string; title: string; detail: string; done?: boolean; onClick: () => void }) { return <button className="quick-step" onClick={onClick}><span className={`step-number ${done ? 'done' : ''}`}>{done ? <Check size={13} /> : number}</span><span className="step-copy"><strong>{title}</strong><small>{detail}</small></span><ArrowUpRight size={14} /></button> }
-
 function capabilityLabel(plugin: ApiPlugin): string {
   try {
     const manifest = JSON.parse(plugin.manifest_json) as { capabilities?: Record<string, unknown> }
@@ -689,20 +597,6 @@ function capabilityLabel(plugin: ApiPlugin): string {
     return labels.length > 0 ? labels.join(' + ') : i18n.t('capabilities.none')
   } catch {
     return i18n.t('capabilities.invalid')
-  }
-}
-
-function auditActionLabel(action: string): string {
-  return i18n.t(`auditActions.${action}`, { defaultValue: action })
-}
-
-function auditDetail(item: ApiAudit): string {
-  try {
-    const details = JSON.parse(item.detail_json) as Record<string, unknown>
-    const values = Object.entries(details).filter(([, value]) => value !== null && value !== undefined && value !== '')
-    return values.length > 0 ? values.map(([key, value]) => `${key}: ${typeof value === 'string' ? value : JSON.stringify(value)}`).join(' · ') : '—'
-  } catch {
-    return item.detail_json || '—'
   }
 }
 
@@ -786,13 +680,6 @@ function Usage({ settings, usage, localUsage, loading, error, onNavigate }: { se
 function BreakdownColumn({ title, rows }: { title: string; rows: UsageBreakdownEntry[] }) {
   const { t } = useTranslation()
   return <div className="breakdown-column"><h3>{title}</h3>{rows.length === 0 ? <p className="breakdown-empty">{t('usage.breakdown.empty')}</p> : rows.map((row) => <div className="breakdown-row" key={row.id}><span title={row.label}>{row.label}</span><strong>{formatNumber(row.requests)}</strong></div>)}</div>
-}
-
-function formatBytes(value: number): string | null {
-  if (!Number.isFinite(value) || value < 0) return null
-  if (value >= 1024 * 1024 * 1024) return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GB`
-  if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`
-  return `${Math.round(value / 1024)} KB`
 }
 
 function ResourceCard({ title, current, limit, unit, percent = 0, icon: Icon }: { title: string; current: string; limit: string; unit: string; percent?: number; icon: typeof Cloud }) {
