@@ -1,7 +1,7 @@
 # Plugmesh 平台交接（HANDOFF）
 
-> 最后更新：2026-10-23 02:38（Asia/Shanghai）
-> 状态：**进行中，当前工作区不可直接推送**
+> 最后更新：2026-10-23 02:46（Asia/Shanghai）
+> 状态：**进行中；正在删除 Cloudflare OAuth 全链路，当前工作区不可直接推送**
 > 维护规则：每完成一个可验证步骤，先更新本文件，再提交一条可追溯的中文 Git 记录；未记录不得继续下一步。
 > 本文件是压缩后优先读取的事实来源。若 README、验收矩阵、旧注释或聊天摘要与本文冲突，以用户最新要求和实际代码为准；旧文档必须在实现完成后同步重写。
 
@@ -9,8 +9,8 @@
 
 - 仓库：`/home/tc/work/plugin-platform`
 - 分支：`main`
-- 整理时 HEAD 与 `origin/main`：`f9ae7b8 docs: 重整交接台账并记录 Token 用量迁移进度`
-- 最近已验收 Actions：run `39832365360`，`completed/success`（`f9ae7b8`）；`39830753816`（`eb414d0`）也成功。
+- 整理时 HEAD 与 `origin/main`：`1a5e5c1 docs: 补齐磁盘交接台账与最新验收状态`
+- 最近已验收 Actions：run `39833249358`，`completed/success`（`1a5e5c1`）；`39832365360`（`f9ae7b8`）、`39830753816`（`eb414d0`）也成功。
 - 当前环境没有 `AGENTS.md`；未发现额外仓库级代理指令。
 - 除本 `HANDOFF.md` 外，工作区有 **10 个未提交代码文件**，必须分组理解和处理：
   - UI/额度草稿 5 个：
@@ -80,12 +80,12 @@
 
 ### 0.2 下一步顺序（不得跳步）
 
-1. 本 HANDOFF 已提交并推送为 `f9ae7b8`，Actions `39832365360` 成功；后续每次状态变化先更新本文件，再推进代码。
-2. 彻底删除 Cloudflare OAuth：
+1. 上次 HANDOFF 已提交并推送为 `1a5e5c1`，Actions `39833249358` 成功；后续每次状态变化先更新本文件，再推进代码。
+2. **正在执行：彻底删除 Cloudflare OAuth。**
    - 路由、回调、Cookie、refresh/revoke、state 清理、Env、smoke、测试全部删除或重写；
    - `oauth-settings.ts` 只保留 GitHub；
    - `outbound-stub.ts` 删除 `/oauth2/token`、`/oauth2/revoke`；
-   - 跑完整 runtime，目标是 21/21 文件、90/90 用例通过。
+   - 跑完整 runtime，目标是 20/20 文件全部通过；删除旧 OAuth 测试前总计 21 文件/90 用例，其中旧 OAuth 文件占 6 个用例，因此删除并重写后预期约 84 个用例。最终以实际测试输出为准，禁止继续把旧的 90/90 当成目标。
 3. 把免费额度和 8 项上限接到 usage：
    - 删除 `PlatformSettings.cloudflareQuotas`；
    - 从 subscriptions 得到 `plan`、`limitSource`、`limits`；
@@ -120,10 +120,10 @@ git diff --stat
 git diff --check
 ```
 
-当前权威快照（2026-10-23 02:38，Asia/Shanghai）：
+当前权威快照（2026-10-23 02:46，Asia/Shanghai）：
 
-- 整理时 HEAD / `origin/main`：`f9ae7b8`，run `39832365360` 成功。
-- 上一提交：`eb414d0`，run `39830753816`（#44）成功。
+- 整理时 HEAD / `origin/main`：`1a5e5c1`，run `39833249358` 成功。
+- 上一提交：`f9ae7b8`，run `39832365360` 成功；再上一提交：`eb414d0`，run `39830753816`（#44）成功。
 - 最近已验收功能提交：`a0539fb feat(cloudflare): 增加 API Token 校验与凭据基础模块`，run `39827872017`（#42）成功。
 - 此前已验收文档：`2a32bfe` run `39828876658`（#43）、`c32a587` run `39826901281`（#41）、`e3cdb05` run `39826112664`（#40）均成功。
 - push 地址：`git@github-plugin-platform:shelter-red/plugin-platform.git`
@@ -153,7 +153,7 @@ curl -fsSL 'https://api.github.com/repos/shelter-red/plugin-platform/actions/run
 | ID | 用户反馈或目标 | 必须达到的效果 | 当前状态 |
 | --- | --- | --- | --- |
 | U01 | “不是说全部重构成组件吗？登录页还是旧的？” | 登录页和全站有清晰组件边界；不重复重写；实际视觉验收 | 🟡 登录页、侧栏、账号、工作区已拆分；多主题/多视口最终视觉检查未完成。 |
-| U02 | 自行从会话历史读分支、提交、推送 | 每步有中文 Git 记录；不靠聊天猜仓库/分支 | 🟡 分支和远端已知；HEAD `f9ae7b8` 的 run `39832365360` 成功；当前 10 个代码文件未提交，禁止误推。 |
+| U02 | 自行从会话历史读分支、提交、推送 | 每步有中文 Git 记录；不靠聊天猜仓库/分支 | 🟡 分支和远端已知；HEAD `1a5e5c1` 的 run `39833249358` 成功；当前 10 个代码文件未提交，禁止误推。 |
 | U03 | 推送时 Actions 老是失败 | 本地完整 CI；推送后追 Actions；失败读日志/产物并修到成功 | 🟡 最新已推送 HEAD 成功；当前完整 runtime 86/90，未全绿，禁止推代码。 |
 | U04 | 错误状态为什么靠 `/?auth_error=` | 真实 HTTP status + JSON；留在当前页；不用查询参数/Cookie/跳首页 | 🟡 GitHub 登录和 Token 设置已使用 HTTP；旧 Cloudflare OAuth 路由、Cookie、跳转仍待删除。 |
 | U05 | setup 失效为何单独返回 “Setup is not available” | `setupApi` 返回 `null` 时走普通非路由处理 | ✅ 已实现并有回归测试；后续改造不得破坏。 |
@@ -494,7 +494,7 @@ docs/local-e2e.md
 
 ## 6. 测试与验收
 
-### 6.1 当前证据（2026-10-23 02:38，Asia/Shanghai）
+### 6.1 当前证据（2026-10-23 02:46，Asia/Shanghai）
 
 ```text
 npm run worker:typecheck                         PASS
@@ -506,7 +506,7 @@ full worker runtime                              86/90 PASS（20/21 files）
 git diff --check                                 PASS
 ```
 
-完整 runtime 的 4 个失败仅为旧 Cloudflare OAuth refresh/过期用例；删除旧 OAuth 后才算可推送状态。
+完整 runtime 的 4 个失败仅为旧 Cloudflare OAuth refresh/过期用例。旧 `cloudflare-oauth.test.ts` 共 6 个用例，其中 2 个通过；删除该文件后文件总数变为 20，机械基线预期约为 84 个用例，但 `oauth-settings.test.ts` 还需重写，最终数字以实际输出为准。删除旧 OAuth 且全量通过后才算可推送状态。
 
 ### 6.2 本地命令
 
@@ -607,6 +607,7 @@ ctest --test-dir native-server/build --output-on-failure
 
 ## 9. 最近动作日志
 
+- 2026-10-23 02:46：再次核对 GitHub Actions API，确认 `1a5e5c1` 的 run `39833249358` 为 `completed/success`；修正 HANDOFF 中过时的 HEAD、Actions 和“21/21、90/90”测试目标。当前仍是 10 个代码文件未提交的业务草稿，本次只整理磁盘交接文件，不改回滚、不推送半成品代码。
 - 2026-10-23 02:38：按用户要求再次整理磁盘 HANDOFF，补齐 U24，刷新 HEAD/`origin/main` 为 `f9ae7b8`、最近 Actions 为 run `39832365360` 成功，并纠正文档时间戳。当前 10 个代码文件仍未提交；下一步仍是删除整个 Cloudflare OAuth 链路，确认完整 runtime 全绿后才推送代码。
 - 2026-10-23 02:32：重新核对当前代码与测试：`worker:typecheck` 通过；Token/settings/analytics 定向 20/20；完整 runtime 86/90，4 个失败全部是旧 OAuth refresh/过期用例。确认 `cloudflareUsageApi` 已改为先凭据后缓存、未配置和旧 OAuth 短路、Analytics 401/403 真实 HTTP。本次整理 HANDOFF，明确下一步是删除整个 Cloudflare OAuth 链路。
 - 2026-10-23 02:20：整理 HANDOFF 当前快照，并验证 Cloudflare Token 设置阶段；当时设置 + Token 定向 runtime 14/14 通过、`worker:typecheck` 通过；完整 runtime 为 85/89 通过，4 个失败全在旧 `analytics.test.ts`。该阻塞随后已由用量 Token 迁移解除。
