@@ -2,7 +2,7 @@
 
 > 最后整理：2026-10-23（Asia/Shanghai）
 >
-> 当前状态：**Cloudflare API Token 前端/后端与 8 项用量迁移已提交；构建、完整 UI smoke 与设置导航稳定性已通过。文档清理、视觉验收、原生二进制/共享库手动构建、帮助中心、完整本地 CI 和 push 后 Actions 闭环尚未收口。禁止在完整本地 CI 通过前 push。**
+> 当前状态：**Cloudflare API Token 前端/后端与 8 项用量迁移已提交；构建、完整 UI smoke 与设置导航稳定性已通过。旧文档/文案已完成盘点但尚未修改；视觉验收、原生二进制/共享库手动构建、帮助中心、完整本地 CI 和 push 后 Actions 闭环尚未收口。禁止在完整本地 CI 通过前 push。**
 >
 > 本文件是上下文压缩后的第一事实源。README、旧方案、旧测试、聊天摘要或历史提交说明与本文冲突时，以用户最新要求、当前代码和本文为准。恢复后先执行第 0 节的核验命令，再按第 8 节顺序继续。
 
@@ -13,16 +13,17 @@
 ```text
 仓库：/home/tc/work/plugin-platform
 分支：main
-当前 HEAD：850928e feat(console): 完成 Cloudflare Token 与八项用量迁移
+当前 HEAD：a02871a docs: 更新 Token 与用量验收交接基线
 origin/main：579eb1f docs: 校正交接基线与最新 Actions 结果
-本地关系：ahead origin/main 8 个提交
+本地关系：ahead origin/main 9 个提交
 fetch remote：https://github.com/shelter-red/plugin-platform.git
 push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 ```
 
-本地领先远端的 8 个提交：
+本地领先远端的 9 个提交：
 
 ```text
+a02871a docs: 更新 Token 与用量验收交接基线
 850928e feat(console): 完成 Cloudflare Token 与八项用量迁移
 653beac docs: 校正交接台账实时恢复基线
 45efad3 docs: 固化完整上下文交接台账
@@ -33,10 +34,10 @@ push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 9882c76 fix(worker): 收口 Cloudflare API Token 与只读额度契约
 ```
 
-- 这 8 个提交尚未 push，**没有对应 Actions 结果**。
+- 这 9 个提交尚未 push，**没有对应 Actions 结果**。
 - 最新已知远端成功 Actions：`579eb1f`，run `39840532476`（#52），`completed/success`。
 - 仓库内未发现 `AGENTS.md`，无额外仓库级代理指令。
-- `850928e` 已提交 35 个前端/测试路径；代码工作区在该提交后应为干净。本 HANDOFF 更新会单独形成 docs-only 提交。
+- `850928e` 已提交 35 个前端/测试路径；`a02871a` 只更新 HANDOFF。当前工作区在本次盘点前干净；本 HANDOFF 更新会单独形成 docs-only 提交。
 - 恢复时始终以实际 `git log -1`、`git status` 和 `git rev-parse HEAD origin/main` 为准。
 
 恢复时先运行：
@@ -53,7 +54,7 @@ find .. -name AGENTS.md -print
 
 ### 0.2 当前工作区
 
-`850928e` 已收口此前 35 个脏路径（21 个修改、10 个删除、4 个新增）。本文件更新前代码工作区干净；不要把历史脏路径清单当成当前状态。
+`850928e` 已收口此前 35 个脏路径（21 个修改、10 个删除、4 个新增）；`a02871a` 只更新 HANDOFF。本文件更新前代码工作区干净；不要把历史脏路径清单当成当前状态。
 
 本次已提交的核心文件：
 
@@ -87,7 +88,7 @@ tests/console-real-stack.spec.ts
 
 ### 0.3 当前验证状态
 
-2026-10-23 在 `850928e` 提交前实测：
+2026-10-23 在 `850928e` 提交前实测（`a02871a` 仅文档变更，不改变这些代码证据）：
 
 ```text
 git diff --check                                      PASS
@@ -241,8 +242,8 @@ doRequests        100,000
 | ID | 用户反馈/目标 | 必须达到的效果 | 当前状态 |
 | --- | --- | --- | --- |
 | U01 | “不是说全部重构成组件吗？登录页还是旧的” | 清晰组件边界；登录页实际视觉验收 | 🟡 登录页/侧栏/账号/工作区已拆；最终截图验收未完成 |
-| U02 | “自己从会话历史里读 Git 分支，自行提交推送” | 每步有中文 Git 记录；不靠聊天猜 | 🟡 `main` 领先 6 个未推送提交；提交 45efad3 后仍有 33 个脏路径 |
-| U03 | “推送时注意 Actions，老是错误” | 本地完整 CI + push 后追踪到成功 | 🟡 最新远端 #52 成功；当前未提交改动未跑完整 CI，禁止 push |
+| U02 | “自己从会话历史里读 Git 分支，自行提交推送” | 每步有中文 Git 记录；不靠聊天猜 | 🟡 `main` 领先 9 个未推送提交；本地完整 CI 与 Actions 闭环仍未完成 |
+| U03 | “推送时注意 Actions，老是错误” | 本地完整 CI + push 后追踪到成功 | 🟡 最新远端 #52 成功；本地 9 个提交未跑完整 CI，禁止 push |
 | U04 | 为什么错误状态靠 `/?auth_error=` | 真实 HTTP + JSON，留在当前页 | 🟡 Cloudflare 跳转/auth-result 链路已删；GitHub 失败页已是 HTTP；仍需统一测试与旧文案清理 |
 | U05 | setup 失效为什么单独返回 `Setup is not available` | 返回 null 后走普通非路由行为 | ✅ 已实现并有测试 |
 | U06 | `D1_ERROR: no such table: workspaces` | 先应用全部 migrations 再部署 | 🟡 deploy 脚本已实现并测试；Workers Builds 控制台配置待核对 |
@@ -294,7 +295,7 @@ doRequests        100,000
 - `platformSettingsApi` 对提交 `cloudflareQuotas` 返回 HTTP 400 `cloudflare_quotas_read_only`。
 - 后端测试桩已改为 Token verify/accounts/subscriptions，不再 mock Cloudflare OAuth token/revoke。
 
-### 3.2 当前未提交前端（大体已完成）
+### 3.2 已提交前端（`850928e`）
 
 - 旧 Cloudflare OAuth 前端 10 个文件已删除。
 - 新增：
@@ -514,7 +515,7 @@ Windows 需处理 OpenSSL DLL/applocal；Linux/macOS 需处理 OpenSSL/RPATH/依
 
 ### 6.1 当前前端
 
-提交 45efad3 前、当前前端草稿已实测：
+`850928e` 提交前实测：
 
 ```text
 npm run build              PASS
@@ -634,7 +635,21 @@ fd80fa4  run 39754896119  #11  管理端 UI smoke 失败
 
 ### 8.2 清理旧文档与文案
 
-按第 3.4 节修改所有文档、`scripts/deploy-worker.sh`、`worker/src/setup.ts`。搜索确认当前 Cloudflare 流程不再出现 OAuth 权限、offline、refresh、PKCE、response_type、手填额度。保留 GitHub OAuth 与历史 migration。
+状态：已完成全仓盘点，尚未修改。下一步按下列清单逐文件清理，不能误删 GitHub OAuth。
+
+- `README.md`：第 28、144、165–174、233、235 行仍把运行期 Cloudflare 配置写成 OAuth、OAuth 客户端、两项权限、refresh/offline、手填额度与 OAuth runtime 用例。
+- `方案.md`：第 13、44–45、55、57、188、190、197 行仍写 OAuth 客户端、协议参数、PKCE、回调 Cookie、`CloudflareOauthSettings`、`response_type`。
+- `docs/acceptance-matrix.md`：第 19、30、32、34、68、73、97、142 行仍写 Cloudflare OAuth 回调/刷新/Cookie、OAuth 组件、手填额度、真实栈配置 OAuth 客户端。
+- `docs/local-e2e.md`：第 91 行仍要求手填 `cloudflareQuotas.d1RowsRead`；第 355 行仍写 Cloudflare OAuth 未联调。
+- `scripts/deploy-worker.sh`：第 242、245 行部署完成提示仍写后台配置 Cloudflare OAuth。
+- `scripts/deploy-worker.test.sh`：仍断言旧部署提示和 README 旧内容；修改 README/脚本后必须同步。
+- `worker/src/setup.ts`：第 130 行仍写“Cloudflare OAuth 与 SMTP 等配置”。
+- `src/content/help.zh-CN.md` / `help.en.md`：仍有 Cloudflare 授权失败 FAQ，需改成 API Token 创建、固定权限、401/403 排障，并补原生服务器教程。
+- `src/content/privacy.zh-CN.md` / `privacy.en.md`：泛称 OAuth clients + Cloudflare credentials，需明确 GitHub OAuth 与 Cloudflare API Token。
+- `src/locales/zh-CN.ts`：第 25 行页面描述仍写 Cloudflare 授权；第 717–718 行旧 `cloudflareConnected` toast 需确认是否为死 key 后删除；英文同步。
+- `src/api.ts` 第 274 行、`worker/src/index.ts` 第 1187 行注释仍写“Cloudflare 授权”，改成“凭据/API Token”。
+
+清理后重新执行第 3.4 节搜索。保留 GitHub OAuth、`oauth_states`、历史 migration `0002_cloudflare_oauth.sql`、`legacy_oauth` 兼容标记；Cloudflare 活跃流程只允许长期 API Token。
 
 ### 8.3 视觉与文案验收
 
@@ -743,4 +758,6 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - 2026-10-23：确认 setup 失效走普通非路由行为，不返回 “Setup is not available”。
 - 2026-10-23：提交 `850928e`（`feat(console): 完成 Cloudflare Token 与八项用量迁移`），显式 stage 35 个路径；前端 Token 表单、固定三项权限、8 项额度、HTTP 错误与设置导航竞态修复一并收口。
 - 2026-10-23：`850928e` 提交前 `npm run build` PASS；`npm run ui:smoke` 86/86 PASS；设置导航 `--repeat-each=3` 3/3 PASS；`git diff --check` PASS。
-- 2026-10-23：HANDOFF 实时基线更新为 HEAD `850928e`、ahead 8；下一严格步骤为 8.2 文档/文案清理。
+- 2026-10-23：提交 `a02871a`（`docs: 更新 Token 与用量验收交接基线`），将实时基线推进到 HEAD `a02871a`、ahead 9。
+- 2026-10-23：完成第 8.2 节全仓盘点：README、方案、验收矩阵、local-e2e、help、privacy、部署提示、setup 文案、locale 和两处注释仍有过期 Cloudflare OAuth/手填额度描述；本次仅记录，尚未修改。
+- 2026-10-23：确认当前工作区干净；下一严格步骤是第 8.2 节文档/文案清理，之后做视觉验收与原生手动构建。
