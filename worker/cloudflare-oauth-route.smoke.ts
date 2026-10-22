@@ -68,6 +68,19 @@ const memberToken = 'member-session-token'
 sessions.set(await digest(adminToken), admin.id)
 sessions.set(await digest(memberToken), member.id)
 const request = (path: string, token?: string) => new Request(`https://console.example.test${path}`, token ? { headers: { cookie: `plugmesh_session=${encodeURIComponent(token)}` } } : undefined)
+type AuthResult = { kind: 'error'; code: string; description: string | null } | { kind: 'success'; accountConfigured: boolean }
+/** 回调结果改为一次性 Cookie 回传，并统一 303 回系统设置页。 */
+const readAuthResult = (response: Response): AuthResult | null => {
+  const match = (response.headers.get('set-cookie') ?? '').match(/plugmesh_cf_auth=([^;]*)/)
+  return match ? JSON.parse(decodeURIComponent(match[1])) as AuthResult : null
+}
+const assertSettingsRedirect = (response: Response) => {
+  assert.equal(response.status, 303)
+  const location = new URL(response.headers.get('location')!, 'https://console.example.test')
+  assert.equal(location.pathname, '/settings')
+  assert.equal(location.search, '')
+  return location
+}
 const originalFetch = globalThis.fetch
 const requests: string[] = []
 globalThis.fetch = async (input) => {
@@ -91,7 +104,7 @@ try {
   assert.equal(authorizeUrl.origin, 'https://dash.cloudflare.com')
   assert.equal(authorizeUrl.pathname, '/oauth2/auth')
   assert.equal(authorizeUrl.searchParams.get('client_id'), 'cf-client-id')
-  assert.equal(authorizeUrl.searchParams.get('scope'), 'workers-platform.read')
+  assert.equal(authorizeUrl.searchParams.get('scope'), 'account-settings.read account-analytics.read offline_access')
   assert.equal(authorizeUrl.searchParams.get('response_type'), 'code')
   assert.equal(authorizeUrl.searchParams.get('code_challenge'), null)
   const state = authorizeUrl.searchParams.get('state')!
@@ -99,21 +112,18 @@ try {
 
   // 用户拒绝授权：透传 error / error_description，且不消耗 state。
   response = await worker.fetch(request(`/auth/cloudflare/callback?error=access_denied&error_description=${encodeURIComponent('User denied access')}&state=${encodeURIComponent(state)}`, adminToken), env, {} as ExecutionContext)
-  assert.equal(response.status, 302)
-  const deniedLocation = new URL(response.headers.get('location')!, 'https://console.example.test')
-  assert.equal(deniedLocation.searchParams.get('cloudflare_error_code'), 'access_denied')
-  assert.equal(deniedLocation.searchParams.get('cloudflare_error_description'), 'User denied access')
-  assert.match(deniedLocation.searchParams.get('cloudflare_error') ?? '', /access_denied/)
+  assertSettingsRedirect(response)
+  assert.deepEqual(readAuthResult(response), { kind: 'error', code: 'access_denied', description: 'User denied access' })
   assert.equal(oauthStates.size, 1)
 
-  // 回调缺少 code 时给出可排查的错误码。
+  // 回调缺少 code 时给出稳定错误码，而不是把长句写进 URL。
   response = await worker.fetch(request(`/auth/cloudflare/callback?state=${encodeURIComponent(state)}`, adminToken), env, {} as ExecutionContext)
-  assert.equal(new URL(response.headers.get('location')!, 'https://console.example.test').searchParams.get('cloudflare_error_code'), 'invalid_callback')
+  assertSettingsRedirect(response)
+  assert.deepEqual(readAuthResult(response), { kind: 'error', code: 'invalid_callback', description: null })
 
   response = await worker.fetch(request(`/auth/cloudflare/callback?state=${encodeURIComponent(state)}&code=cf-code`, adminToken), env, {} as ExecutionContext)
-  assert.equal(response.status, 302)
-  const resultLocation = new URL(response.headers.get('location')!, 'https://console.example.test')
-  assert.equal(resultLocation.searchParams.get('cloudflare'), 'connected')
+  assertSettingsRedirect(response)
+  assert.deepEqual(readAuthResult(response), { kind: 'success', accountConfigured: true })
   assert.equal(oauthStates.size, 0)
   assert.deepEqual(requests, [
     'https://dash.cloudflare.com/oauth2/token',
@@ -128,8 +138,8 @@ try {
   assert.deepEqual(audits, ['cloudflare.oauth.connected'])
 
   response = await worker.fetch(request(`/auth/cloudflare/callback?state=${encodeURIComponent(state)}&code=cf-code`, adminToken), env, {} as ExecutionContext)
-  assert.equal(response.status, 302)
-  assert.match(new URL(response.headers.get('location')!, 'https://console.example.test').searchParams.get('cloudflare_error') ?? '', /已过期或已使用/)
+  assertSettingsRedirect(response)
+  assert.deepEqual(readAuthResult(response), { kind: 'error', code: 'state_expired', description: null })
   assert.equal(requests.length, 2)
 } finally {
   globalThis.fetch = originalFetch

@@ -317,7 +317,9 @@ export interface CloudflareOauthSettings {
   configured: boolean
   clientId: string | null
   redirectUri: string | null
+  /** 平台固定的 OAuth 权限，只读；界面不得允许用户增删。 */
   scope: string
+  scopeNames: Record<string, string>
   secretConfigured: boolean
   source: OauthSource
   /** 以下协议参数由 Worker 只读输出，前端不允许修改。 */
@@ -337,8 +339,13 @@ export interface OauthSettings {
 
 export interface OauthSettingsInput {
   github?: { clientId: string; clientSecret: string; redirectUri: string; allowlist: string }
-  cloudflare?: { clientId: string; clientSecret: string; redirectUri: string; scope: string }
+  cloudflare?: { clientId: string; clientSecret: string; redirectUri: string }
 }
+
+/** Cloudflare 授权回跳结果：经一次性 HttpOnly Cookie 传递，不占用 URL 查询参数。 */
+export type CloudflareAuthResult =
+  | { kind: 'success'; accountConfigured: boolean }
+  | { kind: 'error'; code: string; description: string | null }
 
 export type OauthProvider = 'github' | 'cloudflare'
 
@@ -451,6 +458,13 @@ export async function assignDomain(pluginInstanceId: string, prefix: string): Pr
   const response = await apiRequest(`/api/domains`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pluginInstanceId, prefix }) })
   if (!response.ok) throw await apiError(response, `domain assignment failed: ${response.status}`)
   return response.json() as Promise<DomainAssignmentResult>
+}
+
+export async function fetchCloudflareAuthResult(): Promise<CloudflareAuthResult | null> {
+  const response = await apiRequest(`/api/settings/cloudflare/auth-result`, { credentials: 'include' })
+  if (!response.ok) throw new ApiError(response.status, 'cloudflare auth result request failed')
+  const data = await response.json() as { result?: CloudflareAuthResult | null }
+  return data.result ?? null
 }
 
 export async function fetchCloudflareUsage(): Promise<CloudflareUsage> {

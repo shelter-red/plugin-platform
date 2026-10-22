@@ -1,7 +1,25 @@
 import { decryptSecret, encryptSecret } from './secrets'
 import type { AuthenticatedUser, Env } from './types'
 
-export const DEFAULT_CLOUDFLARE_SCOPE = 'workers-platform.read workers-platform.write'
+/**
+ * Cloudflare OAuth 授权范围由平台固定，界面不可编辑：普通用户无法判断需要哪些权限，
+ * 而 OAuth 客户端只有在创建时勾选过对应 Scope 才允许请求。
+ *
+ * ID 来自 Cloudflare 官方 GET /client/v4/oauth/scopes，名称与控制台 OAuth 客户端
+ * 创建页的权限名称一致：
+ * - Account Settings Read：读取账号与成员关系，用于识别唯一 Cloudflare 账号；
+ * - Account Analytics Read：读取账号级 Analytics，用于 Worker/D1/KV/DO 用量；
+ * - Offline Access：允许平台在 access token 过期后刷新，无需再次人工授权。
+ *
+ * 新增或删除权限必须同时修改这里与前端权限清单，历史配置和环境变量里的 scope 一律忽略。
+ */
+export const CLOUDFLARE_OAUTH_SCOPE_NAMES: Record<string, string> = {
+  'account-settings.read': 'Account Settings Read',
+  'account-analytics.read': 'Account Analytics Read',
+  offline_access: 'Offline Access',
+}
+export const CLOUDFLARE_OAUTH_SCOPES = Object.keys(CLOUDFLARE_OAUTH_SCOPE_NAMES)
+export const DEFAULT_CLOUDFLARE_SCOPE = CLOUDFLARE_OAUTH_SCOPES.join(' ')
 
 /** Cloudflare OAuth 客户端固定使用授权码 + Basic 认证，不支持 PKCE；接口只读输出以便前端展示。 */
 export const CLOUDFLARE_OAUTH_PROTOCOL = {
@@ -92,9 +110,8 @@ export function parseCloudflareOAuthConfig(value: unknown, fallbackSecret = ''):
   const submittedSecret = typeof record.clientSecret === 'string' ? record.clientSecret.trim() : ''
   const clientSecret = submittedSecret || fallbackSecret
   const redirectUri = normalizeOauthRedirectUri(typeof record.redirectUri === 'string' ? record.redirectUri.trim() : '')
-  const scope = typeof record.scope === 'string' && record.scope.trim() ? record.scope.trim() : DEFAULT_CLOUDFLARE_SCOPE
   if (!clientId || !clientSecret || !isHttpUrl(redirectUri)) return null
-  return { clientId, clientSecret, redirectUri, scope }
+  return { clientId, clientSecret, redirectUri, scope: DEFAULT_CLOUDFLARE_SCOPE }
 }
 
 export function environmentGithubConfig(env: Env): GithubOAuthConfig | null {
@@ -110,7 +127,7 @@ export function environmentCloudflareConfig(env: Env): CloudflareOAuthConfig | n
   const clientSecret = env.CLOUDFLARE_OAUTH_CLIENT_SECRET?.trim() ?? ''
   const redirectUri = normalizeOauthRedirectUri(env.CLOUDFLARE_OAUTH_REDIRECT_URI?.trim() ?? '')
   if (!clientId || !clientSecret || !isHttpUrl(redirectUri)) return null
-  return { clientId, clientSecret, redirectUri, scope: env.CLOUDFLARE_OAUTH_SCOPE?.trim() || DEFAULT_CLOUDFLARE_SCOPE }
+  return { clientId, clientSecret, redirectUri, scope: DEFAULT_CLOUDFLARE_SCOPE }
 }
 
 async function readStoredOauthSettings(env: Env): Promise<{ settings: StoredOauthSettings | null; updatedAt: string | null; unreadable: boolean }> {
@@ -164,8 +181,8 @@ function publicGithub(config: GithubOAuthConfig | null, source: OauthSource | nu
 }
 
 function publicCloudflare(config: CloudflareOAuthConfig | null, source: OauthSource | null) {
-  if (!config) return { configured: false, clientId: null, redirectUri: null, scope: DEFAULT_CLOUDFLARE_SCOPE, secretConfigured: false, source: null, ...CLOUDFLARE_OAUTH_PROTOCOL }
-  return { configured: true, clientId: config.clientId, redirectUri: config.redirectUri, scope: config.scope, secretConfigured: true, source, ...CLOUDFLARE_OAUTH_PROTOCOL }
+  if (!config) return { configured: false, clientId: null, redirectUri: null, scope: DEFAULT_CLOUDFLARE_SCOPE, scopeNames: CLOUDFLARE_OAUTH_SCOPE_NAMES, secretConfigured: false, source: null, ...CLOUDFLARE_OAUTH_PROTOCOL }
+  return { configured: true, clientId: config.clientId, redirectUri: config.redirectUri, scope: DEFAULT_CLOUDFLARE_SCOPE, scopeNames: CLOUDFLARE_OAUTH_SCOPE_NAMES, secretConfigured: true, source, ...CLOUDFLARE_OAUTH_PROTOCOL }
 }
 
 async function publicSettings(env: Env) {

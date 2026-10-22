@@ -1,6 +1,7 @@
 import { PluginBridge } from './durable-object'
 import { hashControlToken } from './security'
-import { acceptInvite, createSession, digest, exchangeGithubCode, getCurrentUser, isAllowlisted, redirectWithError, sessionCookie, clearSessionCookie, upsertGithubUser, type AuthErrorCode } from './auth'
+import { acceptInvite, createSession, digest, exchangeGithubCode, getCurrentUser, isAllowlisted, sessionCookie, clearSessionCookie, upsertGithubUser, type AuthErrorCode } from './auth'
+import { authErrorResponse } from './auth-error-page'
 import type { GithubAuthResult } from './auth'
 import type { AuthenticatedUser, Env } from './types'
 import { decryptSecret, encryptSecret } from './secrets'
@@ -12,6 +13,7 @@ import { selectPublicRequestMode } from './request-mode'
 import { resolvePublicRoute } from './public-route'
 import { CLOUDFLARE_OAUTH_PROTOCOL, oauthSettingsApi, resolveOauthSettings } from './oauth-settings'
 import { setupApi } from './setup'
+import { clearCloudflareAuthResultCookie, cloudflareAuthResultCookie, readCloudflareAuthResult, type CloudflareAuthResult } from './cloudflare-auth-result'
 import { recordAudit } from './audit'
 import { DEFAULT_WORKSPACE_ID, activeWorkspaceId, createWorkspace, ensureSuperAdminWorkspace, listWorkspaceMembers, listWorkspaces, ownerCount, parseWorkspaceRole, requireOwner, requireWrite, resolveWorkspace, workspaceForUser } from './workspaces'
 import type { Workspace, WorkspaceRole } from './types'
@@ -52,6 +54,13 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     const workspaces = await listWorkspaces(env, user)
     const active = await activeWorkspaceId(env, request, user)
     return json({ user, workspaces, activeWorkspaceId: active })
+  }
+  if (request.method === 'GET' && url.pathname === '/api/settings/cloudflare/auth-result') {
+    if (user.role !== 'super_admin') return json({ result: null }, 403)
+    return new Response(JSON.stringify({ result: readCloudflareAuthResult(request) }), {
+      status: 200,
+      headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'set-cookie': clearCloudflareAuthResultCookie(url.protocol === 'https:') },
+    })
   }
   const workspaceResponse = await workspaceApi(request, env, user, url)
   if (workspaceResponse) return workspaceResponse
@@ -458,15 +467,15 @@ const githubAuthFailureCodes: Record<Extract<GithubAuthResult, { ok: false }>['r
 async function finishGithubAuth(request: Request, env: Env, url: URL): Promise<Response> {
   const state = url.searchParams.get('state')
   const code = url.searchParams.get('code')
-  if (!state || !code) return redirectWithError(request, 'callback_incomplete')
+  if (!state || !code) return authErrorResponse(request, 'callback_incomplete')
   const stateHash = await digest(state)
   const now = new Date().toISOString()
   const oauthState = await env.DB.prepare('SELECT state_hash, invite_token_hash FROM oauth_states WHERE state_hash = ? AND expires_at > ?').bind(stateHash, now).first<{ state_hash: string; invite_token_hash: string | null }>()
-  if (!oauthState) return redirectWithError(request, 'state_expired')
+  if (!oauthState) return authErrorResponse(request, 'state_expired')
   const consumedState = await env.DB.prepare('DELETE FROM oauth_states WHERE state_hash = ? AND expires_at > ?').bind(oauthState.state_hash, now).run()
-  if ((consumedState.meta.changes ?? 0) !== 1) return redirectWithError(request, 'state_used')
+  if ((consumedState.meta.changes ?? 0) !== 1) return authErrorResponse(request, 'state_used')
   const authResult = await exchangeGithubCode(env, code)
-  if (!authResult.ok) return redirectWithError(request, githubAuthFailureCodes[authResult.reason])
+  if (!authResult.ok) return authErrorResponse(request, githubAuthFailureCodes[authResult.reason])
   const identity = authResult.identity
   const allowlisted = await isAllowlisted(env, { login: identity.login, emails: identity.emails })
   const existing = await env.DB.prepare('SELECT id FROM users WHERE github_id = ?').bind(identity.githubId).first<{ id: string }>()
@@ -474,10 +483,10 @@ async function finishGithubAuth(request: Request, env: Env, url: URL): Promise<R
   let userId: string
   if (oauthState.invite_token_hash) {
     const invitedUserId = await acceptInvite(env, oauthState.invite_token_hash, identity, role)
-    if (!invitedUserId) return redirectWithError(request, 'invite_mismatch')
+    if (!invitedUserId) return authErrorResponse(request, 'invite_mismatch')
     userId = invitedUserId
   } else {
-    if (!allowlisted && !existing) return redirectWithError(request, 'invite_required')
+    if (!allowlisted && !existing) return authErrorResponse(request, 'invite_required')
     userId = await upsertGithubUser(env, identity, role)
   }
   if (role === 'super_admin') await ensureSuperAdminWorkspace(env, userId)
@@ -508,47 +517,43 @@ async function finishCloudflareAuth(request: Request, env: Env, url: URL): Promi
   const code = url.searchParams.get('code')
   const oauthError = url.searchParams.get('error')
   const oauthErrorDescription = url.searchParams.get('error_description')
-  if (!user || user.role !== 'super_admin') return redirectWithCloudflareError(request, '需要超级管理员会话才能完成 Cloudflare 授权', 'session_required')
-  if (oauthError) return redirectWithCloudflareError(request, cloudflareAuthorizationMessage(oauthError, oauthErrorDescription), oauthError, oauthErrorDescription)
-  if (!state || !code) return redirectWithCloudflareError(request, 'Cloudflare 回调缺少 state 或 code 参数，请重新发起授权', 'invalid_callback')
+  if (!user || user.role !== 'super_admin') return redirectWithCloudflareError(request, 'session_required')
+  if (oauthError) return redirectWithCloudflareError(request, oauthError, oauthErrorDescription)
+  if (!state || !code) return redirectWithCloudflareError(request, 'invalid_callback')
   const stateHash = await digest(state)
   const now = new Date().toISOString()
   const stateRow = await env.DB.prepare('SELECT state_hash, user_id FROM cloudflare_oauth_states WHERE state_hash = ? AND user_id = ? AND expires_at > ?').bind(stateHash, user.id, now).first<{ state_hash: string; user_id: string }>()
-  if (!stateRow) return redirectWithCloudflareError(request, 'Cloudflare OAuth 状态已过期或已使用')
+  if (!stateRow) return redirectWithCloudflareError(request, 'state_expired')
   const consumedState = await env.DB.prepare('DELETE FROM cloudflare_oauth_states WHERE state_hash = ? AND user_id = ? AND expires_at > ?').bind(stateRow.state_hash, user.id, now).run()
-  if ((consumedState.meta.changes ?? 0) !== 1) return redirectWithCloudflareError(request, 'Cloudflare OAuth 状态已过期或已使用')
+  if ((consumedState.meta.changes ?? 0) !== 1) return redirectWithCloudflareError(request, 'state_expired')
   const credential = await exchangeCloudflareCode(env, code)
   if (!credential) {
     await recordAudit(env, null, user.id, 'cloudflare.oauth.failed', {})
-    return redirectWithCloudflareError(request, 'Cloudflare OAuth 令牌交换失败')
+    return redirectWithCloudflareError(request, 'token_exchange_failed')
   }
   if (!credential.accountId) credential.accountId = await discoverCloudflareAccountId(credential.accessToken)
-  if (!env.SESSION_SECRET) return redirectWithCloudflareError(request, 'SESSION_SECRET 未配置，无法保存 Cloudflare 凭据')
+  if (!env.SESSION_SECRET) return redirectWithCloudflareError(request, 'secret_missing')
   await storeCloudflareCredential(env, credential)
   await recordAudit(env, null, user.id, 'cloudflare.oauth.connected', { accountIdConfigured: Boolean(credential.accountId) })
-  return redirectWithCloudflareResult(request, Boolean(credential.accountId))
+  return redirectWithCloudflareAuthResult(request, { kind: 'success', accountConfigured: Boolean(credential.accountId) })
 }
 
-function redirectWithCloudflareResult(request: Request, accountConfigured: boolean): Response {
-  const location = new URL('/', request.url)
-  location.searchParams.set('cloudflare', accountConfigured ? 'connected' : 'connected_without_account')
-  return new Response(null, { status: 302, headers: { location: location.toString(), 'referrer-policy': 'no-referrer' } })
+/** 授权结果通过一次性 Cookie 回传，并始终回到系统设置页，而不是首页。 */
+function redirectWithCloudflareAuthResult(request: Request, result: CloudflareAuthResult): Response {
+  const location = new URL('/settings', request.url)
+  return new Response(null, {
+    status: 303,
+    headers: {
+      location: location.toString(),
+      'referrer-policy': 'no-referrer',
+      'cache-control': 'no-store',
+      'set-cookie': cloudflareAuthResultCookie(result, location.protocol === 'https:'),
+    },
+  })
 }
 
-/** 授权诊断：保留 Cloudflare 返回的 error / error_description，避免折叠成一句无法排查的提示。 */
-function cloudflareAuthorizationMessage(code: string, description: string | null): string {
-  if (code === 'access_denied') return '你取消了 Cloudflare 授权（access_denied），平台未写入任何凭据。'
-  if (code === 'invalid_client') return 'Cloudflare 拒绝了客户端凭据（invalid_client），请检查 Client ID 与 Secret。'
-  return description ? `Cloudflare 授权失败：${code} · ${description}` : `Cloudflare 授权失败：${code}`
-}
-
-function redirectWithCloudflareError(request: Request, message: string, code?: string, description?: string | null): Response {
-  const location = new URL('/', request.url)
-  location.searchParams.set('cloudflare_error', message)
-  if (code) location.searchParams.set('cloudflare_error_code', code)
-  if (description) location.searchParams.set('cloudflare_error_description', description)
-  return new Response(null, { status: 302, headers: { location: location.toString(), 'referrer-policy': 'no-referrer' } })
-}
+const redirectWithCloudflareError = (request: Request, code: string, description: string | null = null): Response =>
+  redirectWithCloudflareAuthResult(request, { kind: 'error', code, description })
 
 async function storeCloudflareCredential(env: Env, credential: CloudflareCredential): Promise<string> {
   if (!env.SESSION_SECRET) throw new Error('SESSION_SECRET is not configured')

@@ -12,7 +12,7 @@ const platformSettings = {
 
 const oauthSettings = {
   github: { configured: true, clientId: 'mock-github-client', redirectUri: 'https://console.example.test/auth/github/callback', allowlist: 'admin', secretConfigured: true, source: 'environment' },
-  cloudflare: { configured: true, clientId: 'mock-cloudflare-client', redirectUri: 'https://console.example.test/auth/cloudflare/callback', scope: 'workers-platform.read workers-platform.write', secretConfigured: true, source: 'environment', responseType: 'code', grantType: 'authorization_code', tokenAuthMethod: 'client_secret_basic', pkce: false },
+  cloudflare: { configured: true, clientId: 'mock-cloudflare-client', redirectUri: 'https://console.example.test/auth/cloudflare/callback', scope: 'account-settings.read account-analytics.read offline_access', scopeNames: { 'account-settings.read': 'Account Settings Read', 'account-analytics.read': 'Account Analytics Read', offline_access: 'Offline Access' }, secretConfigured: true, source: 'environment', responseType: 'code', grantType: 'authorization_code', tokenAuthMethod: 'client_secret_basic', pkce: false },
   sessionSecretConfigured: true,
   updatedAt: null,
   unreadable: false,
@@ -52,6 +52,11 @@ type WorkerMock = {
   smtpUpdates: unknown[]
   smtpTests: unknown[]
   smtpTestError: { error: string; field?: string } | null
+  cloudflareAuthResult: { kind: 'error'; code: string; description: string | null } | { kind: 'success'; accountConfigured: boolean } | null
+  authResultRequests: number
+  cloudflareSettings: Record<string, unknown>
+  usage: Record<string, unknown>
+  usageRequests: number
 }
 
 async function mockWorker(page: Page): Promise<WorkerMock> {
@@ -80,6 +85,11 @@ async function mockWorker(page: Page): Promise<WorkerMock> {
     smtpUpdates: [],
     smtpTests: [],
     smtpTestError: null,
+    cloudflareAuthResult: null,
+    authResultRequests: 0,
+    cloudflareSettings: { configured: false, accountIdConfigured: false, accountId: null, updatedAt: null },
+    usage: { configured: false },
+    usageRequests: 0,
   }
 
   await page.route('**/api/**', (route) => handleApi(route, state, logsGate))
@@ -224,13 +234,17 @@ async function handleApi(route: Route, state: WorkerMock, logsGate: Promise<void
     case '/api/domains':
       return route.fulfill({ json: { results: state.domains } })
     case '/api/usage/cloudflare':
-      return route.fulfill({ json: { configured: false } })
+      state.usageRequests += 1
+      return route.fulfill({ json: state.usage })
     case '/api/usage/local':
       return route.fulfill({ json: { ...localUsage, snapshots: state.snapshots } })
+    case '/api/settings/cloudflare/auth-result':
+      state.authResultRequests += 1
+      return route.fulfill({ json: { result: state.cloudflareAuthResult } })
     case '/api/settings/platform':
       return route.fulfill({ json: { ...platformSettings, maintenance: state.maintenance } })
     case '/api/settings/cloudflare':
-      return route.fulfill({ json: { configured: false, accountIdConfigured: false, accountId: null, updatedAt: null } })
+      return route.fulfill({ json: state.cloudflareSettings })
     case '/api/settings/smtp':
       return route.fulfill({ json: { configured: false } })
     default:
@@ -277,12 +291,17 @@ test('管理端在后台保存 OAuth 配置且不回显密钥', async ({ page })
   await expect(panel).toContainText('后台配置')
 })
 
-test('Cloudflare 区块展示协议参数并区分授权诊断', async ({ page }) => {
+test('Cloudflare 区块展示固定权限清单，并把授权失败诊断留在系统设置页', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 })
   const worker = await mockWorker(page)
-  await page.goto('/?cloudflare_error=access_denied&cloudflare_error_code=access_denied&cloudflare_error_description=User%20denied%20access')
-  await page.getByRole('menuitem', { name: '系统设置', exact: true }).click()
+  // 回调结果改为一次性 Cookie：页面加载后主动读回并自动打开 Cloudflare 面板。
+  worker.cloudflareAuthResult = { kind: 'error', code: 'access_denied', description: 'User denied access' }
+  await page.goto('/')
   const panel = page.locator('#settings-cloudflare')
+  await expect(panel).toBeVisible()
+  expect(new URL(page.url()).pathname).toBe('/settings')
+  expect(new URL(page.url()).search).toBe('')
+
   const protocol = panel.locator('.protocol-facts')
   await expect(protocol).toContainText('response_type')
   await expect(protocol).toContainText('code')
@@ -296,21 +315,71 @@ test('Cloudflare 区块展示协议参数并区分授权诊断', async ({ page }
   await expect(diagnosis).toContainText('access_denied')
   await expect(diagnosis).toContainText('User denied access')
   await expect(diagnosis).toContainText('你拒绝了授权请求')
-  expect(new URL(page.url()).search).toBe('')
   await diagnosis.getByRole('button', { name: '关闭诊断' }).click()
   await expect(panel.getByTestId('cloudflare-diagnosis')).toHaveCount(0)
+
+  // 权限清单固定为三项且只读：没有可编辑的 scope 输入框，也不能移除单项。
+  const scopes = panel.getByTestId('cloudflare-scopes')
+  await expect(scopes).toContainText('Account Settings Read')
+  await expect(scopes).toContainText('Account Analytics Read')
+  await expect(scopes).toContainText('Offline Access')
+  await expect(scopes.locator('.scope-list li')).toHaveCount(3)
+  await expect(scopes.locator('input')).toHaveCount(0)
+  await expect(scopes.getByRole('button')).toHaveCount(0)
+  await expect(panel.getByRole('textbox', { name: '授权范围' })).toHaveCount(0)
 
   await panel.getByLabel('Client ID').fill('mock-cloudflare-client-new')
   await panel.getByRole('button', { name: '保存配置' }).click()
   await expect(page.locator('.ant-notification-notice').filter({ hasText: 'Cloudflare 客户端配置已保存' })).toBeVisible()
-  expect(worker.oauthUpdates).toEqual([{ cloudflare: { clientId: 'mock-cloudflare-client-new', clientSecret: '', redirectUri: 'http://127.0.0.1:4184/auth/cloudflare/callback', scope: 'workers-platform.read workers-platform.write' } }])
+  // 保存客户端不再提交 scope，授权范围完全由 Worker 固定。
+  expect(worker.oauthUpdates).toEqual([{ cloudflare: { clientId: 'mock-cloudflare-client-new', clientSecret: '', redirectUri: 'http://127.0.0.1:4184/auth/cloudflare/callback' } }])
 
-  await page.goto('/?cloudflare_error=Cloudflare%20%E6%8E%88%E6%9D%83%E5%A4%B1%E8%B4%A5%EF%BC%9Ainvalid_client&cloudflare_error_code=invalid_client')
-  await page.getByRole('menuitem', { name: '系统设置', exact: true }).click()
+  worker.cloudflareAuthResult = { kind: 'error', code: 'invalid_client', description: null }
+  await page.goto('/')
   const invalidClient = page.locator('#settings-cloudflare').getByTestId('cloudflare-diagnosis')
   await expect(invalidClient).toContainText('invalid_client')
   await expect(invalidClient).toContainText('Client ID 或 Secret')
   await expect(invalidClient).not.toContainText('你拒绝了授权请求')
+})
+
+test('Cloudflare 未识别账号时提示缺少 Account Settings Read 权限', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  const worker = await mockWorker(page)
+  worker.cloudflareSettings = { configured: true, accountIdConfigured: false, accountId: null, updatedAt: '2026-10-21T00:00:00.000Z' }
+  worker.cloudflareAuthResult = { kind: 'success', accountConfigured: false }
+  await page.goto('/')
+  const panel = page.locator('#settings-cloudflare')
+  await expect.poll(() => worker.authResultRequests).toBeGreaterThan(0)
+  await expect(panel).toBeVisible()
+  const missingAccount = panel.locator('.ant-alert').filter({ hasText: '授权已完成，但没有识别到唯一账号' })
+  await expect(missingAccount).toBeVisible()
+  await expect(missingAccount).toContainText('Account Settings Read')
+  await page.getByRole('button', { name: '查看所需权限' }).click()
+  await expect(panel.getByTestId('cloudflare-scopes')).toBeInViewport()
+})
+
+test('用量页提供刷新按钮并提示读取官方数据所需权限', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  const worker = await mockWorker(page)
+  worker.usage = { configured: true, accountIdConfigured: true, requests: 1200, period: { start: '2026-10-20T00:00:00.000Z', end: '2026-10-21T00:00:00.000Z' }, updatedAt: '2026-10-21T00:00:00.000Z', cached: false }
+  await page.goto('/')
+  await page.getByRole('menuitem', { name: '用量与配额', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '用量与配额', level: 1 })).toBeVisible()
+  const refresh = page.getByRole('button', { name: '刷新用量' }).first()
+  await expect(refresh).toBeVisible()
+  const before = worker.usageRequests
+  await refresh.click()
+  await expect(page.locator('.ant-notification-notice').filter({ hasText: '用量数据已刷新' })).toBeVisible()
+  expect(worker.usageRequests).toBeGreaterThan(before)
+
+  // 缺少 Account Settings Read 时官方用量为空，需要明确告诉管理员要补哪项权限。
+  worker.usage = { configured: true, accountIdConfigured: false }
+  await page.getByRole('button', { name: '刷新用量' }).first().click()
+  const alert = page.getByRole('alert').filter({ hasText: '已授权，但未识别到 Cloudflare 账号' })
+  await expect(alert).toBeVisible()
+  await expect(alert).toContainText('Account Settings Read')
+  await alert.getByRole('button', { name: '检查配置' }).click()
+  await expect(page.locator('#settings-cloudflare')).toBeVisible()
 })
 
 test('管理端测试 SMTP 通过后才能保存并清空密码', async ({ page }) => {

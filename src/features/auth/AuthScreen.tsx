@@ -1,5 +1,5 @@
-import { Alert, Avatar, Button, Card, Divider, Flex, Spin, Typography } from 'antd'
-import { Code2, LockKeyhole, Network } from 'lucide-react'
+import { Avatar, Button, Card, Flex, Spin, Typography } from 'antd'
+import { Activity, Box, Code2, LockKeyhole, Network, Server, ShieldCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { AppThemeMode } from '../../app/theme'
 
@@ -13,69 +13,72 @@ function GithubMark({ size = 16 }: { size?: number }) {
   )
 }
 
-// 登录外壳：AntD Card 负责容器，Flex 负责垂直布局，主题变量保持明暗一致。
-function AuthShell({ mode, children }: { mode: AppThemeMode; children: React.ReactNode }) {
-  return (
-    <div className={`auth-screen theme-${mode}`}>
-      <Card className="auth-card" variant="outlined">
-        <Flex vertical align="center" gap={0}>{children}</Flex>
-      </Card>
-    </div>
-  )
+function Brand() {
+  const { t } = useTranslation()
+  return <Flex className="auth-brand" align="center" gap={10}>
+    <Avatar className="auth-brand-mark" shape="square" size={30} icon={<Network size={17} strokeWidth={2.4} />} />
+    <Flex vertical gap={0}>
+      <Text strong className="auth-brand-name">Plugmesh</Text>
+      <Text type="secondary" className="auth-brand-caption">{t('brand.caption')}</Text>
+    </Flex>
+  </Flex>
 }
 
-function BrandHeader() {
+// 登录外壳与控制台共用同一套结构：左侧品牌栏 + 右侧顶栏与内容区，避免再出现独立旧版卡片页。
+function AuthFrame({ mode, heading, children }: { mode: AppThemeMode; heading: string; children: React.ReactNode }) {
   const { t } = useTranslation()
-  return (
-    <>
-      <Flex className="auth-brand" align="center" justify="center" gap={10}>
-        <Avatar className="auth-brand-mark" shape="square" size={34} icon={<Network size={18} strokeWidth={2.4} />} />
-        <Flex vertical align="flex-start" gap={0}>
-          <Text strong className="auth-brand-name">Plugmesh</Text>
-          <Text type="secondary" className="auth-brand-caption">{t('brand.caption')}</Text>
-        </Flex>
-      </Flex>
-      <Divider className="auth-divider" />
-    </>
-  )
+  return <div className={`auth-screen theme-${mode}`}>
+    <aside className="auth-aside">
+      <Brand />
+      <div className="auth-aside-copy">
+        <Title level={2} className="auth-aside-title">{t('auth.asideTitle')}</Title>
+        <Paragraph className="auth-aside-body">{t('auth.asideBody')}</Paragraph>
+      </div>
+      <ul className="auth-points">
+        <li><span className="auth-point-icon"><Server size={15} /></span><div><strong>{t('auth.points.servers')}</strong><span>{t('auth.points.serversHint')}</span></div></li>
+        <li><span className="auth-point-icon"><Box size={15} /></span><div><strong>{t('auth.points.plugins')}</strong><span>{t('auth.points.pluginsHint')}</span></div></li>
+        <li><span className="auth-point-icon"><Activity size={15} /></span><div><strong>{t('auth.points.usage')}</strong><span>{t('auth.points.usageHint')}</span></div></li>
+      </ul>
+      <Text className="auth-aside-foot">{t('auth.asideFoot')}</Text>
+    </aside>
+    <main className="auth-main">
+      <header className="auth-topbar"><span>{t('shell.console')}</span><span aria-hidden="true">/</span><strong>{heading}</strong></header>
+      <div className="auth-main-body">
+        <Card className="auth-panel" variant="outlined">
+          <Flex vertical gap={0}>{children}</Flex>
+        </Card>
+      </div>
+    </main>
+  </div>
 }
 
 export function AuthLoadingScreen({ mode }: { mode: AppThemeMode }) {
   const { t } = useTranslation()
-  return (
-    <AuthShell mode={mode}>
-      <Avatar className="auth-brand-mark auth-loading-mark" shape="square" size={44} icon={<Network size={20} strokeWidth={2.4} />} />
-      <Title level={1} className="auth-title">{t('auth.checkingTitle')}</Title>
-      <Paragraph type="secondary" className="auth-copy">{t('auth.checkingBody')}</Paragraph>
-      <div className="auth-spinner" role="status" aria-live="polite">
-        <Spin size="large" />
-        <span className="sr-only">{t('auth.checkingTitle')}</span>
-      </div>
-    </AuthShell>
-  )
+  return <AuthFrame mode={mode} heading={t('auth.checkingTitle')}>
+    <Avatar className="auth-icon" shape="square" size={44} icon={<Network size={20} strokeWidth={2.4} />} />
+    <Title level={1} className="auth-title">{t('auth.checkingTitle')}</Title>
+    <Paragraph type="secondary" className="auth-copy">{t('auth.checkingBody')}</Paragraph>
+    <div className="auth-spinner" role="status" aria-live="polite">
+      <Spin size="large" />
+      <span className="sr-only">{t('auth.checkingTitle')}</span>
+    </div>
+  </AuthFrame>
 }
-
-// 与 worker/src/auth.ts 的 authErrorCodes 保持一致：URL 只携带稳定错误码，文案由 i18n 渲染。
-const authErrorCodes = ['callback_incomplete', 'state_expired', 'state_used', 'oauth_not_configured', 'token_exchange_failed', 'user_api_failed', 'email_api_failed', 'identity_incomplete', 'email_unverified', 'invite_mismatch', 'invite_required'] as const
-type AuthErrorCode = (typeof authErrorCodes)[number]
-const isAuthErrorCode = (value: string): value is AuthErrorCode => (authErrorCodes as readonly string[]).includes(value)
 
 export function LoginPage({ mode }: { mode: AppThemeMode }) {
   const { t } = useTranslation()
   const params = new URLSearchParams(window.location.search)
   const invite = params.get('invite')
-  const authErrorCode = params.get('auth_error') ?? ''
-  const authMessage = isAuthErrorCode(authErrorCode) ? t(`auth.errors.${authErrorCode}`) : authErrorCode ? t('auth.errors.unknown') : null
   const startUrl = `/auth/github/start${invite ? `?invite=${encodeURIComponent(invite)}` : ''}`
-  return (
-    <AuthShell mode={mode}>
-      <BrandHeader />
-      <Avatar className="auth-icon" shape="square" size={48} icon={<Code2 size={24} />} />
-      <Title level={1} className="auth-title">{invite ? t('auth.inviteTitle') : t('auth.loginTitle')}</Title>
-      <Paragraph type="secondary" className="auth-copy">{invite ? t('auth.inviteBody') : t('auth.loginBody')}</Paragraph>
-      {authMessage && <Alert className="auth-alert" type="error" showIcon message={t('auth.errors.title')} description={authMessage} />}
-      <Button className="auth-submit" type="primary" size="large" block href={startUrl} icon={<GithubMark size={17} />}>{t('auth.github')}</Button>
+  const title = invite ? t('auth.inviteTitle') : t('auth.loginTitle')
+  return <AuthFrame mode={mode} heading={title}>
+    <Avatar className="auth-icon" shape="square" size={48} icon={<Code2 size={24} />} />
+    <Title level={1} className="auth-title">{title}</Title>
+    <Paragraph type="secondary" className="auth-copy">{invite ? t('auth.inviteBody') : t('auth.loginBody')}</Paragraph>
+    <Button className="auth-submit" type="primary" size="large" block href={startUrl} icon={<GithubMark size={17} />}>{t('auth.github')}</Button>
+    <Flex className="auth-notes" vertical gap={6}>
       <Text type="secondary" className="auth-note"><LockKeyhole size={13} aria-hidden="true" />{t('auth.note')}</Text>
-    </AuthShell>
-  )
+      <Text type="secondary" className="auth-note"><ShieldCheck size={13} aria-hidden="true" />{t('auth.inviteOnly')}</Text>
+    </Flex>
+  </AuthFrame>
 }

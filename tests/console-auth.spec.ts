@@ -2,6 +2,7 @@ import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 
 // 登录页运行在启用鉴权的开发服务器上：/api/me 无后端时返回失败，控制台进入匿名态。
+// 登录回调失败现在由 Worker 直接返回 HTTP 错误页，前端不再解析 ?auth_error 参数。
 const themes = [
   { value: 'dark', label: '深色' },
   { value: 'light', label: '浅色' },
@@ -26,19 +27,6 @@ test('登录页展示邀请文案并保留 invite 参数', async ({ page }) => {
   await expect(page.getByRole('heading', { name: '接受平台邀请', level: 1 })).toBeVisible()
   await expect(page.getByRole('link', { name: /使用 GitHub 登录/ })).toHaveAttribute('href', '/auth/github/start?invite=tok_123')
   await expect(page.getByText('平台会在登录后完成身份匹配')).toBeVisible()
-})
-
-test('登录页按错误码渲染本地化提示并保留 GitHub 入口', async ({ page }) => {
-  await page.goto('/?auth_error=state_expired')
-  await expect(page.getByRole('alert')).toContainText('登录链接已过期')
-  await expect(page.getByRole('link', { name: /使用 GitHub 登录/ })).toHaveAttribute('href', '/auth/github/start')
-})
-
-test('登录页对未知错误码显示通用提示而不是原样回显', async ({ page }) => {
-  await page.goto(`/?auth_error=${encodeURIComponent('<img src=x onerror=alert(1)>')}`)
-  const alert = page.getByRole('alert')
-  await expect(alert).toContainText('登录失败，请重试或联系管理员')
-  await expect(alert).not.toContainText('onerror')
 })
 
 test('登录页窄窗口不横向溢出', async ({ page }) => {

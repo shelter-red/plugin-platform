@@ -6,22 +6,42 @@ button, input { font: inherit; }
 button { border: 0; cursor: pointer; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 .app-shell { min-height: 100vh; color: var(--text); background: var(--bg); position: relative; overflow: hidden; }
-.auth-screen { min-height: 100vh; display: grid; place-items: center; padding: 24px; color: var(--text); background: radial-gradient(circle at 50% 0%, var(--primary-faint), transparent 55%), var(--bg); }
-.auth-card { width: min(420px, 100%); text-align: center; box-shadow: 0 24px 70px rgba(0,0,0,.22); border-radius: 14px; }
-.auth-card .ant-card-body { padding: 32px; }
-.auth-brand { width: 100%; margin-bottom: 4px; text-align: left; }
+.auth-screen { min-height: 100vh; display: flex; color: var(--text); background: var(--bg); }
+.auth-aside { width: 380px; flex: 0 0 380px; display: flex; flex-direction: column; gap: 30px; padding: 30px 28px 24px; border-right: 1px solid var(--line); background: radial-gradient(circle at 20% 0%, var(--primary-faint), transparent 55%), var(--surface); }
+.auth-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.auth-topbar { height: 62px; flex: 0 0 62px; display: flex; align-items: center; gap: 8px; padding: 0 30px; border-bottom: 1px solid var(--line); color: var(--text-3); font-size: 12px; }
+.auth-topbar strong { color: var(--text); font-weight: 600; }
+.auth-main-body { flex: 1; display: grid; place-items: center; padding: 32px 24px; }
+.auth-panel { width: min(420px, 100%); border-radius: 12px; box-shadow: var(--shadow); }
+.auth-panel .ant-card-body { padding: 32px; }
+.auth-brand { width: 100%; }
 .auth-brand-mark.ant-avatar { border-radius: 9px; color: #fff; background: var(--primary-solid); box-shadow: 0 6px 18px rgba(16,185,129,.24); }
 .auth-brand-name.ant-typography { color: var(--text); font-size: 15px; line-height: 1.2; }
 .auth-brand-caption.ant-typography { color: var(--text-2); font-size: 11px; line-height: 1.3; }
-.auth-divider.ant-divider { margin: 18px 0 24px; border-color: var(--line); }
-.auth-icon.ant-avatar { margin: 0 auto 16px; border: 1px solid var(--line); border-radius: 12px; color: var(--primary); background: var(--primary-faint); }
+.auth-aside-copy { display: grid; gap: 8px; }
+.auth-aside-title.ant-typography { margin: 0; color: var(--text); font-size: 20px; line-height: 1.35; }
+.auth-aside-body.ant-typography { margin: 0; color: var(--text-2); font-size: 12px; line-height: 1.75; }
+.auth-points { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.auth-points li { display: flex; align-items: flex-start; gap: 10px; }
+.auth-point-icon { width: 28px; height: 28px; flex: none; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 7px; color: var(--primary); background: var(--primary-faint); }
+.auth-points strong { display: block; color: var(--text); font-size: 12px; font-weight: 600; }
+.auth-points span { display: block; color: var(--text-3); font-size: 11px; line-height: 1.6; }
+.auth-aside-foot.ant-typography { margin-top: auto; color: var(--text-4); font-size: 11px; }
+.auth-icon.ant-avatar { margin: 0 0 16px; border: 1px solid var(--line); border-radius: 12px; color: var(--primary); background: var(--primary-faint); }
 .auth-title.ant-typography { margin: 0 0 8px; color: var(--text); font-size: 22px; line-height: 1.3; }
-.auth-copy.ant-typography { max-width: 320px; margin: 0 auto 22px; color: var(--text-2); font-size: 13px; line-height: 1.7; }
+.auth-copy.ant-typography { margin: 0 0 22px; color: var(--text-2); font-size: 13px; line-height: 1.7; }
 .auth-alert { margin-bottom: 16px; text-align: left; }
 .auth-submit { height: 42px; font-size: 14px; font-weight: 500; }
-.auth-note.ant-typography { display: inline-flex; align-items: center; gap: 6px; margin-top: 18px; color: var(--text-3); font-size: 11px; }
+.auth-notes { margin-top: 18px; }
+.auth-note.ant-typography { display: inline-flex; align-items: center; gap: 6px; color: var(--text-3); font-size: 11px; }
 .auth-spinner { display: flex; justify-content: center; margin-top: 22px; }
 .auth-loading-mark.ant-avatar { margin: 0 auto 22px; }
+@media (max-width: 900px) {
+  .auth-aside { display: none; }
+  .auth-topbar { padding: 0 20px; }
+  .auth-main-body { padding: 24px 16px; }
+  .auth-panel .ant-card-body { padding: 24px; }
+}
 .inline-error { display: flex; align-items: center; gap: 7px; padding: 9px; margin: 0 0 13px; border: 1px solid rgba(239,68,68,.26); border-radius: 6px; color: var(--danger-text); background: rgba(239,68,68,.1); text-align: left; font-size: 10px; }
 .loading-line { width: 100%; height: 4px; margin-top: 20px; overflow: hidden; border-radius: 4px; background: rgba(255,255,255,.08); }
 .loading-line::before { content: ''; display: block; width: 38%; height: 100%; border-radius: inherit; background: var(--primary); animation: loading 1.3s ease-in-out infinite; }
@@ -108,6 +128,14 @@ h1 { font-size: 25px; letter-spacing: 0; line-height: 1.05; }
 .notice-bar.danger { border-color: rgba(248,113,113,.3); background: rgba(248,113,113,.08); }
 .notice-bar.danger .notice-icon { color: #f87171; background: rgba(248,113,113,.12); }
 .field-value { color: var(--text); font-size: 11px; }
+.scope-permissions { margin-top: 16px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.scope-permissions-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.scope-list { list-style: none; margin: 10px 0; padding: 0; display: grid; gap: 10px; }
+.scope-list li { display: flex; align-items: flex-start; gap: 9px; }
+.scope-list li > svg { flex: none; margin-top: 2px; color: var(--primary); }
+.scope-list strong { display: block; color: var(--text); font-size: 12px; }
+.scope-list code { display: inline-block; margin: 1px 0 2px; padding: 0 4px; border-radius: 3px; background: var(--surface-strong); color: var(--text-2); font: 10px/1.6 'IBM Plex Mono', monospace; }
+.scope-list span { display: block; color: var(--text-3); font-size: 11px; line-height: 1.6; }
 .protocol-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; margin-top: 14px; padding: 12px; border: 1px dashed var(--line-strong); border-radius: 6px; background: var(--surface); }
 .protocol-facts > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--text-3); font-size: 10px; }
 .protocol-facts code { color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }

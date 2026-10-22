@@ -5,7 +5,7 @@ import { Alert, App, Avatar, Button, Drawer, Dropdown, Menu, Select, Typography 
 import { Activity, ArrowUpRight, Box, Building2, Check, CircleHelp, Command, FileText, Gauge, Globe2, LayoutDashboard, LogOut, Menu as MenuIcon, MoreHorizontal, Network, Plus, RefreshCw, Search, Server, Settings, ShieldCheck, Sun, UserRound, X } from 'lucide-react'
 import { type AppThemeMode, type ThemePreference } from '../app/theme'
 import { useToast } from '../components/ToastProvider'
-import { readCloudflareDiagnosis, type CloudflareDiagnosis } from '../features/settings/cloudflare-auth'
+import { diagnosisMessageKey, type CloudflareDiagnosis } from '../features/settings/cloudflare-auth'
 import { errorMessage, translateError } from '../errors'
 import { IconButton } from '../components/IconButton'
 import { DetailModal } from '../components/DetailModal'
@@ -29,7 +29,7 @@ import { auditActionLabel } from '../lib/audit'
 import { downloadCsv } from '../lib/csv'
 import { useMediaQuery } from '../lib/useMediaQuery'
 import { AuthLoadingScreen, LoginPage } from '../features/auth/AuthScreen'
-import { assignDomain, checkPluginHealth, commandPlugin, createRegistrationCode, fetchAccessLogs, fetchAudit, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchInvites, fetchLocalUsage, fetchOauthSettings, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchPluginDetails, fetchServerDetails, fetchServers, fetchSmtpSettings, syncServer, type ApiAccessLog, type ApiAudit, type ApiDomain, type ApiInvite, type ApiOverview, type ApiPlugin, type ApiPluginDetail, type ApiServer, type ApiServerDetail, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type OauthSettings, type PlatformSettings, type PluginAction, type PluginHealthResult, type SmtpSettings } from '../api'
+import { assignDomain, checkPluginHealth, commandPlugin, createRegistrationCode, fetchAccessLogs, fetchAudit, fetchCloudflareAuthResult, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchInvites, fetchLocalUsage, fetchOauthSettings, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchPluginDetails, fetchServerDetails, fetchServers, fetchSmtpSettings, syncServer, type ApiAccessLog, type ApiAudit, type ApiDomain, type ApiInvite, type ApiOverview, type ApiPlugin, type ApiPluginDetail, type ApiServer, type ApiServerDetail, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type OauthSettings, type PlatformSettings, type PluginAction, type PluginHealthResult, type SmtpSettings } from '../api'
 
 const navGroups: { labelKey: string; items: { id: Page; icon: typeof LayoutDashboard }[] }[] = [
   {
@@ -209,20 +209,29 @@ export function ConsoleShell({ theme, setTheme, effectiveTheme, language }: Cons
     fetchOauthSettings().then(setOauthSettings).catch(() => setOauthSettings(null))
   }, [authEnabled])
 
+  // Cloudflare 授权回跳结果经一次性 Cookie 回传：成功后刷新凭据状态，失败则回到
+  // 系统设置 → Cloudflare 面板展示诊断，而不是把用户丢在首页。
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const result = params.get('cloudflare')
-    const diagnosis = readCloudflareDiagnosis(window.location.search)
-    if (result === 'connected') notify('success', t('toast.cloudflareConnected'))
-    if (result === 'connected_without_account') notify('info', t('toast.cloudflareConnectedWithoutAccount'))
-    if (diagnosis) {
-      setCloudflareDiagnosis(diagnosis)
-      notify('error', diagnosis.message)
-    }
-    if (result || diagnosis) window.history.replaceState({}, '', window.location.pathname)
-    // 只在首次挂载时读取一次回调参数，避免通知实例变化导致重复弹窗。
+    // 鉴权关闭但仍有 API 时同样读回一次性结果（本地/冒烟环境），避免只有生产鉴权路径生效。
+    if (!apiConnected || authState !== 'authenticated' || authUser?.role !== 'super_admin') return
+    let cancelled = false
+    fetchCloudflareAuthResult().then((result) => {
+      if (cancelled || !result) return
+      if (result.kind === 'success') {
+        fetchCloudflareSettings().then(setCloudflareSettings).catch(() => setCloudflareSettings(null))
+        if (result.accountConfigured) return notify('success', t('toast.cloudflareConnected'))
+        // 未识别账号由面板里的缺少权限警告承载，避免同时出现两条重复诊断。
+        openSettingsSection('cloudflare')
+        return notify('warning', t('settings.cloudflare.diagnosis.account_missing'))
+      }
+      setCloudflareDiagnosis({ code: result.code, description: result.description })
+      openSettingsSection('cloudflare')
+      notify('error', t(diagnosisMessageKey(result.code)))
+    }).catch(() => undefined)
+    return () => { cancelled = true }
+    // 仅在登录态确定后读取一次；openSettingsSection/notify 只改写页面状态。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [apiConnected, authState, authUser?.role])
 
   useEffect(() => {
     if (!authEnabled && !import.meta.env.VITE_API_BASE) return
@@ -329,6 +338,23 @@ export function ConsoleShell({ theme, setTheme, effectiveTheme, language }: Cons
       notify('error', t('toast.refreshFailed'))
     } finally {
       setDataLoading(false)
+    }
+  }
+
+  const refreshUsage = async (announce = true) => {
+    setUsageLoading(true)
+    try {
+      const [nextUsage, nextLocalUsage] = await Promise.all([fetchCloudflareUsage(), fetchLocalUsage(range).catch(() => null)])
+      setUsage(nextUsage)
+      if (nextLocalUsage) setLocalUsage(nextLocalUsage)
+      setUsageError(null)
+      if (announce) notify('success', t('usage.refreshed'))
+    } catch (error) {
+      setUsage(null)
+      setUsageError(errorMessage(error, 'toast.usageUnavailable'))
+      notify('error', t('usage.refreshFailed'))
+    } finally {
+      setUsageLoading(false)
     }
   }
 
@@ -557,6 +583,7 @@ export function ConsoleShell({ theme, setTheme, effectiveTheme, language }: Cons
               </div>
               <div className="header-actions">
                 {page === 'overview' && <Button icon={<RefreshCw size={15} />} onClick={() => void refreshData()} disabled={dataLoading}>{t('shell.refresh')}</Button>}
+                {page === 'usage' && <Button icon={<RefreshCw size={15} />} onClick={() => void refreshUsage()} loading={usageLoading}>{t('usage.refresh')}</Button>}
                 {page === 'servers' && <Button type="primary" icon={<Plus size={16} />} onClick={() => setModal('server')} disabled={!canWrite} title={canWrite ? undefined : t('workspace.readOnlyHint')}>{t('shell.bindServer')}</Button>}
                 {page === 'domains' && <Button type="primary" icon={<Plus size={16} />} onClick={() => setModal('domain')} disabled={!canWrite} title={canWrite ? undefined : t('workspace.readOnlyHint')}>{t('shell.assignDomain')}</Button>}
                 {page === 'plugins' && <Button type="primary" icon={<Plus size={16} />} onClick={() => setModal('plugin')} disabled={!canWrite} title={canWrite ? undefined : t('workspace.readOnlyHint')}>{t('shell.loadPlugin')}</Button>}
@@ -568,7 +595,7 @@ export function ConsoleShell({ theme, setTheme, effectiveTheme, language }: Cons
             {page === 'servers' && <ServersPage servers={servers ?? []} loading={dataLoading} onRefresh={() => void refreshData()} onBind={() => setModal('server')} onDetail={(id) => void openDetail('server', id)} />}
             {page === 'plugins' && <PluginsPage plugins={plugins ?? []} loading={dataLoading} onSync={() => void syncManifests()} onLoad={() => setModal('plugin')} onDetail={(id) => void openDetail('plugin', id)} onHealth={(plugin) => void runHealthCheck(plugin)} />}
             {page === 'domains' && <DomainsPage domains={domains ?? []} loading={dataLoading} onAction={notify} onRefresh={() => void refreshData()} onAssign={() => setModal('domain')} />}
-            {page === 'usage' && <UsagePage settings={platformSettings} usage={usage} localUsage={localUsage} loading={usageLoading} error={usageError} onNavigate={selectPage} />}
+            {page === 'usage' && <UsagePage settings={platformSettings} usage={usage} localUsage={localUsage} loading={usageLoading} error={usageError} onRefresh={() => void refreshUsage()} onOpenCloudflareSettings={() => openSettingsSection('cloudflare')} />}
             {page === 'logs' && <AccessLogsPage logs={accessLogs ?? []} loading={accessLogsLoading} error={accessLogsError} onExport={exportAccessLogs} />}
             {page === 'audit' && <AuditPage audits={audits ?? []} loading={auditLoading} error={auditError} onExport={exportAudit} />}
             {page === 'workspaces' && <WorkspacePage workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} onSwitch={switchWorkspace} onWorkspacesChange={reloadWorkspaces} onAction={notify} />}

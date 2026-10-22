@@ -1,18 +1,22 @@
-import { Alert, Button, Input } from 'antd'
-import { ArrowUpRight, Cloud, LockKeyhole, Plus, ShieldAlert } from 'lucide-react'
+import { Alert, App, Button, Input } from 'antd'
+import { ArrowUpRight, Check, Cloud, LockKeyhole, Plus, ShieldAlert } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { revokeCloudflareSettings, revokeOauthSettings, updateOauthSettings, type CloudflareSettings, type OauthSettings } from '../../api'
 import { CopyField } from '../../components/CopyField'
 import { Panel } from '../../components/Panel'
 import { StatusBadge } from '../../components/StatusBadge'
-import { TagListField } from '../../components/TagListField'
 import type { Notify } from '../../components/ToastProvider'
-import type { CloudflareDiagnosis } from './cloudflare-auth'
+import { CLOUDFLARE_SCOPE_FALLBACK, diagnosisMessageKey, diagnosisNeedsPermissions, type CloudflareDiagnosis } from './cloudflare-auth'
 import { oauthSourceLabel, oauthSourceTone } from './oauth-source'
 import { OauthNotices } from './OauthNotices'
 
-const splitList = (value: string) => value.split(/[\s,;]+/).map((entry) => entry.trim()).filter(Boolean)
+/** 权限说明按 Scope ID 映射到 i18n；Worker 只返回官方名称，说明固定在界面里。 */
+const PERMISSION_DESCRIPTION_KEYS: Record<string, string> = {
+  'account-settings.read': 'settings.cloudflare.permissions.accountSettings',
+  'account-analytics.read': 'settings.cloudflare.permissions.accountAnalytics',
+  offline_access: 'settings.cloudflare.permissions.offlineAccess',
+}
 
 interface Props {
   settings: CloudflareSettings | null
@@ -27,36 +31,47 @@ interface Props {
 
 export function CloudflarePanel({ settings, onSettingsChange, oauth, onOauthChange, diagnosis, onDismissDiagnosis, apiLive, onAction }: Props) {
   const { t } = useTranslation()
-  const [client, setClient] = useState({ clientId: '', clientSecret: '', scope: [] as string[] })
+  const modalApi = App.useApp().modal
+  const [client, setClient] = useState({ clientId: '', clientSecret: '' })
   const [saving, setSaving] = useState<'client' | 'revoke' | null>(null)
   const redirect = `${window.location.origin}/auth/cloudflare/callback`
   const protocol = oauth?.cloudflare
+  const scopes = Object.entries(protocol?.scopeNames ?? CLOUDFLARE_SCOPE_FALLBACK)
 
   useEffect(() => {
     if (!oauth) return
-    setClient({ clientId: oauth.cloudflare.clientId ?? '', clientSecret: '', scope: splitList(oauth.cloudflare.scope) })
+    setClient({ clientId: oauth.cloudflare.clientId ?? '', clientSecret: '' })
   }, [oauth])
 
   const startAuth = () => { window.location.assign(`${import.meta.env.VITE_API_BASE ?? ''}/auth/cloudflare/start`) }
+  const scrollToScopes = () => document.getElementById('settings-cloudflare-scopes')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
 
   const revoke = async () => {
-    if (!settings?.configured || !window.confirm(t('settings.cloudflare.revokeConfirm'))) return
-    setSaving('revoke')
-    try {
-      onSettingsChange(await revokeCloudflareSettings())
-      onAction('success', t('settings.cloudflare.revoked'))
-    } catch {
-      onAction('error', t('settings.cloudflare.revokeFailed'))
-    } finally {
-      setSaving(null)
-    }
+    if (!settings?.configured) return
+    modalApi.confirm({
+      title: t('settings.cloudflare.revokeConfirm'),
+      okText: t('settings.cloudflare.revoke'),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        setSaving('revoke')
+        try {
+          onSettingsChange(await revokeCloudflareSettings())
+          onAction('success', t('settings.cloudflare.revoked'))
+        } catch {
+          onAction('error', t('settings.cloudflare.revokeFailed'))
+        } finally {
+          setSaving(null)
+        }
+      },
+    })
   }
 
   const saveClient = async () => {
     if (!oauth) return onAction('warning', t('settings.oauth.notConnected'))
     setSaving('client')
     try {
-      onOauthChange(await updateOauthSettings({ cloudflare: { clientId: client.clientId, clientSecret: client.clientSecret, redirectUri: redirect, scope: client.scope.join(' ') } }))
+      // 授权范围由平台固定，界面不提交 scope；Worker 也会忽略来源里的 scope 字段。
+      onOauthChange(await updateOauthSettings({ cloudflare: { clientId: client.clientId, clientSecret: client.clientSecret, redirectUri: redirect } }))
       setClient((current) => ({ ...current, clientSecret: '' }))
       onAction('success', t('settings.cloudflare.clientSaved'))
     } catch {
@@ -67,26 +82,27 @@ export function CloudflarePanel({ settings, onSettingsChange, oauth, onOauthChan
   }
 
   const resetClient = async () => {
-    if (!window.confirm(t('settings.oauth.resetConfirm', { provider: t('settings.cloudflare.clientTitle') }))) return
-    setSaving('client')
-    try {
-      onOauthChange(await revokeOauthSettings('cloudflare'))
-      onAction('success', t('settings.oauth.resetDone'))
-    } catch {
-      onAction('error', t('settings.oauth.resetFailed'))
-    } finally {
-      setSaving(null)
-    }
+    modalApi.confirm({
+      title: t('settings.oauth.resetConfirm', { provider: t('settings.cloudflare.clientTitle') }),
+      okText: t('settings.oauth.reset'),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        setSaving('client')
+        try {
+          onOauthChange(await revokeOauthSettings('cloudflare'))
+          onAction('success', t('settings.oauth.resetDone'))
+        } catch {
+          onAction('error', t('settings.oauth.resetFailed'))
+        } finally {
+          setSaving(null)
+        }
+      },
+    })
   }
 
   const authorizationStatus = settings?.configured
     ? settings.accountIdConfigured ? t('settings.cloudflare.oauthDone') : t('settings.cloudflare.oauthMissingAccount')
     : settings ? t('settings.cloudflare.waitingAdmin') : t('settings.cloudflare.loading')
-  const advice = diagnosis?.code === 'access_denied'
-    ? t('settings.cloudflare.diagnosisAccessDenied')
-    : diagnosis?.code === 'invalid_client'
-      ? t('settings.cloudflare.diagnosisInvalidClient')
-      : t('settings.cloudflare.diagnosisGeneric')
 
   return <Panel id="settings-cloudflare" className="settings-panel" padded heading={
     <div className="settings-heading">
@@ -105,10 +121,22 @@ export function CloudflarePanel({ settings, onSettingsChange, oauth, onOauthChan
       data-testid="cloudflare-diagnosis"
       message={t('settings.cloudflare.diagnosisTitle')}
       description={<div className="alert-body">
-        <span>{diagnosis.message}</span>
-        <span>{advice}</span>
-        <span>{t('settings.cloudflare.diagnosisCode')}：{diagnosis.code ?? t('settings.cloudflare.diagnosisUnknownCode')}{diagnosis.description ? ` · ${diagnosis.description}` : ''}</span>
+        <span>{t(diagnosisMessageKey(diagnosis.code))}</span>
+        {diagnosisNeedsPermissions(diagnosis.code) && <span>{t('settings.cloudflare.diagnosisPermissionHint')}</span>}
+        <span>{t('settings.cloudflare.diagnosisCode')}：{diagnosis.code}{diagnosis.description ? ` · ${diagnosis.description}` : ''}</span>
         <Button type="link" size="small" onClick={onDismissDiagnosis}>{t('settings.cloudflare.diagnosisDismiss')}</Button>
+      </div>}
+    />}
+
+    {settings?.configured && !settings.accountIdConfigured && <Alert
+      className="oauth-notice"
+      type="warning"
+      showIcon
+      icon={<ShieldAlert size={16} />}
+      message={t('settings.cloudflare.accountMissingTitle')}
+      description={<div className="alert-body">
+        <span>{t('settings.cloudflare.accountMissingHint')}</span>
+        <Button type="link" size="small" onClick={scrollToScopes}>{t('settings.cloudflare.viewPermissions')}</Button>
       </div>}
     />}
 
@@ -146,8 +174,27 @@ export function CloudflarePanel({ settings, onSettingsChange, oauth, onOauthChan
           <Input.Password value={client.clientSecret} aria-label={t('settings.oauth.clientSecret')} onChange={(event) => setClient((current) => ({ ...current, clientSecret: event.target.value }))} placeholder={protocol?.secretConfigured ? t('settings.oauth.secretPlaceholder') : t('settings.oauth.secretPlaceholderNew')} disabled={saving !== null} />
         </div>
         <CopyField label={t('settings.oauth.redirectUri')} value={redirect} hint={t('settings.oauth.redirectHint')} />
-        <TagListField label={t('settings.oauth.scope')} value={client.scope} onChange={(scope) => setClient((current) => ({ ...current, scope }))} hint={t('settings.cloudflare.scopeHint')} lowercase={false} disabled={saving !== null} />
       </div>
+
+      <div className="scope-permissions" id="settings-cloudflare-scopes" data-testid="cloudflare-scopes">
+        <div className="scope-permissions-head">
+          <span className="field-label">{t('settings.cloudflare.permissionsTitle')}</span>
+          <StatusBadge tone="neutral">{t('settings.cloudflare.permissionsFixed')}</StatusBadge>
+        </div>
+        <p className="field-hint">{t('settings.cloudflare.permissionsHint')}</p>
+        <ol className="scope-list">
+          {scopes.map(([id, name]) => <li key={id}>
+            <Check size={14} aria-hidden="true" />
+            <div>
+              <strong>{name}</strong>
+              <code>{id}</code>
+              {PERMISSION_DESCRIPTION_KEYS[id] && <span>{t(PERMISSION_DESCRIPTION_KEYS[id])}</span>}
+            </div>
+          </li>)}
+        </ol>
+        <p className="field-hint">{t('settings.cloudflare.permissionsApply')}</p>
+      </div>
+
       {protocol
         ? <div className="protocol-facts" aria-label={t('settings.cloudflare.protocolTitle')}>
           <div><span>response_type</span><code>{protocol.responseType}</code></div>

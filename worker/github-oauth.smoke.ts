@@ -122,25 +122,27 @@ try {
   assert.equal(requests[1]!.userAgent, 'plugmesh-platform')
   assert.equal(requests[2]!.userAgent, 'plugmesh-platform')
 
+  // 回调失败直接返回 HTTP 错误状态与 HTML，不再 302 回首页携带 auth_error 查询参数。
   const replay = await worker.fetch(new Request(`https://console.example.test/auth/github/callback?state=${encodeURIComponent(state)}&code=github-code`), env, {} as ExecutionContext)
-  assert.equal(replay.status, 302)
-  assert.equal(new URL(replay.headers.get('location')!, 'https://console.example.test').searchParams.get('auth_error'), 'state_expired')
+  assert.equal(replay.status, 409)
+  assert.equal(replay.headers.get('cache-control'), 'no-store')
+  assert.match(await replay.text(), /This sign-in link has expired/)
   assert.equal(requests.length, 3)
 
   tokenError = 'The code passed is incorrect or expired.'
   const failedStart = await worker.fetch(new Request('https://console.example.test/auth/github/start'), env, {} as ExecutionContext)
   const failedState = new URL(failedStart.headers.get('location')!, 'https://github.com').searchParams.get('state')!
   const failed = await worker.fetch(new Request(`https://console.example.test/auth/github/callback?state=${encodeURIComponent(failedState)}&code=expired-code`), env, {} as ExecutionContext)
-  assert.equal(failed.status, 302)
-  assert.equal(new URL(failed.headers.get('location')!, 'https://console.example.test').searchParams.get('auth_error'), 'token_exchange_failed')
+  assert.equal(failed.status, 502)
+  assert.match(await failed.text(), /GitHub rejected the authorization code/)
   tokenError = null
 
   activeIdentity = { githubId: '43', login: 'bob', email: 'bob@example.test', displayName: 'Bob' }
   const rejectedStart = await worker.fetch(new Request('https://console.example.test/auth/github/start'), env, {} as ExecutionContext)
   const rejectedState = new URL(rejectedStart.headers.get('location')!, 'https://github.com').searchParams.get('state')!
   const rejected = await worker.fetch(new Request(`https://console.example.test/auth/github/callback?state=${encodeURIComponent(rejectedState)}&code=github-code`), env, {} as ExecutionContext)
-  assert.equal(rejected.status, 302)
-  assert.equal(new URL(rejected.headers.get('location')!, 'https://console.example.test').searchParams.get('auth_error'), 'invite_required')
+  assert.equal(rejected.status, 403)
+  assert.match(await rejected.text(), /has not been invited/)
   assert.equal(users.has('43'), false)
   assert.equal(sessions.length, 1)
 

@@ -66,16 +66,10 @@ export async function getCurrentUser(request: Request, env: Env): Promise<Authen
   return env.DB.prepare('SELECT id, github_id, email, display_name, role FROM users WHERE id = ?').bind(session.user_id).first<AuthenticatedUser>()
 }
 
-// OAuth 回调是浏览器整页跳转，无法用 4xx 正文承载错误；按 RFC 6749 的约定回跳携带稳定错误码，
-// 具体文案交给前端 i18n，避免把可变长句写进 URL（也让错误状态可被测试与埋点稳定识别）。
+// 登录回调失败由 auth-error-page 直接返回 HTTP 错误状态与可读页面；
+// 错误码只用于服务端映射状态与文案，不再写进 URL 查询参数。
 export const authErrorCodes = ['callback_incomplete', 'state_expired', 'state_used', 'oauth_not_configured', 'token_exchange_failed', 'user_api_failed', 'email_api_failed', 'identity_incomplete', 'email_unverified', 'invite_mismatch', 'invite_required'] as const
 export type AuthErrorCode = (typeof authErrorCodes)[number]
-
-export function redirectWithError(request: Request, code: AuthErrorCode): Response {
-  const location = new URL('/', request.url)
-  location.searchParams.set('auth_error', code)
-  return Response.redirect(location.toString(), 302)
-}
 
 export interface GithubIdentity {
   login: string

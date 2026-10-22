@@ -57,12 +57,14 @@ test('未受邀身份被拒绝且 state 只能使用一次', async () => {
   const state = authorize.searchParams.get('state') ?? ''
 
   const rejected = await callback(state, code)
-  expect(rejected.status).toBe(302)
-  expect(new URL(rejected.headers.get('location') ?? '').searchParams.get('auth_error')).toBe('invite_required')
+  expect(rejected.status).toBe(403)
+  expect(rejected.headers.get('cache-control')).toBe('no-store')
+  expect(await rejected.text()).toContain('Sign-in failed')
   expect((await testEnv.DB.prepare('SELECT COUNT(*) AS count FROM users').first<{ count: number }>())?.count).toBe(0)
 
   const replayed = await callback(state, code)
-  expect(new URL(replayed.headers.get('location') ?? '').searchParams.get('auth_error')).toBe('state_expired')
+  expect(replayed.status).toBe(409)
+  expect(await replayed.text()).toContain('This sign-in link has expired')
 })
 
 test('白名单 GitHub 登录直接成为超级管理员', async () => {

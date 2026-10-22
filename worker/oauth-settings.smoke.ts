@@ -61,7 +61,9 @@ const request = (method: string, body?: unknown) => new Request('https://console
   const body = await response.json() as { cloudflare: Record<string, unknown> }
   assert.equal(body.cloudflare.configured, true)
   assert.equal(body.cloudflare.clientId, 'cf-client-id')
-  assert.equal(body.cloudflare.scope, 'workers-platform.read')
+  // 环境变量里的旧 scope 一律忽略，授权范围由平台固定。
+  assert.equal(body.cloudflare.scope, 'account-settings.read account-analytics.read offline_access')
+  assert.deepEqual(body.cloudflare.scopeNames, { 'account-settings.read': 'Account Settings Read', 'account-analytics.read': 'Account Analytics Read', offline_access: 'Offline Access' })
   assert.equal(body.cloudflare.secretConfigured, true)
   assert.equal(body.cloudflare.source, 'environment')
   assert.deepEqual({ responseType: body.cloudflare.responseType, grantType: body.cloudflare.grantType, tokenAuthMethod: body.cloudflare.tokenAuthMethod, pkce: body.cloudflare.pkce }, protocol)
@@ -77,7 +79,8 @@ const request = (method: string, body?: unknown) => new Request('https://console
   assert.equal(response.status, 200)
   const body = await response.json() as { cloudflare: Record<string, unknown> }
   assert.equal(body.cloudflare.clientId, 'cf-client-2')
-  assert.equal(body.cloudflare.scope, 'workers-platform.read workers-platform.write')
+  // 提交的 scope 字段被忽略，避免界面或旧配置把权限改坏。
+  assert.equal(body.cloudflare.scope, 'account-settings.read account-analytics.read offline_access')
   assert.equal(body.cloudflare.source, 'database')
   assert.deepEqual({ responseType: body.cloudflare.responseType, grantType: body.cloudflare.grantType, tokenAuthMethod: body.cloudflare.tokenAuthMethod, pkce: body.cloudflare.pkce }, protocol)
   const stored = JSON.parse(await decryptSecret(secret, readStored()!.ciphertext, readStored()!.iv)) as { cloudflare: { clientSecret: string } }

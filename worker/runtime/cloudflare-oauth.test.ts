@@ -57,15 +57,20 @@ test('Cloudflare OAuth 回调兑换令牌、自动发现账号并加密保存', 
   expect(authorizeUrl.origin).toBe('https://dash.cloudflare.com')
   expect(authorizeUrl.searchParams.get('client_id')).toBe('cf-test-client')
   expect(authorizeUrl.searchParams.get('redirect_uri')).toBe('https://console.example.com/auth/cloudflare/callback')
-  expect(authorizeUrl.searchParams.get('scope')).toContain('workers-platform.read')
+  expect(authorizeUrl.searchParams.get('scope')).toBe('account-settings.read account-analytics.read offline_access')
   const state = authorizeUrl.searchParams.get('state') ?? ''
   expect(state).not.toBe('')
   const pendingStates = await testEnv.DB.prepare('SELECT COUNT(*) AS count FROM cloudflare_oauth_states').first<{ count: number }>()
   expect(pendingStates?.count).toBe(1)
 
   const callback = await api(`/auth/cloudflare/callback?code=cf-code&state=${encodeURIComponent(state)}`, ADMIN_TOKEN)
-  expect(callback.status).toBe(302)
-  expect(callback.headers.get('location')).toBe('https://console.example.com/?cloudflare=connected')
+  // 回调始终 303 回系统设置页，结果放进一次性 Cookie，避免用户被丢到首页或读到 URL 里的错误句。
+  expect(callback.status).toBe(303)
+  expect(callback.headers.get('location')).toBe('https://console.example.com/settings')
+  const authCookie = callback.headers.get('set-cookie') ?? ''
+  expect(authCookie).toContain('plugmesh_cf_auth=')
+  const resultCookie = decodeURIComponent(authCookie.split(';')[0]!.slice('plugmesh_cf_auth='.length))
+  expect(JSON.parse(resultCookie)).toEqual({ kind: 'success', accountConfigured: true })
 
   const stored = await testEnv.DB.prepare('SELECT ciphertext FROM cloudflare_credentials WHERE id = ?').bind('primary').first<{ ciphertext: string }>()
   expect(stored?.ciphertext).not.toContain('cf-access-cf-code')
@@ -79,9 +84,10 @@ test('Cloudflare OAuth 回调兑换令牌、自动发现账号并加密保存', 
   expect(JSON.parse(audit?.detail_json ?? '{}').accountIdConfigured).toBe(true)
 
   const replay = await api(`/auth/cloudflare/callback?code=cf-code&state=${encodeURIComponent(state)}`, ADMIN_TOKEN)
-  expect(replay.status).toBe(302)
-  const replayError = new URL(replay.headers.get('location') ?? '').searchParams.get('cloudflare_error') ?? ''
-  expect(replayError).toContain('状态已过期或已使用')
+  expect(replay.status).toBe(303)
+  expect(replay.headers.get('location')).toBe('https://console.example.com/settings')
+  const replayCookie = decodeURIComponent((replay.headers.get('set-cookie') ?? '').split(';')[0]!.slice('plugmesh_cf_auth='.length))
+  expect(JSON.parse(replayCookie)).toEqual({ kind: 'error', code: 'state_expired', description: null })
   expect((await readCredential()).accessToken).toBe('cf-access-cf-code')
 })
 
@@ -126,4 +132,17 @@ test('Cloudflare 令牌刷新失败时返回 502 且不改动已存凭据', { ti
   expect(credential.refreshToken).toBe('refresh-bad')
   const audit = await testEnv.DB.prepare("SELECT COUNT(*) AS count FROM audit_log WHERE action = 'cloudflare.oauth.refreshed'").first<{ count: number }>()
   expect(audit?.count).toBe(0)
+})
+
+test('授权结果经一次性 Cookie 读回并立即清除', { timeout: 20_000 }, async () => {
+  const cookieValue = encodeURIComponent(JSON.stringify({ kind: 'error', code: 'invalid_scope', description: 'scope not allowed' }))
+  const response = await SELF.fetch('https://console.example.com/api/settings/cloudflare/auth-result', { headers: { cookie: `plugmesh_session=${ADMIN_TOKEN}; plugmesh_cf_auth=${cookieValue}` } })
+  expect(response.status).toBe(200)
+  expect(response.headers.get('cache-control')).toBe('no-store')
+  expect(response.headers.get('set-cookie')).toContain('plugmesh_cf_auth=;')
+  expect(response.headers.get('set-cookie')).toContain('Max-Age=0')
+  expect(await response.json()).toEqual({ result: { kind: 'error', code: 'invalid_scope', description: 'scope not allowed' } })
+
+  const empty = await SELF.fetch('https://console.example.com/api/settings/cloudflare/auth-result', { headers: { cookie: `plugmesh_session=${ADMIN_TOKEN}` } })
+  expect(await empty.json()).toEqual({ result: null })
 })
