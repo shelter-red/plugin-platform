@@ -77,6 +77,19 @@ test('正确初始化后 GitHub 白名单账号成为首个超级管理员，入
   expect((payload.github as { configured: boolean }).configured).toBe(true)
 
   const locked = await submitSetup()
-  expect(locked.status).toBe(404)
-  expect(await locked.text()).toBe('Setup is not available')
+  const fallback = await SELF.fetch('https://console.example.com/no-such-route', {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: 'setupToken=runtime-setup-token',
+    redirect: 'manual',
+  })
+  expect(locked.status).toBe(fallback.status)
+  const lockedBody = new TextDecoder().decode(await locked.arrayBuffer())
+  const fallbackBody = new TextDecoder().decode(await fallback.arrayBuffer())
+  expect(lockedBody).toBe(fallbackBody)
+
+  const lockedPage = await SELF.fetch('https://console.example.com/setup', { redirect: 'manual' })
+  const fallbackPage = await SELF.fetch('https://console.example.com/no-such-route', { redirect: 'manual' })
+  expect(lockedPage.status).toBe(fallbackPage.status)
+  expect(await lockedPage.text()).toBe(await fallbackPage.text())
 })

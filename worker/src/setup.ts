@@ -151,10 +151,11 @@ function setupPage(url: URL, state: SetupState, values: SetupValues, error = '',
 </html>`, status)
 }
 
-export async function setupApi(request: Request, env: Env, url: URL): Promise<Response> {
-  if (request.method !== 'GET' && request.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: SECURITY_HEADERS })
+export async function setupApi(request: Request, env: Env, url: URL): Promise<Response | null> {
   const state = await setupState(env)
-  if (state.unavailable) return new Response('Setup is not available', { status: 404, headers: SECURITY_HEADERS })
+  // 入口失效后不再单独给出文案，交回统一分发（静态资源 / SPA 回退），与其它非路由路径行为一致。
+  if (state.unavailable) return null
+  if (request.method !== 'GET' && request.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: SECURITY_HEADERS })
   if (!env.SESSION_SECRET) {
     return setupPage(url, state, { clientId: '', allowlist: '' }, 'SESSION_SECRET 未配置，无法安全保存 OAuth 凭据。请使用一键部署脚本或先写入该 Secret。', 503)
   }
