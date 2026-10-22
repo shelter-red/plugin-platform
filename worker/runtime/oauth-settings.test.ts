@@ -22,9 +22,9 @@ async function seedUsers(): Promise<void> {
   ])
 }
 
-async function storedSecrets(): Promise<{ github?: { clientSecret?: string }; cloudflare?: { clientSecret?: string } }> {
+async function storedSecrets(): Promise<{ github?: { clientSecret?: string } }> {
   const row = await testEnv.DB.prepare('SELECT ciphertext, iv FROM oauth_settings WHERE id = ?').bind('primary').first<{ ciphertext: string; iv: string }>()
-  return JSON.parse(await decryptSecret(testEnv.SESSION_SECRET!, row!.ciphertext, row!.iv)) as { github?: { clientSecret?: string }; cloudflare?: { clientSecret?: string } }
+  return JSON.parse(await decryptSecret(testEnv.SESSION_SECRET!, row!.ciphertext, row!.iv)) as { github?: { clientSecret?: string } }
 }
 
 beforeEach(async () => {
@@ -32,16 +32,16 @@ beforeEach(async () => {
   await seedUsers()
 })
 
-test('OAuth 配置仅超级管理员可读写，GET 不回显密钥', async () => {
+test('OAuth 配置仅超级管理员可读写，GET 不回显密钥，且响应中不再包含 Cloudflare OAuth', async () => {
   const forbidden = await api('/api/settings/oauth', MEMBER_TOKEN)
   expect(forbidden.status).toBe(403)
   expect((await api('/api/settings/oauth', MEMBER_TOKEN, { method: 'PUT', body: '{}', headers: { 'content-type': 'application/json' } })).status).toBe(403)
 
   const initial = await api('/api/settings/oauth', ADMIN_TOKEN)
   expect(initial.status).toBe(200)
-  const initialBody = await initial.json() as { github: { configured: boolean; clientId: string; secretConfigured: boolean; source: string }; cloudflare: { configured: boolean; source: string } }
+  const initialBody = await initial.json() as Record<string, unknown>
   expect(initialBody.github).toMatchObject({ configured: true, clientId: 'runtime-github-client', secretConfigured: true, source: 'environment' })
-  expect(initialBody.cloudflare).toMatchObject({ configured: true, source: 'environment' })
+  expect(initialBody).not.toHaveProperty('cloudflare')
 
   const saved = await api('/api/settings/oauth', ADMIN_TOKEN, {
     method: 'PUT',
@@ -51,9 +51,9 @@ test('OAuth 配置仅超级管理员可读写，GET 不回显密钥', async () =
   expect(saved.status).toBe(200)
   const savedText = await saved.text()
   expect(savedText).not.toContain('db-github-secret')
-  const savedBody = JSON.parse(savedText) as { github: { configured: boolean; clientId: string; allowlist: string; source: string }; cloudflare: { source: string } }
+  const savedBody = JSON.parse(savedText) as Record<string, unknown>
   expect(savedBody.github).toMatchObject({ configured: true, clientId: 'db-github-client', allowlist: 'runtime-admin, admin@example.com', source: 'database' })
-  expect(savedBody.cloudflare.source).toBe('environment')
+  expect(savedBody).not.toHaveProperty('cloudflare')
 
   const row = await testEnv.DB.prepare('SELECT ciphertext FROM oauth_settings WHERE id = ?').bind('primary').first<{ ciphertext: string }>()
   expect(row?.ciphertext).not.toContain('db-github-secret')
@@ -66,39 +66,47 @@ test('OAuth 配置仅超级管理员可读写，GET 不回显密钥', async () =
   expect(authorize.searchParams.get('redirect_uri')).toBe('https://console.example.com/auth/github/callback')
 })
 
-test('留空密钥时保留已有密钥，撤销后回退到环境变量配置', async () => {
+test('留空密钥时保留已有 GitHub 密钥，撤销后回退到环境变量配置', async () => {
   const first = await api('/api/settings/oauth', ADMIN_TOKEN, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ cloudflare: { clientId: 'db-cf-client', clientSecret: 'db-cf-secret', redirectUri: 'https://console.example.com/auth/cloudflare/callback', scope: 'workers-platform.read' } }),
+    body: JSON.stringify({ github: { clientId: 'db-github-client', clientSecret: 'db-github-secret', redirectUri: 'https://console.example.com/auth/github/callback' } }),
   })
   expect(first.status).toBe(200)
 
   const second = await api('/api/settings/oauth', ADMIN_TOKEN, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ cloudflare: { clientId: 'db-cf-client-2', clientSecret: '', redirectUri: 'https://console.example.com/auth/cloudflare/callback', scope: 'workers-platform.read workers-platform.write' } }),
+    body: JSON.stringify({ github: { clientId: 'db-github-client-2', clientSecret: '', redirectUri: 'https://console.example.com/auth/github/callback' } }),
   })
   expect(second.status).toBe(200)
-  expect((await storedSecrets()).cloudflare?.clientSecret).toBe('db-cf-secret')
+  expect((await storedSecrets()).github?.clientSecret).toBe('db-github-secret')
 
-  const start = await api('/auth/cloudflare/start', ADMIN_TOKEN)
+  const start = await api('/auth/github/start', ADMIN_TOKEN, { method: 'GET' })
   expect(start.status).toBe(302)
-  expect(new URL(start.headers.get('location') ?? '').searchParams.get('client_id')).toBe('db-cf-client-2')
+  expect(new URL(start.headers.get('location') ?? '').searchParams.get('client_id')).toBe('db-github-client-2')
 
-  const revoked = await api('/api/settings/oauth?provider=cloudflare', ADMIN_TOKEN, { method: 'DELETE' })
+  const revoked = await api('/api/settings/oauth?provider=github', ADMIN_TOKEN, { method: 'DELETE' })
   expect(revoked.status).toBe(200)
-  const revokedBody = await revoked.json() as { cloudflare: { source: string; clientId: string } }
-  expect(revokedBody.cloudflare).toMatchObject({ source: 'environment', clientId: 'cf-test-client' })
+  const revokedBody = await revoked.json() as Record<string, unknown>
+  expect(revokedBody.github).toMatchObject({ source: 'environment', clientId: 'runtime-github-client' })
 })
 
-test('无效回调地址拒绝保存，留空密钥可继承环境变量密钥', async () => {
+test('无效 GitHub 回调地址拒绝保存，提交 Cloudflare OAuth 配置明确返回 400', async () => {
   const invalid = await api('/api/settings/oauth', ADMIN_TOKEN, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ github: { clientId: 'x', clientSecret: 'secret', redirectUri: 'not-a-url', allowlist: '' } }),
   })
   expect(invalid.status).toBe(400)
+
+  const cloudflare = await api('/api/settings/oauth', ADMIN_TOKEN, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ cloudflare: { clientId: 'old', clientSecret: 'old' } }),
+  })
+  expect(cloudflare.status).toBe(400)
+  expect(await cloudflare.json()).toMatchObject({ error: expect.stringContaining('API Token') })
 
   const noSecret = await api('/api/settings/oauth', ADMIN_TOKEN, {
     method: 'PUT',

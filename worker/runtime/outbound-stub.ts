@@ -1,4 +1,4 @@
-// 测试用出站端点桩：GitHub OAuth 与 Cloudflare OAuth 令牌端点，均按固定输入返回确定性结果。
+// 测试用出站端点桩：GitHub OAuth 与 Cloudflare API Token 接口，均按固定输入返回确定性结果。
 const identities: Record<string, { id: number; login: string; name: string; email: string }> = {
   octocat: { id: 4242, login: 'octocat', name: 'Octo Cat', email: 'invitee@example.com' },
   stranger: { id: 777, login: 'stranger', name: 'Stranger', email: 'stranger@example.com' },
@@ -8,26 +8,47 @@ const identities: Record<string, { id: number; login: string; name: string; emai
 const identityFor = (code: string) => identities[code] ?? null
 
 export const CLOUDFLARE_STUB_ACCOUNT_ID = '0123456789abcdef0123456789abcdef'
-export const CLOUDFLARE_STUB_REFRESHED_TOKEN = 'cf-access-refreshed'
+export const CLOUDFLARE_STUB_SECOND_ACCOUNT_ID = 'fedcba9876543210fedcba9876543210'
+export const CLOUDFLARE_STUB_API_TOKEN = 'cf-api-token-runtime'
+export const CLOUDFLARE_STUB_INVALID_TOKEN = 'cf-api-token-invalid'
+export const CLOUDFLARE_STUB_PERMISSION_DENIED_TOKEN = 'cf-api-token-permission-denied'
+export const CLOUDFLARE_STUB_MULTI_ACCOUNT_TOKEN = 'cf-api-token-multi-account'
 
-async function cloudflareToken(request: Request): Promise<Response> {
-  const form = new URLSearchParams(await request.text())
-  const grantType = form.get('grant_type') ?? ''
-  if (grantType === 'authorization_code') {
-    const code = form.get('code') ?? ''
-    if (!code) return Response.json({ error: 'invalid_request' }, { status: 400 })
-    return Response.json({ access_token: `cf-access-${code}`, refresh_token: 'refresh-ok', token_type: 'Bearer', expires_in: 3600 })
-  }
-  if (grantType !== 'refresh_token') return Response.json({ error: 'unsupported_grant_type' }, { status: 400 })
-  const token = form.get('refresh_token') ?? ''
-  if (token !== 'refresh-ok' && token !== 'refresh-ok-next') return Response.json({ error: 'invalid_grant' }, { status: 400 })
-  return Response.json({ access_token: CLOUDFLARE_STUB_REFRESHED_TOKEN, refresh_token: 'refresh-ok-next', token_type: 'Bearer', expires_in: 3600 })
+function bearerToken(request: Request): string {
+  return (request.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '')
 }
 
-async function cloudflareAccounts(request: Request): Promise<Response> {
-  const authorized = (request.headers.get('authorization') ?? '').startsWith('Bearer ')
-  if (!authorized) return new Response('bad credentials', { status: 401 })
-  return Response.json({ result: [{ id: CLOUDFLARE_STUB_ACCOUNT_ID }] })
+function cloudflareTokenVerify(request: Request): Response {
+  const token = bearerToken(request)
+  if (!token || token === CLOUDFLARE_STUB_INVALID_TOKEN) return Response.json({ success: false, errors: [{ message: 'Invalid API Token' }] }, { status: 401 })
+  return Response.json({ success: true, result: { id: 'token-runtime', status: 'active' } })
+}
+
+function cloudflareAccounts(request: Request): Response {
+  const token = bearerToken(request)
+  if (!token) return new Response('bad credentials', { status: 401 })
+  if (token === CLOUDFLARE_STUB_PERMISSION_DENIED_TOKEN) return Response.json({ success: false, errors: [{ message: 'Account permission denied' }] }, { status: 403 })
+  const accounts = token === CLOUDFLARE_STUB_MULTI_ACCOUNT_TOKEN
+    ? [CLOUDFLARE_STUB_ACCOUNT_ID, CLOUDFLARE_STUB_SECOND_ACCOUNT_ID]
+    : [CLOUDFLARE_STUB_ACCOUNT_ID]
+  return Response.json({
+    success: true,
+    result: accounts.map((id, index) => ({ id, name: `Runtime Account ${index + 1}` })),
+    result_info: { page: 1, per_page: 50, count: accounts.length, total_pages: 1 },
+  })
+}
+
+function cloudflareSubscriptions(request: Request): Response {
+  const accountId = new URL(request.url).pathname.split('/')[4]
+  if (accountId !== CLOUDFLARE_STUB_ACCOUNT_ID && accountId !== CLOUDFLARE_STUB_SECOND_ACCOUNT_ID) {
+    return Response.json({ success: false, errors: [{ message: 'Account not found' }] }, { status: 404 })
+  }
+  return Response.json({
+    success: true,
+    result: [{ id: 'subscription-runtime', state: 'active', rate_plan: { id: 'free', public_name: 'Free Website' } }],
+    errors: [],
+    messages: [],
+  })
 }
 
 export async function outboundStub(request: Request): Promise<Response> {
@@ -48,8 +69,8 @@ export async function outboundStub(request: Request): Promise<Response> {
       { email: identity.email, primary: true, verified: true },
     ])
   }
-  if (url.hostname === 'dash.cloudflare.com' && url.pathname === '/oauth2/token' && request.method === 'POST') return cloudflareToken(request)
-  if (url.hostname === 'dash.cloudflare.com' && url.pathname === '/oauth2/revoke' && request.method === 'POST') return Response.json({ success: true })
   if (url.hostname === 'api.cloudflare.com' && url.pathname === '/client/v4/accounts' && request.method === 'GET') return cloudflareAccounts(request)
+  if (url.hostname === 'api.cloudflare.com' && url.pathname === '/client/v4/user/tokens/verify' && request.method === 'GET') return cloudflareTokenVerify(request)
+  if (url.hostname === 'api.cloudflare.com' && /^\/client\/v4\/accounts\/[^/]+\/subscriptions$/.test(url.pathname) && request.method === 'GET') return cloudflareSubscriptions(request)
   return new Response(`unexpected outbound request: ${request.url}`, { status: 502 })
 }

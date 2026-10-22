@@ -58,7 +58,7 @@ assert.deepEqual(invite.values.slice(0, 2), ['expired', 'pending'])
 const expirationTime = Date.parse(String(invite.values[2]))
 assert.ok(expirationTime >= before && expirationTime <= after)
 
-for (const table of ['sessions', 'oauth_states', 'cloudflare_oauth_states', 'registration_codes']) {
+for (const table of ['sessions', 'oauth_states', 'registration_codes']) {
   const cleanup = find(`DELETE FROM ${table}`)
   const timestamp = Date.parse(String(cleanup.values[0]))
   assert.ok(timestamp >= before && timestamp <= after)

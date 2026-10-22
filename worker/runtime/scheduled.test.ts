@@ -21,7 +21,6 @@ test('定时维护任务在真实 D1 上按保留期清理数据并删除过期 
     testEnv.DB.prepare('INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)').bind('session-valid', 'user-runtime', 'hash-session-valid', inDays(7), daysAgo(1)),
     testEnv.DB.prepare('INSERT INTO oauth_states (state_hash, invite_token_hash, expires_at, created_at) VALUES (?, ?, ?, ?)').bind('hash-oauth-expired', null, hoursAgo(1), daysAgo(1)),
     testEnv.DB.prepare('INSERT INTO oauth_states (state_hash, invite_token_hash, expires_at, created_at) VALUES (?, ?, ?, ?)').bind('hash-oauth-valid', null, inDays(1), daysAgo(1)),
-    testEnv.DB.prepare('INSERT INTO cloudflare_oauth_states (state_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)').bind('hash-cf-expired', 'user-runtime', hoursAgo(1), daysAgo(1)),
     testEnv.DB.prepare('INSERT INTO registration_codes (id, user_id, code_hash, expires_at, used_at, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind('code-expired', 'user-runtime', 'hash-code-expired', hoursAgo(1), null, daysAgo(1)),
     testEnv.DB.prepare('INSERT INTO registration_codes (id, user_id, code_hash, expires_at, used_at, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind('code-valid', 'user-runtime', 'hash-code-valid', inDays(1), null, daysAgo(1)),
   ])
@@ -48,8 +47,6 @@ test('定时维护任务在真实 D1 上按保留期清理数据并删除过期 
   expect(sessions.results.map((row) => row.id)).toEqual(['session-valid'])
   const oauthStates = await testEnv.DB.prepare('SELECT state_hash FROM oauth_states ORDER BY state_hash').all<{ state_hash: string }>()
   expect(oauthStates.results.map((row) => row.state_hash)).toEqual(['hash-oauth-valid'])
-  const cloudflareStates = await testEnv.DB.prepare('SELECT COUNT(*) AS count FROM cloudflare_oauth_states').first<{ count: number }>()
-  expect(cloudflareStates?.count).toBe(0)
   const codes = await testEnv.DB.prepare('SELECT id FROM registration_codes ORDER BY id').all<{ id: string }>()
   expect(codes.results.map((row) => row.id)).toEqual(['code-valid'])
 

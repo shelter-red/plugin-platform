@@ -1,8 +1,8 @@
 # Plugmesh 平台交接（HANDOFF）
 
-> 最后整理：2026-10-23 03:32（Asia/Shanghai）
-> 状态：**后端 Cloudflare Token/usage 契约已完成并通过验证；前端 Token 化和最终 UI/部署/构建任务仍未完成**
-> 记录基线：本次文档整理前的 HEAD 为 `c84ceb0 docs: 刷新交接台账与后端验收基线`（`main` 与 `origin/main` 一致）
+> 最后整理：2026-10-23 03:40（Asia/Shanghai）
+> 状态：**Cloudflare Token/usage 后端已完成本地验收并由本步骤提交收口；前端 Token 化、最终 UI/部署/构建任务仍未完成**
+> 记录基线：本次后端提交前的 HEAD 为 `579eb1f docs: 校正交接基线与最新 Actions 结果`（`main` 与 `origin/main` 一致）
 > 本文件提交后，以实际 `git log -1 --oneline --decorate` 为最新 HEAD，不要照抄本页基线。
 > 本文件是上下文压缩后的第一事实源。README、验收矩阵、旧注释、聊天摘要或历史方案与本文冲突时，以用户最新要求和实际代码为准；旧文档必须在实现后同步重写。
 
@@ -12,22 +12,22 @@
 - 分支：`main`
 - push：`git@github-plugin-platform:shelter-red/plugin-platform.git`
 - fetch：`https://github.com/shelter-red/plugin-platform.git`
-- 整理时 HEAD / `origin/main`：`c84ceb0`
-- 最近已验收 Actions：run `39839503567`（#51，`c84ceb0`），`completed/success`
+- 整理时 HEAD / `origin/main`：`579eb1f`
+- 最近已验收 Actions：run `39840532476`（#52，`579eb1f`），`completed/success`
 - 仓库内未发现 `AGENTS.md`，没有额外仓库级代理指令。
-- 当前工作区有 **26 个未提交路径**，不能整体 `git add .`，也不能当作最终版本直接推送。
-- 当前后端实测已经全绿：
+- 本步骤收口前工作区有 **26 个未提交路径**。其中 21 个后端 Token/usage 路径已拆分出来，与 HANDOFF 一起提交；提交后只应保留 **5 个未完成前端草稿**，不得整体 `git add .` 或误推。
+- 本步骤后端再次实测全绿：
   - `npm run worker:typecheck`：**PASS**
   - 完整 Worker runtime：**20/20 文件、89/89 用例 PASS**
   - `npm run worker:cloudflare-usage-smoke`：**PASS**
   - `npm run worker:oauth-settings-smoke`：**PASS**
   - `git diff --check`：**PASS**
-- 当前前端仍未完成 Token 化：
+- 后端已收口，当前前端仍未完成 Token 化：
   - `src/api.ts` 仍包含 `CloudflareOauthSettings`、`OauthSettings.cloudflare`、`CloudflareAuthResult`、`fetchCloudflareAuthResult()`、`authorizationExpired`、`CloudflareQuotas` 和 `PlatformSettings.cloudflareQuotas`。
   - 系统设置仍在使用旧 OAuth 授权组件和客户端协议字段。
   - 用量页仍从 `settings.cloudflareQuotas` 读取手填额度，而不是从 `usage.limits` 读取 subscriptions 确认后的只读额度。
   - 中英文文案和 UI 测试仍含旧 OAuth、`response_type`、`authorizationExpired` 等残留。
-- 因此恢复工作不能从“继续跑全量测试并直接推送”开始；必须先完成前端契约切换和 UI 清理，再跑完整本地 CI。
+- 因此恢复工作从 `src/api.ts` 的前端 Token 契约开始；不得重新引入 OAuth，也不得把已提交的后端回退成前端草稿依赖的旧契约。
 
 ### 0.1 绝对硬约束
 
@@ -69,7 +69,7 @@
 
 ### 0.2 当前最强恢复结论
 
-后端已经完成并验证：
+后端已经完成、再次验证，并由本步骤提交收口（提交后以实际 `git log` 为准）：
 
 - 删除旧 Cloudflare OAuth 主链路：
   - `/auth/cloudflare/start`
@@ -160,9 +160,10 @@ git diff --check
 
 整理时记录：
 
-- HEAD / `origin/main`：`c84ceb0`
-- 最新 Actions：run `39839503567`（#51，`c84ceb0`），`completed/success`
+- HEAD / `origin/main`：`579eb1f`
+- 最新 Actions：run `39840532476`（#52，`579eb1f`），`completed/success`
 - 上一批成功记录：
+  - `c84ceb0` run `39839503567`（#51）
   - `92e3fcd` run `39837622904`（#50）
   - `a9c85f0` run `39836893476`（#49）
   - `7a54cfc` run `39835890828`（#48）
@@ -170,7 +171,7 @@ git diff --check
   - `1a5e5c1` run `39833249358`（#46）
 - 本 HANDOFF 提交后会产生新 HEAD；以实际 Git 和 GitHub Actions 为准。
 
-当前未提交路径（26 个）：
+本步骤收口前未提交路径（26 个）：
 
 ```text
 M package.json
@@ -201,12 +202,43 @@ M worker/src/types.ts
 M worker/src/usage.ts
 ```
 
-这批路径包含两组内容：
+其中 21 个后端路径由本步骤提交收口：
 
-- 可验证的后端 Token/usage 实现、runtime 测试和 smoke；
-- 尚未完成的前端草稿、旧测试断言和旧文案。
+```text
+package.json
+vitest.workers.config.ts
+worker/cloudflare-oauth-route.smoke.ts
+worker/cloudflare-oauth.smoke.ts
+worker/cloudflare-usage.smoke.ts
+worker/oauth-settings.smoke.ts
+worker/runtime/analytics.test.ts
+worker/runtime/cloudflare-oauth.test.ts
+worker/runtime/cloudflare-settings.test.ts
+worker/runtime/helpers.ts
+worker/runtime/oauth-settings.test.ts
+worker/runtime/outbound-stub.ts
+worker/runtime/scheduled.test.ts
+worker/scheduled-maintenance.smoke.ts
+worker/src/cloudflare-auth-result.ts
+worker/src/cloudflare-oauth.ts
+worker/src/cloudflare-token.ts
+worker/src/index.ts
+worker/src/oauth-settings.ts
+worker/src/types.ts
+worker/src/usage.ts
+```
 
-禁止整体提交。后续提交必须按逻辑分组并显式列文件；前端未完成前不能把当前 26 个路径作为一套提交推送。
+提交后必须只剩这 5 个尚未完成的前端草稿：
+
+```text
+M src/features/overview/UsageResourcesPanel.tsx
+M src/features/usage/PlatformUsageSection.tsx
+M src/locales/en.ts
+M src/locales/zh-CN.ts
+M tests/console-worker.spec.ts
+```
+
+禁止整体提交。后续提交必须按逻辑分组并显式列文件；前端未完成前不能把旧测试断言或旧 OAuth 文案当作后端契约。
 
 已知 Actions 失败反例，不能重犯：
 
@@ -385,13 +417,14 @@ curl -fsSL 'https://api.github.com/repos/shelter-red/plugin-platform/actions/run
 - `a0539fb`：Cloudflare Token 基础模块与 8 项 runtime 测试。
 - HANDOFF 多次整理提交；不要再重复拆登录页、侧栏、账号、工作区。
 
-### 4.2 工作区后端已经完成的部分
+### 4.2 已提交的 Cloudflare Token/usage 后端
 
 - Cloudflare 设置 API 的 Token 路径可用。
 - Cloudflare usage API 的未配置短路、旧 OAuth 短路、401/403 映射、Free/非 Free limits 可用。
 - Cloudflare Token 存储、脱敏、固定权限、账号分页/唯一性、subscriptions 校验有测试。
 - OAuth 文件删除后完整 runtime 现在全绿：20/20、89/89。
 - `git diff --check` 通过。
+- 本步骤已把 21 个后端路径从 5 个前端草稿中拆出，未夹带 `src/api.ts` 之外的旧 UI/OAuth 残留。
 
 ### 4.3 工作区前端未完成/已破坏契约的部分
 
@@ -660,7 +693,7 @@ npm run ui:smoke PASS
 
 ## 6. 当前测试证据与复现命令
 
-### 6.1 最近一次后端实测（2026-10-23）
+### 6.1 2026-10-23 03:35 本步骤后端实测
 
 ```text
 npm run worker:typecheck                         PASS
@@ -767,7 +800,7 @@ ctest --test-dir native-server/build --output-on-failure
 - 不能恢复 `/?auth_error=`、Cloudflare auth-result Cookie、跳首页或 “Setup is not available” 特例。
 - 不能用删断言、临时兼容旧字段、重引 OAuth 或手写 mock 的方式制造绿色。
 - 不要为了“组件化”把所有东西拆成无意义小组件；组件边界应可独立命名、测试和理解。
-- 不要批量回滚当前工作区：前端草稿包含 8 项额度展示和平台请求“不限”的有效意图；后端文件包含已验证的 Token 设置与用量实现。两组都应在 OAuth 删除和 limits 数据模型落地后整合。
+- 不要批量回滚当前工作区：后端已提交；剩余前端草稿包含 8 项额度展示和平台请求“不限”的有效意图，但仍含旧 OAuth/手填额度残留，必须按 Token 契约重写。
 - 官方免费基线可能随 Cloudflare 政策变化；UI 应标注来源和核对日期，不能声称实时计费。
 - `worker/migrations/0002_cloudflare_oauth.sql` 是历史 migration，不应删除或改写；只删除运行时逻辑。
 - `usage_cache` 旧结构必须 miss；不能为了减少一次请求而信任缺少 `plan/limitSource/limits` 的缓存。
@@ -775,7 +808,8 @@ ctest --test-dir native-server/build --output-on-failure
 
 ## 9. 最近动作日志
 
-- 2026-10-23 03:32：把 HANDOFF 基线校正到当前已推送 HEAD `c84ceb0` 和最新成功 Actions run `39839503567`（#51）；再次确认工作区仍有 26 个代码路径未提交，前端 Token 化、用量 UI、部署确认、手动原生构建和帮助中心仍未完成。本次只更新交接台账，不夹带未完成代码。
+- 2026-10-23 03:40：从 26 个未提交路径中拆出 21 个已验证后端 Token/usage 文件，准备与 HANDOFF 一起做中文提交；保留 5 个前端草稿不动。再次实测 `worker:typecheck`、完整 Worker runtime 20/20 89/89、`worker:cloudflare-usage-smoke`、`worker:oauth-settings-smoke` 和 `git diff --check` 全部通过。
+- 2026-10-23 03:32：把 HANDOFF 基线校正到已推送 HEAD `c84ceb0` 和 Actions run `39839503567`（#51）；该文档提交后基线为 `579eb1f`、run `39840532476`（#52）成功。
 - 2026-10-23 03:22：重新核对工作区和 GitHub，HEAD/`origin/main` 为 `c84ceb0`；该文档提交的 Actions run `39839503567`（#51）最终 `completed/success`。最近一次后端实测 Worker typecheck、完整 runtime 20/20 89/89、两个 Cloudflare smoke 全绿，确认后端 Token/usage 契约已落地，前端仍为旧 OAuth/手填额度契约。
 - 2026-10-23 03:20：完整 Worker runtime 在 `node:22-bookworm` 中通过，20/20 文件、89/89 用例；日志中的 workerd warning/uncaught 均未改变成功退出码。
 - 2026-10-23：`worker:cloudflare-usage-smoke` 与 `worker:oauth-settings-smoke` 均通过；后端 smoke 已切换到 Token + subscriptions + 8 项 Free limits 契约。

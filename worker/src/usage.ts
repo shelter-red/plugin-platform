@@ -1,21 +1,8 @@
-import type { CloudflareQuotas, Env, PlatformQuotas, PlatformSettings } from './types'
+import type { CloudflareUsageLimits, Env, PlatformQuotas, PlatformSettings } from './types'
 import { decryptSecret } from './secrets'
 import { parseSmtpSettings, sendMaintenanceEmail, type SmtpSettings } from './email'
 
 export const defaultPluginDomainSuffix = '.plugins.example.com'
-
-// Cloudflare 免费计划每日额度，取自官方限额页（Workers / D1 / KV / Durable Objects，核对于 2026-10）。
-// 平台请求本身不设上限，这里的 Worker 请求数只用于判断官方免费额度是否触顶。
-export const defaultCloudflareQuotas: CloudflareQuotas = {
-  workerRequests: 100_000,
-  d1RowsRead: 5_000_000,
-  d1RowsWritten: 100_000,
-  kvRead: 100_000,
-  kvWrite: 1_000,
-  kvDelete: 1_000,
-  kvList: 1_000,
-  doRequests: 100_000,
-}
 
 export const defaultPlatformSettings: PlatformSettings = {
   maintenance: false,
@@ -25,7 +12,6 @@ export const defaultPlatformSettings: PlatformSettings = {
     r2Bytes: 10 * 1024 * 1024 * 1024,
     r2Objects: 1000,
   },
-  cloudflareQuotas: defaultCloudflareQuotas,
 }
 
 const usageKey = 'global'
@@ -155,7 +141,7 @@ export function cloudflareQuotaReason(usage: {
   d1?: { rowsRead: number; rowsWritten: number }
   kv?: { read: number; write: number; delete: number; list: number }
   durableObjects?: { requests: number }
-}, quotas: CloudflareQuotas): string | null {
+}, quotas: CloudflareUsageLimits): string | null {
   if ((usage.requests ?? 0) >= quotas.workerRequests) return 'Worker request quota reached'
   if ((usage.d1?.rowsRead ?? 0) >= quotas.d1RowsRead) return 'D1 rows read quota reached'
   if ((usage.d1?.rowsWritten ?? 0) >= quotas.d1RowsWritten) return 'D1 rows written quota reached'
@@ -190,16 +176,6 @@ async function readPlatformSettings(env: Env): Promise<PlatformSettings> {
         activeConnections: positiveQuota(value.quotas?.activeConnections) ?? fallback.quotas.activeConnections,
         r2Bytes: positiveQuota(value.quotas?.r2Bytes) ?? fallback.quotas.r2Bytes,
         r2Objects: positiveQuota(value.quotas?.r2Objects) ?? fallback.quotas.r2Objects,
-      },
-      cloudflareQuotas: {
-        workerRequests: positiveQuota(value.cloudflareQuotas?.workerRequests) ?? fallback.cloudflareQuotas.workerRequests,
-        d1RowsRead: positiveQuota(value.cloudflareQuotas?.d1RowsRead) ?? fallback.cloudflareQuotas.d1RowsRead,
-        d1RowsWritten: positiveQuota(value.cloudflareQuotas?.d1RowsWritten) ?? fallback.cloudflareQuotas.d1RowsWritten,
-        kvRead: positiveQuota(value.cloudflareQuotas?.kvRead) ?? fallback.cloudflareQuotas.kvRead,
-        kvWrite: positiveQuota(value.cloudflareQuotas?.kvWrite) ?? fallback.cloudflareQuotas.kvWrite,
-        kvDelete: positiveQuota(value.cloudflareQuotas?.kvDelete) ?? fallback.cloudflareQuotas.kvDelete,
-        kvList: positiveQuota(value.cloudflareQuotas?.kvList) ?? fallback.cloudflareQuotas.kvList,
-        doRequests: positiveQuota(value.cloudflareQuotas?.doRequests) ?? fallback.cloudflareQuotas.doRequests,
       },
     }
   } catch {

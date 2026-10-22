@@ -1,5 +1,5 @@
 import { decryptSecret, encryptSecret } from './secrets'
-import type { Env } from './types'
+import type { CloudflarePlanSummary, CloudflareUsageLimits, Env } from './types'
 
 /** Cloudflare 官方只读权限。前端只展示，保存接口不接受自定义 scope。 */
 export const CLOUDFLARE_API_TOKEN_PERMISSIONS = [
@@ -47,13 +47,6 @@ export interface CloudflareSubscriptionSummary {
   state: string | null
   planId: string | null
   planName: string | null
-}
-
-export interface CloudflarePlanSummary {
-  id: string | null
-  name: string | null
-  free: boolean
-  confirmed: boolean
 }
 
 export interface CloudflareSubscriptionResult {
@@ -111,6 +104,20 @@ interface CloudflareSubscriptionPayload {
 }
 
 type Fetcher = typeof fetch
+
+/** Cloudflare 免费计划每日基线。只有 subscriptions 明确返回 Free 才使用这组值。 */
+export const CLOUDFLARE_FREE_LIMITS: CloudflareUsageLimits = {
+  workerRequests: 100_000,
+  d1RowsRead: 5_000_000,
+  d1RowsWritten: 100_000,
+  kvRead: 100_000,
+  kvWrite: 1_000,
+  kvDelete: 1_000,
+  kvList: 1_000,
+  doRequests: 100_000,
+}
+
+export const CLOUDFLARE_FREE_LIMITS_VERIFIED_AT = '2026-10'
 
 const API_ORIGIN = 'https://api.cloudflare.com/client/v4'
 const ACCOUNTS_PER_PAGE = 50
@@ -293,7 +300,10 @@ export async function storeCloudflareCredential(env: Env, credential: Cloudflare
   if (!env.SESSION_SECRET) throw new CloudflareTokenError(503, 'secret_missing', 'SESSION_SECRET 未配置，无法安全保存 Token')
   const sealed = await encryptSecret(env.SESSION_SECRET, JSON.stringify(credential))
   const updatedAt = new Date().toISOString()
-  await env.DB.prepare('INSERT INTO cloudflare_credentials (id, ciphertext, iv, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET ciphertext = excluded.ciphertext, iv = excluded.iv, updated_at = excluded.updated_at').bind('primary', sealed.ciphertext, sealed.iv, updatedAt).run()
+  await env.DB.batch([
+    env.DB.prepare('INSERT INTO cloudflare_credentials (id, ciphertext, iv, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET ciphertext = excluded.ciphertext, iv = excluded.iv, updated_at = excluded.updated_at').bind('primary', sealed.ciphertext, sealed.iv, updatedAt),
+    env.DB.prepare('DELETE FROM usage_cache WHERE key = ?').bind('cloudflare:workers'),
+  ])
   return updatedAt
 }
 
@@ -335,4 +345,13 @@ export async function deleteStoredCloudflareCredential(env: Env): Promise<void> 
     env.DB.prepare('DELETE FROM cloudflare_credentials WHERE id = ?').bind('primary'),
     env.DB.prepare('DELETE FROM usage_cache WHERE key = ?').bind('cloudflare:workers'),
   ])
+}
+
+/** subscriptions 只确认 Free 时才返回官方基线；其他套餐明确返回 unavailable。 */
+export function cloudflarePlanLimits(plan: CloudflarePlanSummary): {
+  limitSource: 'cloudflare_subscriptions_free_baseline' | 'unavailable'
+  limits: CloudflareUsageLimits | null
+} {
+  if (!plan.confirmed || !plan.free) return { limitSource: 'unavailable', limits: null }
+  return { limitSource: 'cloudflare_subscriptions_free_baseline', limits: { ...CLOUDFLARE_FREE_LIMITS } }
 }

@@ -5,23 +5,10 @@ export interface PlatformQuotas {
   r2Objects: number
 }
 
-// Cloudflare 免费计划每日额度。请求数本身不设平台上限，这里只是观察官方用量是否触顶。
-export interface CloudflareQuotas {
-  workerRequests: number
-  d1RowsRead: number
-  d1RowsWritten: number
-  kvRead: number
-  kvWrite: number
-  kvDelete: number
-  kvList: number
-  doRequests: number
-}
-
 export interface PlatformSettings {
   maintenance: boolean
   pluginDomainSuffix: string
   quotas: PlatformQuotas
-  cloudflareQuotas: CloudflareQuotas
 }
 
 export interface Env {
@@ -36,10 +23,6 @@ export interface Env {
   GITHUB_ALLOWLIST?: string
   SESSION_SECRET?: string
   SETUP_TOKEN?: string
-  CLOUDFLARE_OAUTH_CLIENT_ID?: string
-  CLOUDFLARE_OAUTH_CLIENT_SECRET?: string
-  CLOUDFLARE_OAUTH_REDIRECT_URI?: string
-  CLOUDFLARE_OAUTH_SCOPE?: string
 }
 
 export type WorkspaceRole = 'owner' | 'operator' | 'viewer'
@@ -95,4 +78,23 @@ export interface PluginManifest {
   }
   permissions: string[]
   healthPath: string
+}
+
+/** Cloudflare 免费计划的只读每日额度，来源必须是 subscriptions，而不是平台设置。 */
+export interface CloudflareUsageLimits {
+  workerRequests: number
+  d1RowsRead: number
+  d1RowsWritten: number
+  kvRead: number
+  kvWrite: number
+  kvDelete: number
+  kvList: number
+  doRequests: number
+}
+
+export interface CloudflarePlanSummary {
+  id: string | null
+  name: string | null
+  free: boolean
+  confirmed: boolean
 }

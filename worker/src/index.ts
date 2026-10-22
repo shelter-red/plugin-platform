@@ -3,17 +3,16 @@ import { hashControlToken } from './security'
 import { acceptInvite, createSession, digest, exchangeGithubCode, getCurrentUser, isAllowlisted, sessionCookie, clearSessionCookie, upsertGithubUser, type AuthErrorCode } from './auth'
 import { authErrorResponse } from './auth-error-page'
 import type { GithubAuthResult } from './auth'
-import type { AuthenticatedUser, Env } from './types'
+import type { AuthenticatedUser, CloudflarePlanSummary, CloudflareUsageLimits, Env } from './types'
 import { decryptSecret, encryptSecret } from './secrets'
 import { isEmail, parseSmtpSettings, publicSmtpSettings, sendInviteEmail, sendSmtpTest, validateSmtpSettings, type SmtpSettings } from './email'
-import { discoverCloudflareAccountId, exchangeCloudflareCode, readCloudflareCredential, refreshCloudflareCredential, revokeCloudflareToken, type CloudflareCredential } from './cloudflare-oauth'
+import { CLOUDFLARE_API_TOKEN_PERMISSIONS, CloudflareTokenError, cloudflarePlanLimits, deleteStoredCloudflareCredential, maskCloudflareAccountId, readCloudflareSubscriptions, readStoredCloudflareCredential, storeCloudflareCredential as storeCloudflareApiTokenCredential, validateCloudflareApiToken } from './cloudflare-token'
 import { activateMaintenance, cloudflareQuotaReason, defaultPlatformSettings, getPlatformSettings, isMaintenanceMode, normalizePluginDomainSuffix, recordRequest, releaseR2Usage, reserveR2Usage, setPlatformSettingsCache } from './usage'
 import { findPluginRoute, invalidatePluginRoute } from './route-cache'
 import { selectPublicRequestMode } from './request-mode'
 import { resolvePublicRoute } from './public-route'
-import { CLOUDFLARE_OAUTH_PROTOCOL, oauthSettingsApi, resolveOauthSettings } from './oauth-settings'
+import { oauthSettingsApi, resolveOauthSettings } from './oauth-settings'
 import { setupApi } from './setup'
-import { clearCloudflareAuthResultCookie, cloudflareAuthResultCookie, readCloudflareAuthResult, type CloudflareAuthResult } from './cloudflare-auth-result'
 import { recordAudit } from './audit'
 import { DEFAULT_WORKSPACE_ID, activeWorkspaceId, createWorkspace, ensureSuperAdminWorkspace, listWorkspaceMembers, listWorkspaces, ownerCount, parseWorkspaceRole, requireOwner, requireWrite, resolveWorkspace, workspaceForUser } from './workspaces'
 import type { Workspace, WorkspaceRole } from './types'
@@ -33,8 +32,6 @@ export default {
     }
     if (url.pathname === '/auth/github/start') return startGithubAuth(env, url)
     if (url.pathname === '/auth/github/callback') return finishGithubAuth(request, env, url)
-    if (url.pathname === '/auth/cloudflare/start') return startCloudflareAuth(request, env)
-    if (url.pathname === '/auth/cloudflare/callback') return finishCloudflareAuth(request, env, url)
     if (url.pathname === '/auth/logout') return new Response(null, { status: 302, headers: { location: '/', 'set-cookie': clearSessionCookie(url.protocol === 'https:') } })
     if (url.pathname === '/control/register') return request.headers.get('Upgrade')?.toLowerCase() === 'websocket' ? registerServerSocket(env) : registerServer(request, env)
     if (url.pathname.startsWith('/api/')) return api(request, env, url)
@@ -54,13 +51,6 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     const workspaces = await listWorkspaces(env, user)
     const active = await activeWorkspaceId(env, request, user)
     return json({ user, workspaces, activeWorkspaceId: active })
-  }
-  if (request.method === 'GET' && url.pathname === '/api/settings/cloudflare/auth-result') {
-    if (user.role !== 'super_admin') return json({ result: null }, 403)
-    return new Response(JSON.stringify({ result: readCloudflareAuthResult(request) }), {
-      status: 200,
-      headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'set-cookie': clearCloudflareAuthResultCookie(url.protocol === 'https:') },
-    })
   }
   const workspaceResponse = await workspaceApi(request, env, user, url)
   if (workspaceResponse) return workspaceResponse
@@ -427,7 +417,6 @@ export async function runScheduledMaintenance(env: Env): Promise<void> {
     env.DB.prepare('UPDATE invites SET status = ? WHERE status = ? AND expires_at <= ?').bind('expired', 'pending', nowIso).run(),
     env.DB.prepare('DELETE FROM sessions WHERE expires_at <= ?').bind(nowIso).run(),
     env.DB.prepare('DELETE FROM oauth_states WHERE expires_at <= ?').bind(nowIso).run(),
-    env.DB.prepare('DELETE FROM cloudflare_oauth_states WHERE expires_at <= ?').bind(nowIso).run(),
     env.DB.prepare('DELETE FROM registration_codes WHERE expires_at <= ?').bind(nowIso).run(),
   ])
 }
@@ -489,75 +478,6 @@ async function finishGithubAuth(request: Request, env: Env, url: URL): Promise<R
   if (role === 'super_admin') await ensureSuperAdminWorkspace(env, userId)
   const token = await createSession(env, userId)
   return new Response(null, { status: 302, headers: { location: '/', 'set-cookie': sessionCookie(token, url.protocol === 'https:') } })
-}
-
-async function startCloudflareAuth(request: Request, env: Env): Promise<Response> {
-  const user = await getCurrentUser(request, env)
-  if (!user) return json({ error: 'Authentication required' }, 401)
-  if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
-  const { cloudflare } = await resolveOauthSettings(env)
-  if (!cloudflare) return json({ error: 'Cloudflare OAuth is not configured' }, 503)
-  const state = crypto.randomUUID() + crypto.randomUUID()
-  await env.DB.prepare('INSERT INTO cloudflare_oauth_states (state_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)').bind(await digest(state), user.id, new Date(Date.now() + 10 * 60 * 1000).toISOString(), new Date().toISOString()).run()
-  const authorizeUrl = new URL('https://dash.cloudflare.com/oauth2/auth')
-  authorizeUrl.searchParams.set('client_id', cloudflare.clientId)
-  authorizeUrl.searchParams.set('redirect_uri', cloudflare.redirectUri)
-  authorizeUrl.searchParams.set('response_type', CLOUDFLARE_OAUTH_PROTOCOL.responseType)
-  authorizeUrl.searchParams.set('scope', cloudflare.scope)
-  authorizeUrl.searchParams.set('state', state)
-  return new Response(null, { status: 302, headers: { location: authorizeUrl.toString(), 'referrer-policy': 'no-referrer' } })
-}
-
-async function finishCloudflareAuth(request: Request, env: Env, url: URL): Promise<Response> {
-  const user = await getCurrentUser(request, env)
-  const state = url.searchParams.get('state')
-  const code = url.searchParams.get('code')
-  const oauthError = url.searchParams.get('error')
-  const oauthErrorDescription = url.searchParams.get('error_description')
-  if (!user || user.role !== 'super_admin') return redirectWithCloudflareError(request, 'session_required')
-  if (oauthError) return redirectWithCloudflareError(request, oauthError, oauthErrorDescription)
-  if (!state || !code) return redirectWithCloudflareError(request, 'invalid_callback')
-  const stateHash = await digest(state)
-  const now = new Date().toISOString()
-  const stateRow = await env.DB.prepare('SELECT state_hash, user_id FROM cloudflare_oauth_states WHERE state_hash = ? AND user_id = ? AND expires_at > ?').bind(stateHash, user.id, now).first<{ state_hash: string; user_id: string }>()
-  if (!stateRow) return redirectWithCloudflareError(request, 'state_expired')
-  const consumedState = await env.DB.prepare('DELETE FROM cloudflare_oauth_states WHERE state_hash = ? AND user_id = ? AND expires_at > ?').bind(stateRow.state_hash, user.id, now).run()
-  if ((consumedState.meta.changes ?? 0) !== 1) return redirectWithCloudflareError(request, 'state_expired')
-  const credential = await exchangeCloudflareCode(env, code)
-  if (!credential) {
-    await recordAudit(env, null, user.id, 'cloudflare.oauth.failed', {})
-    return redirectWithCloudflareError(request, 'token_exchange_failed')
-  }
-  if (!credential.accountId) credential.accountId = await discoverCloudflareAccountId(credential.accessToken)
-  if (!env.SESSION_SECRET) return redirectWithCloudflareError(request, 'secret_missing')
-  await storeCloudflareCredential(env, credential)
-  await recordAudit(env, null, user.id, 'cloudflare.oauth.connected', { accountIdConfigured: Boolean(credential.accountId) })
-  return redirectWithCloudflareAuthResult(request, { kind: 'success', accountConfigured: Boolean(credential.accountId) })
-}
-
-/** 授权结果通过一次性 Cookie 回传，并始终回到系统设置页，而不是首页。 */
-function redirectWithCloudflareAuthResult(request: Request, result: CloudflareAuthResult): Response {
-  const location = new URL('/settings', request.url)
-  return new Response(null, {
-    status: 303,
-    headers: {
-      location: location.toString(),
-      'referrer-policy': 'no-referrer',
-      'cache-control': 'no-store',
-      'set-cookie': cloudflareAuthResultCookie(result, location.protocol === 'https:'),
-    },
-  })
-}
-
-const redirectWithCloudflareError = (request: Request, code: string, description: string | null = null): Response =>
-  redirectWithCloudflareAuthResult(request, { kind: 'error', code, description })
-
-async function storeCloudflareCredential(env: Env, credential: CloudflareCredential): Promise<string> {
-  if (!env.SESSION_SECRET) throw new Error('SESSION_SECRET is not configured')
-  const sealed = await encryptSecret(env.SESSION_SECRET, JSON.stringify(credential))
-  const updatedAt = new Date().toISOString()
-  await env.DB.prepare('INSERT INTO cloudflare_credentials (id, ciphertext, iv, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET ciphertext = excluded.ciphertext, iv = excluded.iv, updated_at = excluded.updated_at').bind('primary', sealed.ciphertext, sealed.iv, updatedAt).run()
-  return updatedAt
 }
 
 type AccessLogRecord = {
@@ -838,7 +758,13 @@ async function platformSettingsApi(request: Request, env: Env, user: Authenticat
   const settings = await getPlatformSettings(env)
   if (request.method === 'GET') return json(settings)
   if (request.method !== 'PUT') return json({ error: 'Method not allowed' }, 405)
-  const body = await request.json().catch(() => null) as { maintenance?: boolean; pluginDomainSuffix?: string; quotas?: Partial<typeof defaultPlatformSettings.quotas>; cloudflareQuotas?: Partial<typeof defaultPlatformSettings.cloudflareQuotas> } | null
+  const body = await request.json().catch(() => null) as { maintenance?: boolean; pluginDomainSuffix?: string; quotas?: Partial<typeof defaultPlatformSettings.quotas>; [key: string]: unknown } | null
+  if (body && Object.prototype.hasOwnProperty.call(body, 'cloudflareQuotas')) {
+    return json({
+      code: 'cloudflare_quotas_read_only',
+      message: 'Cloudflare 免费额度由 subscriptions 读取，不能在平台设置中修改',
+    }, 400)
+  }
   const pluginDomainSuffix = body?.pluginDomainSuffix === undefined
     ? settings.pluginDomainSuffix
     : normalizePluginDomainSuffix(body.pluginDomainSuffix)
@@ -850,16 +776,6 @@ async function platformSettingsApi(request: Request, env: Env, user: Authenticat
       activeConnections: parsePositiveQuota(body?.quotas?.activeConnections, settings.quotas.activeConnections),
       r2Bytes: parsePositiveQuota(body?.quotas?.r2Bytes, settings.quotas.r2Bytes),
       r2Objects: parsePositiveQuota(body?.quotas?.r2Objects, settings.quotas.r2Objects),
-    },
-    cloudflareQuotas: {
-      workerRequests: parsePositiveQuota(body?.cloudflareQuotas?.workerRequests, settings.cloudflareQuotas.workerRequests),
-      d1RowsRead: parsePositiveQuota(body?.cloudflareQuotas?.d1RowsRead, settings.cloudflareQuotas.d1RowsRead),
-      d1RowsWritten: parsePositiveQuota(body?.cloudflareQuotas?.d1RowsWritten, settings.cloudflareQuotas.d1RowsWritten),
-      kvRead: parsePositiveQuota(body?.cloudflareQuotas?.kvRead, settings.cloudflareQuotas.kvRead),
-      kvWrite: parsePositiveQuota(body?.cloudflareQuotas?.kvWrite, settings.cloudflareQuotas.kvWrite),
-      kvDelete: parsePositiveQuota(body?.cloudflareQuotas?.kvDelete, settings.cloudflareQuotas.kvDelete),
-      kvList: parsePositiveQuota(body?.cloudflareQuotas?.kvList, settings.cloudflareQuotas.kvList),
-      doRequests: parsePositiveQuota(body?.cloudflareQuotas?.doRequests, settings.cloudflareQuotas.doRequests),
     },
   }
   await env.DB.prepare('INSERT INTO platform_settings (key, value_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at').bind('platform', JSON.stringify(next), new Date().toISOString()).run()
@@ -873,31 +789,73 @@ function parsePositiveQuota(value: unknown, fallback: number): number {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback
 }
 
-export async function cloudflareSettingsApi(request: Request, env: Env, user: AuthenticatedUser): Promise<Response> {
-  if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
-  const existing = await env.DB.prepare('SELECT ciphertext, iv, updated_at FROM cloudflare_credentials WHERE id = ?').bind('primary').first<{ ciphertext: string; iv: string; updated_at: string }>()
-  if (request.method === 'GET') {
-    const credential = existing ? await readCloudflareCredential(env, existing.ciphertext, existing.iv) : null
-    return json({ configured: Boolean(credential), accountIdConfigured: Boolean(credential?.accountId), accountId: maskAccountId(credential?.accountId), updatedAt: existing?.updated_at ?? null })
+type StoredCloudflareCredential = Awaited<ReturnType<typeof readStoredCloudflareCredential>>
+
+function publicCloudflareSettings(stored: StoredCloudflareCredential) {
+  const base = {
+    permissions: [...CLOUDFLARE_API_TOKEN_PERMISSIONS],
+    accountIdConfigured: false,
+    accountId: null as string | null,
+    updatedAt: stored?.updatedAt ?? null,
+    lastVerifiedAt: null as string | null,
+    legacyCredential: false,
   }
-  if (request.method === 'DELETE') {
-    if (existing) {
-      const credential = await readCloudflareCredential(env, existing.ciphertext, existing.iv)
-      if (credential) await revokeCloudflareToken(env, credential.accessToken)
+  if (!stored) return { configured: false, credentialKind: null, ...base }
+  if (stored.kind === 'legacy_oauth') {
+    return {
+      configured: false,
+      credentialKind: 'legacy_oauth' as const,
+      ...base,
+      accountIdConfigured: Boolean(stored.accountId),
+      accountId: maskCloudflareAccountId(stored.accountId),
+      legacyCredential: true,
     }
-    await env.DB.prepare('DELETE FROM cloudflare_credentials WHERE id = ?').bind('primary').run()
-    await recordAudit(env, null, user.id, 'cloudflare.credentials.revoked', {})
-    return json({ configured: false, accountIdConfigured: false, accountId: null, updatedAt: null })
   }
-  if (request.method !== 'PUT') return json({ error: 'Method not allowed' }, 405)
-  if (!env.SESSION_SECRET) return json({ error: 'SESSION_SECRET is not configured' }, 503)
-  const body = await request.json().catch(() => null) as { accessToken?: string; accountId?: string } | null
-  if (!body?.accessToken?.trim()) return json({ error: 'accessToken is required' }, 400)
-  const sealed = await encryptSecret(env.SESSION_SECRET, JSON.stringify({ accessToken: body.accessToken.trim(), accountId: body.accountId?.trim() || null, tokenType: 'Bearer', expiresAt: null } satisfies CloudflareCredential))
-  const updatedAt = new Date().toISOString()
-  await env.DB.prepare('INSERT INTO cloudflare_credentials (id, ciphertext, iv, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET ciphertext = excluded.ciphertext, iv = excluded.iv, updated_at = excluded.updated_at').bind('primary', sealed.ciphertext, sealed.iv, updatedAt).run()
-  await recordAudit(env, null, user.id, 'cloudflare.credentials.updated', { accountIdConfigured: Boolean(body.accountId?.trim()) })
-  return json({ configured: true, accountIdConfigured: Boolean(body.accountId?.trim()), accountId: maskAccountId(body.accountId?.trim() || null), updatedAt })
+  return {
+    configured: true,
+    credentialKind: 'api_token' as const,
+    ...base,
+    accountIdConfigured: true,
+    accountId: maskCloudflareAccountId(stored.credential.accountId),
+    lastVerifiedAt: stored.credential.verifiedAt,
+  }
+}
+
+function cloudflareTokenErrorResponse(error: unknown): Response {
+  if (error instanceof CloudflareTokenError) {
+    return json({ code: error.code, message: error.message }, error.status)
+  }
+  return json({ code: 'cloudflare_settings_failed', message: 'Cloudflare 设置请求失败' }, 500)
+}
+
+/** Cloudflare 设置只接受长期 API Token；保存前完成 Token、账号与订阅权限校验。 */
+export async function cloudflareSettingsApi(request: Request, env: Env, user: AuthenticatedUser, fetchImpl: typeof fetch = fetch): Promise<Response> {
+  if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
+  try {
+    if (request.method === 'GET') return json(publicCloudflareSettings(await readStoredCloudflareCredential(env)))
+    if (request.method === 'DELETE') {
+      await deleteStoredCloudflareCredential(env)
+      await recordAudit(env, null, user.id, 'cloudflare.credentials.revoked', { credentialKind: 'api_token' })
+      return json(publicCloudflareSettings(null))
+    }
+    if (request.method !== 'PUT') return json({ error: 'Method not allowed' }, 405)
+    if (!env.SESSION_SECRET) throw new CloudflareTokenError(503, 'secret_missing', 'SESSION_SECRET 未配置，无法安全保存 Token')
+    const body = await request.json().catch(() => null) as { apiToken?: unknown; accountId?: unknown } | null
+    const apiToken = typeof body?.apiToken === 'string' ? body.apiToken.trim() : ''
+    if (!apiToken) throw new CloudflareTokenError(400, 'token_required', '请输入 Cloudflare API Token')
+    const requestedAccountId = typeof body?.accountId === 'string' ? body.accountId.trim() || undefined : undefined
+    const validated = await validateCloudflareApiToken(apiToken, requestedAccountId, fetchImpl)
+    const updatedAt = await storeCloudflareApiTokenCredential(env, validated.credential)
+    await recordAudit(env, null, user.id, 'cloudflare.credentials.updated', {
+      credentialKind: 'api_token',
+      accountIdConfigured: true,
+      planId: validated.subscriptions.plan.id,
+      planConfirmed: validated.subscriptions.plan.confirmed,
+    })
+    return json(publicCloudflareSettings({ kind: 'api_token', credential: validated.credential, updatedAt }))
+  } catch (error) {
+    return cloudflareTokenErrorResponse(error)
+  }
 }
 
 async function loadSmtpSettings(env: Env): Promise<SmtpSettings | null> {
@@ -929,11 +887,6 @@ async function sendWithRetry(send: () => Promise<void>, maxAttempts = 3): Promis
     }
   }
   throw lastError instanceof Error ? lastError : new Error('SMTP send failed')
-}
-
-function maskAccountId(accountId: string | null | undefined): string | null {
-  if (!accountId) return null
-  return accountId.length <= 8 ? '已配置' : `${accountId.slice(0, 4)}...${accountId.slice(-4)}`
 }
 
 export async function smtpSettingsApi(request: Request, env: Env, user: AuthenticatedUser): Promise<Response> {
@@ -1022,70 +975,73 @@ function redactSmtpError(message: string, password: string): string {
 
 export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser, fetchImpl: typeof fetch = fetch): Promise<Response> {
   if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
+
+  let stored: StoredCloudflareCredential
+  try {
+    stored = await readStoredCloudflareCredential(env)
+  } catch (error) {
+    return cloudflareTokenErrorResponse(error)
+  }
+  if (!stored) return json({ configured: false, cached: false })
+  if (stored.kind === 'legacy_oauth') {
+    return json({
+      configured: false,
+      cached: false,
+      legacyCredential: true,
+      error: 'Cloudflare 旧版 OAuth 凭据已停用，请重新录入 API Token',
+    })
+  }
+
+  // 凭据必须优先于缓存：删除 Token 或切换 Token 后，旧缓存不能继续伪装成已配置。
   const cached = await env.DB.prepare('SELECT value_json, expires_at, updated_at FROM usage_cache WHERE key = ? AND expires_at > ?').bind('cloudflare:workers', new Date().toISOString()).first<{ value_json: string; expires_at: string; updated_at: string }>()
-  if (cached) {
-    const result = JSON.parse(cached.value_json) as CloudflareUsageResult
-    await enforceCloudflareUsageQuotas(env, result)
-    return json({ ...result, cached: true, updatedAt: cached.updated_at })
+  const cachedResult = cached ? parseCloudflareUsageCache(cached.value_json) : null
+  if (cached && cachedResult) {
+    await enforceCloudflareUsageQuotas(env, cachedResult, cachedResult.limits)
+    return json({ ...cachedResult, cached: true, updatedAt: cached.updated_at })
   }
-  if (!env.SESSION_SECRET) return json({ error: 'SESSION_SECRET is not configured' }, 503)
-  const credentials = await env.DB.prepare('SELECT ciphertext, iv FROM cloudflare_credentials WHERE id = ?').bind('primary').first<{ ciphertext: string; iv: string }>()
-  if (!credentials) return json({ configured: false, cached: false })
-  let credential = await readCloudflareCredential(env, credentials.ciphertext, credentials.iv)
-  if (!credential) return json({ error: 'Cloudflare credential decryption failed' }, 500)
-  let refreshed = false
-  if (credential.expiresAt && Date.parse(credential.expiresAt) <= Date.now() + 60_000) {
-    const next = await refreshCloudflareCredential(env, credential)
-    // Cloudflare OAuth 客户端没有 offline_access，token 响应未给 refresh_token 时只能重新授权。
-    if (!next) return json({ configured: true, accountIdConfigured: Boolean(credential.accountId), authorizationExpired: true, cached: false })
-    credential = next
-    refreshed = true
-    await storeCloudflareCredential(env, credential)
-    await recordAudit(env, null, user.id, 'cloudflare.oauth.refreshed', {})
-  }
-  if (!credential.accountId) return json({ configured: true, accountIdConfigured: false, cached: false })
-  const accountId = credential.accountId
+
+  const { apiToken, accountId } = stored.credential
   const end = new Date()
   const start = new Date(end.getTime() - 24 * 60 * 60 * 1000)
-  const analyticsRequest = (accessToken: string) => fetchImpl('https://api.cloudflare.com/client/v4/graphql', {
+
+  // 免费基线只能来自 subscriptions；不能从平台设置手填，也不能用旧缓存猜测。
+  let subscriptions: Awaited<ReturnType<typeof readCloudflareSubscriptions>>
+  try {
+    subscriptions = await readCloudflareSubscriptions(apiToken, accountId, fetchImpl)
+  } catch (error) {
+    return cloudflareTokenErrorResponse(error)
+  }
+  const { limitSource, limits } = cloudflarePlanLimits(subscriptions.plan)
+
+  const analyticsRequest = () => fetchImpl('https://api.cloudflare.com/client/v4/graphql', {
     method: 'POST',
-    headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
+    headers: { authorization: `Bearer ${apiToken}`, 'content-type': 'application/json' },
     body: JSON.stringify({ query: `query Usage($accountTag: String!, $start: Time!, $end: Time!) { viewer { accounts(filter: { accountTag: $accountTag }) { workersInvocationsAdaptive(limit: 1, filter: { datetime_geq: $start, datetime_leq: $end }) { sum { requests } } } } }`, variables: { accountTag: accountId, start: start.toISOString(), end: end.toISOString() } }),
   })
-  let response = await analyticsRequest(credential.accessToken)
-  if (response.status === 401 && !refreshed) {
-    const next = await refreshCloudflareCredential(env, credential)
-    if (next) {
-      credential = next
-      refreshed = true
-      await storeCloudflareCredential(env, credential)
-      await recordAudit(env, null, user.id, 'cloudflare.oauth.refreshed', {})
-      response = await analyticsRequest(credential.accessToken)
-    }
+  let response: Response
+  try {
+    response = await analyticsRequest()
+  } catch {
+    return cloudflareAnalyticsError('无法连接 Cloudflare Analytics 接口')
   }
-  if (response.status === 401) return json({ configured: true, accountIdConfigured: true, authorizationExpired: true, cached: false })
-  if (!response.ok) return json({ error: 'Cloudflare Analytics request failed', status: response.status }, 502)
-  const payload = await response.json() as { errors?: unknown[]; data?: { viewer?: { accounts?: Array<{ workersInvocationsAdaptive?: Array<{ sum?: { requests?: number } }> }> } } }
-  if (payload.errors?.length) return json({ error: 'Cloudflare Analytics returned errors', details: payload.errors }, 502)
+  if (!response.ok) return cloudflareAnalyticsError('Cloudflare Analytics request failed', response.status)
+  const payload = await response.json().catch(() => null) as { errors?: unknown[]; data?: { viewer?: { accounts?: Array<{ workersInvocationsAdaptive?: Array<{ sum?: { requests?: number } }> }> } } } | null
+  if (!payload) return json({ code: 'cloudflare_analytics_error', message: 'Cloudflare Analytics 响应不是有效 JSON' }, 502)
+  if (payload.errors?.length) return json({ code: 'cloudflare_analytics_error', message: 'Cloudflare Analytics returned errors', details: payload.errors }, 502)
   const requests = payload.data?.viewer?.accounts?.[0]?.workersInvocationsAdaptive?.[0]?.sum?.requests ?? 0
-  const resourceAnalyticsRequest = (accessToken: string) => fetchImpl('https://api.cloudflare.com/client/v4/graphql', {
+  const resourceAnalyticsRequest = () => fetchImpl('https://api.cloudflare.com/client/v4/graphql', {
     method: 'POST',
-    headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
+    headers: { authorization: `Bearer ${apiToken}`, 'content-type': 'application/json' },
     body: JSON.stringify({ query: `query ResourceUsage($accountTag: String!, $start: Date, $end: Date) { viewer { accounts(filter: { accountTag: $accountTag }) { d1AnalyticsAdaptiveGroups(limit: 10000, filter: { date_geq: $start, date_leq: $end }) { sum { readQueries writeQueries rowsRead rowsWritten } } kvOperationsAdaptiveGroups(limit: 10000, filter: { date_geq: $start, date_leq: $end }) { sum { requests } dimensions { actionType } } durableObjectsInvocationsAdaptiveGroups(limit: 1000, filter: { date_geq: $start, date_leq: $end }) { sum { requests } } durableObjectsPeriodicGroups(limit: 1000, filter: { date_geq: $start, date_leq: $end }) { sum { cpuTime } } durableObjectsStorageGroups(limit: 1000, filter: { date_geq: $start, date_leq: $end }) { max { storedBytes } } } } }`, variables: { accountTag: accountId, start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) } }),
   })
-  let resourceResponse = await resourceAnalyticsRequest(credential.accessToken)
-  if (resourceResponse.status === 401 && !refreshed) {
-    const next = await refreshCloudflareCredential(env, credential)
-    if (next) {
-      credential = next
-      await storeCloudflareCredential(env, credential)
-      await recordAudit(env, null, user.id, 'cloudflare.oauth.refreshed', {})
-      resourceResponse = await resourceAnalyticsRequest(credential.accessToken)
-    }
+  let resourceResponse: Response
+  try {
+    resourceResponse = await resourceAnalyticsRequest()
+  } catch {
+    return cloudflareAnalyticsError('无法连接 Cloudflare Resource Analytics 接口')
   }
-  if (resourceResponse.status === 401) return json({ configured: true, accountIdConfigured: true, authorizationExpired: true, cached: false })
-  if (!resourceResponse.ok) return json({ error: 'Cloudflare resource analytics request failed', status: resourceResponse.status }, 502)
-  const resourcePayload = await resourceResponse.json() as {
+  if (!resourceResponse.ok) return cloudflareAnalyticsError('Cloudflare resource analytics request failed', resourceResponse.status)
+  const resourcePayload = await resourceResponse.json().catch(() => null) as {
     errors?: unknown[]
     data?: {
       viewer?: {
@@ -1098,8 +1054,9 @@ export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser, fetc
         }>
       }
     }
-  }
-  if (resourcePayload.errors?.length) return json({ error: 'Cloudflare resource analytics returned errors' }, 502)
+  } | null
+  if (!resourcePayload) return json({ code: 'cloudflare_resource_analytics_error', message: 'Cloudflare Resource Analytics 响应不是有效 JSON' }, 502)
+  if (resourcePayload.errors?.length) return json({ code: 'cloudflare_resource_analytics_error', message: 'Cloudflare resource analytics returned errors' }, 502)
   const resourceAccount = resourcePayload.data?.viewer?.accounts?.[0]
   const d1 = resourceAccount?.d1AnalyticsAdaptiveGroups?.reduce((total, row) => ({
     readQueries: total.readQueries + (row.sum?.readQueries ?? 0),
@@ -1120,11 +1077,29 @@ export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser, fetc
     cpuTime: resourceAccount?.durableObjectsPeriodicGroups?.reduce((total, row) => total + (row.sum?.cpuTime ?? 0), 0) ?? 0,
     storedBytes: Math.max(0, ...(resourceAccount?.durableObjectsStorageGroups ?? []).map((row) => row.max?.storedBytes ?? 0)),
   }
-  const result: CloudflareUsageResult = { configured: true, accountIdConfigured: true, period: { start: start.toISOString(), end: end.toISOString() }, requests, d1, kv, durableObjects, source: 'cloudflare_graphql' }
+  const result: CloudflareUsageResult = {
+    configured: true,
+    accountIdConfigured: true,
+    period: { start: start.toISOString(), end: end.toISOString() },
+    requests,
+    d1,
+    kv,
+    durableObjects,
+    source: 'cloudflare_graphql',
+    plan: subscriptions.plan,
+    limitSource,
+    limits,
+  }
   const updatedAt = new Date().toISOString()
   await env.DB.prepare('INSERT INTO usage_cache (key, value_json, expires_at, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, expires_at = excluded.expires_at, updated_at = excluded.updated_at').bind('cloudflare:workers', JSON.stringify(result), new Date(Date.now() + 5 * 60 * 1000).toISOString(), updatedAt).run()
-  await enforceCloudflareUsageQuotas(env, result)
+  await enforceCloudflareUsageQuotas(env, result, limits)
   return json({ ...result, cached: false, updatedAt })
+}
+
+function cloudflareAnalyticsError(message: string, upstreamStatus?: number): Response {
+  if (upstreamStatus === 401) return json({ code: 'token_invalid', message: 'Cloudflare API Token 无效或已被撤销', upstreamStatus }, 401)
+  if (upstreamStatus === 403) return json({ code: 'token_permission_denied', message: 'Cloudflare API Token 缺少 Account Analytics Read 权限', upstreamStatus }, 403)
+  return json({ code: 'cloudflare_analytics_failed', message, ...(upstreamStatus === undefined ? {} : { upstreamStatus }) }, 502)
 }
 
 type CloudflareUsageResult = {
@@ -1136,14 +1111,64 @@ type CloudflareUsageResult = {
   kv: { read: number; write: number; delete: number; list: number }
   durableObjects: { requests: number; cpuTime: number; storedBytes: number }
   source: 'cloudflare_graphql'
+  plan: CloudflarePlanSummary
+  limitSource: 'cloudflare_subscriptions_free_baseline' | 'unavailable'
+  limits: CloudflareUsageLimits | null
 }
 
-async function enforceCloudflareUsageQuotas(env: Env, usage: CloudflareUsageResult): Promise<void> {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isNonNegativeNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+}
+
+function isCloudflarePlanSummary(value: unknown): value is CloudflarePlanSummary {
+  if (!isRecord(value)) return false
+  return (value.id === null || typeof value.id === 'string')
+    && (value.name === null || typeof value.name === 'string')
+    && typeof value.free === 'boolean'
+    && typeof value.confirmed === 'boolean'
+}
+
+function hasNonNegativeNumbers(value: unknown, keys: readonly string[]): boolean {
+  if (!isRecord(value)) return false
+  return keys.every((key) => isNonNegativeNumber(value[key]))
+}
+
+function isCloudflareUsageLimits(value: unknown): value is CloudflareUsageLimits {
+  if (!isRecord(value)) return false
+  const keys: Array<keyof CloudflareUsageLimits> = ['workerRequests', 'd1RowsRead', 'd1RowsWritten', 'kvRead', 'kvWrite', 'kvDelete', 'kvList', 'doRequests']
+  return keys.every((key) => Number.isSafeInteger(value[key]) && (value[key] as number) > 0)
+}
+
+function parseCloudflareUsageCache(value: string): CloudflareUsageResult | null {
+  try {
+    const result = JSON.parse(value) as unknown
+    if (!isRecord(result) || result.configured !== true || result.accountIdConfigured !== true || result.source !== 'cloudflare_graphql') return null
+    if (!isRecord(result.period) || typeof result.period.start !== 'string' || typeof result.period.end !== 'string') return null
+    if (!isNonNegativeNumber(result.requests)) return null
+    if (!hasNonNegativeNumbers(result.d1, ['readQueries', 'writeQueries', 'rowsRead', 'rowsWritten'])) return null
+    if (!hasNonNegativeNumbers(result.kv, ['read', 'write', 'delete', 'list'])) return null
+    if (!hasNonNegativeNumbers(result.durableObjects, ['requests', 'cpuTime', 'storedBytes'])) return null
+    if (!isCloudflarePlanSummary(result.plan)) return null
+    if (result.limitSource !== 'cloudflare_subscriptions_free_baseline' && result.limitSource !== 'unavailable') return null
+    if (result.limits !== null && !isCloudflareUsageLimits(result.limits)) return null
+    return result as CloudflareUsageResult
+  } catch {
+    return null
+  }
+}
+
+async function enforceCloudflareUsageQuotas(env: Env, usage: CloudflareUsageResult, limits: CloudflareUsageLimits | null): Promise<void> {
+  if (!limits) return
   const settings = await getPlatformSettings(env)
   if (settings.maintenance) return
-  const reason = cloudflareQuotaReason(usage, settings.cloudflareQuotas)
+  const reason = cloudflareQuotaReason(usage, limits)
   if (reason) await activateMaintenance(env, reason)
 }
+
 
 export async function localUsageApi(env: Env, user: AuthenticatedUser, url = new URL('https://worker.invalid/api/usage/local'), workspace?: Workspace): Promise<Response> {
   if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
