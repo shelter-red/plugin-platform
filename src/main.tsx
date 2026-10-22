@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { createRoot } from 'react-dom/client'
-import { App as AntdApp, ConfigProvider, Select } from 'antd'
+import { BrowserRouter, Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { App as AntdApp, ConfigProvider, Dropdown, Select } from 'antd'
 import enUS from 'antd/locale/en_US'
 import zhCN from 'antd/locale/zh_CN'
 import '@ant-design/v5-patch-for-react-19'
@@ -11,7 +12,6 @@ import {
   ArrowUpRight,
   Box,
   Check,
-  ChevronDown,
   CircleHelp,
   Cloud,
   Code2,
@@ -19,13 +19,13 @@ import {
   Copy,
   Database,
   Download,
-  ExternalLink,
   FileText,
   Gauge,
   Globe2,
   HardDrive,
   KeyRound,
   LayoutDashboard,
+  LogOut,
   ListFilter,
   LockKeyhole,
   Menu,
@@ -38,6 +38,7 @@ import {
   Settings,
   ShieldCheck,
   Sun,
+  UserRound,
   Users,
   X,
   Zap,
@@ -60,10 +61,12 @@ import { SmtpPanel } from './features/settings/SmtpPanel'
 import { errorMessage, translateError } from './errors'
 import { StatusBadge } from './components/StatusBadge'
 import { CommandPalette, type CommandItem } from './components/CommandPalette'
+import { DocPage } from './components/DocPage'
+import { AccountPage } from './features/account/AccountPage'
+import { PAGE_PATHS, docFromPath, pageFromPath, type Page } from './app/routes'
 import i18n, { storeLanguage, type Language } from './i18n'
 import { ApiError, assignDomain, checkPluginHealth, commandPlugin, createInvite, createRegistrationCode, fetchAccessLogs, fetchAudit, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchInvites, fetchLocalUsage, fetchOauthSettings, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchPluginDetails, fetchServerDetails, fetchServers, fetchSmtpSettings, revokeInvite, syncServer, type ApiAccessLog, type ApiAudit, type ApiDomain, type ApiInvite, type ApiOverview, type ApiPlugin, type ApiPluginDetail, type ApiServer, type ApiServerDetail, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type OauthSettings, type PlatformSettings, type PluginAction, type PluginHealthResult, type SmtpSettings, type UsageBreakdownEntry, type UsageSnapshot, updatePlatformSettings } from './api'
 
-type Page = 'overview' | 'servers' | 'plugins' | 'domains' | 'usage' | 'logs' | 'audit' | 'settings'
 type Theme = 'dark' | 'light' | 'system'
 type ModalInput = { prefix?: string; pluginInstanceId?: string }
 type ModalResult = { kind: 'registration'; code: string; expiresAt: string } | { kind: 'plugin'; state: string } | { kind: 'domain'; hostname: string }
@@ -149,6 +152,10 @@ type ConsoleProps = {
 
 function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
   const { t, i18n: translator } = useTranslation()
+  const location = useLocation()
+  const navigate = useNavigate()
+  const page = pageFromPath(location.pathname)
+  const docPage = docFromPath(location.pathname)
   const authEnabled = import.meta.env.VITE_AUTH_ENABLED !== 'false'
   const [authState, setAuthState] = useState<'loading' | 'authenticated' | 'anonymous'>(authEnabled ? 'loading' : 'authenticated')
   const [authUser, setAuthUser] = useState<{ display_name: string; email: string; role?: string } | null>(null)
@@ -175,7 +182,6 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
   const [oauthSettings, setOauthSettings] = useState<OauthSettings | null>(null)
   const [cloudflareDiagnosis, setCloudflareDiagnosis] = useState<CloudflareDiagnosis | null>(null)
   const [apiLive, setApiLive] = useState(false)
-  const [page, setPage] = useState<Page>('overview')
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [settingsFocus, setSettingsFocus] = useState<{ section: string; nonce: number } | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -188,7 +194,11 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
   const [pluginActionLoading, setPluginActionLoading] = useState<{ id: string; action: Exclude<PluginAction, 'health'> } | null>(null)
   const [range, setRange] = useState<'24h' | '7d' | '30d'>('7d')
 
-  const meta = { title: t(`pages.${page}.title`), description: t(`pages.${page}.description`) }
+  const meta = page
+    ? { title: t(`pages.${page}.title`), description: t(`pages.${page}.description`) }
+    : docPage
+      ? { title: t(`docs.${docPage}.title`), description: t(`docs.${docPage}.description`) }
+      : { title: t('nav.overview'), description: '' }
   const changeLanguage = (next: Language) => {
     storeLanguage(next)
     void translator.changeLanguage(next)
@@ -207,17 +217,28 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
   const userInitials = (authUser?.display_name ?? authUser?.email ?? '—').trim().slice(0, 2).toUpperCase()
+  const userMenuItems = [
+    { key: 'account', label: t('account.title'), icon: <UserRound size={14} /> },
+    { key: 'help', label: t('docs.help.title'), icon: <CircleHelp size={14} /> },
+    { type: 'divider' as const },
+    { key: 'logout', label: t('account.logout'), icon: <LogOut size={14} />, danger: true },
+  ]
+  const onUserMenu = ({ key }: { key: string }) => {
+    if (key === 'logout') window.location.assign('/auth/logout')
+    if (key === 'account') navigate('/account')
+    if (key === 'help') navigate('/help')
+  }
 
   useEffect(() => {
-    if (!authEnabled) return
+    if (!authEnabled && !import.meta.env.VITE_API_BASE) return
     fetch('/api/me', { credentials: 'include' })
       .then(async (response) => {
         if (!response.ok) throw new Error('anonymous')
         const data = await response.json() as { user?: { display_name: string; email: string; role?: string } }
         setAuthUser(data.user ?? null)
-        setAuthState('authenticated')
+        if (authEnabled) setAuthState('authenticated')
       })
-      .catch(() => setAuthState('anonymous'))
+      .catch(() => { if (authEnabled) setAuthState('anonymous') })
   }, [authEnabled])
 
   useEffect(() => {
@@ -410,12 +431,12 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
 
   const selectPage = (next: Page) => {
     if (next === 'settings') setSettingsFocus(null)
-    setPage(next)
+    navigate(PAGE_PATHS[next])
     setSidebarOpen(false)
   }
 
   const openSettingsSection = (section: string) => {
-    setPage('settings')
+    navigate(PAGE_PATHS.settings)
     setSidebarOpen(false)
     setSettingsFocus({ section, nonce: Date.now() })
   }
@@ -466,22 +487,31 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
 
   if (authEnabled && authState === 'loading') return <AuthLoading />
   if (authEnabled && authState === 'anonymous') return <LoginPage />
+  if (!page && !docPage) return <Navigate to="/" replace />
 
   return (
     <div className={`app-shell theme-${effectiveTheme}`}>
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
         <div className="brand-row">
-          <div className="brand-mark"><Network size={17} strokeWidth={2.4} /></div>
-          <div><div className="brand-name">Plugmesh</div><div className="brand-caption">{t('brand.caption')}</div></div>
+          <Link className="brand-link" to="/" onClick={() => setSidebarOpen(false)} aria-label={t('shell.home')}>
+            <div className="brand-mark"><Network size={17} strokeWidth={2.4} /></div>
+            <div><div className="brand-name">Plugmesh</div><div className="brand-caption">{t('brand.caption')}</div></div>
+          </Link>
           <IconButton label={t('shell.closeNav')} onClick={() => setSidebarOpen(false)}><X size={17} /></IconButton>
         </div>
-        <div className="workspace-switcher"><div className="workspace-icon">P</div><div className="workspace-copy"><strong>{t('shell.workspace')}</strong><span>{apiLive ? t('shell.connected') : t('shell.waiting')}</span></div><ChevronDown size={14} /></div>
+        <div className="workspace-switcher"><div className="workspace-icon">P</div><div className="workspace-copy"><strong>{t('shell.workspace')}</strong><span>{apiLive ? t('shell.connected') : t('shell.waiting')}</span></div></div>
         <nav className="nav-area">
           {navGroups.map((group) => <div className="nav-group" key={group.labelKey}><div className="nav-label">{t(group.labelKey)}</div>{group.items.map(({ id, icon: NavIcon }) => <button className={`nav-item ${page === id ? 'active' : ''}`} key={id} onClick={() => selectPage(id)} aria-label={t(`nav.${id}`)}><NavIcon size={16} /><span>{t(`nav.${id}`)}</span>{id === 'servers' && servers && servers.length > 0 && <span className="nav-count">{servers.length}</span>}</button>)}</div>)}
         </nav>
         <div className="sidebar-bottom">
-          <div className="support-link"><CircleHelp size={15} /><span>{t('shell.help')}</span><ExternalLink size={12} /></div>
-          <div className="user-card"><div className="avatar">{(authUser?.display_name ?? '—').slice(0, 2).toUpperCase()}</div><div className="user-copy"><strong>{authUser?.display_name ?? t('shell.unknownUser')}</strong><span>{authUser?.email ?? t('shell.unknownIdentity')}</span></div><MoreHorizontal size={16} /></div>
+          <Link className="support-link" to="/help" onClick={() => setSidebarOpen(false)}><CircleHelp size={15} /><span>{t('shell.help')}</span><ArrowUpRight size={12} /></Link>
+          <Dropdown menu={{ items: userMenuItems, onClick: onUserMenu }} trigger={['click']} placement="topLeft">
+            <button type="button" className="user-card" aria-label={t('shell.openUserMenu')}>
+              <div className="avatar">{(authUser?.display_name ?? '—').slice(0, 2).toUpperCase()}</div>
+              <div className="user-copy"><strong>{authUser?.display_name ?? t('shell.unknownUser')}</strong><span>{authUser?.email ?? t('shell.unknownIdentity')}</span></div>
+              <MoreHorizontal size={16} />
+            </button>
+          </Dropdown>
         </div>
       </aside>
 
@@ -493,7 +523,9 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
             <div className="theme-menu"><Sun size={16} aria-hidden="true" /><Select aria-label={t('theme.select')} value={theme} onChange={(value) => setTheme(value)} variant="borderless" popupMatchSelectWidth={false} options={[{ value: 'dark', label: t('theme.dark') }, { value: 'light', label: t('theme.light') }, { value: 'system', label: t('theme.system') }]} /></div>
             <div className="theme-menu language-menu"><Globe2 size={16} aria-hidden="true" /><Select aria-label={t('language.select')} value={language} onChange={(value) => changeLanguage(value)} variant="borderless" popupMatchSelectWidth={false} options={[{ value: 'zh-CN', label: t('language.zh') }, { value: 'en', label: t('language.en') }]} /></div>
             <IconButton label={t('shell.auditEvents')} onClick={() => selectPage('audit')}><Activity size={16} /></IconButton>
-            <div className="top-avatar" aria-label={authUser?.display_name ?? authUser?.email ?? t('shell.currentUser')}>{userInitials}</div>
+            <Dropdown menu={{ items: userMenuItems, onClick: onUserMenu }} trigger={['click']} placement="bottomRight">
+              <button type="button" className="top-avatar" aria-label={t('shell.currentUser')}>{userInitials}</button>
+            </Dropdown>
           </div>
         </header>
         <div className="page-scroll">
@@ -508,6 +540,7 @@ function Console({ theme, setTheme, effectiveTheme, language }: ConsoleProps) {
             {page === 'logs' && <AccessLogs logs={accessLogs ?? []} loading={accessLogsLoading} error={accessLogsError} onExport={exportAccessLogs} />}
             {page === 'audit' && <Audit audits={audits ?? []} loading={auditLoading} error={auditError} onExport={exportAudit} />}
             {page === 'settings' && <SettingsPage focusSection={settingsFocus} settings={platformSettings} apiLive={apiLive} onSettingsChange={setPlatformSettings} cloudflareSettings={cloudflareSettings} onCloudflareChange={setCloudflareSettings} cloudflareDiagnosis={cloudflareDiagnosis} onDismissCloudflareDiagnosis={() => setCloudflareDiagnosis(null)} smtpSettings={smtpSettings} onSmtpChange={setSmtpSettings} oauthSettings={oauthSettings} onOauthChange={setOauthSettings} invites={invites} onInvitesChange={setInvites} onAction={notify} />}
+            {docPage && (docPage === 'account' ? <AccountPage user={authUser} /> : <DocPage page={docPage} />)}
           </div>
         </div>
       </main>
@@ -989,4 +1022,4 @@ function Root() {
   return <ConfigProvider locale={language === 'en' ? enUS : zhCN} theme={createAppTheme(effectiveTheme)}><AntdApp><Console theme={theme} setTheme={setTheme} effectiveTheme={effectiveTheme} language={language} /></AntdApp></ConfigProvider>
 }
 
-createRoot(document.getElementById('root')!).render(<Root />)
+createRoot(document.getElementById('root')!).render(<BrowserRouter><Root /></BrowserRouter>)

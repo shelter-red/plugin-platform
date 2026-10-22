@@ -43,6 +43,8 @@ export default {
     loadPlugin: '加载插件',
     loadFailed: '数据读取失败',
     retry: '重试',
+    home: '返回总览',
+    openUserMenu: '打开账号菜单',
   },
   palette: {
     title: '命令面板',
@@ -50,6 +52,13 @@ export default {
     empty: '没有匹配结果',
     hint: '↑↓ 选择 · Enter 跳转 · Esc 关闭',
     group: { pages: '页面', settings: '设置' },
+  },
+  docs: {
+    help: { title: '帮助中心', description: '快速了解登录、绑定服务器、加载插件和分配域名的完整流程。' },
+    terms: { title: '使用条款', description: '自托管部署的责任边界与可接受的使用方式。' },
+    privacy: { title: '隐私说明', description: '登录身份、运行数据和凭据的收集、使用与保留期限。' },
+    account: { title: '账号', description: '查看当前登录身份与权限，并管理会话。' },
+    related: '相关文档',
   },
   theme: { label: '主题：{{label}}', select: '选择主题', dark: '深色', light: '浅色', system: '系统' },
   auth: {
@@ -61,6 +70,17 @@ export default {
     loginBody: '管理插件服务器、插件实例和公开域名。平台不开放自助注册。',
     github: '使用 GitHub 登录',
     note: '登录状态由 HttpOnly 会话 cookie 保护',
+  },
+  account: {
+    title: '账号',
+    name: '显示名',
+    email: '邮箱',
+    role: '角色',
+    provider: '登录方式',
+    githubProvider: 'GitHub OAuth',
+    more: '帮助与协议',
+    logout: '退出登录',
+    roles: { superAdmin: '超级管理员', member: '成员' },
   },
   common: {
     notRead: '未读取',

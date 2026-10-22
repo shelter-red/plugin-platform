@@ -43,6 +43,8 @@ export default {
     loadPlugin: 'Load plugin',
     loadFailed: 'Could not load data',
     retry: 'Retry',
+    home: 'Back to overview',
+    openUserMenu: 'Open account menu',
   },
   palette: {
     title: 'Command palette',
@@ -50,6 +52,13 @@ export default {
     empty: 'No matching results',
     hint: '↑↓ to select · Enter to open · Esc to close',
     group: { pages: 'Pages', settings: 'Settings' },
+  },
+  docs: {
+    help: { title: 'Help center', description: 'Sign in, bind a server, load plugins and assign domains end to end.' },
+    terms: { title: 'Terms of use', description: 'Responsibilities and acceptable use for self-hosted deployments.' },
+    privacy: { title: 'Privacy notice', description: 'What identity, runtime and credential data is stored, used and retained.' },
+    account: { title: 'Account', description: 'Review your current identity and role, and manage the session.' },
+    related: 'Related documents',
   },
   theme: { label: 'Theme: {{label}}', select: 'Select theme', dark: 'Dark', light: 'Light', system: 'System' },
   auth: {
@@ -61,6 +70,17 @@ export default {
     loginBody: 'Manage plugin servers, plugin instances and public domains. Self-signup is disabled.',
     github: 'Sign in with GitHub',
     note: 'Your session is protected by an HttpOnly cookie',
+  },
+  account: {
+    title: 'Account',
+    name: 'Display name',
+    email: 'Email',
+    role: 'Role',
+    provider: 'Sign-in method',
+    githubProvider: 'GitHub OAuth',
+    more: 'Help & terms',
+    logout: 'Sign out',
+    roles: { superAdmin: 'Super admin', member: 'Member' },
   },
   common: {
     notRead: 'Not available',

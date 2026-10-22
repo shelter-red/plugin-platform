@@ -147,6 +147,8 @@ async function handleApi(route: Route, state: WorkerMock, logsGate: Promise<void
     return route.fulfill({ status: 500, json: { error: 'smoke failure' } })
   }
   switch (pathname) {
+    case '/api/me':
+      return route.fulfill({ json: { user: { id: 'user-1', github_id: '1', display_name: 'E2E Admin', email: 'e2e@example.com', role: 'super_admin' } } })
     case '/api/overview':
       return route.fulfill({ json: overview })
     case '/api/servers':
@@ -496,6 +498,47 @@ test('管理端移除背景模糊与背景过渡并使用本地字体', async ({
   await page.waitForTimeout(150)
   const second = await topbar.screenshot()
   expect(second.equals(first)).toBe(true)
+})
+
+test('管理端入口可跳转并展示账号与协议页', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await mockWorker(page)
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: '总览' })).toBeVisible()
+
+  await page.getByRole('link', { name: '帮助与协议' }).click()
+  await expect(page).toHaveURL(/\/help$/)
+  await expect(page.getByRole('heading', { name: '帮助中心' })).toBeVisible()
+  await expect(page.getByText('快速开始')).toBeVisible()
+  await expect(page.getByText(/⌘K \/ Ctrl\+K/)).toBeVisible()
+
+  await page.getByRole('link', { name: '使用条款' }).click()
+  await expect(page).toHaveURL(/\/terms$/)
+  await expect(page.getByRole('heading', { name: '可接受的使用' })).toBeVisible()
+  await expect(page.getByRole('link', { name: '隐私说明' })).toBeVisible()
+
+  await page.getByRole('link', { name: '返回总览' }).click()
+  await expect(page).toHaveURL(/\/$/)
+  await expect(page.getByRole('heading', { name: '总览' })).toBeVisible()
+
+  await page.getByRole('button', { name: '当前用户' }).click()
+  await page.getByRole('menuitem', { name: '账号' }).click()
+  await expect(page).toHaveURL(/\/account$/)
+  await expect(page.getByRole('heading', { name: 'E2E Admin' })).toBeVisible()
+  await expect(page.getByText('超级管理员')).toBeVisible()
+  await expect(page.getByText('e2e@example.com').first()).toBeVisible()
+
+  await page.getByRole('button', { name: '打开账号菜单' }).click()
+  await expect(page.getByRole('menuitem', { name: '退出登录' }).last()).toBeVisible()
+  await page.keyboard.press('Escape')
+
+  await page.goto('/privacy')
+  await expect(page.getByRole('heading', { name: '隐私说明' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '保留期限' })).toBeVisible()
+
+  await page.goto('/missing-page')
+  await expect(page).toHaveURL(/\/$/)
+  await expect(page.getByRole('heading', { name: '总览' })).toBeVisible()
 })
 
 const enabledPlugin = {
