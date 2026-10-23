@@ -2,7 +2,7 @@
 
 > 最后整理：2026-10-23（Asia/Shanghai）
 >
-> 当前状态：**Cloudflare API Token 前后端、8 项用量及 17 个路径的旧文案清理已推送。最近一次代码基线为 `e349e7b`，`HEAD == origin/main == e349e7b`；Actions run `39880735501`（#61）为 `completed/success`。本轮完整本地验收已通过 `git diff --check`、`npm run ci:local`（87/87 UI smoke）、Worker runtime 20/20 文件与 89/89 测试、`npm run deploy:worker:test` 10/10。8.3 的窄屏布局子步骤已完成，下一步已登记为图标/文字对齐、重复入口/空卡片和中英文文案审计；之后才进入原生可执行/共享库手动构建、帮助中心原生教程和生产联调。若之后再次修改本 HANDOFF，会生成新的 docs-only commit；恢复时不要用本文代替实时 Git/Actions 查询。**
+> 当前状态：**Cloudflare API Token 前后端、8 项用量及 17 个路径的旧文案清理已推送。最近一次代码基线为 `67efa26`，`HEAD == origin/main == 67efa26`；Actions run `39881453006`（#62）为 `completed/success`。本轮完整本地验收已通过 `git diff --check`、`npm run ci:local`（87/87 UI smoke）、Worker runtime 20/20 文件与 89/89 测试、`npm run deploy:worker:test` 10/10。8.3 的窄屏布局子步骤已完成，下一步先核对 Cloudflare Token 权限/域名配置契约，再继续图标/文字对齐、重复入口/空卡片和中英文文案审计；之后才进入原生可执行/共享库手动构建、帮助中心原生教程和生产联调。若之后再次修改本 HANDOFF，会生成新的 docs-only commit；恢复时不要用本文代替实时 Git/Actions 查询。**
 >
 > 本文件是上下文压缩后的第一事实源。README、旧方案、旧测试、聊天摘要或历史提交说明与本文冲突时，以用户最新要求、当前代码和本文为准。恢复后先执行第 0 节的核验命令，再按第 8 节顺序继续。
 
@@ -13,8 +13,8 @@
 ```text
 仓库：/home/tc/work/plugin-platform
 分支：main
-HEAD（最近核验）：e349e7b fix(ui): 修复设置页窄屏布局并更新视觉基线
-origin/main（最近核验）：e349e7b
+HEAD（最近核验）：67efa26 docs: 记录窄屏修复闭环与文案审计入口
+origin/main（最近核验）：67efa26
 工作区（最近核验）：clean；后续若再次整理 HANDOFF，以实时 Git 为准
 fetch remote：https://github.com/shelter-red/plugin-platform.git
 push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
@@ -23,7 +23,8 @@ push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 最近提交（均已推送）：
 
 ```text
-e349e7b fix(ui): 修复设置页窄屏布局并更新视觉基线  ← 当前代码基线
+67efa26 docs: 记录窄屏修复闭环与文案审计入口  ← 当前代码基线
+e349e7b fix(ui): 修复设置页窄屏布局并更新视觉基线
 b6ad802 docs: 记录交接提交的 Actions 成功结果
 02dbb1a docs: 更新交接状态与 Actions 基线
 a9e3839 docs: 固化完整交接与本地验收基线
@@ -168,13 +169,17 @@ Workers Builds 控制台 Deploy command 核对
 https://dash.cloudflare.com/profile/api-tokens
 ```
 
-- 用户创建 Token 时固定只读权限，界面只展示，用户不能勾选、取消、增删或编辑：
+- 用户创建 Token 时当前界面固定展示只读权限，不能勾选、取消、增删或编辑：
 
 ```text
 Account Settings Read
 Account Analytics Read
 Billing Read
 ```
+
+- 这三项只能支持账号发现、Analytics 用量读取和套餐读取；它们不是域名配置权限。当前所谓“公开域名”是平台自身的 Host/D1 路由，不等于通过 Cloudflare DNS API 创建或修改 Zone/DNS 记录。
+- 用户最新反馈要求重新核对域名配置是否真的需要 Cloudflare DNS/Zone 能力。实现前必须查明代码是否存在 DNS/Zone 写入 API；若确实需要，必须补充 Cloudflare 官方可选权限和对应后端能力，不能仅修改权限文案，也不能把写权限混入默认只读 Token。
+- Cloudflare API Token 表单当前只接收 Token 值和可选 Account ID。Token 名称是 Cloudflare 侧元数据，不应继续称为 OAuth 名称；“Token 名称”“Permissions/Scopes”是否需要平台保存/展示，必须以 Cloudflare Token 创建页和当前产品流程核对后决定。不得自行编造权限名。
 
 - 最终用户可见界面和活跃逻辑不得出现：
 
@@ -298,7 +303,8 @@ doRequests        100,000
 | U21 | 文案诡异、莫名卡片、同页多个按钮跳同页 | 中英文审计；清重复说明/空卡片/重复跳转 | ⬜ 未完成 |
 | U22 | Actions 手动构建插件服务器：可执行/库、目标平台 | 仅 `workflow_dispatch`；真正共享库 + artifact + SHA256 | ⬜ 未开始 |
 | U23 | 帮助中心说明二进制/库文件服务器怎么用 | 中英文完整使用说明 | ⬜ 未开始 |
-| U24 | 都整理到磁盘 HANDOFF，避免压缩后忘 | 所有要求、事实、阻塞、步骤、验收可恢复 | ✅ 已更新到 `a9e3839` 基线，明确区分完成项、剩余项、禁止事项和实时核验要求 |
+| U24 | 都整理到磁盘 HANDOFF，避免压缩后忘 | 所有要求、事实、阻塞、步骤、验收可恢复 | ✅ 已更新到 `67efa26` 基线，明确区分完成项、剩余项、禁止事项和实时核验要求 |
+| U25 | 三项只读权限怎么配置域名；OAuth/Token 名称不一致；Token 还要选范围 | 先核对域名是否是平台路由还是 Cloudflare DNS；区分 Token 名称与 OAuth；核对真实 Token 权限/范围模型 | ⬜ 已登记，待代码与 Cloudflare 官方权限模型核对；当前三项只读不能声称支持 DNS/Zone 配置 |
 
 ## 3. 当前实现清单
 
