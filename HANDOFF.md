@@ -4,7 +4,7 @@
 >
 > 本次恢复记录：U29 的主站 Host 路由修复、回归测试和应急说明已在当前工作区完成；代码提交与最新 Actions 仍待本步验收闭环。在该闭环完成前不得进入 8.5。
 >
-> 本步本地验收已通过：`npm run worker:typecheck`、`npm run build`、`npm run worker:smoke`、`worker/runtime/setup.test.ts` 2/2，以及 Docker Worker runtime 20/20 文件、93/93 测试；下一步提交 U29 代码/文档并重新执行完整 CI。
+> 本步本地验收已通过：`npm run worker:typecheck`、`npm run build`、`npm run worker:smoke`、`worker/runtime/setup.test.ts` 2/2（含重叠后缀下主站根路径和 `/api/health`），以及 Docker Worker runtime 20/20 文件、93/93 测试；下一步提交 U29 代码/文档并重新执行完整 CI。
 >
 > 当前状态：**Cloudflare API Token、8 项用量监控、Token 直接配置插件域名、原生插件服务器手动构建和 Cloudflare 权限三列文案已完成。权限修正提交为 `3e9f89d`，原生修复提交为 `accfed0`；`accfed0` 的 Actions #84（run `39931270148`）已在 GitHub Actions 页面确认成功。权限面板现在按创建页左、中、右三列展示：账户/区域/用户范围、中文+官方英文权限组、读取/写入/编辑级别；中列不再让用户把 `Account Analytics Read` 误当成一个下拉选项。`3e9f89d` 的本地构建、UI 静态审计和 Cloudflare 设置定向 Playwright 31/31 已通过。新发现 U29：当插件域名后缀覆盖主站（例如后缀为 `shelter.red`、主站为 `platform.shelter.red`）时，主站会被误判为插件域名并返回 `Plugin domain not found`；下一步先修复主站 Host 路由，再进入 8.5。若之后再次修改本 HANDOFF，会生成新的 docs-only commit；恢复时不要用本文代替实时 Git/Actions 查询。**
 >
@@ -853,4 +853,4 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - 2026-10-23：权限面板改为监控/域名两组并标注只读、写入、编辑；不再显示无法由 Cloudflare API 回读确认的逐项“缺失”状态；账号、订阅、Zone、DNS、Worker Route 的 403 错误分别指出对应权限。完整 `ci:local` 87/87、设置页 Axe 2/2、权限定向 Docker runtime 16/16 通过；`8ec7590`、`269befa` 已推送，Actions #68/#69 成功。
 - 2026-10-23：确认剩余工作顺序：视觉/文案人工验收 → 原生手动构建与真正 SHARED target → 帮助中心原生教程 → Workers Builds/D1/真实服务联调 → 全量验收 → 新提交的 push/Actions 闭环。
 - 2026-10-23：提交 `beb8668`（`fix(cloudflare): 按三列展示 Token 权限`）已推送。Cloudflare 权限面板现在按“范围 / Scope、权限组 / Permission、级别 / Level”三列显示；权限组为中文 + Cloudflare 英文原名，范围明确为账户、区域、用户，用户范围仅说明不使用；README、帮助中心、方案和验收矩阵同步为三列填写方式。`git diff --check`、`npm run build`、`npm run ui:conventions`、`npm run ui:css-audit`、`npm run ci:local`（Worker smoke、UI 88/88）和 Docker runtime（20 个文件、93 个测试）通过。Actions #81 / run `39920624930` 已 `completed/success`。
-- 2026-10-23：提交 `b9eb2b8`（`docs: 登记主站路由修复待验收状态`）记录 U29 工作区范围。随后验证 `npm run worker:typecheck`、`npm run build`、`npm run worker:smoke`、setup 定向 2/2 和 Docker Worker runtime 20/20 文件、93/93 测试通过；U29 代码/文档仍待单独提交、推送和最新 Actions 验收。
+- 2026-10-23：提交 `b9eb2b8`（`docs: 登记主站路由修复待验收状态`）记录 U29 工作区范围；`afe4fef` 记录首次本地验收。随后补充重叠后缀下主站 `/api/health` 回归断言，setup 定向仍为 2/2，`git diff --check` 通过；U29 代码/文档仍待单独提交、推送和最新 Actions 验收。
