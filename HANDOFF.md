@@ -663,7 +663,15 @@ fd80fa4  run 39754896119  #11  管理端 UI smoke 失败
 
 ### 8.3 视觉与文案验收（已登记，当前步骤）
 
-开始本步骤前必须先检查本地 Git/Actions；本次已在 `b6ad802` 的 HANDOFF 中登记，待本记录提交的 Actions 闭环后执行。证据要求：使用 Playwright 实际启动管理端，覆盖登录页、设置页、Cloudflare Token 面板、用量页，至少检查桌面/窄屏与双主题截图，并记录发现的问题后再修改。
+开始本步骤前必须先检查本地 Git/Actions；本次已在 `b6ad802` 的 HANDOFF 中登记，并在 `cf130d1` 的 Actions #59 成功后执行。当前证据与问题：
+
+- 登录页实际页面是 `AuthFrame`/`LoginPage` 组件，桌面与窄屏没有横向溢出；不是旧登录页。
+- Cloudflare 设置区实际页面使用 Token 表单、固定三项权限和创建 Token 链接；页面没有 Cloudflare Client ID、Secret 或回调字段。现有 tracked settings 截图仍是旧 OAuth 外观，且 5% 像素容差使 targeted screenshot 仍通过，不能继续作为可靠视觉基线。
+- 390px 设置页的 `.settings-nav` 与 `.settings-content` 计算宽度为 462px，而可用内容列只有 362px；`.app-shell` 的裁剪掩盖了横向溢出，导航和面板右侧内容被截断，必须修复并增加窄屏宽度断言。
+- 空态下工作区切换器高度为 46.34px，标题/副标题合计 30.34px，当前没有遮挡；仍需用“默认工作区”真实数据覆盖两行文案，避免回归。
+- 当前宿主缺少 CJK 字体，直接截图出现方框/缺字；最终像素基线必须在 CI 同款 Playwright 环境重建，不能把宿主字体缺失误当成产品文案问题。
+
+下一步只处理已记录的窄屏布局、可靠截图基线和对应回归断言；完成后再进入图标对齐、重复入口和中英文文案审计。
 
 - 登录页实际截图，确认不是旧页面或旧组件。
 - 检查设置页 Cloudflare Token 区块、固定权限、创建 Token 链接。
