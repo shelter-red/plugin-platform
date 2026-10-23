@@ -73,11 +73,19 @@ native-server/build/plugmesh-server --register
 
 省略的参数依次从 `PLUGMESH_WORKER_URL`、`PLUGMESH_SERVER_NAME`、`PLUGMESH_CREDENTIAL_FILE` 读取，注册码与口令分别使用 `PLUGMESH_REGISTRATION_CODE`、`PLUGMESH_LOCAL_UI_PASSWORD`（及 `PLUGMESH_LOCAL_UI_PASSWORD_CONFIRMATION`）、`PLUGMESH_CREDENTIAL_PASSWORD`；环境变量优先于提示，输入会去掉首尾空白，本地 UI 口令至少 8 位。
 
+## 使用 GitHub Actions 构建产物
+
+`.github/workflows/build-plugin-server.yml` 只接受手动触发。选择 `executable` 时，artifact 名称形如 `plugmesh-plugin-server-linux-executable-Release`，包含 `plugmesh-server`、`plugmesh-plugin-host`、`plugin_api.h`、README、构建信息和归档校验和；选择 `shared` 时还包含 Linux 的 `libplugmesh-server.so`、macOS 的 `libplugmesh-server.dylib` 或 Windows 的 DLL/导入库，以及 `server_api.h`。下载后在 artifact 根目录执行 `sha256sum -c SHA256SUMS`（macOS 使用 `shasum -a 256 -c SHA256SUMS`），确认归档未被替换后再解压。
+
+Linux 和 macOS 产物需要系统可用的 OpenSSL 3 运行库；Windows 产物会随包复制构建所需的 vcpkg DLL。所有平台都需要把 `plugmesh-plugin-host` 与服务器放在同一目录，或设置 `PLUGMESH_PLUGIN_HOST`。artifact 不包含 `native-ui/dist`，需要本地控制台时先执行 `npm run native-ui:build`，再设置 `PLUGMESH_LOCAL_UI_DIRECTORY`；无浏览器环境可以直接使用上面的 `--register` CLI。
+
+构建产物中的 `plugin_api.h` 是插件动态库 ABI，`server_api.h` 是共享库嵌入接口，二者用途不同。插件目录仍按一个插件一个子目录放置 `manifest.json` 和 `.so`/`.dylib`/`.dll`，服务器只会发现 manifest 中 `library` 位于该子目录内的插件。
+
 ## 共享库嵌入
 
 CMake 的 `plugmesh-server-shared` target 会生成真正的共享库：Linux 为 `libplugmesh-server.so`，macOS 为 `libplugmesh-server.dylib`，Windows 为 `plugmesh-server.dll`。公共头文件 `include/plugmesh/server_api.h` 只暴露 C ABI，避免把 C++ STL 类型跨越动态库边界。
 
-共享库接收已经注册的 Worker 参数，不包含命令行注册和本地 UI setup 流程。调用方负责保存凭据，并在 `plugin_host_executable` 中提供 `plugmesh-plugin-host` 的路径；该路径为空时由现有 `PLUGMESH_PLUGIN_HOST` 规则解析。最小生命周期如下：
+共享库接收已经注册的 Worker 参数，不包含命令行注册和本地 UI setup 流程。调用方负责安全保存凭据，并在 `plugin_host_executable` 中提供 `plugmesh-plugin-host` 的路径；该路径为空时由现有 `PLUGMESH_PLUGIN_HOST` 规则解析。`plugmesh_server_create` 会复制配置字符串，最小生命周期如下：
 
 ```c
 #include "plugmesh/server_api.h"

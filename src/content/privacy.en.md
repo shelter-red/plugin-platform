@@ -5,6 +5,10 @@
 - Runtime data: server heartbeats, plugin manifests, public request logs and audit events.
 - Configuration: GitHub OAuth client credentials, SMTP passwords and the Cloudflare API Token are encrypted with AES-GCM before being written to D1; secret values are never returned by GET APIs.
 
+### Local plugin servers
+
+The executable and shared-library plugin servers run on your machine or inside your host process. Plugin libraries, `manifest.json` files, local logs and credential files are handled locally; the server opens a control connection to the platform and forwards the data needed for public plugin requests. After registration, the access token is stored in the system credential store or in a password-protected AES-GCM encrypted file, and is not written to the repository. In shared-library mode the host application owns and supplies the credentials; restrict the plugin directory and local management port according to your deployment policy.
+
 ### How data is used
 
 Only for authentication, request routing, usage accounting, auditing and maintenance notifications.

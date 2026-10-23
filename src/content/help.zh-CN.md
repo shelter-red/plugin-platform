@@ -56,6 +56,79 @@ WHERE key = 'platform';
 
 错误会保留在当前设置或用量页面并显示 HTTP 状态、错误码和原始消息。Cloudflare 免费额度只从 subscriptions 读取；未确认 Free 计划时页面显示「未读取」，不能手工填写。
 
+### 使用二进制插件服务器
+
+从 GitHub Actions 的「手动构建插件服务器」下载与你的系统和产物类型匹配的 artifact。`executable` 是可直接启动的 `plugmesh-server`；`shared` 是供其他程序嵌入的共享库，不是独立可执行文件。下载后先校验 `SHA256SUMS`：Linux 使用 `sha256sum -c SHA256SUMS`，macOS 使用 `shasum -a 256 -c SHA256SUMS`，Windows PowerShell 用 `Get-FileHash` 对照文件中的 SHA-256。不要混用不同操作系统构建出的插件库或服务器。
+
+插件目录必须按“一个插件一个子目录”组织，每个子目录至少包含 `manifest.json` 和与当前平台匹配的动态库，例如 Linux：
+
+```text
+plugins/
+└── sample.plugin/
+    ├── manifest.json
+    └── libsample.so
+```
+
+`manifest.json` 至少声明 `id`、`name`、`version`、`abiVersion`、`library`、`healthPath`、`capabilities` 和 `permissions`；`abiVersion` 支持 2、3、4，`library` 只能指向同一插件目录内的 `.so`、`.dylib` 或 `.dll`。插件 ABI 公共头文件随构建 artifact 提供，具体字段和回调见仓库的 `native-server/README.md`。
+
+在管理端「插件服务器」生成一次性注册码，然后在解压后的服务器目录执行绑定。Linux/macOS 示例：
+
+```bash
+PLUGMESH_CREDENTIAL_PASSWORD='本地凭据口令' \
+PLUGMESH_REGISTRATION_CODE='一次性注册码' \
+./plugmesh-server --register https://platform.example.com '边缘服务器' ~/.config/plugmesh/credentials.json
+```
+
+Windows PowerShell 示例：
+
+```powershell
+$env:PLUGMESH_CREDENTIAL_PASSWORD = '本地凭据口令'
+$env:PLUGMESH_REGISTRATION_CODE = '一次性注册码'
+.\plugmesh-server.exe --register https://platform.example.com '边缘服务器' "$env:USERPROFILE\.plugmesh\credentials.json"
+```
+
+绑定后启动服务器。`plugmesh-plugin-host` 放在 `plugmesh-server` 同一目录时可以省略 `PLUGMESH_PLUGIN_HOST`；否则必须指定它。`PLUGMESH_LOCAL_UI_DIRECTORY` 只影响本机管理界面，二进制 artifact 不包含该前端目录时，可单独构建 `native-ui` 后传入路径。
+
+```bash
+PLUGMESH_CREDENTIAL_FILE="$HOME/.config/plugmesh/credentials.json" \
+PLUGMESH_CREDENTIAL_PASSWORD='本地凭据口令' \
+PLUGMESH_PLUGIN_DIRECTORY="$PWD/plugins" \
+PLUGMESH_PLUGIN_HOST="$PWD/plugmesh-plugin-host" \
+./plugmesh-server
+```
+
+服务器在管理端显示在线后，到「插件实例」执行加载、启用，再执行健康检查；健康检查通过后，在「公开域名」分配前缀。服务器本地默认只监听 `127.0.0.1:8787`，可用 `PLUGMESH_LOCAL_PORT` 修改端口。`PLUGMESH_WORKER_URL`、`PLUGMESH_PLUGIN_DIRECTORY`、`PLUGMESH_PLUGIN_HOST`、`PLUGMESH_CREDENTIAL_FILE`、`PLUGMESH_CREDENTIAL_PASSWORD` 和 `PLUGMESH_LOCAL_UI_DIRECTORY` 都可以用环境变量配置；不要把访问令牌或凭据文件提交到代码仓库。
+
+### 使用共享库嵌入宿主
+
+共享库 artifact 只提供服务器运行库、`plugmesh-plugin-host`、`server_api.h` 和构建说明。宿主程序需要自行保存凭据，并通过 `plugmesh_server_config` 传入已绑定的 Worker 地址、服务器 ID、访问令牌、插件目录和宿主可执行文件路径；共享库不提供 `--register` 或本地 UI setup。调用方链接对应平台的 `libplugmesh-server.so`、`libplugmesh-server.dylib` 或 Windows `plugmesh-server.dll`/导入库，并随程序提供 OpenSSL 3 运行库。
+
+最小 C ABI 生命周期如下：
+
+```c
+#include "plugmesh/server_api.h"
+
+plugmesh_server_config config = {
+    "https://platform.example.com",
+    "server-id",
+    "access-token",
+    "/opt/plugmesh/plugins",
+    "/opt/plugmesh/plugmesh-plugin-host",
+};
+char error[256];
+plugmesh_server* server = plugmesh_server_create(&config, error, sizeof(error));
+if (!server || !plugmesh_server_start(server)) {
+    /* 记录 plugmesh_server_last_error(server) 或 error 后处理失败。 */
+}
+/* 宿主进程存活期间保持 server 运行。 */
+plugmesh_server_stop(server);
+plugmesh_server_destroy(server);
+```
+
+`server_api.h` 是跨 C/C++ 宿主的稳定 C ABI，不要让 STL 类型跨越边界；插件自身仍按 `plugin_api.h` 的 ABI v2/v3/v4 导出入口。`plugmesh_server_create` 会复制配置字符串，停止时必须按 `stop` → `destroy` 顺序释放。跨平台的导入库、RPATH、OpenSSL 和插件目录布局见 [`native-server/README.md`](https://github.com/shelter-red/plugin-platform/blob/main/native-server/README.md)。
+
+如果服务器没有发现插件，先检查 `PLUGMESH_PLUGIN_DIRECTORY`、子目录中的 `manifest.json`、`library` 扩展名和 `PLUGMESH_PLUGIN_HOST`；如果健康检查失败，先在本机查看 `/api/diagnostics` 与 `/api/logs`，再检查服务器到 Worker 的 HTTPS 出站连接。
+
 ## 支持范围
 
 本仓库为自托管插件平台，不提供托管服务。反馈问题时请附上访问日志、审计日志与部署方式。

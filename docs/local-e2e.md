@@ -8,6 +8,8 @@
 - 本机 glibc 2.31 无法直接运行 workerd，`wrangler` 统一在 `node:22-bookworm-slim` 容器内执行并挂载 `/etc/ssl/certs`。
 - 已构建 `native-server/build/plugmesh-server`、`native-server/build/plugins` 和 `native-ui/dist`。
 
+也可以用 GitHub Actions 的「手动构建插件服务器」artifact 替换 `plugmesh-server` 和 `plugmesh-plugin-host`：选择与本机匹配的 `executable`/`Release` 产物，下载后先在 artifact 根目录执行 `sha256sum -c SHA256SUMS`（macOS 使用 `shasum -a 256 -c SHA256SUMS`），再把两个可执行文件放入同一目录。artifact 不包含示例插件、`native-ui/dist` 或插件目录，仍需从源码构建示例插件，或提供自己的 `manifest.json`/动态库，并设置 `PLUGMESH_PLUGIN_DIRECTORY` 和 `PLUGMESH_LOCAL_UI_DIRECTORY`。共享库 artifact 不能直接替换这里的服务器进程，只能由宿主按 `native-server/include/plugmesh/server_api.h` 嵌入。
+
 ## 启动 Worker
 
 ```bash

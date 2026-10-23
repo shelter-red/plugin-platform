@@ -236,6 +236,8 @@ npx wrangler dev --config wrangler.toml --var SESSION_SECRET:local-only-session-
 
 workflow 只接受手动触发，不会因为普通推送重复构建。每个 artifact 包含所选服务器产物、`plugmesh-plugin-host`、插件 ABI 公共头、`server_api.h`（共享库）和构建说明，并附带 `SHA256SUMS`。共享库通过 `native-server/include/plugmesh/server_api.h` 提供稳定 C ABI；可执行程序仍使用 `--register` 或环境变量完成绑定。
 
+下载 artifact 后先在根目录校验 `SHA256SUMS`（Linux：`sha256sum -c SHA256SUMS`；macOS：`shasum -a 256 -c SHA256SUMS`），再按 [`src/content/help.zh-CN.md`](src/content/help.zh-CN.md) 或 [`native-server/README.md`](native-server/README.md) 绑定服务器、设置 `PLUGMESH_PLUGIN_DIRECTORY` 并加载插件。artifact 不包含 `native-ui/dist`；需要本地控制台时另行构建 `native-ui`，或直接使用 CLI 注册和环境变量运行。共享库不是独立程序，宿主必须链接 `server_api.h` C ABI 并负责保存已绑定凭据。
+
 ## 发布原生端
 
 推送 `v*` tag（或手动触发 `.github/workflows/release.yml`）会在 Ubuntu、Windows 和 macOS runner 上构建 `plugmesh-server`，并发布到对应 GitHub Release：

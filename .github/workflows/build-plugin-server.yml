@@ -113,7 +113,7 @@ jobs:
           printf '类型：%s\n平台：Linux x86_64\n构建类型：%s\n' "${{ inputs.artifact_type }}" "${{ inputs.build_type }}" > "dist/$package/BUILD-INFO.txt"
           archive="$package.tar.gz"
           tar -C dist -czf "dist/$archive" "$package"
-          sha256sum "dist/$archive" > dist/SHA256SUMS
+          (cd dist && sha256sum "$archive" > SHA256SUMS)
 
       - name: 打包（macOS）
         if: inputs.target_platform == 'macos'
@@ -134,7 +134,7 @@ jobs:
           printf '类型：%s\n平台：macOS\n构建类型：%s\n' "${{ inputs.artifact_type }}" "${{ inputs.build_type }}" > "dist/$package/BUILD-INFO.txt"
           archive="$package.tar.gz"
           tar -C dist -czf "dist/$archive" "$package"
-          shasum -a 256 "dist/$archive" > dist/SHA256SUMS
+          (cd dist && shasum -a 256 "$archive" > SHA256SUMS)
 
       - name: 打包（Windows）
         if: inputs.target_platform == 'windows'
