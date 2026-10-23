@@ -106,6 +106,7 @@ setup_token=$(cat "$TMP/state/secret_SETUP_TOKEN")
 [[ "$first_output" != *"$setup_token"* ]]
 [[ "$first_output" == *'在初始化页填写 GitHub OAuth App 的 Client ID、Client Secret 和管理员白名单'* ]]
 [[ "$first_output" == *'回调地址由当前访问域名自动生成，无需手填'* ]]
+[[ "$first_output" != *'再在 Cloudflare 配置一次 DNS / Worker Route'* ]]
 [[ "$first_output" != *'Client ID、Client Secret、回调地址'* ]]
 grep -q 'test-database-id' "$TMP/wrangler.toml"
 [[ $(grep -c '^database_id = ' "$TMP/wrangler.toml") -eq 1 ]]

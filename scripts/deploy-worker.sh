@@ -240,7 +240,6 @@ cat <<'NEXT_STEPS'
   3. 在初始化页填写 GitHub OAuth App 的 Client ID、Client Secret 和管理员白名单。
      回调地址由当前访问域名自动生成，无需手填。
   4. 完成 GitHub 登录后，在管理后台配置 Cloudflare API Token、SMTP、平台阈值和插件域名后缀。
-  5. 如需自定义插件域名，再在 Cloudflare 配置一次 DNS / Worker Route，并在后台保存域名后缀。
 
 部署阶段不会写入 GitHub OAuth、Cloudflare API Token、SMTP 或插件域名后缀；这些均在后台配置并加密保存。
 NEXT_STEPS
