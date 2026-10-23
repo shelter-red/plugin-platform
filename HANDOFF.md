@@ -10,7 +10,11 @@
 >
 > 推送前完整验证已通过：`npm run ci:local`（UI smoke 88/88，UI 约定和样式审计通过）、`npm run deploy:worker:test`（10/10）、`git diff --check`；工作区干净，可以推送。推送后只追踪新 HEAD 的 Actions。
 >
+> `1636916` 已推送，Actions #87（run `39940433238`）及其 `changes`/`web` jobs 均 `completed/success`，native jobs 按路径过滤为 skipped；下面仅提交本次 Actions 结果记录，并继续追踪该 docs-only HEAD 的新 Actions。
+>
 > 当前状态：**Cloudflare API Token、8 项用量监控、Token 直接配置插件域名、原生插件服务器手动构建和 Cloudflare 权限三列文案已完成。权限修正提交为 `3e9f89d`，原生修复提交为 `accfed0`；`accfed0` 的 Actions #84（run `39931270148`）已在 GitHub Actions 页面确认成功。权限面板现在按创建页左、中、右三列展示：账户/区域/用户范围、中文+官方英文权限组、读取/写入/编辑级别；中列不再让用户把 `Account Analytics Read` 误当成一个下拉选项。`3e9f89d` 的本地构建、UI 静态审计和 Cloudflare 设置定向 Playwright 31/31 已通过。新发现 U29：当插件域名后缀覆盖主站（例如后缀为 `shelter.red`、主站为 `platform.shelter.red`）时，主站会被误判为插件域名并返回 `Plugin domain not found`；下一步先修复主站 Host 路由，再进入 8.5。若之后再次修改本 HANDOFF，会生成新的 docs-only commit；恢复时不要用本文代替实时 Git/Actions 查询。**
+>
+> 状态修订：上方状态段中的 U29“下一步先修复”是修复前历史措辞；当前以 `0695e77`、Actions #87 和本文件后续记录为准，U29 已完成，下一步进入 8.5。
 >
 > 本文件是上下文压缩后的第一事实源。README、旧方案、旧测试、聊天摘要或历史提交说明与本文冲突时，以用户最新要求、当前代码和本文为准。恢复后先执行第 0 节的核验命令，再按第 8 节顺序继续。
 
@@ -21,9 +25,9 @@
 ```text
 仓库：/home/tc/work/plugin-platform
 分支：main
-HEAD（本次核验）：68e56ee docs: 登记主站域名误判路由问题
-origin/main（本次核验）：68e56ee
-工作区（本次核验）：U29 路由修复、回归测试和 README/help/验收说明共 8 个非 HANDOFF 文件待验收提交；本次先提交 HANDOFF 状态记录
+HEAD（本次核验）：1636916 docs: 登记主站修复推送前验收
+origin/main（本次核验）：1636916
+工作区（本次核验）：U29 代码/文档已推送；本次仅更新 HANDOFF 记录 Actions #87，提交后仍需追踪新 docs-only HEAD
 fetch remote：https://github.com/shelter-red/plugin-platform.git
 push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 ```
@@ -179,8 +183,8 @@ Workers Builds 控制台 Deploy command 核对
 
 1. 执行 0.1 的 Git 核验，不凭记忆判断 HEAD、分支或工作区。
 2. 阅读第 1、2 节，确认用户硬约束，尤其不要恢复任何 Cloudflare OAuth 字段。
-3. 8.2 已完成：16 个非 HANDOFF 路径在 `6e9d0ec`，HANDOFF 记录提交为 `a9e3839`、`02dbb1a`、`b6ad802`，窄屏修复为 `e349e7b`，均已推送；#56、#57、#58、#61 均成功。8.3 窄屏布局子步骤已完成，8.4 原生手动构建已实现；#83 的 Windows 失败已由 `accfed0` 修复，#84 已确认成功。U28 权限三列修正已由 `3e9f89d` 完成。U29 的代码和文档已在工作区，先完成本次 HANDOFF-only 记录，再做本地验收、代码提交和新 HEAD 的 Actions 追踪。若本次又产生 HANDOFF-only 提交，以实时 Git/Actions 为准。
-4. 之后严格按 U29 提交/推送闭环 → 8.5 → 8.6 → 8.7 → 8.8 执行；8.4 原生手动构建和 U28 权限三列修正已完成。
+3. 8.2 已完成：16 个非 HANDOFF 路径在 `6e9d0ec`，HANDOFF 记录提交为 `a9e3839`、`02dbb1a`、`b6ad802`，窄屏修复为 `e349e7b`，均已推送；#56、#57、#58、#61 均成功。8.3 窄屏布局子步骤已完成，8.4 原生手动构建已实现；#83 的 Windows 失败已由 `accfed0` 修复，#84 已确认成功。U28 权限三列修正已由 `3e9f89d` 完成。U29 已由 `0695e77` 修复，`1636916` 的 Actions #87 已成功；本次只记录该结果并追踪新的 HANDOFF-only 提交。若本次又产生 HANDOFF-only 提交，以实时 Git/Actions 为准。
+4. U29 提交/推送闭环已完成，当前只收口 Actions 记录；之后严格按 8.5 → 8.6 → 8.7 → 8.8 执行。8.4 原生手动构建和 U28 权限三列修正已完成。
 5. 每次更新本文件后单独提交；push 后追踪新 HEAD 的 Actions，不引用旧 run 作为新提交证据。
 6. 每次压缩恢复后都更新本文件，不把“计划”写成“已完成”。
 
@@ -336,7 +340,7 @@ doRequests        100,000
 | U25 | 监控权限怎么配置域名；OAuth/Token 名称不一致；Token 还要选范围 | Token 固定六项权限平铺展示实际状态；说明 Account/Zone/User resources；保存插件域名后缀时自动同步 Zone、DNS 和 Worker Route | ✅ `ca7e54c`：前后端状态探测、平铺 UI、文案、Docker runtime 17/17、`ci:local` 87/87、定向浏览器验收已通过；Actions #71 成功 |
 | U27 | 用量刷新不应被 DNS/Worker Route 缺失阻断；权限列表看不出账户/区域/用户范围 | 用量查询只要求监控权限；资源明细权限失败时保留可读取结果并把明细标为未读取；每项权限标明 Account/Zone resources，并明确 User resources 不使用 | ✅ `3cf3ba1`：Billing/Resource Analytics 缺失降级、账户/区域范围标签、Docker runtime 93/93、`ci:local` 88/88；Actions #79 成功 |
 | U28 | Cloudflare 创建页是范围/权限/级别三个并排选择，现有拼接英文名称搜不到 | 权限列表按左“账户/区域/用户范围”、中“中文权限组（含官方英文）”、右“读取/写入/编辑级别”三列展示；名称与 Cloudflare 官方权限组一致；同步帮助、README、验收和测试 | ✅ `3e9f89d`：本地构建、UI 静态审计、Cloudflare 设置定向 Playwright 31/31 通过；推送后追踪本提交 Actions |
-| U29 | 主站 `platform.shelter.red` 返回 `Plugin domain not found` | 插件后缀匹配不能覆盖已配置的主站 Host；主站继续交给管理端 SPA/API，真正的插件域名才进入公开代理 | 🟡 `0695e77` 已提交；本地完整 CI 和部署脚本测试通过，待推送和最新 Actions 闭环 |
+| U29 | 主站 `platform.shelter.red` 返回 `Plugin domain not found` | 插件后缀匹配不能覆盖已配置的主站 Host；主站继续交给管理端 SPA/API，真正的插件域名才进入公开代理 | ✅ `0695e77` 已提交、推送；本地完整 CI 和 Actions #87（run `39940433238`）成功，待本次 HANDOFF 记录提交后的 Actions 闭环 |
 
 ## 3. 当前实现清单
 
@@ -860,3 +864,4 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - 2026-10-23：提交 `b9eb2b8`（`docs: 登记主站路由修复待验收状态`）记录 U29 工作区范围；`afe4fef` 记录首次本地验收。随后补充重叠后缀下主站 `/api/health` 回归断言，setup 定向仍为 2/2，`git diff --check` 通过；U29 代码/文档仍待单独提交、推送和最新 Actions 验收。
 - 2026-10-23：U29 代码、回归测试、README/help/验收说明和中英文设置提示提交为 `0695e77`（`修复主站被插件域名后缀误判`）；工作区干净。推送前必须完成完整 CI，推送后必须追踪该 HEAD 的 Actions 到 `completed/success`。
 - 2026-10-23：`0695e77` 推送前验证完成：`npm run ci:local` 的 UI smoke 88/88、UI 约定/样式审计、构建和 Worker smoke 全部通过；`npm run deploy:worker:test` 10/10，`git diff --check` 通过，工作区干净。下一步为推送并追踪最新 Actions。
+- 2026-10-23：`1636916` 已推送；Actions #87（run `39940433238`）对应 HEAD 且 `completed/success`。jobs：`changes`、`web` 成功，`macos-native`、`linux-native`、`windows-native` 按路径过滤 skipped。当前只剩提交本记录并追踪新的 docs-only HEAD。
