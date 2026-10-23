@@ -20,6 +20,8 @@
 >
 > 推送前完整验收已通过：`npm run ci:local`（UI smoke 88/88）和 `npm run deploy:worker:test`（10/10），`git diff --check` 通过；当前仅剩 8.5 文件提交、推送和 Actions 验证。
 >
+> 额外发现 Actions 问题：发布原生端 run #1（run `39946244958`）由 `workflow_dispatch` 在非 tag 提交 `fcc77e2` 上启动；Linux/Windows/macOS 构建均成功，只有 `创建 Release → 上传到 GitHub Release` 失败。下一步先记录并修正 `release.yml`，移除与无 tag 发布冲突的手动触发；手动构建继续使用独立 workflow。
+>
 > 当前状态：**Cloudflare API Token、8 项用量监控、Token 直接配置插件域名、原生插件服务器手动构建和 Cloudflare 权限三列文案已完成。权限修正提交为 `3e9f89d`，原生修复提交为 `accfed0`；`accfed0` 的 Actions #84（run `39931270148`）已在 GitHub Actions 页面确认成功。权限面板现在按创建页左、中、右三列展示：账户/区域/用户范围、中文+官方英文权限组、读取/写入/编辑级别；中列不再让用户把 `Account Analytics Read` 误当成一个下拉选项。`3e9f89d` 的本地构建、UI 静态审计和 Cloudflare 设置定向 Playwright 31/31 已通过。新发现 U29：当插件域名后缀覆盖主站（例如后缀为 `shelter.red`、主站为 `platform.shelter.red`）时，主站会被误判为插件域名并返回 `Plugin domain not found`；下一步先修复主站 Host 路由，再进入 8.5。若之后再次修改本 HANDOFF，会生成新的 docs-only commit；恢复时不要用本文代替实时 Git/Actions 查询。**
 >
 > 状态修订：上方状态段中的 U29“下一步先修复”是修复前历史措辞；当前以 `0695e77`、Actions #87 和本文件后续记录为准，U29 已完成，下一步进入 8.5。
@@ -35,7 +37,7 @@
 分支：main
 HEAD（本次核验）：330baf4 docs: 收口主站修复并进入插件教程
 origin/main（本次核验）：330baf4
-工作区（本次核验）：U29 已完成；Actions #89 成功；8.5 教程/隐私/验收/构建说明共 10 个文件待完整 CI 后提交
+工作区（本次核验）：U29 已完成；Actions #89 成功；8.5 已提交为 `fcc2568`，平台 Actions #91 待完成；另有 `release.yml` 非 tag 手动触发失败待修正
 fetch remote：https://github.com/shelter-red/plugin-platform.git
 push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 ```
@@ -343,7 +345,7 @@ doRequests        100,000
 | U21 | 文案诡异、莫名卡片、同页多个按钮跳同页 | 中英文审计；清重复说明/空卡片/重复跳转 | ✅ `114acee` 已完成列表页空卡片、重复入口和中英文 Cloudflare 文案清理；Actions #75（run `39904507031`）成功 |
 | U26 | “在 Cloudflare 创建页还要设置”及手动 DNS/Worker Route 提示没有必要且与 Token 自动配置冲突 | 删除旧的创建页说明和部署脚本中的手动 DNS/Worker Route 指示；保留必要的六项权限与 Account/Zone/User resources 说明；增加无误导提示的回归断言 | 🟡 已登记，待实现与 Actions 验证 |
 | U22 | Actions 手动构建插件服务器：可执行/库、目标平台 | 仅 `workflow_dispatch`；真正共享库 + artifact + SHA256 | ✅ `e4ae1f1` / `accfed0` 已实现并完成本地三平台构建验证；`accfed0` Actions 最终结论待限流恢复后确认 |
-| U23 | 帮助中心说明二进制/库文件服务器怎么用 | 中英文完整使用说明 | 🟡 教程、校验和说明、共享库 C ABI、凭据边界已在工作区；本地完整 CI 通过，待提交、推送和 Actions 闭环 |
+| U23 | 帮助中心说明二进制/库文件服务器怎么用 | 中英文完整使用说明 | 🟡 已提交 `fcc2568`，本地完整 CI 通过，平台 Actions #91 待完成；发布 workflow 的非 tag 手动触发问题另行修正 |
 | U24 | 都整理到磁盘 HANDOFF，避免压缩后忘 | 所有要求、事实、阻塞、步骤、验收可恢复 | ✅ 已更新到 `9d2f38d` 基线，明确区分完成项、剩余项、禁止事项和实时核验要求 |
 | U25 | 监控权限怎么配置域名；OAuth/Token 名称不一致；Token 还要选范围 | Token 固定六项权限平铺展示实际状态；说明 Account/Zone/User resources；保存插件域名后缀时自动同步 Zone、DNS 和 Worker Route | ✅ `ca7e54c`：前后端状态探测、平铺 UI、文案、Docker runtime 17/17、`ci:local` 87/87、定向浏览器验收已通过；Actions #71 成功 |
 | U27 | 用量刷新不应被 DNS/Worker Route 缺失阻断；权限列表看不出账户/区域/用户范围 | 用量查询只要求监控权限；资源明细权限失败时保留可读取结果并把明细标为未读取；每项权限标明 Account/Zone resources，并明确 User resources 不使用 | ✅ `3cf3ba1`：Billing/Resource Analytics 缺失降级、账户/区域范围标签、Docker runtime 93/93、`ci:local` 88/88；Actions #79 成功 |
@@ -877,3 +879,4 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - 2026-10-23：Actions #89（run `39942031490`）对应 `330baf4` 且 `completed/success`；`changes`/`web` 成功，三个 native job skipped。8.5 已登记并开始，目标文件为中英文帮助中心、README、方案、验收矩阵、local-e2e、privacy 和 `native-server/README.md`，先写文档再做对应文档审计与本地验证。
 - 2026-10-23：8.5 教程/隐私/验收/构建说明在工作区完成；`npm run build`、UI 约定审计、CSS 审计、`git diff --check`、SHA-256 根目录模拟校验通过，CI 同款 Playwright UI smoke 88/88 通过。宿主机 UI smoke 的首次 EACCES 来自 root-owned Vite 生成缓存，修复缓存权限后已在容器中通过；下一步执行完整 `ci:local` 后提交。
 - 2026-10-23：8.5 推送前完整验收通过：`npm run ci:local`（UI smoke 88/88）和 `npm run deploy:worker:test`（10/10），`git diff --check` 通过；10 个教程/工作流文件待提交、推送和 Actions 验证。
+- 2026-10-23：8.5 实现提交为 `fcc2568` 并已推送，平台验收 #91（run `39948749104`）待完成。另核对发布原生端 #1（run `39946244958`）：事件为 `workflow_dispatch`、HEAD `fcc77e2`，三平台构建成功，发布 job 在上传 GitHub Release 失败；这是无 tag 手动发布入口的 workflow 配置问题，待删除该入口并重新验收。
