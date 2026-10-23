@@ -8,6 +8,8 @@
 >
 > U29 代码/文档已提交为 `0695e77`（`修复主站被插件域名后缀误判`），下一步只做推送前完整 CI；未通过前不推送。
 >
+> 推送前完整验证已通过：`npm run ci:local`（UI smoke 88/88，UI 约定和样式审计通过）、`npm run deploy:worker:test`（10/10）、`git diff --check`；工作区干净，可以推送。推送后只追踪新 HEAD 的 Actions。
+>
 > 当前状态：**Cloudflare API Token、8 项用量监控、Token 直接配置插件域名、原生插件服务器手动构建和 Cloudflare 权限三列文案已完成。权限修正提交为 `3e9f89d`，原生修复提交为 `accfed0`；`accfed0` 的 Actions #84（run `39931270148`）已在 GitHub Actions 页面确认成功。权限面板现在按创建页左、中、右三列展示：账户/区域/用户范围、中文+官方英文权限组、读取/写入/编辑级别；中列不再让用户把 `Account Analytics Read` 误当成一个下拉选项。`3e9f89d` 的本地构建、UI 静态审计和 Cloudflare 设置定向 Playwright 31/31 已通过。新发现 U29：当插件域名后缀覆盖主站（例如后缀为 `shelter.red`、主站为 `platform.shelter.red`）时，主站会被误判为插件域名并返回 `Plugin domain not found`；下一步先修复主站 Host 路由，再进入 8.5。若之后再次修改本 HANDOFF，会生成新的 docs-only commit；恢复时不要用本文代替实时 Git/Actions 查询。**
 >
 > 本文件是上下文压缩后的第一事实源。README、旧方案、旧测试、聊天摘要或历史提交说明与本文冲突时，以用户最新要求、当前代码和本文为准。恢复后先执行第 0 节的核验命令，再按第 8 节顺序继续。
@@ -334,7 +336,7 @@ doRequests        100,000
 | U25 | 监控权限怎么配置域名；OAuth/Token 名称不一致；Token 还要选范围 | Token 固定六项权限平铺展示实际状态；说明 Account/Zone/User resources；保存插件域名后缀时自动同步 Zone、DNS 和 Worker Route | ✅ `ca7e54c`：前后端状态探测、平铺 UI、文案、Docker runtime 17/17、`ci:local` 87/87、定向浏览器验收已通过；Actions #71 成功 |
 | U27 | 用量刷新不应被 DNS/Worker Route 缺失阻断；权限列表看不出账户/区域/用户范围 | 用量查询只要求监控权限；资源明细权限失败时保留可读取结果并把明细标为未读取；每项权限标明 Account/Zone resources，并明确 User resources 不使用 | ✅ `3cf3ba1`：Billing/Resource Analytics 缺失降级、账户/区域范围标签、Docker runtime 93/93、`ci:local` 88/88；Actions #79 成功 |
 | U28 | Cloudflare 创建页是范围/权限/级别三个并排选择，现有拼接英文名称搜不到 | 权限列表按左“账户/区域/用户范围”、中“中文权限组（含官方英文）”、右“读取/写入/编辑级别”三列展示；名称与 Cloudflare 官方权限组一致；同步帮助、README、验收和测试 | ✅ `3e9f89d`：本地构建、UI 静态审计、Cloudflare 设置定向 Playwright 31/31 通过；推送后追踪本提交 Actions |
-| U29 | 主站 `platform.shelter.red` 返回 `Plugin domain not found` | 插件后缀匹配不能覆盖已配置的主站 Host；主站继续交给管理端 SPA/API，真正的插件域名才进入公开代理 | 🟡 `0695e77` 已提交；本地定向验收通过，待完整 CI、推送和最新 Actions 闭环 |
+| U29 | 主站 `platform.shelter.red` 返回 `Plugin domain not found` | 插件后缀匹配不能覆盖已配置的主站 Host；主站继续交给管理端 SPA/API，真正的插件域名才进入公开代理 | 🟡 `0695e77` 已提交；本地完整 CI 和部署脚本测试通过，待推送和最新 Actions 闭环 |
 
 ## 3. 当前实现清单
 
@@ -857,3 +859,4 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - 2026-10-23：提交 `beb8668`（`fix(cloudflare): 按三列展示 Token 权限`）已推送。Cloudflare 权限面板现在按“范围 / Scope、权限组 / Permission、级别 / Level”三列显示；权限组为中文 + Cloudflare 英文原名，范围明确为账户、区域、用户，用户范围仅说明不使用；README、帮助中心、方案和验收矩阵同步为三列填写方式。`git diff --check`、`npm run build`、`npm run ui:conventions`、`npm run ui:css-audit`、`npm run ci:local`（Worker smoke、UI 88/88）和 Docker runtime（20 个文件、93 个测试）通过。Actions #81 / run `39920624930` 已 `completed/success`。
 - 2026-10-23：提交 `b9eb2b8`（`docs: 登记主站路由修复待验收状态`）记录 U29 工作区范围；`afe4fef` 记录首次本地验收。随后补充重叠后缀下主站 `/api/health` 回归断言，setup 定向仍为 2/2，`git diff --check` 通过；U29 代码/文档仍待单独提交、推送和最新 Actions 验收。
 - 2026-10-23：U29 代码、回归测试、README/help/验收说明和中英文设置提示提交为 `0695e77`（`修复主站被插件域名后缀误判`）；工作区干净。推送前必须完成完整 CI，推送后必须追踪该 HEAD 的 Actions 到 `completed/success`。
+- 2026-10-23：`0695e77` 推送前验证完成：`npm run ci:local` 的 UI smoke 88/88、UI 约定/样式审计、构建和 Worker smoke 全部通过；`npm run deploy:worker:test` 10/10，`git diff --check` 通过，工作区干净。下一步为推送并追踪最新 Actions。
