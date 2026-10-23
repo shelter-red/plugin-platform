@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 发布标签（必须以 v 开头，例如 v1.0.0）
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -13,8 +19,24 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate:
+    name: 校验发布标签
+    runs-on: ubuntu-latest
+    steps:
+      - name: 校验 tag
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^v[^/[:space:]]+$ ]]; then
+            echo "::error::发布标签必须以 v 开头且不能包含斜杠或空格：$RELEASE_TAG"
+            exit 1
+          fi
+          echo "发布标签：$RELEASE_TAG"
+
   build:
     name: 构建 ${{ matrix.name }}
+    needs: validate
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -126,6 +148,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
 
@@ -145,6 +169,8 @@ jobs:
       - name: 上传到 GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          target_commitish: ${{ github.sha }}
           files: |
             dist/*.zip
             dist/SHA256SUMS

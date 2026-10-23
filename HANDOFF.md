@@ -38,6 +38,8 @@
 >
 > 新问题登记：当前仓库没有 `v*` tag 或 GitHub Release；旧发布 run #1（`39946244958`）是无 tag 的历史 `workflow_dispatch`，因此 `softprops/action-gh-release` 报 “GitHub Releases requires a tag”。仅删除手动触发会导致没有 Release，下一步先修正发布 workflow：保留 tag push，并增加必填 `release_tag` 的手动入口，将该值显式传给 Release action；先记录本范围，再修改 workflow。
 >
+> 发布 workflow 修复已完成：`release.yml` 增加必填 `release_tag` 的手动入口和独立 tag 校验 job；`build`/`publish` 依赖校验，Release action 显式使用 `tag_name` 与 `target_commitish`，tag push 自动发布逻辑保留。Bash tag 正负校验、`git diff --check`、`npm run ci:local`（UI smoke 89/89）和 `npm run deploy:worker:test`（10/10）均通过；下一步提交、推送并追踪最新 Actions。
+>
 > `8ad8704` 已推送；平台验收 #98（run `39957698043`）对应 HEAD 且 `completed/success`，`changes`/`web` 成功，三个 native job skipped。U16 真实数据审计已完成：1440/1024 视口下默认工作区切换器为 `46.34px`，两行文案上下各留 `8px`，图标与文案中心一致；带图标按钮和导航项的垂直中心差均为 `0px`，没有发现需要凭猜测修改的样式问题。下一步只增加对应 Playwright 回归断言，不改变现有视觉规则。
 >
 > U16 回归断言已加入 `tests/console-worker.spec.ts`：真实默认工作区下检查切换器最小高度、文字上下边界、头像/文字中心线，以及可见 AntD 图标按钮和导航项中心线。单项验证通过；完整 `npm run ci:local` 通过（UI smoke 89/89），`npm run deploy:worker:test` 通过（10/10）。下一步提交、推送并追踪最新 Actions。
@@ -55,9 +57,9 @@
 ```text
 仓库：/home/tc/work/plugin-platform
 分支：main
-HEAD（本次核验）：0a305f7 补充工作区与图标对齐回归
-origin/main（本次核验）：0a305f7
-工作区（本次核验）：U29、8.5、发布 workflow 修复、8.6 核对和 U16 视觉测量/回归已记录；平台验收 #93/#94/#95/#96/#97/#98/#99/#100 均成功；当前登记发布 workflow 缺少有效 tag 的问题，尚未修改代码
+HEAD（本次核验）：5f59ada 登记发布缺少 tag 的问题
+origin/main（本次核验）：5f59ada
+工作区（本次核验）：U29、8.5、发布 workflow 修复、8.6 核对和 U16 视觉测量/回归已记录；发布 workflow 的 tag 修复已完成本地验收，尚未提交；平台验收 #93/#94/#95/#96/#97/#98/#99/#100/#101 均成功
 fetch remote：https://github.com/shelter-red/plugin-platform.git
 push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 ```
@@ -487,7 +489,7 @@ rg -n -i "offline_access|workers-platform\.read|response_type|pkce|grant_type|cl
 
 当前 `.github/workflows/release.yml`：
 
-- 仅支持 `v*` tag push；手动选择产物的平台/类型/构建模式由独立的 `build-plugin-server.yml` 提供；
+- 支持 `v*` tag push，也支持必须填写 `v*` `release_tag` 的手动发布；手动选择产物的平台/类型/构建模式由独立的 `build-plugin-server.yml` 提供；
 - 只构建可执行程序；
 - 三平台 matrix；
 - 没有“可执行/共享库”选择。
@@ -911,3 +913,4 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - 2026-10-23：`8ad8704`（`记录最新 Actions 并登记视觉审计`）已推送；Actions #98（run `39957698043`）对应 HEAD 且 `completed/success`，`changes`/`web` 成功，三个 native job skipped。U16 测量确认默认工作区和图标中心线正常，下一步增加布局回归断言，不凭猜测改样式。
 - 2026-10-23：U16 回归断言已加入 `tests/console-worker.spec.ts`；单项和完整本地验收通过，`npm run ci:local` 为 89/89 UI smoke，`npm run deploy:worker:test` 为 10/10。测试改动待提交、推送和 Actions 验证。
 - 2026-10-23：用户反馈发布仍报 `GitHub Releases requires a tag`。核对 GitHub API：仓库当前没有 tag、没有 Release；现行 `release.yml` 仅由 `v*` tag push 触发，错误来自历史无 tag 的 workflow_dispatch run #1。登记下一步修复为“手动发布要求填写 `v*` tag，并显式传给 Release action”，避免无 tag 调用。
+- 2026-10-23：发布 workflow tag 修复在工作区完成并通过本地验收：手动 `release_tag`、tag 校验 job、显式 `tag_name`/`target_commitish` 已加入；`npm run ci:local` 89/89、`npm run deploy:worker:test` 10/10、Bash 正负 tag 校验和 `git diff --check` 通过。待提交、推送和最新 Actions 验证。
