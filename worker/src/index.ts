@@ -20,6 +20,25 @@ import type { Workspace, WorkspaceRole } from './types'
 export { PluginBridge }
 
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json; charset=utf-8' } })
+const consoleHostnameCacheTtlMs = 30_000
+let consoleHostnameCache: { value: string | null; expiresAt: number } | null = null
+
+function invalidateConsoleHostnameCache(): void {
+  consoleHostnameCache = null
+}
+
+async function configuredConsoleHostname(env: Env): Promise<string | null> {
+  if (consoleHostnameCache && consoleHostnameCache.expiresAt > Date.now()) return consoleHostnameCache.value
+  let hostname: string | null = null
+  try {
+    const redirectUri = (await resolveOauthSettings(env)).github?.redirectUri
+    if (redirectUri) hostname = new URL(redirectUri).hostname.toLowerCase()
+  } catch {
+    hostname = null
+  }
+  consoleHostnameCache = { value: hostname, expiresAt: Date.now() + consoleHostnameCacheTtlMs }
+  return hostname
+}
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -28,7 +47,10 @@ export default {
     if (url.pathname === '/api/health') return json({ ok: true, service: 'plugmesh-worker', protocolVersion: 1 })
     if (url.pathname === '/setup') {
       const setupResponse = await setupApi(request, env, url)
-      if (setupResponse) return setupResponse
+      if (setupResponse) {
+        invalidateConsoleHostnameCache()
+        return setupResponse
+      }
     }
     if (url.pathname === '/auth/github/start') return startGithubAuth(env, url)
     if (url.pathname === '/auth/github/callback') return finishGithubAuth(request, env, url)
@@ -83,7 +105,11 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     return json(await env.DB.prepare('SELECT audit_log.id, audit_log.action, audit_log.detail_json, audit_log.created_at, users.display_name AS actor_name, users.email AS actor_email FROM audit_log LEFT JOIN users ON users.id = audit_log.user_id WHERE audit_log.workspace_id = ? AND audit_log.created_at >= ? ORDER BY audit_log.created_at DESC LIMIT 100').bind(workspace.id, since).all())
   }
   if (request.method === 'GET' && url.pathname === '/api/access-logs') return accessLogsApi(env, workspace)
-  if (url.pathname === '/api/settings/oauth') return oauthSettingsApi(request, env, user)
+  if (url.pathname === '/api/settings/oauth') {
+    const response = await oauthSettingsApi(request, env, user)
+    invalidateConsoleHostnameCache()
+    return response
+  }
   if (url.pathname === '/api/settings/platform') return platformSettingsApi(request, env, user)
   if (url.pathname === '/api/settings/cloudflare') return cloudflareSettingsApi(request, env, user)
   if (url.pathname === '/api/settings/smtp') return smtpSettingsApi(request, env, user)
@@ -716,6 +742,7 @@ export async function createServerRegistration(env: Env, code: string | undefine
 
 async function proxyPublicHost(request: Request, env: Env, url: URL, ctx: ExecutionContext): Promise<Response> {
   const suffix = await pluginDomainSuffix(env)
+  if (url.hostname === await configuredConsoleHostname(env)) return env.ASSETS ? env.ASSETS.fetch(request) : new Response('Plugmesh console route', { status: 404 })
   if (!url.hostname.endsWith(suffix) || url.hostname.length <= suffix.length) return env.ASSETS ? env.ASSETS.fetch(request) : new Response('Plugmesh console route', { status: 404 })
   const prefix = url.hostname.slice(0, -suffix.length)
   if (!/^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$/.test(prefix)) return new Response('Plugmesh console route', { status: 404 })
@@ -1277,6 +1304,7 @@ async function pluginDomainSuffix(env: Env): Promise<string> {
 
 async function isPluginHostname(hostname: string, env: Env): Promise<boolean> {
   const suffix = await pluginDomainSuffix(env)
-  return hostname.endsWith(suffix) && hostname.length > suffix.length
+  if (!hostname.endsWith(suffix) || hostname.length <= suffix.length) return false
+  return hostname !== await configuredConsoleHostname(env)
 }
 

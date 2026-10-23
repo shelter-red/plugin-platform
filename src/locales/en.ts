@@ -553,7 +553,7 @@ export default {
     },
     domainSuffix: {
       label: 'Plugin domain suffix',
-      hint: 'Saving uses the Cloudflare Token to sync the Zone wildcard DNS and Worker Route; new plugin domains need no redeploy.',
+      hint: 'Saving uses the Cloudflare Token to sync the Zone wildcard DNS and Worker Route. Do not use a parent domain that contains the console host; use plugins.example.com when the console is platform.example.com. New plugin domains need no redeploy.',
       save: 'Save domain suffix',
       saved: 'Plugin domain suffix saved; Cloudflare DNS and Worker Route synced',
       saveFailed: 'Could not save the plugin domain suffix',

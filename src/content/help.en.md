@@ -38,7 +38,16 @@ Open **Settings → Cloudflare** and use the **Create API Token** link. Fill the
 
 Choose the target account under **Account**, the plugin domain's Zone under **Zone**, and nothing under **User**. The platform verifies the Token, lists visible accounts and reads subscriptions before saving. The Account ID field only selects a target when the Token can see multiple accounts. The settings page reports each permission as verified, missing or not tested.
 
-When you save the plugin domain suffix under **Maintenance, domains & quotas**, the platform uses the stored Token to find the matching Zone, write the wildcard DNS record and create the Worker Route. Existing third-party DNS records or Worker Routes are preserved and reported as conflicts instead of being overwritten.
+When you save the plugin domain suffix under **Maintenance, domains & quotas**, the platform uses the stored Token to find the matching Zone, write the wildcard DNS record and create the Worker Route. Do not use a parent suffix that contains the console host; use `plugins.example.com` when the console is `platform.example.com`. Existing third-party DNS records or Worker Routes are preserved and reported as conflicts instead of being overwritten.
+
+If a bad suffix makes the console return `Plugin domain not found`, open Cloudflare Dashboard → D1 → `plugmesh` → Console and run the emergency update below, replacing `plugins.example.com` with the intended plugin suffix. Then save the suffix again in the settings page so the stored Token can sync DNS and the Worker Route:
+
+```sql
+UPDATE platform_settings
+SET value_json = json_set(value_json, '$.pluginDomainSuffix', '.plugins.example.com'),
+    updated_at = datetime('now')
+WHERE key = 'platform';
+```
 
 - `401 token_invalid`: the Token is invalid, revoked, or has passed its configured expiry date; create a new Token.
 - `403 token_permission_denied`: one of the fixed permissions is missing; update the permissions or recreate the Token.

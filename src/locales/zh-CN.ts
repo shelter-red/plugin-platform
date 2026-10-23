@@ -554,7 +554,7 @@ export default {
     },
     domainSuffix: {
       label: '插件域名后缀',
-      hint: '保存时使用 Cloudflare Token 自动同步对应 Zone 的通配 DNS 和 Worker Route；新增插件域名无需重新部署。',
+      hint: '保存时使用 Cloudflare Token 自动同步对应 Zone 的通配 DNS 和 Worker Route；请勿使用包含主站域名的父域名，例如主站为 platform.example.com 时使用 plugins.example.com；新增插件域名无需重新部署。',
       save: '保存域名后缀',
       saved: '插件域名后缀已保存，Cloudflare DNS 和 Worker Route 已同步',
       saveFailed: '插件域名后缀保存失败',

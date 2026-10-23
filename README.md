@@ -188,7 +188,16 @@ Token 只以 AES-GCM 密文保存在 D1，GET 设置接口永远不回显明文�
 - `console.example.com/*`：管理端、管理 API 和 GitHub OAuth 回调；
 - `*.plugins.example.com/*`：插件公开入口。
 
-随后在后台把插件域名后缀设为 `plugins.example.com`。新增插件域名会立即使用该后缀，不需要修改环境变量或重新部署。`PLUGIN_DOMAIN_SUFFIX` 仅用于本地测试和旧数据兼容回退，不是部署必填项。
+随后在后台把插件域名后缀设为 `plugins.example.com`。插件后缀不要使用包含管理端主站的父域名：例如主站是 `platform.example.com` 时，不要填写 `example.com`，应使用 `plugins.example.com`。新增插件域名会立即使用该后缀，不需要修改环境变量或重新部署。`PLUGIN_DOMAIN_SUFFIX` 仅用于本地测试和旧数据兼容回退，不是部署必填项。
+
+如果错误后缀已经让主站返回 `Plugin domain not found`，可先在 Cloudflare Dashboard → D1 → `plugmesh` → Console 执行下面的应急更新，把 `plugins.example.com` 替换为实际插件后缀；恢复访问后再从系统设置保存一次，让平台用 Token 自动同步 DNS 和 Worker Route：
+
+```sql
+UPDATE platform_settings
+SET value_json = json_set(value_json, '$.pluginDomainSuffix', '.plugins.example.com'),
+    updated_at = datetime('now')
+WHERE key = 'platform';
+```
 
 ### 校验与高级选项
 

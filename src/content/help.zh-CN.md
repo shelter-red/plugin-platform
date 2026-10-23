@@ -38,7 +38,16 @@
 
 `账户 / Account` 选择目标账号，`区域 / Zone` 选择插件域名所在 Zone，`用户 / User` 不使用。平台会验证 Token、读取可见账号和 subscriptions；本页的 Account ID 只用于多个可见账号时选择目标账号。返回设置页后，六项权限会分别显示“已验证”“缺少”或“未检测”。
 
-保存「维护、域名与配额」中的插件域名后缀时，平台会用已保存 Token 找到对应 Zone，写入通配 DNS 记录并创建 Worker Route。已有其他 DNS 记录或 Worker 路由时会保留原配置并返回冲突，不能通过平台覆盖。
+保存「维护、域名与配额」中的插件域名后缀时，平台会用已保存 Token 找到对应 Zone，写入通配 DNS 记录并创建 Worker Route。插件后缀不要使用包含管理端主站的父域名，例如主站为 `platform.example.com` 时使用 `plugins.example.com`。已有其他 DNS 记录或 Worker 路由时会保留原配置并返回冲突，不能通过平台覆盖。
+
+如果错误后缀已经让主站返回「Plugin domain not found」，可先在 Cloudflare Dashboard → D1 → `plugmesh` → Console 执行下面的应急更新，把 `plugins.example.com` 换成实际插件后缀；恢复访问后再从系统设置保存一次，让平台用 Token 自动同步 DNS 和 Worker Route：
+
+```sql
+UPDATE platform_settings
+SET value_json = json_set(value_json, '$.pluginDomainSuffix', '.plugins.example.com'),
+    updated_at = datetime('now')
+WHERE key = 'platform';
+```
 
 - `401 token_invalid`：Token 无效、已被撤销，或你设置了过期时间且已经到期；请重建 Token。
 - `403 token_permission_denied`：Token 缺少上述任一权限；请修改权限或重新创建 Token。

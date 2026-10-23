@@ -1,6 +1,7 @@
 import { SELF } from 'cloudflare:test'
 import { beforeEach, expect, test } from 'vitest'
 import { resetDatabase, testEnv } from './helpers'
+import { defaultPlatformSettings, setPlatformSettingsCache } from '../src/usage'
 
 const SETUP_TOKEN = 'runtime-setup-token'
 
@@ -75,6 +76,15 @@ test('正确初始化后 GitHub 白名单账号成为首个超级管理员，入
   const payload = await settings.json() as Record<string, unknown>
   expect(JSON.stringify(payload)).not.toContain('setup-github-secret')
   expect((payload.github as { configured: boolean }).configured).toBe(true)
+
+  // 主站可以位于插件后缀的子域名下；已保存的 GitHub 回调主机必须优先走管理端 SPA。
+  setPlatformSettingsCache({ ...defaultPlatformSettings, pluginDomainSuffix: '.example.com' })
+  const consolePage = await SELF.fetch('https://console.example.com/')
+  expect(consolePage.status).toBe(200)
+  expect(await consolePage.text()).not.toContain('Plugin domain not found')
+  const consoleHealth = await SELF.fetch('https://console.example.com/api/health')
+  expect(consoleHealth.status).toBe(200)
+  expect(await consoleHealth.json()).toEqual({ ok: true, service: 'plugmesh-worker', protocolVersion: 1 })
 
   const locked = await submitSetup()
   const fallback = await SELF.fetch('https://console.example.com/no-such-route', {
