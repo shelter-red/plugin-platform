@@ -692,6 +692,16 @@ fd80fa4  run 39754896119  #11  管理端 UI smoke 失败
 
 当前步骤登记：执行界面、重复入口、空卡片及中英文文案审计。范围是 `src/**/*.tsx`、`src/locales/*`、`src/content/help.*.md`、设置/用量/登录页实际渲染与既有 Playwright 截图；先列出可复现问题，再逐项修改并补回归断言。不得把原生构建 workflow 或帮助教程混入本步骤；本步骤完成并记录验收后，才进入 8.4。
 
+本步骤审计发现（待实现）：
+
+- `ServersPage` 与 `DomainsPage` 在列表有数据时仍然无条件渲染额外的 EmptyState 操作卡片；无数据时又与页头主按钮重复。删除额外卡片，页头保留唯一主操作。
+- `PluginsPage` 的页头、空态和有数据时表格底部都提供“加载插件”；保留页头主操作，删除空态按钮和底部重复按钮，保留数量信息。
+- `UsagePage` 的状态提示和“数据源状态”都跳转 Cloudflare 设置；保留状态提示的配置入口，数据源状态只展示状态。
+- `AccountWorkspacesCard` 的工作区行和底部“管理工作区”按钮都跳转 `/workspaces`；保留工作区行入口，删除底部重复操作。
+- `src/content/help.en.md` 仍要求填写 Token 名称且未说明 `User resources`；与中文帮助和当前 Token 权限模型统一。
+
+本步骤不改变路由、API、权限和数据契约；修复需同步移除无用 import/props，并增加 Playwright 负断言证明重复入口和额外卡片不再出现。
+
 本次已完成：`.settings-nav`、`.settings-content` 和 AntD 菜单补充 `min-width: 0`/`width: 100%`；新增 `console-ui` 的 390px 分区边界断言；在 CI 同款 Playwright 容器重建设置页 6 张截图、移动设置预览和登录页截图。结果为 `ci:local` 87/87、`npm run deploy:worker:test` 10/10；390px 下设置布局、导航和内容列均为 362px，未超出视口。当前又完成 Cloudflare Token 六项权限、自动 DNS/Worker Route 和帮助中心文案收口；下一步仍是图标/文字对齐、重复入口/空卡片以及中英文文案审计。
 
 - 登录页实际截图，确认不是旧页面或旧组件。
