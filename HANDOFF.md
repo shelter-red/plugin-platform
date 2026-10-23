@@ -50,6 +50,8 @@
 >
 > `a6f8569` 对应平台验收 run `39997388485` 已在 Actions 页面显示 `completed/success`；该 run 的 `web`、`changes` 和按路径触发的 native jobs 均完成成功。REST API 当前触发匿名限流，但页面状态已核对。当前 Release 和最终代码状态均已完成。
 >
+> 下一步登记：清理本文件及 `docs/acceptance-matrix.md` 中与当前实现矛盾的过期“待实现/未完成”状态，重点收口 U26、帮助中心、U22/U23、最终验收清单和当前 HEAD；本步只整理事实记录，不改运行时代码、路由、API 或权限契约。必须先完成本登记提交和 Actions 验收，再执行文档清理。
+>
 > `8ad8704` 已推送；平台验收 #98（run `39957698043`）对应 HEAD 且 `completed/success`，`changes`/`web` 成功，三个 native job skipped。U16 真实数据审计已完成：1440/1024 视口下默认工作区切换器为 `46.34px`，两行文案上下各留 `8px`，图标与文案中心一致；带图标按钮和导航项的垂直中心差均为 `0px`，没有发现需要凭猜测修改的样式问题。下一步只增加对应 Playwright 回归断言，不改变现有视觉规则。
 >
 > U16 回归断言已加入 `tests/console-worker.spec.ts`：真实默认工作区下检查切换器最小高度、文字上下边界、头像/文字中心线，以及可见 AntD 图标按钮和导航项中心线。单项验证通过；完整 `npm run ci:local` 通过（UI smoke 89/89），`npm run deploy:worker:test` 通过（10/10）。下一步提交、推送并追踪最新 Actions。
