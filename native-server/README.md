@@ -73,6 +73,34 @@ native-server/build/plugmesh-server --register
 
 省略的参数依次从 `PLUGMESH_WORKER_URL`、`PLUGMESH_SERVER_NAME`、`PLUGMESH_CREDENTIAL_FILE` 读取，注册码与口令分别使用 `PLUGMESH_REGISTRATION_CODE`、`PLUGMESH_LOCAL_UI_PASSWORD`（及 `PLUGMESH_LOCAL_UI_PASSWORD_CONFIRMATION`）、`PLUGMESH_CREDENTIAL_PASSWORD`；环境变量优先于提示，输入会去掉首尾空白，本地 UI 口令至少 8 位。
 
+## 共享库嵌入
+
+CMake 的 `plugmesh-server-shared` target 会生成真正的共享库：Linux 为 `libplugmesh-server.so`，macOS 为 `libplugmesh-server.dylib`，Windows 为 `plugmesh-server.dll`。公共头文件 `include/plugmesh/server_api.h` 只暴露 C ABI，避免把 C++ STL 类型跨越动态库边界。
+
+共享库接收已经注册的 Worker 参数，不包含命令行注册和本地 UI setup 流程。调用方负责保存凭据，并在 `plugin_host_executable` 中提供 `plugmesh-plugin-host` 的路径；该路径为空时由现有 `PLUGMESH_PLUGIN_HOST` 规则解析。最小生命周期如下：
+
+```c
+#include "plugmesh/server_api.h"
+
+plugmesh_server_config config = {
+    "https://console.example.com",
+    "server-id",
+    "access-token",
+    "/opt/plugmesh/plugins",
+    "/opt/plugmesh/plugmesh-plugin-host",
+};
+char error[256];
+plugmesh_server* server = plugmesh_server_create(&config, error, sizeof(error));
+if (!server || !plugmesh_server_start(server)) {
+    /* error contains a validation or startup message. */
+}
+/* Keep the server alive while the host application is running. */
+plugmesh_server_stop(server);
+plugmesh_server_destroy(server);
+```
+
+库文件和可执行文件都需要 OpenSSL 3 运行库；共享库还需要调用方链接本项目导出的 C ABI，并把插件宿主放在可执行文件旁或显式传入路径。手动构建入口会把共享库、插件宿主、公共头和构建说明一起打包。
+
 ## Windows 构建
 
 ### MSVC

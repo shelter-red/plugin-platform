@@ -39,7 +39,8 @@ Cloudflare Token 当前同时覆盖账号/用量读取和插件域名自动配�
 
 | 验收项 | 状态 | 证据与边界 |
 | --- | --- | --- |
-| Linux 构建、启动和 localhost UI | 本地已验证 | CMake 构建、CTest `10/10`、`native-ui:smoke` 通过。 |
+| Linux 构建、启动和 localhost UI | 本地已验证 | CMake 构建、CTest `11/11`、`native-ui:smoke` 通过。 |
+| 手动构建插件服务器 workflow 与共享库 | 部分实现 | `.github/workflows/build-plugin-server.yml` 仅接受 `workflow_dispatch`，提供可执行程序/共享库、Linux/Windows/macOS、Debug/Release 三组选择；`native-server/CMakeLists.txt` 提供真正的 `plugmesh-server-shared` target 和 `server_api.h` C ABI，Linux 本地已分别验证 EXECUTABLE/SHARED target、C ABI smoke 与 CTest。GitHub hosted runner 三平台手动 workflow 尚未实际触发，Windows/macOS 共享库产物仍需 Actions 验证。 |
 | Windows 构建与启动 | 部分实现 | 用 MinGW-w64 交叉编译出 `plugmesh-server.exe`、`plugmesh-plugin-host.exe`、本地 UI smoke 服务器、10 个 smoke 可执行文件和三个示例 `.dll`（PE32+），据此补齐 Windows 分支的链接库（`advapi32`/`ws2_32`/`mswsock`/`crypt32`），并对 MinGW 显式启用 websocketpp 的 C++11 线程宏（否则回退 `boost::thread`）。构建步骤见 `native-server/README.md`「Windows 构建」与 `native-server/cmake/mingw-w64-toolchain.cmake`。产物静态链接 MinGW 运行时，只依赖系统 DLL。在 Wine 5.0（`wine64`）下 10 个 smoke 全部通过，`plugmesh-server.exe` 以 setup 模式启动、`/api/health` 返回 `systemCredentialsAvailable=true`，并正常提供本地 UI 的 `index.html` 与静态资源；`native-ui/run-wine-smoke.sh` 让 `native-ui` Playwright 连到 Wine 下的 `plugmesh-local-ui-smoke-server.exe`，首次绑定、会话流程、日志与诊断（含健康检查与停用/重载/卸载）、主题与语言五条用例 5/5 通过（新增用例暴露并修复了 Windows 下插件宿主可执行文件缺少 `.exe` 后缀、导致本地 UI 加载插件失败的问题）；未在真实 Windows 主机上启动。`.github/workflows/platform-ci.yml` 已配置 `windows-latest` 原生构建和 CTest，但尚无该工作流的执行结果。 |
 | 首次 UI 设置本地口令和一次性注册码绑定 | 本地已验证 | Native UI Playwright smoke 覆盖绑定表单、localhost 服务重启和新口令登录；注册码交换仍由本地 mock handler 承载，未连接已部署 Worker。 |
 | 长期密钥持久化和重启恢复 | 本地已验证 | Linux 加密文件保存/读取有 CTest；本地真实栈中加密凭据文件重启 `plugmesh-server` 后自动重连 Worker，插件状态和域名恢复，公开入口返回 200（`docs/local-e2e.md`）。Windows 凭据存储未验证。 |

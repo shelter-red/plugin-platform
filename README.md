@@ -217,6 +217,16 @@ npx wrangler dev --config wrangler.toml --var SESSION_SECRET:local-only-session-
 
 该值只用于本地 Miniflare，不要用于生产。
 
+## 手动构建插件服务器
+
+打开 GitHub Actions 的「手动构建插件服务器」workflow，选择：
+
+- 产物类型：`executable`（`plugmesh-server`）或 `shared`（`libplugmesh-server` / 平台对应的共享库）。
+- 目标平台：Linux、Windows 或 macOS。
+- 构建类型：`Release` 或 `Debug`。
+
+workflow 只接受手动触发，不会因为普通推送重复构建。每个 artifact 包含所选服务器产物、`plugmesh-plugin-host`、插件 ABI 公共头、`server_api.h`（共享库）和构建说明，并附带 `SHA256SUMS`。共享库通过 `native-server/include/plugmesh/server_api.h` 提供稳定 C ABI；可执行程序仍使用 `--register` 或环境变量完成绑定。
+
 ## 发布原生端
 
 推送 `v*` tag（或手动触发 `.github/workflows/release.yml`）会在 Ubuntu、Windows 和 macOS runner 上构建 `plugmesh-server`，并发布到对应 GitHub Release：

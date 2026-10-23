@@ -7,6 +7,12 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+set(PLUGMESH_BUILD_ARTIFACT "ALL" CACHE STRING "Build artifact: ALL, EXECUTABLE or SHARED")
+set_property(CACHE PLUGMESH_BUILD_ARTIFACT PROPERTY STRINGS ALL EXECUTABLE SHARED)
+if (NOT PLUGMESH_BUILD_ARTIFACT STREQUAL "ALL" AND NOT PLUGMESH_BUILD_ARTIFACT STREQUAL "EXECUTABLE" AND NOT PLUGMESH_BUILD_ARTIFACT STREQUAL "SHARED")
+  message(FATAL_ERROR "PLUGMESH_BUILD_ARTIFACT must be ALL, EXECUTABLE or SHARED")
+endif()
+
 if (NOT MSVC)
   # 自家源码保持 0 警告；第三方头文件不产生警告，已用 -Wall -Wextra 全量构建确认。
   add_compile_options(-Wall -Wextra)
@@ -32,6 +38,7 @@ add_library(plugmesh_core STATIC
   src/registration_client.cpp
   src/server_config.cpp
 )
+set_target_properties(plugmesh_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_compile_definitions(plugmesh_core PUBLIC ASIO_STANDALONE)
 # 内置 websocketpp 只用 __cplusplus 判断 C++11 能力，而 MSVC 默认把 __cplusplus
 # 报成 199711L，于是 random/type_traits 退回 boost 分支（仓库不随附 Boost），
@@ -41,8 +48,17 @@ target_include_directories(plugmesh_core PUBLIC include)
 target_include_directories(plugmesh_core SYSTEM PUBLIC third_party/include)
 target_link_libraries(plugmesh_core PUBLIC OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
 
-add_executable(plugmesh-server src/main.cpp)
-target_link_libraries(plugmesh-server PRIVATE plugmesh_core)
+if (PLUGMESH_BUILD_ARTIFACT STREQUAL "ALL" OR PLUGMESH_BUILD_ARTIFACT STREQUAL "EXECUTABLE")
+  add_executable(plugmesh-server src/main.cpp)
+  target_link_libraries(plugmesh-server PRIVATE plugmesh_core)
+endif()
+
+if (PLUGMESH_BUILD_ARTIFACT STREQUAL "ALL" OR PLUGMESH_BUILD_ARTIFACT STREQUAL "SHARED")
+  add_library(plugmesh-server-shared SHARED src/server_api.cpp)
+  set_target_properties(plugmesh-server-shared PROPERTIES OUTPUT_NAME plugmesh-server)
+  target_include_directories(plugmesh-server-shared PUBLIC include)
+  target_link_libraries(plugmesh-server-shared PRIVATE plugmesh_core)
+endif()
 
 add_library(plugmesh-sample SHARED examples/sample_plugin.cpp)
 target_include_directories(plugmesh-sample PRIVATE include)
@@ -115,6 +131,12 @@ target_link_libraries(plugmesh-local-http-server-smoke PRIVATE plugmesh_core)
 add_executable(plugmesh-local-ui-smoke-server tests/local_ui_smoke_server.cpp)
 target_link_libraries(plugmesh-local-ui-smoke-server PRIVATE plugmesh_core)
 
+if (TARGET plugmesh-server-shared)
+  add_executable(plugmesh-server-api-smoke tests/server_api_smoke.cpp)
+  target_link_libraries(plugmesh-server-api-smoke PRIVATE plugmesh-server-shared)
+  add_dependencies(plugmesh-server-api-smoke plugmesh-sample)
+endif()
+
 add_test(NAME plugmesh-control-protocol-smoke COMMAND plugmesh-control-protocol-smoke)
 add_test(NAME plugmesh-control-client-smoke COMMAND plugmesh-control-client-smoke $<TARGET_FILE:plugmesh-plugin-host> "${CMAKE_CURRENT_BINARY_DIR}/plugins")
 add_test(NAME plugmesh-credential-store-smoke COMMAND plugmesh-credential-store-smoke)
@@ -125,6 +147,9 @@ add_test(NAME plugmesh-plugin-manager-smoke COMMAND plugmesh-plugin-manager-smok
 add_test(NAME plugmesh-plugin-manager-crash-smoke COMMAND plugmesh-plugin-manager-crash-smoke $<TARGET_FILE:plugmesh-plugin-host> "${CMAKE_CURRENT_BINARY_DIR}/plugins")
 add_test(NAME plugmesh-plugin-websocket-lifecycle-smoke COMMAND plugmesh-plugin-websocket-lifecycle-smoke $<TARGET_FILE:plugmesh-plugin-host> "${CMAKE_CURRENT_BINARY_DIR}/plugins")
 add_test(NAME plugmesh-local-http-server-smoke COMMAND plugmesh-local-http-server-smoke)
+if (TARGET plugmesh-server-api-smoke)
+  add_test(NAME plugmesh-server-api-smoke COMMAND plugmesh-server-api-smoke "${CMAKE_CURRENT_BINARY_DIR}/plugins")
+endif()
 
 if (WIN32)
   target_compile_definitions(plugmesh_core PRIVATE PLUGMESH_PLATFORM_WINDOWS=1)
