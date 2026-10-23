@@ -2,7 +2,7 @@
 
 > 最后整理：2026-10-23（Asia/Shanghai）
 >
-> 当前状态：**Cloudflare API Token、8 项用量监控、Token 直接配置插件域名的后端/前端实现已在工作区完成，尚未提交。最近一次已推送代码基线为 `de1a4e2`，Actions #65（run `39883132655`）为 `completed/success`。本轮新增官方六项权限契约：监控 `Account Settings Read`、`Account Analytics Read`、`Billing Read`；域名配置 `Zone Read`、`DNS Write`、`Workers Routes Edit`。保存插件域名后缀时，Worker 使用已保存 Token 查找 active Zone、维护 Plugmesh 通配 DNS 记录并创建/更新 `plugmesh-worker` Route；缺 Token、Zone 不匹配、已有第三方记录或 Route 冲突均返回真实 HTTP 错误，不静默保存。当前工作区的 `ci:local` 87/87、Docker runtime 20/20 文件 91/91 测试、deploy test 10/10、构建和类型检查均已通过；本轮改动仍待提交、push 和新 Actions。若之后再次修改本 HANDOFF，会生成新的 docs-only commit；恢复时不要用本文代替实时 Git/Actions 查询。**
+> 当前状态：**Cloudflare API Token、8 项用量监控、Token 直接配置插件域名的后端/前端实现已完成并推送。最新功能提交为 `9d2f38d`，Actions #66（run `39890875239`）为 `completed/success`。本轮新增官方六项权限契约：监控 `Account Settings Read`、`Account Analytics Read`、`Billing Read`；域名配置 `Zone Read`、`DNS Write`、`Workers Routes Edit`。保存插件域名后缀时，Worker 使用已保存 Token 查找 active Zone、维护 Plugmesh 通配 DNS 记录并创建/更新 `plugmesh-worker` Route；缺 Token、Zone 不匹配、已有第三方记录或 Route 冲突均返回真实 HTTP 错误，不静默保存。`ci:local` 87/87、Docker runtime 20/20 文件 91/91 测试、deploy test 10/10、构建和类型检查均已通过。若之后再次修改本 HANDOFF，会生成新的 docs-only commit；恢复时不要用本文代替实时 Git/Actions 查询。**
 >
 > 本文件是上下文压缩后的第一事实源。README、旧方案、旧测试、聊天摘要或历史提交说明与本文冲突时，以用户最新要求、当前代码和本文为准。恢复后先执行第 0 节的核验命令，再按第 8 节顺序继续。
 
@@ -13,9 +13,9 @@
 ```text
 仓库：/home/tc/work/plugin-platform
 分支：main
-HEAD（最近核验）：de1a4e2 docs: 记录 Token 自动配置域名实现
-origin/main（最近核验）：de1a4e2
-工作区（最近核验）：有本轮未提交改动；后续若再次整理 HANDOFF，以实时 Git 为准
+HEAD（最近核验）：9d2f38d fix(cloudflare): 收口 Token 权限与配置文案
+origin/main（最近核验）：9d2f38d
+工作区（最近核验）：有本次 HANDOFF 更新待提交；后续若再次整理 HANDOFF，以实时 Git 为准
 fetch remote：https://github.com/shelter-red/plugin-platform.git
 push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 ```
@@ -23,7 +23,8 @@ push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 最近提交（均已推送）：
 
 ```text
-de1a4e2 docs: 记录 Token 自动配置域名实现  ← 当前已推送基线
+9d2f38d fix(cloudflare): 收口 Token 权限与配置文案  ← 当前功能基线，Actions #66 成功
+de1a4e2 docs: 记录 Token 自动配置域名实现
 49c7413 docs: 明确 Token 范围与域名配置边界
 67efa26 docs: 记录窄屏修复闭环与文案审计入口
 e349e7b fix(ui): 修复设置页窄屏布局并更新视觉基线
@@ -122,8 +123,8 @@ git diff --check                               PASS
 npm run ci:local                               PASS（本轮 19 个路径；87/87 UI smoke）
 npm run deploy:worker:test                     10/10 PASS（含 README 新部署前提断言）
 Worker runtime（Docker node:22-bookworm）       20/20 files，91/91 tests PASS
-latest remote Actions de1a4e2 / #65             completed/success
-本轮改动尚未提交 / push / Actions 闭环            待完成
+latest remote Actions 9d2f38d / #66             completed/success
+本轮功能改动提交 / push / Actions 闭环            PASS
 ```
 
 已记录的代码验收：
@@ -307,7 +308,7 @@ doRequests        100,000
 | U21 | 文案诡异、莫名卡片、同页多个按钮跳同页 | 中英文审计；清重复说明/空卡片/重复跳转 | ⬜ 未完成 |
 | U22 | Actions 手动构建插件服务器：可执行/库、目标平台 | 仅 `workflow_dispatch`；真正共享库 + artifact + SHA256 | ⬜ 未开始 |
 | U23 | 帮助中心说明二进制/库文件服务器怎么用 | 中英文完整使用说明 | ⬜ 未开始 |
-| U24 | 都整理到磁盘 HANDOFF，避免压缩后忘 | 所有要求、事实、阻塞、步骤、验收可恢复 | ✅ 已更新到 `49c7413` 基线，明确区分完成项、剩余项、禁止事项和实时核验要求 |
+| U24 | 都整理到磁盘 HANDOFF，避免压缩后忘 | 所有要求、事实、阻塞、步骤、验收可恢复 | ✅ 已更新到 `9d2f38d` 基线，明确区分完成项、剩余项、禁止事项和实时核验要求 |
 | U25 | 监控权限怎么配置域名；OAuth/Token 名称不一致；Token 还要选范围 | Token 固定六项权限；Cloudflare 创建页填写 Token 名称并选择 Account/Zone resources；保存插件域名后缀时自动同步 Zone、DNS 和 Worker Route | ✅ 实现、文档、UI smoke、Worker runtime、类型检查和构建已通过；真实 Cloudflare 联调仍未进行 |
 
 ## 3. 当前实现清单
@@ -731,7 +732,7 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 1. 全部验收通过。
 2. 按逻辑分组提交，显式 stage 文件，中文提交信息。
 3. push 到 `main`。
-4. 查询最新 Actions，间隔至少约 1 分钟，追到 `completed`。
+4. 查询最新 Actions，间隔至少约 1 分钟，追到 `completed`；`9d2f38d` 已由 #66 验证成功。
 5. 失败时读失败 step、日志和 `playwright-report` artifact；修复后重跑本地、再 push。
 6. 只有最新 Actions 成功后才能宣称完成。
 
@@ -806,4 +807,5 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - 2026-10-23：完成视觉验收登记的窄屏布局子步骤：发现并修复 390px 设置页 462px 溢出，新增布局边界回归；CI 同款容器重建设置页 6 张、移动设置预览和登录页截图；`ci:local` 87/87、`npm run deploy:worker:test` 10/10 通过。下一步为图标/文字对齐、重复入口/空卡片和中英文文案审计。
 - 2026-10-23：`e349e7b`（`fix(ui): 修复设置页窄屏布局并更新视觉基线`）已推送；Actions run `39880735501`（#61）达到 `completed/success`。
 - 2026-10-23：当前工作区完成 Cloudflare Token 六项权限、Token 名称与 Account/Zone resources 指引、保存域名后缀时自动同步 Zone/DNS/Worker Route；删除帮助中心“配置 Cloudflare 不需要 OAuth 客户端”这类反向文案，改为直接说明操作步骤。`ci:local` 87/87、Docker runtime 20/20 文件 91/91 测试、`deploy:worker:test` 10/10、`worker:typecheck` 和 `build` 均通过，待提交推送。
+- 2026-10-23：功能提交 `9d2f38d` 已推送；Actions #66（run `39890875239`）`completed/success`。本次 HANDOFF 更新需另行提交并追踪其 Actions。
 - 2026-10-23：确认剩余工作顺序：视觉/文案人工验收 → 原生手动构建与真正 SHARED target → 帮助中心原生教程 → Workers Builds/D1/真实服务联调 → 全量验收 → 新提交的 push/Actions 闭环。
