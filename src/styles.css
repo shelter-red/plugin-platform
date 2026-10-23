@@ -1485,11 +1485,14 @@ td a {
 .settings-nav {
   position: sticky;
   top: 12px;
+  min-width: 0;
 }
 .settings-nav .settings-menu.ant-menu {
   background: transparent;
   border-inline-end: 0;
   font-size: 11px;
+  width: 100%;
+  min-width: 0;
 }
 .settings-nav .ant-menu-item {
   padding-inline: 10px;
@@ -1509,6 +1512,7 @@ td a {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
 }
 .settings-panel {
   padding: 18px;

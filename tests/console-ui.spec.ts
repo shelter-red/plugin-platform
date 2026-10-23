@@ -95,6 +95,21 @@ test('管理端窄窗口各页面空态可用', async ({ page }) => {
   }
 })
 
+test('管理端设置页窄窗口分区不超出内容列', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/settings')
+  await expect(page.locator('main')).toBeVisible()
+  const bounds = await page.evaluate(() => {
+    const layout = document.querySelector('.settings-layout')?.getBoundingClientRect()
+    const nav = document.querySelector('.settings-nav')?.getBoundingClientRect()
+    const content = document.querySelector('.settings-content')?.getBoundingClientRect()
+    return { viewport: window.innerWidth, layout, nav, content }
+  })
+  expect(bounds.layout?.right).toBeLessThanOrEqual(bounds.viewport)
+  expect(bounds.nav?.right).toBeLessThanOrEqual(bounds.layout?.right ?? 0)
+  expect(bounds.content?.right).toBeLessThanOrEqual(bounds.layout?.right ?? 0)
+})
+
 test('管理端窄窗口弹窗可用', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/')

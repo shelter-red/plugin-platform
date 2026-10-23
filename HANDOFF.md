@@ -288,7 +288,7 @@ doRequests        100,000
 | U13 | 未配置为何还能查 `/api/usage/local?range=7d` 且返回 200 | 区分 Cloudflare 与本地统计；未配置不读缓存/不发请求 | ✅ 路由与测试已覆盖 |
 | U14 | response_type 放错位置；CF OAuth 没有 PKCE | 最终 Token 方案中这些字段全部消失 | ✅ 当前 Token UI/文档不出现这些字段；测试只把它们作为“必须不存在”的负断言 |
 | U15 | `1e4fd10`、`fd80fa4` Actions 失败 | 失败修复、本地 CI、push、Actions、产物闭环 | ✅ 当前最终基线 `b6ad802` #58 成功；每次新提交仍须重新追踪 |
-| U16 | 图标没对齐；“默认工作区”很矮挡字 | 统一高度/gap/行高/居中；双主题多视口检查 | 🟡 已有高度修复；本轮新增 UI 未做最终截图验收 |
+| U16 | 图标没对齐；“默认工作区”很矮挡字 | 统一高度/gap/行高/居中；双主题多视口检查 | 🟡 空态与窄屏设置布局已实测；默认工作区真实数据和全局图标对齐仍待下一步审计 |
 | U17 | 额度少，D1 写入等都要监控且显示百分比 | 8 项 used/limit/percentage | ✅ 前后端已实现 8 项，含次数、上限、百分比；专项回归已通过 |
 | U18 | 平台和监控分开；平台请求不限 | 平台只统计；Cloudflare 官方额度独立 | 🟡 分组、“不限”和定向回归已实现；最终多视口视觉验收未完成 |
 | U19 | GitHub OAuth 没过期，CF 为什么过期；改 Token | 不再暗示 OAuth 过期；界面/链接/错误全部 Token 化 | ✅ 后端/API/面板/README/docs/help/deploy 提示已 Token 化，随 `6e9d0ec` 推送并通过 #56 |
@@ -661,7 +661,7 @@ fd80fa4  run 39754896119  #11  管理端 UI smoke 失败
 
 收口判定：运行第 3.4 节搜索时，只允许出现 GitHub OAuth、测试负断言、`legacy_oauth`、历史 migration 和 `native-server/third_party`。本轮 `git diff --check`、`npm run ci:local`、Worker runtime 与 `npm run deploy:worker:test` 均已通过；`deploy-worker.test.sh` 的 README 最小部署断言已从旧的“Cloudflare 账号授权”同步为“连接 Cloudflare Workers Builds 账号”。`6e9d0ec`、`a9e3839` 与 `02dbb1a` 已推送，#56/#57 成功。
 
-### 8.3 视觉与文案验收（已登记，当前步骤）
+### 8.3 视觉与文案验收（窄屏布局子步骤已完成）
 
 开始本步骤前必须先检查本地 Git/Actions；本次已在 `b6ad802` 的 HANDOFF 中登记，并在 `cf130d1` 的 Actions #59 成功后执行。当前证据与问题：
 
@@ -672,6 +672,8 @@ fd80fa4  run 39754896119  #11  管理端 UI smoke 失败
 - 当前宿主缺少 CJK 字体，直接截图出现方框/缺字；最终像素基线必须在 CI 同款 Playwright 环境重建，不能把宿主字体缺失误当成产品文案问题。
 
 下一步只处理已记录的窄屏布局、可靠截图基线和对应回归断言；完成后再进入图标对齐、重复入口和中英文文案审计。
+
+本次已完成：`.settings-nav`、`.settings-content` 和 AntD 菜单补充 `min-width: 0`/`width: 100%`；新增 `console-ui` 的 390px 分区边界断言；在 CI 同款 Playwright 容器重建设置页 6 张截图、移动设置预览和登录页截图。结果为 `ci:local` 87/87、`npm run deploy:worker:test` 10/10；390px 下设置布局、导航和内容列均为 362px，未超出视口。下一步登记为：图标/文字对齐、重复入口/空卡片以及中英文文案审计。
 
 - 登录页实际截图，确认不是旧页面或旧组件。
 - 检查设置页 Cloudflare Token 区块、固定权限、创建 Token 链接。
@@ -787,4 +789,6 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - 2026-10-23：再次整理 HANDOFF，更新“待 push/PENDING”旧状态，将已完成的 Token 化、部署断言、17 路径验收与 #56 成功记录下来；若产生新的 HANDOFF-only commit，仍需按第 7 节实时追踪，不能用 #56 代替新 HEAD。
 - 2026-10-23：本次 HANDOFF-only 更新后重新执行 `git diff --check`、`npm run ci:local`（89 TSX 审计、476 样式规则、构建、Worker smoke、86/86 UI smoke）和 `npm run deploy:worker:test`（10/10），全部通过。
 - 2026-10-23：提交 `02dbb1a` 已推送；Actions run `39856158838`（#57）达到 `completed/success`。后续 HANDOFF 更新必须继续先记录、再提交、再推送并追踪新 HEAD。
+- 2026-10-23：提交 `b6ad802` 已推送；Actions run `39877275016`（#58）达到 `completed/success`。
+- 2026-10-23：完成视觉验收登记的窄屏布局子步骤：发现并修复 390px 设置页 462px 溢出，新增布局边界回归；CI 同款容器重建设置页 6 张、移动设置预览和登录页截图；`ci:local` 87/87、`npm run deploy:worker:test` 10/10 通过。下一步为图标/文字对齐、重复入口/空卡片和中英文文案审计。
 - 2026-10-23：确认剩余工作顺序：视觉/文案人工验收 → 原生手动构建与真正 SHARED target → 帮助中心原生教程 → Workers Builds/D1/真实服务联调 → 全量验收 → 新提交的 push/Actions 闭环。
