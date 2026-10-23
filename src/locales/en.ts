@@ -482,7 +482,7 @@ export default {
       permissionsFixed: 'Fixed set',
       permissionsHint: 'The icons are live probes of the saved Token: green means verified, red means missing, and a question mark means not tested. Cloudflare does not expose a direct Token policy readback.',
       permissionStates: { allowed: 'Verified', denied: 'Missing', unknown: 'Not tested' },
-      permissionColumns: { scope: 'Scope', name: 'Permission', level: 'Level' },
+      permissionColumns: { scope: 'Scope', name: 'Permission group', level: 'Level' },
       permissionLevels: { read: 'Read', write: 'Write', edit: 'Edit' },
       resourceScopeHint: 'When creating the Token: choose the target account under Account, the plugin domain Zone under Zone, and nothing under User.',
       permissionScopes: { account: 'Account', zone: 'Zone', user: 'User' },

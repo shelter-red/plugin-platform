@@ -27,7 +27,7 @@ Domains can only be assigned to enabled plugins that pass the health check. Pref
 
 Open **Settings → Cloudflare** and use the **Create API Token** link. Fill the three Cloudflare dropdowns for each fixed permission: scope, permission group and level.
 
-| Scope | Permission | Level |
+| Scope | Permission group | Level |
 | --- | --- | --- |
 | Account | Account Settings | Read |
 | Account | Account Analytics | Read |

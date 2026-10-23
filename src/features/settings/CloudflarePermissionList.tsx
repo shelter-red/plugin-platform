@@ -26,7 +26,7 @@ const PERMISSION_ROWS: Array<{
   { key: 'Workers Routes Edit', scopeKey: 'settings.cloudflare.permissionScopes.zone', nameKey: 'settings.cloudflare.permissionNames.routes', levelKey: 'settings.cloudflare.permissionLevels.edit', descriptionKey: 'settings.cloudflare.permissions.routes' },
 ]
 
-/** Token 权限平铺展示；图标来自当前 Token 的实际 API 探测，不提供增删或自定义范围输入。 */
+/** 按 Cloudflare 创建页的三列展示固定权限；状态图标来自当前 Token 的实际 API 探测。 */
 export function CloudflarePermissionList({ permissionStatus }: { permissionStatus?: Record<string, 'allowed' | 'denied' | 'unknown'> }) {
   const { t } = useTranslation()
   const stateIcon = (state: 'allowed' | 'denied' | 'unknown') => state === 'allowed' ? <Check size={14} aria-hidden="true" /> : state === 'denied' ? <X size={14} aria-hidden="true" /> : <CircleHelp size={14} aria-hidden="true" />
