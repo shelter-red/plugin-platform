@@ -36,6 +36,8 @@
 >
 > `8093797` 已推送；平台验收 #97（run `39956325137`）对应 HEAD 且 `completed/success`，`changes`/`web` 成功，三个 native job skipped。8.6 的仓库/公网证据与未直接验证项已完整记录；下一步登记 U16 的图标、文字和默认工作区高度审计，先检查现有组件和真实视口，再决定最小必要修复。
 >
+> 新问题登记：当前仓库没有 `v*` tag 或 GitHub Release；旧发布 run #1（`39946244958`）是无 tag 的历史 `workflow_dispatch`，因此 `softprops/action-gh-release` 报 “GitHub Releases requires a tag”。仅删除手动触发会导致没有 Release，下一步先修正发布 workflow：保留 tag push，并增加必填 `release_tag` 的手动入口，将该值显式传给 Release action；先记录本范围，再修改 workflow。
+>
 > `8ad8704` 已推送；平台验收 #98（run `39957698043`）对应 HEAD 且 `completed/success`，`changes`/`web` 成功，三个 native job skipped。U16 真实数据审计已完成：1440/1024 视口下默认工作区切换器为 `46.34px`，两行文案上下各留 `8px`，图标与文案中心一致；带图标按钮和导航项的垂直中心差均为 `0px`，没有发现需要凭猜测修改的样式问题。下一步只增加对应 Playwright 回归断言，不改变现有视觉规则。
 >
 > U16 回归断言已加入 `tests/console-worker.spec.ts`：真实默认工作区下检查切换器最小高度、文字上下边界、头像/文字中心线，以及可见 AntD 图标按钮和导航项中心线。单项验证通过；完整 `npm run ci:local` 通过（UI smoke 89/89），`npm run deploy:worker:test` 通过（10/10）。下一步提交、推送并追踪最新 Actions。
@@ -53,9 +55,9 @@
 ```text
 仓库：/home/tc/work/plugin-platform
 分支：main
-HEAD（本次核验）：8ad8704 记录最新 Actions 并登记视觉审计
-origin/main（本次核验）：8ad8704
-工作区（本次核验）：U29、8.5、发布 workflow 修复、8.6 核对和 U16 视觉测量已记录；新增 U16 回归断言尚未提交；平台验收 #93/#94/#95/#96/#97/#98/#99 均成功；下一步提交并追踪该测试变更
+HEAD（本次核验）：0a305f7 补充工作区与图标对齐回归
+origin/main（本次核验）：0a305f7
+工作区（本次核验）：U29、8.5、发布 workflow 修复、8.6 核对和 U16 视觉测量/回归已记录；平台验收 #93/#94/#95/#96/#97/#98/#99/#100 均成功；当前登记发布 workflow 缺少有效 tag 的问题，尚未修改代码
 fetch remote：https://github.com/shelter-red/plugin-platform.git
 push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 ```
@@ -908,3 +910,4 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - 2026-10-23：`8093797`（`记录 Workers Builds Actions 验收`）已推送；Actions #97（run `39956325137`）对应 HEAD 且 `completed/success`，`changes`/`web` 成功，三个 native job skipped。当前开始 U16 视觉审计，先取真实数据/双主题/桌面与窄屏证据，再决定是否修改组件或样式。
 - 2026-10-23：`8ad8704`（`记录最新 Actions 并登记视觉审计`）已推送；Actions #98（run `39957698043`）对应 HEAD 且 `completed/success`，`changes`/`web` 成功，三个 native job skipped。U16 测量确认默认工作区和图标中心线正常，下一步增加布局回归断言，不凭猜测改样式。
 - 2026-10-23：U16 回归断言已加入 `tests/console-worker.spec.ts`；单项和完整本地验收通过，`npm run ci:local` 为 89/89 UI smoke，`npm run deploy:worker:test` 为 10/10。测试改动待提交、推送和 Actions 验证。
+- 2026-10-23：用户反馈发布仍报 `GitHub Releases requires a tag`。核对 GitHub API：仓库当前没有 tag、没有 Release；现行 `release.yml` 仅由 `v*` tag push 触发，错误来自历史无 tag 的 workflow_dispatch run #1。登记下一步修复为“手动发布要求填写 `v*` tag，并显式传给 Release action”，避免无 tag 调用。
