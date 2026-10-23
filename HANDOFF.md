@@ -44,6 +44,8 @@
 >
 > 新增原生发布修复待验收：Linux executable/shared artifact 改为随包携带 `libssl.so.3` 与 `libcrypto.so.3`，CMake 为 Linux 目标设置 `$ORIGIN` RUNPATH；修复 Windows 注册成功后 HTTP 响应未退出就停止监听可能导致的 teardown 崩溃；CLI 短密码和空凭据口令会在交互模式重新输入，native UI 去掉 HTML `minLength` 拦截并保留错误后的表单内容。Linux 构建、Windows 交叉编译、native HTTP smoke、Wine Windows HTTP smoke、native UI 短密码回归均通过；待提交、推送、Actions 验收后，再以最新 HEAD 创建 `v0.1.0`。
 >
+> `5dd388c` 已推送；平台验收 #103（run `39991911396`）对应 HEAD 且 `completed/success`，`web`、`changes`、`linux-native`、`windows-native`、`macos-native` 全部成功。该提交已完成原生运行时和交互配置修复验收；下一步先提交本条记录并追踪 docs-only Actions，再从最新 `main` 创建 `v0.1.0`。
+>
 > `8ad8704` 已推送；平台验收 #98（run `39957698043`）对应 HEAD 且 `completed/success`，`changes`/`web` 成功，三个 native job skipped。U16 真实数据审计已完成：1440/1024 视口下默认工作区切换器为 `46.34px`，两行文案上下各留 `8px`，图标与文案中心一致；带图标按钮和导航项的垂直中心差均为 `0px`，没有发现需要凭猜测修改的样式问题。下一步只增加对应 Playwright 回归断言，不改变现有视觉规则。
 >
 > U16 回归断言已加入 `tests/console-worker.spec.ts`：真实默认工作区下检查切换器最小高度、文字上下边界、头像/文字中心线，以及可见 AntD 图标按钮和导航项中心线。单项验证通过；完整 `npm run ci:local` 通过（UI smoke 89/89），`npm run deploy:worker:test` 通过（10/10）。下一步提交、推送并追踪最新 Actions。
@@ -61,9 +63,9 @@
 ```text
 仓库：/home/tc/work/plugin-platform
 分支：main
-HEAD（本次核验）：799928c 登记 v0.1.0 发布验收
-origin/main（本次核验）：799928c
-工作区（本次核验）：U29、8.5、发布 workflow 修复、8.6 核对和 U16 视觉测量/回归已记录；平台验收 #102 已成功；当前新增原生运行时/交互配置修复待提交推送，之后以最新 HEAD 创建 `v0.1.0` 验证真实 Release
+HEAD（本次核验）：5dd388c 修复原生服务器发布与交互配置
+origin/main（本次核验）：5dd388c
+工作区（本次核验）：U29、8.5、发布 workflow 修复、8.6 核对和 U16 视觉测量/回归已记录；原生运行时/交互配置修复已推送并通过平台验收 #103；当前登记 docs-only Actions 后创建 `v0.1.0` 验证真实 Release
 fetch remote：https://github.com/shelter-red/plugin-platform.git
 push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 ```
@@ -920,3 +922,4 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - 2026-10-23：发布 workflow tag 修复在工作区完成并通过本地验收：手动 `release_tag`、tag 校验 job、显式 `tag_name`/`target_commitish` 已加入；`npm run ci:local` 89/89、`npm run deploy:worker:test` 10/10、Bash 正负 tag 校验和 `git diff --check` 通过。待提交、推送和最新 Actions 验证。
 - 2026-10-23：`cad27b3`（`修复发布 workflow 的 tag 参数`）已推送；Actions #102（run `39981973620`）对应 HEAD 且 `completed/success`，`changes`/`web` 成功，三个 native job skipped。当前没有 tag 或 Release；因 `package.json` 版本是 `0.1.0`，登记下一步创建 `v0.1.0` 验证真实发布产物。
 - 2026-10-24：修复原生发布可用性：Linux 包随附 OpenSSL 3 运行库并使用 `$ORIGIN`，Windows 注册流程等待 HTTP 请求完全退出再停止监听；CLI 交互密码和凭据口令失败时重新输入，native UI 短密码改为应用内错误提示并保留表单。Linux/Windows 编译、native HTTP smoke、Wine Windows smoke、native UI setup 回归均通过；代码与工作流待提交、推送和最新 Actions 验收，不能沿用 `cad27b3` 创建发布 tag。
+- 2026-10-24：`5dd388c`（`修复原生服务器发布与交互配置`）已推送；平台验收 #103（run `39991911396`）完成成功，`web`、`changes`、`linux-native`、`windows-native`、`macos-native` 全部成功。下一步提交本记录并追踪新 HEAD，再创建 `v0.1.0`。
