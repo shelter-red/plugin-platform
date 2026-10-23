@@ -1,7 +1,7 @@
 import { decryptSecret, encryptSecret } from './secrets'
 import type { CloudflarePlanSummary, CloudflareUsageLimits, Env } from './types'
 
-/** Token 权限按用途分组；前端只展示，保存接口不接受自定义 scope。 */
+/** 平台固定使用的 Token 权限清单；保存接口不接受自定义 scope。 */
 export const CLOUDFLARE_MONITOR_PERMISSIONS = [
   'Account Settings Read',
   'Account Analytics Read',
@@ -15,6 +15,9 @@ export const CLOUDFLARE_DOMAIN_PERMISSIONS = [
 ] as const
 
 export const CLOUDFLARE_API_TOKEN_PERMISSIONS = [...CLOUDFLARE_MONITOR_PERMISSIONS, ...CLOUDFLARE_DOMAIN_PERMISSIONS] as const
+
+export type CloudflarePermissionState = 'allowed' | 'denied' | 'unknown'
+export type CloudflarePermissionStatus = Record<(typeof CLOUDFLARE_API_TOKEN_PERMISSIONS)[number], CloudflarePermissionState>
 
 export type CloudflareTokenErrorCode =
   | 'token_required'
@@ -343,6 +346,68 @@ export async function validateCloudflareApiToken(
     account,
     subscriptions,
   }
+}
+
+async function probePermission(run: () => Promise<unknown>): Promise<CloudflarePermissionState> {
+  try {
+    await run()
+    return 'allowed'
+  } catch (error) {
+    if (error instanceof CloudflareTokenError && (error.status === 401 || error.status === 403)) return 'denied'
+    return 'unknown'
+  }
+}
+
+async function probeAnalyticsPermission(apiToken: string, accountId: string, fetchImpl: Fetcher): Promise<CloudflarePermissionState> {
+  try {
+    const response = await fetchImpl(`${API_ORIGIN}/graphql`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${apiToken}`, accept: 'application/json', 'content-type': 'application/json' },
+      body: JSON.stringify({ query: 'query PermissionProbe($accountTag: String!) { viewer { accounts(filter: { accountTag: $accountTag }) { accountTag } } }', variables: { accountTag: accountId } }),
+    })
+    const payload = await parseJson(response) as { errors?: unknown[] } | null
+    if (response.status === 401 || response.status === 403 || (response.ok && Array.isArray(payload?.errors) && payload.errors.length > 0)) return 'denied'
+    return response.ok ? 'allowed' : 'unknown'
+  } catch {
+    return 'unknown'
+  }
+}
+
+async function probeMutationPermission(apiToken: string, path: string, fetchImpl: Fetcher): Promise<CloudflarePermissionState> {
+  try {
+    // An empty request is rejected before mutation, but still passes Cloudflare's permission check.
+    const response = await fetchImpl(`${API_ORIGIN}${path}`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${apiToken}`, accept: 'application/json', 'content-type': 'application/json' },
+      body: '{}',
+    })
+    if (response.status === 401 || response.status === 403) return 'denied'
+    if (response.status === 400 || response.status === 422 || response.ok) return 'allowed'
+    return 'unknown'
+  } catch {
+    return 'unknown'
+  }
+}
+
+/** 逐项验证当前 Token 的实际 API 能力；Cloudflare 不提供直接读取 policy 的接口。 */
+export async function checkCloudflarePermissionStatus(
+  apiToken: string,
+  accountId: string,
+  fetchImpl: Fetcher = fetch,
+): Promise<CloudflarePermissionStatus> {
+  const status = Object.fromEntries(CLOUDFLARE_API_TOKEN_PERMISSIONS.map((permission) => [permission, 'unknown'])) as CloudflarePermissionStatus
+  status['Account Settings Read'] = await probePermission(() => listCloudflareAccounts(apiToken, fetchImpl))
+  status['Billing Read'] = await probePermission(() => readCloudflareSubscriptions(apiToken, accountId, fetchImpl))
+  status['Account Analytics Read'] = await probeAnalyticsPermission(apiToken, accountId, fetchImpl)
+
+  let zones: CloudflareZone[] = []
+  status['Zone Read'] = await probePermission(async () => { zones = await listCloudflareZones(apiToken, accountId, fetchImpl) })
+  const zoneId = zones[0]?.id
+  if (zoneId) {
+    status['DNS Write'] = await probeMutationPermission(apiToken, `/zones/${encodeURIComponent(zoneId)}/dns_records`, fetchImpl)
+    status['Workers Routes Edit'] = await probeMutationPermission(apiToken, `/zones/${encodeURIComponent(zoneId)}/workers/routes`, fetchImpl)
+  }
+  return status
 }
 
 async function listCloudflareZones(apiToken: string, accountId: string, fetchImpl: Fetcher): Promise<CloudflareZone[]> {

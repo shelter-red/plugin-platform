@@ -164,7 +164,7 @@ GitHub 回调失败时 Worker 直接返回对应 HTTP 状态（400/403/409/502/5
 
 ### Cloudflare API Token 所需权限（固定）
 
-平台使用 Cloudflare API Token 读取账号/用量并配置插件域名；GitHub 登录使用单独的 OAuth App 配置。请从 **Cloudflare Dashboard → My Profile → API Tokens → Create Token** 创建自定义 Token：在创建页填写 Token 名称，选择下面的监控与域名权限，并在 `Account resources`、`Zone resources` 中限制到实际使用的资源。Token 名称是 Cloudflare 控制台标签，平台不读取或保存；系统设置 → Cloudflare 固定展示权限清单，不提供自定义范围入口：
+平台使用 Cloudflare API Token 读取账号/用量并配置插件域名；GitHub 登录使用单独的 OAuth App 配置。创建 Token 时授予下面六项固定权限，并将 `Account resources` 限制到目标账号、`Zone resources` 限制到插件域名所在 Zone；`User resources` 不使用。系统设置 → Cloudflare 会显示这六项权限的实际探测状态，不提供自定义范围入口：
 
 | 官方权限名称 | 用途 |
 | --- | --- |

@@ -72,15 +72,20 @@ export async function outboundStub(request: Request): Promise<Response> {
   if (url.hostname === 'api.cloudflare.com' && url.pathname === '/client/v4/accounts' && request.method === 'GET') return cloudflareAccounts(request)
   if (url.hostname === 'api.cloudflare.com' && url.pathname === '/client/v4/user/tokens/verify' && request.method === 'GET') return cloudflareTokenVerify(request)
   if (url.hostname === 'api.cloudflare.com' && /^\/client\/v4\/accounts\/[^/]+\/subscriptions$/.test(url.pathname) && request.method === 'GET') return cloudflareSubscriptions(request)
+  if (url.hostname === 'api.cloudflare.com' && url.pathname === '/client/v4/graphql' && request.method === 'POST') {
+    return Response.json({ data: { viewer: { accounts: [{ accountTag: CLOUDFLARE_STUB_ACCOUNT_ID }] } } })
+  }
   if (url.hostname === 'api.cloudflare.com' && url.pathname === '/client/v4/zones' && request.method === 'GET') {
     return Response.json({ success: true, result: [{ id: 'zone-runtime', name: 'example.net', status: 'active' }], result_info: { page: 1, per_page: 50, count: 1, total_pages: 1 } })
   }
   if (url.hostname === 'api.cloudflare.com' && url.pathname === '/client/v4/zones/zone-runtime/dns_records') {
     if (request.method === 'GET') return Response.json({ success: true, result: [] })
+    if (bearerToken(request) === CLOUDFLARE_STUB_MISSING_WRITE_TOKEN) return Response.json({ success: false, errors: [{ message: 'DNS write permission denied' }] }, { status: 403 })
     return Response.json({ success: true, result: { id: 'dns-runtime', type: 'A', name: url.searchParams.get('name') ?? '*.plugins.example.net', content: '192.0.2.1' } })
   }
   if (url.hostname === 'api.cloudflare.com' && url.pathname === '/client/v4/zones/zone-runtime/workers/routes') {
     if (request.method === 'GET') return Response.json({ success: true, result: [] })
+    if (bearerToken(request) === CLOUDFLARE_STUB_MISSING_WRITE_TOKEN) return Response.json({ success: false, errors: [{ message: 'Worker route permission denied' }] }, { status: 403 })
     return Response.json({ success: true, result: { id: 'route-runtime', pattern: '*.plugins.example.net/*', script: 'plugmesh-worker' } })
   }
   return new Response(`unexpected outbound request: ${request.url}`, { status: 502 })

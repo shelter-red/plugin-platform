@@ -1,20 +1,15 @@
 import { useTranslation } from 'react-i18next'
-import { Check } from 'lucide-react'
+import { Check, CircleHelp, X } from 'lucide-react'
 import { StatusBadge } from '../../components/StatusBadge'
 
-export const CLOUDFLARE_MONITOR_PERMISSIONS = [
+export const CLOUDFLARE_API_TOKEN_PERMISSIONS = [
   'Account Settings Read',
   'Account Analytics Read',
   'Billing Read',
-] as const
-
-export const CLOUDFLARE_DOMAIN_PERMISSIONS = [
   'Zone Read',
   'DNS Write',
   'Workers Routes Edit',
 ] as const
-
-export const CLOUDFLARE_API_TOKEN_PERMISSIONS = [...CLOUDFLARE_MONITOR_PERMISSIONS, ...CLOUDFLARE_DOMAIN_PERMISSIONS] as const
 
 const DESCRIPTION_KEYS: Record<(typeof CLOUDFLARE_API_TOKEN_PERMISSIONS)[number], string> = {
   'Account Settings Read': 'settings.cloudflare.permissions.accountSettings',
@@ -34,36 +29,28 @@ const MODE_KEYS: Record<(typeof CLOUDFLARE_API_TOKEN_PERMISSIONS)[number], strin
   'Workers Routes Edit': 'settings.cloudflare.permissionModes.edit',
 }
 
-function PermissionGroup({ title, names }: { title: string; names: readonly (typeof CLOUDFLARE_API_TOKEN_PERMISSIONS)[number][] }) {
+/** Token 权限平铺展示；图标来自当前 Token 的实际 API 探测，不提供增删或自定义范围输入。 */
+export function CloudflarePermissionList({ permissionStatus }: { permissionStatus?: Record<string, 'allowed' | 'denied' | 'unknown'> }) {
   const { t } = useTranslation()
-  return <section className="permission-group">
-    <div className="permission-group-heading">
-      <strong>{title}</strong>
-      <span className="permission-tag">{t('settings.cloudflare.permissionRequired')}</span>
-    </div>
-    <ol className="scope-list">
-      {names.map((name) => <li key={name}>
-        <Check size={14} aria-hidden="true" />
-        <div>
-          <div className="permission-name"><strong>{name}</strong><span className="permission-tag">{t(MODE_KEYS[name])}</span></div>
-          <span>{t(DESCRIPTION_KEYS[name])}</span>
-        </div>
-      </li>)}
-    </ol>
-  </section>
-}
-
-/** Token 权限由产品固定，只展示用途和操作类型；不提供增删、取消或自定义范围输入。 */
-export function CloudflarePermissionList() {
-  const { t } = useTranslation()
+  const stateIcon = (state: 'allowed' | 'denied' | 'unknown') => state === 'allowed' ? <Check size={14} aria-hidden="true" /> : state === 'denied' ? <X size={14} aria-hidden="true" /> : <CircleHelp size={14} aria-hidden="true" />
   return <div className="scope-permissions" id="settings-cloudflare-permissions" data-testid="cloudflare-permissions">
     <div className="scope-permissions-head">
       <span className="field-label">{t('settings.cloudflare.permissionsTitle')}</span>
       <StatusBadge tone="neutral">{t('settings.cloudflare.permissionsFixed')}</StatusBadge>
     </div>
     <p className="field-hint">{t('settings.cloudflare.permissionsHint')}</p>
-    <PermissionGroup title={t('settings.cloudflare.monitorPermissionsTitle')} names={CLOUDFLARE_MONITOR_PERMISSIONS} />
-    <PermissionGroup title={t('settings.cloudflare.domainPermissionsTitle')} names={CLOUDFLARE_DOMAIN_PERMISSIONS} />
-    <p className="field-hint">{t('settings.cloudflare.permissionsApply')}</p>
+    <ol className="scope-list">
+      {CLOUDFLARE_API_TOKEN_PERMISSIONS.map((name) => {
+        const state = permissionStatus?.[name] ?? 'unknown'
+        return <li key={name}>
+          <span className={`permission-state ${state === 'allowed' ? 'allowed' : state === 'denied' ? 'denied' : 'unknown'}`}>{stateIcon(state)}</span>
+          <div>
+            <div className="permission-name"><strong>{name}</strong><span className="permission-tag">{t(MODE_KEYS[name])}</span><span className={`permission-state ${state === 'allowed' ? 'allowed' : state === 'denied' ? 'denied' : 'unknown'}`}>{t(`settings.cloudflare.permissionStates.${state}`)}</span></div>
+            <span>{t(DESCRIPTION_KEYS[name])}</span>
+          </div>
+        </li>
+      })}
+    </ol>
+    <p className="field-hint">{t('settings.cloudflare.resourceScopeHint')}</p>
   </div>
 }

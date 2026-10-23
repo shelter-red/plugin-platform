@@ -6,7 +6,7 @@ import type { GithubAuthResult } from './auth'
 import type { AuthenticatedUser, CloudflarePlanSummary, CloudflareUsageLimits, Env } from './types'
 import { decryptSecret, encryptSecret } from './secrets'
 import { isEmail, parseSmtpSettings, publicSmtpSettings, sendInviteEmail, sendSmtpTest, validateSmtpSettings, type SmtpSettings } from './email'
-import { CLOUDFLARE_API_TOKEN_PERMISSIONS, CloudflareTokenError, cloudflarePlanLimits, configureCloudflareDomain, deleteStoredCloudflareCredential, maskCloudflareAccountId, readCloudflareSubscriptions, readStoredCloudflareCredential, storeCloudflareCredential as storeCloudflareApiTokenCredential, validateCloudflareApiToken } from './cloudflare-token'
+import { checkCloudflarePermissionStatus, CLOUDFLARE_API_TOKEN_PERMISSIONS, CloudflareTokenError, cloudflarePlanLimits, configureCloudflareDomain, deleteStoredCloudflareCredential, maskCloudflareAccountId, readCloudflareSubscriptions, readStoredCloudflareCredential, storeCloudflareCredential as storeCloudflareApiTokenCredential, validateCloudflareApiToken } from './cloudflare-token'
 import { activateMaintenance, cloudflareQuotaReason, defaultPlatformSettings, getPlatformSettings, isMaintenanceMode, normalizePluginDomainSuffix, recordRequest, releaseR2Usage, reserveR2Usage, setPlatformSettingsCache } from './usage'
 import { findPluginRoute, invalidatePluginRoute } from './route-cache'
 import { selectPublicRequestMode } from './request-mode'
@@ -802,9 +802,14 @@ function parsePositiveQuota(value: unknown, fallback: number): number {
 
 type StoredCloudflareCredential = Awaited<ReturnType<typeof readStoredCloudflareCredential>>
 
-function publicCloudflareSettings(stored: StoredCloudflareCredential) {
+function unknownCloudflarePermissionStatus() {
+  return Object.fromEntries(CLOUDFLARE_API_TOKEN_PERMISSIONS.map((permission) => [permission, 'unknown']))
+}
+
+function publicCloudflareSettings(stored: StoredCloudflareCredential, permissionStatus = unknownCloudflarePermissionStatus()) {
   const base = {
     permissions: [...CLOUDFLARE_API_TOKEN_PERMISSIONS],
+    permissionStatus,
     accountIdConfigured: false,
     accountId: null as string | null,
     updatedAt: stored?.updatedAt ?? null,
@@ -843,7 +848,13 @@ function cloudflareTokenErrorResponse(error: unknown): Response {
 export async function cloudflareSettingsApi(request: Request, env: Env, user: AuthenticatedUser, fetchImpl: typeof fetch = fetch): Promise<Response> {
   if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
   try {
-    if (request.method === 'GET') return json(publicCloudflareSettings(await readStoredCloudflareCredential(env)))
+    if (request.method === 'GET') {
+      const stored = await readStoredCloudflareCredential(env)
+      const permissionStatus = stored?.kind === 'api_token'
+        ? await checkCloudflarePermissionStatus(stored.credential.apiToken, stored.credential.accountId, fetchImpl)
+        : undefined
+      return json(publicCloudflareSettings(stored, permissionStatus))
+    }
     if (request.method === 'DELETE') {
       await deleteStoredCloudflareCredential(env)
       await recordAudit(env, null, user.id, 'cloudflare.credentials.revoked', { credentialKind: 'api_token' })
@@ -863,7 +874,8 @@ export async function cloudflareSettingsApi(request: Request, env: Env, user: Au
       planId: validated.subscriptions.plan.id,
       planConfirmed: validated.subscriptions.plan.confirmed,
     })
-    return json(publicCloudflareSettings({ kind: 'api_token', credential: validated.credential, updatedAt }))
+    const permissionStatus = await checkCloudflarePermissionStatus(validated.credential.apiToken, validated.credential.accountId, fetchImpl)
+    return json(publicCloudflareSettings({ kind: 'api_token', credential: validated.credential, updatedAt }, permissionStatus))
   } catch (error) {
     return cloudflareTokenErrorResponse(error)
   }

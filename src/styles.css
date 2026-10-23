@@ -752,19 +752,6 @@ h1 {
   display: grid;
   gap: 10px;
 }
-.permission-group + .permission-group {
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
-}
-.permission-group-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  color: var(--text);
-  font-size: 11px;
-}
 .permission-name {
   display: flex;
   align-items: center;
@@ -801,33 +788,26 @@ h1 {
   font-size: 11px;
   line-height: 1.6;
 }
-.cloudflare-token-guide {
-  margin-top: 16px;
-  padding-top: 14px;
-  border-top: 1px solid var(--line);
-  color: var(--text-2);
-  font-size: 11px;
-  line-height: 1.65;
-}
-.cloudflare-token-guide-heading {
-  display: flex;
+.scope-list .permission-tag,
+.scope-list .permission-state {
+  display: inline-flex;
   align-items: center;
-  gap: 7px;
+  flex: 0 0 auto;
+  width: auto;
   color: var(--text);
+  font-size: 10px;
+  line-height: 1.4;
 }
-.cloudflare-token-guide-heading svg {
-  flex: none;
-  color: var(--primary);
+.scope-list > li > .permission-state {
+  margin-top: 2px;
 }
-.cloudflare-token-guide ol {
-  margin: 8px 0 0 18px;
-  padding: 0;
+.permission-state.allowed {
+  color: var(--primary-strong);
 }
-.cloudflare-token-guide li {
-  padding-left: 3px;
+.permission-state.denied {
+  color: var(--danger-text);
 }
-.cloudflare-token-guide p {
-  margin: 8px 0 0;
+.permission-state.unknown {
   color: var(--text-3);
 }
 .metric-grid {

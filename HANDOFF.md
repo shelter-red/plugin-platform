@@ -2,7 +2,7 @@
 
 > 最后整理：2026-10-23（Asia/Shanghai）
 >
-> 当前状态：**Cloudflare API Token、8 项用量监控、Token 直接配置插件域名的后端/前端实现已完成并推送。最新提交为 `269befa`，Actions #69（run `39895253346`）为 `completed/success`。Cloudflare 权限面板明确分为监控组（前三项只读）和域名配置组（Zone Read 只读、DNS Write 写入、Workers Routes Edit 编辑），不再把产品要求清单伪装成当前 Token 的权限回读；403 会按账号列表、订阅、Zone、DNS、Worker Route 操作指出对应权限。保存插件域名后缀时，Worker 使用已保存 Token 查找 active Zone、维护 Plugmesh 通配 DNS 记录并创建/更新 `plugmesh-worker` Route；缺 Token、Zone 不匹配、已有第三方记录或 Route 冲突均返回真实 HTTP 错误，不静默保存。`ci:local` 87/87、Docker runtime 20/20 文件 91/91 测试、权限定向 runtime 16/16、设置页 Axe 2/2、deploy test 10/10、构建和类型检查均已通过。若之后再次修改本 HANDOFF，会生成新的 docs-only commit；恢复时不要用本文代替实时 Git/Actions 查询。**
+> 当前状态：**Cloudflare API Token、8 项用量监控、Token 直接配置插件域名的后端/前端实现已完成。本轮提交为 `6c999f4`，推送后的 Actions 尚待核验。Cloudflare 权限面板六项权限平铺展示，逐项显示“已验证/缺少/未检测”，不再显示监控组或域名组；Account resources、Zone resources、User resources 的用途在列表下直接说明。403 会按账号列表、订阅、Zone、DNS、Worker Route 操作指出对应权限。保存插件域名后缀时，Worker 使用已保存 Token 查找 active Zone、维护 Plugmesh 通配 DNS 记录并创建/更新 `plugmesh-worker` Route；缺 Token、Zone 不匹配、已有第三方记录或 Route 冲突均返回真实 HTTP 错误，不静默保存。`ci:local` 87/87、Docker runtime 权限定向 17/17、设置页 Axe 2/2、构建和类型检查均已通过。若之后再次修改本 HANDOFF，会生成新的 docs-only commit；恢复时不要用本文代替实时 Git/Actions 查询。**
 >
 > 本文件是上下文压缩后的第一事实源。README、旧方案、旧测试、聊天摘要或历史提交说明与本文冲突时，以用户最新要求、当前代码和本文为准。恢复后先执行第 0 节的核验命令，再按第 8 节顺序继续。
 
@@ -186,7 +186,7 @@ Workers Routes Edit
 ```
 
 - 前三项用于账号发现、Analytics 用量和套餐读取；后三项用于查找 Zone、写入插件通配 DNS 记录和创建 Worker Route。插件域名后缀保存时由平台使用已保存 Token 自动同步这些资源；已有第三方记录或路由时返回冲突，不覆盖。
-- Cloudflare API Token 创建页还需要 Token 名称和资源范围。Token 名称只是 Cloudflare 侧元数据，平台不保存；Account resources 与 Zone resources 由用户在 Cloudflare 创建页选择，平台的 Account ID 只用于多个可见账号时选择目标账号。
+- Cloudflare API Token 的固定六项权限在设置页平铺列出，并显示当前 Token 的实际探测状态。`Account resources` 选择目标账号，`Zone resources` 选择插件域名所在 Zone；`User resources` 不使用。平台的 Account ID 只用于多个可见账号时选择目标账号。
 
 - 最终用户可见界面和活跃逻辑不得出现：
 
@@ -311,7 +311,7 @@ doRequests        100,000
 | U22 | Actions 手动构建插件服务器：可执行/库、目标平台 | 仅 `workflow_dispatch`；真正共享库 + artifact + SHA256 | ⬜ 未开始 |
 | U23 | 帮助中心说明二进制/库文件服务器怎么用 | 中英文完整使用说明 | ⬜ 未开始 |
 | U24 | 都整理到磁盘 HANDOFF，避免压缩后忘 | 所有要求、事实、阻塞、步骤、验收可恢复 | ✅ 已更新到 `9d2f38d` 基线，明确区分完成项、剩余项、禁止事项和实时核验要求 |
-| U25 | 监控权限怎么配置域名；OAuth/Token 名称不一致；Token 还要选范围 | Token 固定六项权限；Cloudflare 创建页填写 Token 名称并选择 Account/Zone resources；保存插件域名后缀时自动同步 Zone、DNS 和 Worker Route | ✅ 实现、文档、UI smoke、Worker runtime、类型检查和构建已通过；真实 Cloudflare 联调仍未进行 |
+| U25 | 监控权限怎么配置域名；OAuth/Token 名称不一致；Token 还要选范围 | Token 固定六项权限平铺展示实际状态；说明 Account/Zone/User resources；保存插件域名后缀时自动同步 Zone、DNS 和 Worker Route | ✅ `6c999f4`：前后端状态探测、平铺 UI、文案、Docker runtime 17/17、`ci:local` 87/87 和定向浏览器验收已通过；待推送后核验 Actions |
 
 ## 3. 当前实现清单
 
@@ -346,7 +346,7 @@ doRequests        100,000
 
 - 旧 Cloudflare OAuth 前端 10 个文件已删除。
 - 新增：
-  - `CloudflarePermissionList.tsx`：固定六项权限、不提供 input/button；
+  - `CloudflarePermissionList.tsx`：固定六项权限平铺展示，不提供 input/button，并显示当前 Token 的“已验证/缺少/未检测”状态；
   - `CloudflareTokenForm.tsx`：Token、可选 Account ID、保存/验证/撤销、创建 Token 链接；
   - `CloudflareTokenStatus.tsx`：脱敏账号、最后验证时间、旧凭据提示；
   - `useCloudflareTokenForm.ts`：HTTP 错误保留 status/code/message。
@@ -667,7 +667,7 @@ fd80fa4  run 39754896119  #11  管理端 UI smoke 失败
 状态：**本轮 17 个路径已通过完整本地验收并推送；16 个非 HANDOFF 路径为 `6e9d0ec`，HANDOFF 由 `a9e3839`、`02dbb1a` 逐步收口，#56/#57 成功。不得再写成“尚未修改”“待 push”或“尚未验证”**。
 
 - README：GitHub OAuth 与 Cloudflare API Token 已明确区分；Cloudflare 固定六项权限并说明 Token 名称、Account/Zone resources 与自动 DNS/Worker Route；不再写 refresh/offline、Cloudflare OAuth 客户端或手填免费额度。
-- `docs/acceptance-matrix.md`：Cloudflare 行改为 Token verify / accounts / subscriptions / Zone / DNS / Worker Route / 密文保存 / 本地删除；组件化行改为 `CloudflareTokenForm` / `CloudflareTokenStatus` / `CloudflarePermissionList` / `CloudflareTokenScopeGuide` / `useCloudflareTokenForm`；维护配额行只写平台 3 项阈值；真实栈说明不再手填 Cloudflare 额度。
+- `docs/acceptance-matrix.md`：Cloudflare 行改为 Token verify / accounts / subscriptions / Zone / DNS / Worker Route / 权限实际状态 / 密文保存 / 本地删除；组件化行改为 `CloudflareTokenForm` / `CloudflareTokenStatus` / `CloudflarePermissionList` / `useCloudflareTokenForm`；维护配额行只写平台 3 项阈值；真实栈说明不再手填 Cloudflare 额度。
 - `docs/local-e2e.md`：移除 `cloudflareQuotas.d1RowsRead` 手填流程，改为确认面板没有免费额度输入框；联调边界改为 Cloudflare API Token / Analytics / subscriptions。
 - `方案.md`：Cloudflare 区块、接口、权限矩阵、验证项改为 API Token；平台设置权限矩阵明确 GitHub OAuth，不再用含糊的 OAuth 指代 Cloudflare。
 - `scripts/deploy-worker.sh` / `deploy-worker.test.sh`：部署完成提示与断言同步为 GitHub OAuth + Cloudflare API Token + SMTP + 平台阈值。

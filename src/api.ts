@@ -341,6 +341,7 @@ export interface CloudflareSettings {
   accountIdConfigured: boolean
   accountId: string | null
   permissions: string[]
+  permissionStatus: Record<string, 'allowed' | 'denied' | 'unknown'>
   updatedAt: string | null
   lastVerifiedAt: string | null
   legacyCredential: boolean

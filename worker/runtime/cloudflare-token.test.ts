@@ -2,6 +2,7 @@ import { beforeEach, expect, test } from 'vitest'
 import {
   CLOUDFLARE_API_TOKEN_PERMISSIONS,
   CloudflareTokenError,
+  checkCloudflarePermissionStatus,
   configureCloudflareDomain,
   deleteStoredCloudflareCredential,
   listCloudflareAccounts,
@@ -127,6 +128,29 @@ test('无效 Token、权限不足和上游失败使用稳定错误码', async ()
   await expect(readCloudflareSubscriptions(TOKEN, ACCOUNT_A, jsonFetcher({
     [`/client/v4/accounts/${ACCOUNT_A}/subscriptions`]: () => new Response('upstream down', { status: 503 }),
   }))).rejects.toMatchObject({ status: 502, code: 'cloudflare_upstream_error', upstreamStatus: 503 })
+})
+
+test('权限诊断逐项返回已验证或缺少，不把缺少写权限显示为已验证', async () => {
+  const status = await checkCloudflarePermissionStatus(TOKEN, ACCOUNT_A, jsonFetcher({
+    '/client/v4/accounts?page=1&per_page=50': () => accountPage([ACCOUNT_A], 1, 1),
+    [`/client/v4/accounts/${ACCOUNT_A}/subscriptions`]: () => subscriptions('free', 'Free Website'),
+    '/client/v4/graphql': () => Response.json({ data: { viewer: { accounts: [{ accountTag: ACCOUNT_A }] } } }),
+    [`/client/v4/zones?account.id=${ACCOUNT_A}&status=active&page=1&per_page=50`]: () => Response.json({
+      success: true,
+      result: [{ id: 'zone-1', name: 'example.com', status: 'active' }],
+      result_info: { page: 1, per_page: 50, count: 1, total_pages: 1 },
+    }),
+    '/client/v4/zones/zone-1/dns_records': () => new Response('denied', { status: 403 }),
+    '/client/v4/zones/zone-1/workers/routes': () => new Response('denied', { status: 403 }),
+  }))
+  expect(status).toEqual({
+    'Account Settings Read': 'allowed',
+    'Account Analytics Read': 'allowed',
+    'Billing Read': 'allowed',
+    'Zone Read': 'allowed',
+    'DNS Write': 'denied',
+    'Workers Routes Edit': 'denied',
+  })
 })
 
 test('使用 Token 自动配置 Zone、通配 DNS 和 Worker Route', async () => {

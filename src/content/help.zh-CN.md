@@ -25,7 +25,7 @@
 
 ### Cloudflare API Token 读取失败怎么办？
 
-请在「系统设置 → Cloudflare」点击「创建 API Token」，在 Cloudflare 创建页填写 Token 名称，选择 `Account Settings Read`、`Account Analytics Read`、`Billing Read`、`Zone Read`、`DNS Write` 和 `Workers Routes Edit`，再在 `Account resources` 与 `Zone resources` 中限制到实际使用的账号和域名。Token 名称只是 Cloudflare 控制台标签，平台不会读取或保存它。平台会验证 Token、读取可见账号和 subscriptions；本页的 Account ID 只用于多个可见账号时选择目标账号。
+在「系统设置 → Cloudflare」打开创建 API Token 链接，授予 `Account Settings Read`、`Account Analytics Read`、`Billing Read`、`Zone Read`、`DNS Write` 和 `Workers Routes Edit`。`Account resources` 选择目标账号，`Zone resources` 选择插件域名所在 Zone；`User resources` 不使用。平台会验证 Token、读取可见账号和 subscriptions；本页的 Account ID 只用于多个可见账号时选择目标账号。返回设置页后，六项权限会分别显示“已验证”“缺少”或“未检测”。
 
 保存「维护、域名与配额」中的插件域名后缀时，平台会用已保存 Token 找到对应 Zone，写入通配 DNS 记录并创建 Worker Route。已有其他 DNS 记录或 Worker 路由时会保留原配置并返回冲突，不能通过平台覆盖。
 

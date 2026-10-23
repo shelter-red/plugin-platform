@@ -24,6 +24,7 @@ const cloudflareSettings = {
   accountIdConfigured: false,
   accountId: null,
   permissions: cloudflarePermissions,
+  permissionStatus: Object.fromEntries(cloudflarePermissions.map((permission) => [permission, 'unknown'])),
   updatedAt: null,
   lastVerifiedAt: null,
   legacyCredential: false,
@@ -391,8 +392,8 @@ test('Cloudflare 使用固定权限和 API Token 直达链接', async ({ page })
   await expect(permissions).toContainText('Zone Read')
   await expect(permissions).toContainText('DNS Write')
   await expect(permissions).toContainText('Workers Routes Edit')
-  await expect(permissions).toContainText('账号与用量监控')
-  await expect(permissions).toContainText('插件域名自动配置')
+  await expect(permissions).not.toContainText('账号与用量监控')
+  await expect(permissions).not.toContainText('插件域名自动配置')
   await expect(permissions).toContainText('只读')
   await expect(permissions).toContainText('写入')
   await expect(permissions).toContainText('编辑')
@@ -400,10 +401,10 @@ test('Cloudflare 使用固定权限和 API Token 直达链接', async ({ page })
   await expect(permissions.locator('input')).toHaveCount(0)
   await expect(permissions.getByRole('button')).toHaveCount(0)
 
-  const scopeGuide = panel.getByTestId('cloudflare-token-guide')
-  await expect(scopeGuide).toContainText('Token 名称')
-  await expect(scopeGuide).toContainText('Account resources')
-  await expect(scopeGuide).toContainText('DNS')
+  await expect(permissions).toContainText('Account resources')
+  await expect(permissions).toContainText('Zone resources')
+  await expect(permissions).toContainText('User resources')
+  await expect(permissions).toContainText('未检测')
 
   const createToken = panel.getByRole('link', { name: /创建 API Token/ })
   await expect(createToken).toHaveAttribute('href', 'https://dash.cloudflare.com/profile/api-tokens')
