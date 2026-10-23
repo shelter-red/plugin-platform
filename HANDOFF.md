@@ -2,7 +2,7 @@
 
 > 最后整理：2026-10-23（Asia/Shanghai）
 >
-> 当前状态：**Cloudflare API Token 前后端、8 项用量及 17 个路径的旧文案清理已推送。最近一次 HANDOFF 基线为 `02dbb1a`，`HEAD == origin/main == 02dbb1a`；Actions run `39856158838`（#57）为 `completed/success`。本轮完整本地验收已通过 `git diff --check`、`npm run ci:local`（86/86 UI smoke）、Worker runtime 20/20 文件与 89/89 测试、`npm run deploy:worker:test` 10/10。剩余主线是视觉/文案人工验收、原生可执行/共享库手动构建、帮助中心原生教程和生产联调。若之后再次修改本 HANDOFF，会生成新的 docs-only commit；恢复时不要用本文代替实时 Git/Actions 查询。**
+> 当前状态：**Cloudflare API Token 前后端、8 项用量及 17 个路径的旧文案清理已推送。最近一次 HANDOFF 基线为 `b6ad802`，`HEAD == origin/main == b6ad802`；Actions run `39877275016`（#58）为 `completed/success`。本轮完整本地验收已通过 `git diff --check`、`npm run ci:local`（86/86 UI smoke）、Worker runtime 20/20 文件与 89/89 测试、`npm run deploy:worker:test` 10/10。下一步已登记为 8.3 视觉/文案人工验收；之后才进入原生可执行/共享库手动构建、帮助中心原生教程和生产联调。若之后再次修改本 HANDOFF，会生成新的 docs-only commit；恢复时不要用本文代替实时 Git/Actions 查询。**
 >
 > 本文件是上下文压缩后的第一事实源。README、旧方案、旧测试、聊天摘要或历史提交说明与本文冲突时，以用户最新要求、当前代码和本文为准。恢复后先执行第 0 节的核验命令，再按第 8 节顺序继续。
 
@@ -13,8 +13,8 @@
 ```text
 仓库：/home/tc/work/plugin-platform
 分支：main
-HEAD（最近核验）：02dbb1a docs: 更新交接状态与 Actions 基线
-origin/main（最近核验）：02dbb1a
+HEAD（最近核验）：b6ad802 docs: 记录交接提交的 Actions 成功结果
+origin/main（最近核验）：b6ad802
 工作区（最近核验）：clean；后续若再次整理 HANDOFF，以实时 Git 为准
 fetch remote：https://github.com/shelter-red/plugin-platform.git
 push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
@@ -23,7 +23,8 @@ push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 最近提交（均已推送）：
 
 ```text
-02dbb1a docs: 更新交接状态与 Actions 基线  ← 当前 HANDOFF 基线
+b6ad802 docs: 记录交接提交的 Actions 成功结果  ← 当前 HANDOFF 基线
+02dbb1a docs: 更新交接状态与 Actions 基线
 a9e3839 docs: 固化完整交接与本地验收基线
 6e9d0ec docs: 统一 Cloudflare API Token 与平台额度语义
 cc37ba8 docs: 校订交接基线并固化剩余任务
@@ -39,7 +40,7 @@ a02871a docs: 更新 Token 与用量验收交接基线
 - `6e9d0ec` 包含本轮 16 个非 HANDOFF 路径；`a9e3839` 是随后单独收口 HANDOFF 的提交，两者均已 push。
 - `a9e3839` 对应 Actions run `39855022484`（#56），`completed/success`；随后 HANDOFF-only 的 `02dbb1a` 对应 #57，也已成功。
 - 上一基线 `cc37ba8` 对应 #55（run `39852598521`）；更早成功包括 `42d1870` #54（run `39851368864`）、`c0bfde3` #53（run `39850719037`）、`579eb1f` #52（run `39840532476`）。
-- 本轮 17 个路径已通过完整本地验收并完成 push/远端 Actions 闭环；`02dbb1a` 是随后记录 #56 结果的 HANDOFF-only commit，#57 也已成功。若之后新增 HANDOFF-only commit，仍须按第 7 节追踪最新 HEAD，不能拿 #57 代替新提交证据。
+- 本轮 17 个路径已通过完整本地验收并完成 push/远端 Actions 闭环；`02dbb1a` 记录 #56 结果，`b6ad802` 记录 #57 结果，#58 也已成功。若之后新增 HANDOFF-only commit，仍须按第 7 节追踪最新 HEAD，不能拿 #58 代替新提交证据。
 - 仓库内未发现 `AGENTS.md`，无额外仓库级代理指令。
 - 恢复时始终以实际 `git fetch`、`git log -1`、`git status`、`git rev-parse HEAD origin/main` 为准，不凭本文记忆判断。
 
@@ -116,7 +117,7 @@ git diff --check                               PASS
 npm run ci:local                               PASS（本轮 17 个路径；86/86 UI smoke）
 npm run deploy:worker:test                     10/10 PASS（含 README 新部署前提断言）
 Worker runtime（Docker node:22-bookworm）       20/20 files，89/89 tests PASS
-latest remote Actions 02dbb1a / #57             completed/success
+latest remote Actions b6ad802 / #58             completed/success
 本轮 17 个路径提交 / push / Actions 闭环        PASS
 ```
 
@@ -149,7 +150,7 @@ Workers Builds 控制台 Deploy command 核对
 
 1. 执行 0.1 的 Git 核验，不凭记忆判断 HEAD、分支或工作区。
 2. 阅读第 1、2 节，确认用户硬约束，尤其不要恢复任何 Cloudflare OAuth 字段。
-3. 8.2 已完成：16 个非 HANDOFF 路径在 `6e9d0ec`，HANDOFF 记录提交为 `a9e3839`、`02dbb1a`，均已推送；#56、#57 均成功。若本次又产生 HANDOFF-only 提交，以实时 Git/Actions 为准。
+3. 8.2 已完成：16 个非 HANDOFF 路径在 `6e9d0ec`，HANDOFF 记录提交为 `a9e3839`、`02dbb1a`、`b6ad802`，均已推送；#56、#57、#58 均成功。下一步 8.3 已登记但尚未完成；若本次又产生 HANDOFF-only 提交，以实时 Git/Actions 为准。
 4. 之后严格按 8.3 → 8.4 → 8.5 → 8.6 → 8.7 → 8.8 执行。
 5. 每次更新本文件后单独提交；push 后追踪新 HEAD 的 Actions，不引用旧 run 作为新提交证据。
 6. 每次压缩恢复后都更新本文件，不把“计划”写成“已完成”。
@@ -274,7 +275,7 @@ doRequests        100,000
 | --- | --- | --- | --- |
 | U01 | “不是说全部重构成组件吗？登录页还是旧的” | 清晰组件边界；登录页实际视觉验收 | 🟡 登录页/侧栏/账号/工作区已拆；最终截图验收未完成 |
 | U02 | “自己从会话历史里读 Git 分支，自行提交推送” | 每步有中文 Git 记录；不靠聊天猜 | ✅ 16 个非 HANDOFF 路径为 `6e9d0ec`，HANDOFF 为 `a9e3839`，均已推送 |
-| U03 | “推送时注意 Actions，老是错误” | 本地完整 CI + push 后追踪到成功 | ✅ `02dbb1a` 的完整本地 CI 通过，Actions #57 成功；后续新提交仍须重新追踪 |
+| U03 | “推送时注意 Actions，老是错误” | 本地完整 CI + push 后追踪到成功 | ✅ `b6ad802` 的 HANDOFF 提交 Actions #58 成功；后续新提交仍须重新追踪 |
 | U04 | 为什么错误状态靠 `/?auth_error=` | 真实 HTTP + JSON，留在当前页 | ✅ Cloudflare 当前页 HTTP 错误与 GitHub 错误页均有测试；旧 `auth_error` 文案已清理 |
 | U05 | setup 失效为什么单独返回 `Setup is not available` | 返回 null 后走普通非路由行为 | ✅ 已实现并有测试 |
 | U06 | `D1_ERROR: no such table: workspaces` | 先应用全部 migrations 再部署 | 🟡 deploy 脚本已实现并测试；Workers Builds 控制台配置待核对 |
@@ -286,7 +287,7 @@ doRequests        100,000
 | U12 | OAuth 根本没有 offline_access | 删除 offline_access/refresh/过期语义 | ✅ 活跃 Cloudflare 流程与文档已删除；仅测试负断言和历史 migration/兼容标记保留 |
 | U13 | 未配置为何还能查 `/api/usage/local?range=7d` 且返回 200 | 区分 Cloudflare 与本地统计；未配置不读缓存/不发请求 | ✅ 路由与测试已覆盖 |
 | U14 | response_type 放错位置；CF OAuth 没有 PKCE | 最终 Token 方案中这些字段全部消失 | ✅ 当前 Token UI/文档不出现这些字段；测试只把它们作为“必须不存在”的负断言 |
-| U15 | `1e4fd10`、`fd80fa4` Actions 失败 | 失败修复、本地 CI、push、Actions、产物闭环 | ✅ 当前最终基线 `02dbb1a` #57 成功；每次新提交仍须重新追踪 |
+| U15 | `1e4fd10`、`fd80fa4` Actions 失败 | 失败修复、本地 CI、push、Actions、产物闭环 | ✅ 当前最终基线 `b6ad802` #58 成功；每次新提交仍须重新追踪 |
 | U16 | 图标没对齐；“默认工作区”很矮挡字 | 统一高度/gap/行高/居中；双主题多视口检查 | 🟡 已有高度修复；本轮新增 UI 未做最终截图验收 |
 | U17 | 额度少，D1 写入等都要监控且显示百分比 | 8 项 used/limit/percentage | ✅ 前后端已实现 8 项，含次数、上限、百分比；专项回归已通过 |
 | U18 | 平台和监控分开；平台请求不限 | 平台只统计；Cloudflare 官方额度独立 | 🟡 分组、“不限”和定向回归已实现；最终多视口视觉验收未完成 |
@@ -540,7 +541,7 @@ npm run deploy:worker:test 10/10 PASS
 npm run ci:local           PASS（最近一次完整记录）
 ```
 
-当前 17 个路径（含文档/文案、注释与部署测试断言）已执行完整本地验收：`git diff --check`、`npm run ci:local`（86/86 UI smoke）、`npm run deploy:worker:test`（10/10）和 Docker Worker runtime（20/20 files，89/89 tests）全部通过。随后 `02dbb1a` 仅更新交接事实并已通过相同本地门禁，Actions #57 也已成功；后续若再有提交，仍必须追踪该新 HEAD，不能拿本轮证据代替。
+当前 17 个路径（含文档/文案、注释与部署测试断言）已执行完整本地验收：`git diff --check`、`npm run ci:local`（86/86 UI smoke）、`npm run deploy:worker:test`（10/10）和 Docker Worker runtime（20/20 files，89/89 tests）全部通过。随后 `02dbb1a`、`b6ad802` 仅更新交接事实并已通过相同本地门禁，Actions #57/#58 也已成功；后续若再有提交，仍必须追踪该新 HEAD，不能拿本轮证据代替。
 
 ### 6.2 Worker runtime（Docker）
 
@@ -613,7 +614,8 @@ curl -fsSL 'https://api.github.com/repos/shelter-red/plugin-platform/actions/run
 历史 Actions：
 
 ```text
-02dbb1a  run 39856158838  #57  success  （当前已核验最终基线）
+b6ad802  run 39877275016  #58  success  （当前已核验最终基线）
+02dbb1a  run 39856158838  #57  success
 a9e3839  run 39855022484  #56  success
 cc37ba8  run 39852598521  #55  success
 42d1870  run 39851368864  #54  success
@@ -659,7 +661,9 @@ fd80fa4  run 39754896119  #11  管理端 UI smoke 失败
 
 收口判定：运行第 3.4 节搜索时，只允许出现 GitHub OAuth、测试负断言、`legacy_oauth`、历史 migration 和 `native-server/third_party`。本轮 `git diff --check`、`npm run ci:local`、Worker runtime 与 `npm run deploy:worker:test` 均已通过；`deploy-worker.test.sh` 的 README 最小部署断言已从旧的“Cloudflare 账号授权”同步为“连接 Cloudflare Workers Builds 账号”。`6e9d0ec`、`a9e3839` 与 `02dbb1a` 已推送，#56/#57 成功。
 
-### 8.3 视觉与文案验收
+### 8.3 视觉与文案验收（已登记，当前步骤）
+
+开始本步骤前必须先检查本地 Git/Actions；本次已在 `b6ad802` 的 HANDOFF 中登记，待本记录提交的 Actions 闭环后执行。证据要求：使用 Playwright 实际启动管理端，覆盖登录页、设置页、Cloudflare Token 面板、用量页，至少检查桌面/窄屏与双主题截图，并记录发现的问题后再修改。
 
 - 登录页实际截图，确认不是旧页面或旧组件。
 - 检查设置页 Cloudflare Token 区块、固定权限、创建 Token 链接。
