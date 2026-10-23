@@ -34,6 +34,8 @@
 >
 > `f337401` 已推送；平台验收 #96（run `39955443195`）对应 HEAD 且 `completed/success`，`changes`/`web` 成功，三个 native job skipped。8.6 仓库与公网只读证据已完成记录，生产 Workers Builds 控制台命令仍需直接确认。
 >
+> `8093797` 已推送；平台验收 #97（run `39956325137`）对应 HEAD 且 `completed/success`，`changes`/`web` 成功，三个 native job skipped。8.6 的仓库/公网证据与未直接验证项已完整记录；下一步登记 U16 的图标、文字和默认工作区高度审计，先检查现有组件和真实视口，再决定最小必要修复。
+>
 > 当前状态：**Cloudflare API Token、8 项用量监控、Token 直接配置插件域名、原生插件服务器手动构建和 Cloudflare 权限三列文案已完成。权限修正提交为 `3e9f89d`，原生修复提交为 `accfed0`；`accfed0` 的 Actions #84（run `39931270148`）已在 GitHub Actions 页面确认成功。权限面板现在按创建页左、中、右三列展示：账户/区域/用户范围、中文+官方英文权限组、读取/写入/编辑级别；中列不再让用户把 `Account Analytics Read` 误当成一个下拉选项。`3e9f89d` 的本地构建、UI 静态审计和 Cloudflare 设置定向 Playwright 31/31 已通过。新发现 U29：当插件域名后缀覆盖主站（例如后缀为 `shelter.red`、主站为 `platform.shelter.red`）时，主站会被误判为插件域名并返回 `Plugin domain not found`；下一步先修复主站 Host 路由，再进入 8.5。若之后再次修改本 HANDOFF，会生成新的 docs-only commit；恢复时不要用本文代替实时 Git/Actions 查询。**
 >
 > 状态修订：上方状态段中的 U29“下一步先修复”是修复前历史措辞；当前以 `0695e77`、Actions #87 和本文件后续记录为准，U29 已完成，下一步进入 8.5。
@@ -47,9 +49,9 @@
 ```text
 仓库：/home/tc/work/plugin-platform
 分支：main
-HEAD（本次核验）：f337401 记录 Workers Builds 配置核对结果
-origin/main（本次核验）：f337401
-工作区（本次核验）：U29、8.5、发布 workflow 修复和 8.6 仓库/公网核对已记录；平台验收 #93/#94/#95/#96 均成功；仅剩生产控制台 Deploy command 待直接确认
+HEAD（本次核验）：8093797 记录 Workers Builds Actions 验收
+origin/main（本次核验）：8093797
+工作区（本次核验）：U29、8.5、发布 workflow 修复和 8.6 仓库/公网核对已记录；平台验收 #93/#94/#95/#96/#97 均成功；生产控制台 Deploy command 待直接确认，下一步为 U16 视觉审计
 fetch remote：https://github.com/shelter-red/plugin-platform.git
 push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 ```
@@ -349,7 +351,7 @@ doRequests        100,000
 | U13 | 未配置为何还能查 `/api/usage/local?range=7d` 且返回 200 | 区分 Cloudflare 与本地统计；未配置不读缓存/不发请求 | ✅ 路由与测试已覆盖 |
 | U14 | response_type 放错位置；CF OAuth 没有 PKCE | 最终 Token 方案中这些字段全部消失 | ✅ 当前 Token UI/文档不出现这些字段；测试只把它们作为“必须不存在”的负断言 |
 | U15 | `1e4fd10`、`fd80fa4` Actions 失败 | 失败修复、本地 CI、push、Actions、产物闭环 | ✅ 当前最终基线 `e349e7b` #61 成功；每次新提交仍须重新追踪 |
-| U16 | 图标没对齐；“默认工作区”很矮挡字 | 统一高度/gap/行高/居中；双主题多视口检查 | 🟡 空态与窄屏设置布局已实测；默认工作区真实数据和全局图标对齐仍待下一步审计 |
+| U16 | 图标没对齐；“默认工作区”很矮挡字 | 统一高度/gap/行高/居中；双主题多视口检查 | 🟡 空态与窄屏设置布局已实测；本步开始真实数据下的默认工作区和全局图标视觉审计 |
 | U17 | 额度少，D1 写入等都要监控且显示百分比 | 8 项 used/limit/percentage | ✅ 前后端已实现 8 项，含次数、上限、百分比；专项回归已通过 |
 | U18 | 平台和监控分开；平台请求不限 | 平台只统计；Cloudflare 官方额度独立 | 🟡 分组、“不限”和定向回归已实现；最终多视口视觉验收未完成 |
 | U19 | GitHub OAuth 没过期，CF 为什么过期；改 Token | 不再暗示 OAuth 过期；界面/链接/错误全部 Token 化 | ✅ 后端/API/面板/README/docs/help/deploy 提示已 Token 化，随 `6e9d0ec` 推送并通过 #56 |
@@ -899,3 +901,4 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - 2026-10-23：`6143d1b`（`记录发布 workflow Actions 成功`）已推送；Actions #94（run `39953118213`）对应 HEAD 且 `completed/success`，`changes`/`web` 成功，三个 native job skipped。发布 workflow 阶段完成，开始 8.6：核对 Workers Builds 的 Deploy command 是否为 `npm run deploy`。
 - 2026-10-23：8.6 仓库与生产只读核对完成：`npm run deploy` 是唯一部署入口，部署模拟 10/10；`platform.shelter.red` 的 `/api/health`、首页、`/setup` 返回 200，GitHub OAuth start 返回正确 HTTPS 回调，未见缺表或主站误判错误。因本机无 Cloudflare 凭据，Workers Builds 控制台 Deploy command 仍待用户在 Dashboard 直接确认，U06 保持未完成。
 - 2026-10-23：`f337401`（`记录 Workers Builds 配置核对结果`）已推送；Actions #96（run `39955443195`）对应 HEAD 且 `completed/success`，`changes`/`web` 成功，三个 native job skipped。8.6 记录闭环，但生产控制台 Deploy command 仍待直接确认。
+- 2026-10-23：`8093797`（`记录 Workers Builds Actions 验收`）已推送；Actions #97（run `39956325137`）对应 HEAD 且 `completed/success`，`changes`/`web` 成功，三个 native job skipped。当前开始 U16 视觉审计，先取真实数据/双主题/桌面与窄屏证据，再决定是否修改组件或样式。
