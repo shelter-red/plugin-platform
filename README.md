@@ -240,7 +240,7 @@ workflow 只接受手动触发，不会因为普通推送重复构建。每个 a
 
 ## 发布原生端
 
-推送 `v*` tag（或手动触发 `.github/workflows/release.yml`）会在 Ubuntu、Windows 和 macOS runner 上构建 `plugmesh-server`，并发布到对应 GitHub Release：
+推送 `v*` tag 会在 Ubuntu、Windows 和 macOS runner 上构建 `plugmesh-server`，并发布到对应 GitHub Release；需要手动选择可执行文件/共享库、平台或 Debug/Release 时，请使用上面的「手动构建插件服务器」workflow：
 
 | 产物 | 说明 |
 | --- | --- |
