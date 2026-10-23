@@ -2,7 +2,7 @@
 
 > 最后整理：2026-10-23（Asia/Shanghai）
 >
-> 当前状态：**Cloudflare API Token、8 项用量监控、Token 直接配置插件域名和原生插件服务器手动构建已完成。最近功能提交为 `e4ae1f1`，Windows 构建修复为 `accfed0`；前置 Cloudflare 权限三列提交为 `beb8668`，Actions #81（run `39920624930`）已成功。原生构建已通过 Linux executable/shared、MinGW Windows executable/shared/host、本地 C ABI smoke 和 CTest 11/11；`accfed0` 对应的 Actions run `39931270148` 需在 GitHub Actions 页面/API 限额恢复后确认最终结论。Cloudflare 权限面板继续按创建页左、中、右三列展示：账户/区域/用户范围、中文+官方英文权限组、读取/写入/编辑级别；本轮将把中文范围统一为“账户”并明确列标题，避免用户把 `Account Analytics Read` 误当成一个下拉选项。下一步是完成本轮权限文案修正，再更新 HANDOFF 并追踪新提交的 Actions。若之后再次修改本 HANDOFF，会生成新的 docs-only commit；恢复时不要用本文代替实时 Git/Actions 查询。**
+> 当前状态：**Cloudflare API Token、8 项用量监控、Token 直接配置插件域名、原生插件服务器手动构建和 Cloudflare 权限三列文案已完成。权限修正提交为 `3e9f89d`，原生修复提交为 `accfed0`；`accfed0` 的 Actions #84（run `39931270148`）已在 GitHub Actions 页面确认成功。权限面板现在按创建页左、中、右三列展示：账户/区域/用户范围、中文+官方英文权限组、读取/写入/编辑级别；中列不再让用户把 `Account Analytics Read` 误当成一个下拉选项。`3e9f89d` 的本地构建、UI 静态审计和 Cloudflare 设置定向 Playwright 31/31 已通过。新发现 U29：当插件域名后缀覆盖主站（例如后缀为 `shelter.red`、主站为 `platform.shelter.red`）时，主站会被误判为插件域名并返回 `Plugin domain not found`；下一步先修复主站 Host 路由，再进入 8.5。若之后再次修改本 HANDOFF，会生成新的 docs-only commit；恢复时不要用本文代替实时 Git/Actions 查询。**
 >
 > 本文件是上下文压缩后的第一事实源。README、旧方案、旧测试、聊天摘要或历史提交说明与本文冲突时，以用户最新要求、当前代码和本文为准。恢复后先执行第 0 节的核验命令，再按第 8 节顺序继续。
 
@@ -13,9 +13,9 @@
 ```text
 仓库：/home/tc/work/plugin-platform
 分支：main
-HEAD（最近核验）：accfed0 fix(native): 修复 Windows 共享库构建
-origin/main（最近核验）：accfed0
-工作区（最近核验）：干净；原生构建已完成，权限三列中文范围修正待提交
+HEAD（最近核验）：3e9f89d fix(cloudflare): 明确权限组三列中文名称
+origin/main（最近核验）：accfed0（权限功能提交与 HANDOFF 待一并推送）
+工作区（最近核验）：仅 HANDOFF 待提交；权限三列修正已完成本地验证
 fetch remote：https://github.com/shelter-red/plugin-platform.git
 push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 ```
@@ -23,6 +23,10 @@ push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 最近提交（均已推送）：
 
 ```text
+3e9f89d fix(cloudflare): 明确权限组三列中文名称（待随本 HANDOFF 推送）
+a44e427 docs: 记录原生构建完成与权限三列后续
+accfed0 fix(native): 修复 Windows 共享库构建
+e4ae1f1 feat(native): 增加插件服务器手动构建与共享库
 a07193e docs: 更新权限验收状态
 114acee fix(ui): 清理重复入口和空态卡片
 5504b62 docs: 记录界面重复入口修复验收  ← Actions #75（run `39904507031`）成功
@@ -134,7 +138,7 @@ git diff --check                               PASS
 npm run ci:local                               PASS（本轮 19 个路径；87/87 UI smoke）
 npm run deploy:worker:test                     10/10 PASS（含 README 新部署前提断言）
 Worker runtime（Docker node:22-bookworm）       20/20 files，91/91 tests PASS
-latest known remote Actions 269befa / #69       completed/success
+latest known remote Actions #84 / 39931270148   completed/success
 本轮功能改动提交 / push / Actions 闭环            PASS
 ```
 
@@ -142,9 +146,10 @@ latest known remote Actions 269befa / #69       completed/success
 
 ```text
 npm run build                                  PASS
-npm run ui:conventions                         90 个 TSX，0 违规
-npm run ui:css-audit                           482 条规则，0 死代码/重复
+npm run ui:conventions                         89 个 TSX，0 违规
+npm run ui:css-audit                           486 条规则，0 死代码/重复
 npm run ui:smoke                               87 passed
+npx playwright test tests/console-worker.spec.ts 31 passed（本轮 Cloudflare/UI 定向验收）
 npm run deploy:worker:test                     10/10 PASS
 Worker runtime                                 20/20 files，89/89 tests PASS
 npm run ci:local                               PASS（最近的完整基线）
@@ -153,7 +158,6 @@ npm run ci:local                               PASS（最近的完整基线）
 尚未完成/不能宣称通过：
 
 ```text
-`accfed0` 对应 Actions #84 的最终结论（GitHub API 当前受未认证限流影响）
 登录页、设置页、Cloudflare Token 面板、用量页人工视觉验收
 帮助中心的二进制/共享库插件服务器教程
 真实 Cloudflare API / Token / subscriptions / Analytics 联调
@@ -167,8 +171,8 @@ Workers Builds 控制台 Deploy command 核对
 
 1. 执行 0.1 的 Git 核验，不凭记忆判断 HEAD、分支或工作区。
 2. 阅读第 1、2 节，确认用户硬约束，尤其不要恢复任何 Cloudflare OAuth 字段。
-3. 8.2 已完成：16 个非 HANDOFF 路径在 `6e9d0ec`，HANDOFF 记录提交为 `a9e3839`、`02dbb1a`、`b6ad802`，窄屏修复为 `e349e7b`，均已推送；#56、#57、#58、#61 均成功。8.3 窄屏布局子步骤已完成，8.4 原生手动构建已实现；#83 的 Windows 失败已由 `accfed0` 修复，#84 最终结论仍需实时核验。若本次又产生 HANDOFF-only 提交，以实时 Git/Actions 为准。
-4. 之后严格按 8.3 → 8.4 → 8.5 → 8.6 → 8.7 → 8.8 执行。
+3. 8.2 已完成：16 个非 HANDOFF 路径在 `6e9d0ec`，HANDOFF 记录提交为 `a9e3839`、`02dbb1a`、`b6ad802`，窄屏修复为 `e349e7b`，均已推送；#56、#57、#58、#61 均成功。8.3 窄屏布局子步骤已完成，8.4 原生手动构建已实现；#83 的 Windows 失败已由 `accfed0` 修复，#84 已确认成功。U28 权限三列修正已由 `3e9f89d` 完成，推送后需追踪该提交 Actions。U29 主站 Host 误判已登记，修复前不得进入 8.5。若本次又产生 HANDOFF-only 提交，以实时 Git/Actions 为准。
+4. 之后严格按 U29 修复 → 8.5 → 8.6 → 8.7 → 8.8 执行；8.4 原生手动构建和 U28 权限三列修正已完成。
 5. 每次更新本文件后单独提交；push 后追踪新 HEAD 的 Actions，不引用旧 run 作为新提交证据。
 6. 每次压缩恢复后都更新本文件，不把“计划”写成“已完成”。
 
@@ -323,7 +327,8 @@ doRequests        100,000
 | U24 | 都整理到磁盘 HANDOFF，避免压缩后忘 | 所有要求、事实、阻塞、步骤、验收可恢复 | ✅ 已更新到 `9d2f38d` 基线，明确区分完成项、剩余项、禁止事项和实时核验要求 |
 | U25 | 监控权限怎么配置域名；OAuth/Token 名称不一致；Token 还要选范围 | Token 固定六项权限平铺展示实际状态；说明 Account/Zone/User resources；保存插件域名后缀时自动同步 Zone、DNS 和 Worker Route | ✅ `ca7e54c`：前后端状态探测、平铺 UI、文案、Docker runtime 17/17、`ci:local` 87/87、定向浏览器验收已通过；Actions #71 成功 |
 | U27 | 用量刷新不应被 DNS/Worker Route 缺失阻断；权限列表看不出账户/区域/用户范围 | 用量查询只要求监控权限；资源明细权限失败时保留可读取结果并把明细标为未读取；每项权限标明 Account/Zone resources，并明确 User resources 不使用 | ✅ `3cf3ba1`：Billing/Resource Analytics 缺失降级、账户/区域范围标签、Docker runtime 93/93、`ci:local` 88/88；Actions #79 成功 |
-| U28 | Cloudflare 创建页是范围/权限/级别三个并排选择，现有拼接英文名称搜不到 | 权限列表按左“账户/区域/用户范围”、中“中文权限组（含官方英文）”、右“读取/写入/编辑级别”三列展示；名称与 Cloudflare 官方权限组一致；同步帮助、README、验收和测试 | 🟡 三列已实现；本轮统一“账户”用词和列标题后重新验收 |
+| U28 | Cloudflare 创建页是范围/权限/级别三个并排选择，现有拼接英文名称搜不到 | 权限列表按左“账户/区域/用户范围”、中“中文权限组（含官方英文）”、右“读取/写入/编辑级别”三列展示；名称与 Cloudflare 官方权限组一致；同步帮助、README、验收和测试 | ✅ `3e9f89d`：本地构建、UI 静态审计、Cloudflare 设置定向 Playwright 31/31 通过；推送后追踪本提交 Actions |
+| U29 | 主站 `platform.shelter.red` 返回 `Plugin domain not found` | 插件后缀匹配不能覆盖已配置的主站 Host；主站继续交给管理端 SPA/API，真正的插件域名才进入公开代理 | 🟡 已定位为 Host 路由优先级问题，待修复和回归测试 |
 
 ## 3. 当前实现清单
 
@@ -775,7 +780,7 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - [ ] “默认工作区”文字不遮挡，图标/文字对齐。
 - [x] 系统设置只出现 Cloudflare API Token 和可选 Account ID。
 - [x] 活跃 Cloudflare 流程不出现 Client ID/Secret、回调、scope 编辑、PKCE、`response_type`、`grant_type`。
-- [x] 固定权限按 Cloudflare 三列展示：帐户 / Account + 帐户设置 / Account Settings + 读取 / Read、帐户 / Account + 帐户分析 / Account Analytics + 读取 / Read、帐户 / Account + 账单 / Billing + 读取 / Read、区域 / Zone + 区域 / Zone + 读取 / Read、区域 / Zone + DNS + 写入 / Write、区域 / Zone + Workers 路由 / Workers Routes + 编辑 / Edit；用户 / User 不使用，不提供自定义入口。
+- [x] 固定权限按 Cloudflare 三列展示：账户 / Account + 账户设置 / Account Settings + 读取 / Read、账户 / Account + 账户分析 / Account Analytics + 读取 / Read、账户 / Account + 账单 / Billing + 读取 / Read、区域 / Zone + 区域 / Zone + 读取 / Read、区域 / Zone + DNS + 写入 / Write、区域 / Zone + Workers 路由 / Workers Routes + 编辑 / Edit；用户 / User 不使用，不提供自定义入口。
 - [x] “创建 Token”跳到 `https://dash.cloudflare.com/profile/api-tokens`。
 - [x] Token 保存前完成 verify、账号发现、subscriptions 校验；失败用 HTTP 状态并在当前面板显示，runtime/UI 回归已有覆盖。
 - [x] 旧 Cloudflare OAuth 活跃路由、Cookie、refresh/revoke、state 和 smoke 已删除。
@@ -790,11 +795,11 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - [x] 用量页只有一个刷新入口；自动加载时刷新按钮不禁用且点击会再次请求。
 - [x] 概览已移除与右上箭头重复的“查看全部额度”入口；其他页面文案/空卡片仍待视觉验收。
 - [ ] 生产部署应用 0008 及全部 migrations，Workers Builds 实际入口为 `npm run deploy`。
-- [x] 手动 Actions 可选可执行程序/库文件、目标平台，并上传 artifact + SHA256；本地三平台构建和 CTest 11/11 通过，#84 最终状态待确认。
+- [x] 手动 Actions 可选可执行程序/库文件、目标平台，并上传 artifact + SHA256；本地三平台构建和 CTest 11/11 通过，#84 已确认成功。
 - [ ] 帮助中心中英文都有二进制/共享库插件服务器完整说明。
 - [x] 当前 17 个路径的 `npm run ci:local`、Worker runtime、deploy test 均已通过。
 - [x] native CTest 11/11、Linux executable/shared、MinGW Windows executable/shared/host 已执行并通过。
-- [x] `e4ae1f1` / `accfed0` 的原生实现、本地三平台构建、C ABI smoke 和 CTest 11/11 已通过；#83 的 Windows 失败原因已修复，#84 最终状态尚待确认。
+- [x] `e4ae1f1` / `accfed0` 的原生实现、本地三平台构建、C ABI smoke 和 CTest 11/11 已通过；#83 的 Windows 失败原因已修复，#84 已确认成功。
 - [x] 当前 17 个路径的完整本地 CI 已通过（87/87 UI smoke）。
 - [x] 16 个非 HANDOFF 路径已提交为 `6e9d0ec`，HANDOFF 收口为 `a9e3839`，两者均已 push。
 - [x] `a9e3839`/#56、`02dbb1a`/#57、`b6ad802`/#58、`e349e7b`/#61 的远端 Actions 均已成功；若本次整理又生成 HANDOFF-only commit，以实时最新 run 为准。
@@ -843,4 +848,4 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - 2026-10-23：功能提交 `9d2f38d` 已推送；Actions #66（run `39890875239`）`completed/success`。本次 HANDOFF 更新需另行提交并追踪其 Actions。
 - 2026-10-23：权限面板改为监控/域名两组并标注只读、写入、编辑；不再显示无法由 Cloudflare API 回读确认的逐项“缺失”状态；账号、订阅、Zone、DNS、Worker Route 的 403 错误分别指出对应权限。完整 `ci:local` 87/87、设置页 Axe 2/2、权限定向 Docker runtime 16/16 通过；`8ec7590`、`269befa` 已推送，Actions #68/#69 成功。
 - 2026-10-23：确认剩余工作顺序：视觉/文案人工验收 → 原生手动构建与真正 SHARED target → 帮助中心原生教程 → Workers Builds/D1/真实服务联调 → 全量验收 → 新提交的 push/Actions 闭环。
-- 2026-10-23：提交 `beb8668`（`fix(cloudflare): 按三列展示 Token 权限`）已推送。Cloudflare 权限面板现在按“范围 / Scope、权限 / Permission、级别 / Level”三列显示；权限组为中文 + Cloudflare 英文原名，范围明确为帐户、区域、用户，用户范围仅说明不使用；README、帮助中心、方案和验收矩阵同步为三列填写方式。`git diff --check`、`npm run build`、`npm run ui:conventions`、`npm run ui:css-audit`、`npm run ci:local`（Worker smoke、UI 88/88）和 Docker runtime（20 个文件、93 个测试）通过。Actions #81 / run `39920624930` 已 `completed/success`。
+- 2026-10-23：提交 `beb8668`（`fix(cloudflare): 按三列展示 Token 权限`）已推送。Cloudflare 权限面板现在按“范围 / Scope、权限组 / Permission、级别 / Level”三列显示；权限组为中文 + Cloudflare 英文原名，范围明确为账户、区域、用户，用户范围仅说明不使用；README、帮助中心、方案和验收矩阵同步为三列填写方式。`git diff --check`、`npm run build`、`npm run ui:conventions`、`npm run ui:css-audit`、`npm run ci:local`（Worker smoke、UI 88/88）和 Docker runtime（20 个文件、93 个测试）通过。Actions #81 / run `39920624930` 已 `completed/success`。
