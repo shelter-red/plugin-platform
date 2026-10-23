@@ -32,6 +32,8 @@
 >
 > 8.6 核对：仓库唯一部署脚本为 `npm run deploy`，`deploy-worker.test.sh` 10/10 已验证 Workers Builds 分支先处理 D1/R2、迁移和 Secret 再发布；生产只读检查 `https://platform.shelter.red/api/health`、首页、`/setup` 均为 200，GitHub 登录入口为 302 且回调使用 HTTPS，未出现 `D1_ERROR` 或 `Plugin domain not found`。本机无 Cloudflare 凭据，Workers Builds 控制台的 Deploy command 尚不能直接读取，故 U06/生产部署项仍不标完成；下一步需在 Cloudflare 控制台确认并记录实际值。
 >
+> `f337401` 已推送；平台验收 #96（run `39955443195`）对应 HEAD 且 `completed/success`，`changes`/`web` 成功，三个 native job skipped。8.6 仓库与公网只读证据已完成记录，生产 Workers Builds 控制台命令仍需直接确认。
+>
 > 当前状态：**Cloudflare API Token、8 项用量监控、Token 直接配置插件域名、原生插件服务器手动构建和 Cloudflare 权限三列文案已完成。权限修正提交为 `3e9f89d`，原生修复提交为 `accfed0`；`accfed0` 的 Actions #84（run `39931270148`）已在 GitHub Actions 页面确认成功。权限面板现在按创建页左、中、右三列展示：账户/区域/用户范围、中文+官方英文权限组、读取/写入/编辑级别；中列不再让用户把 `Account Analytics Read` 误当成一个下拉选项。`3e9f89d` 的本地构建、UI 静态审计和 Cloudflare 设置定向 Playwright 31/31 已通过。新发现 U29：当插件域名后缀覆盖主站（例如后缀为 `shelter.red`、主站为 `platform.shelter.red`）时，主站会被误判为插件域名并返回 `Plugin domain not found`；下一步先修复主站 Host 路由，再进入 8.5。若之后再次修改本 HANDOFF，会生成新的 docs-only commit；恢复时不要用本文代替实时 Git/Actions 查询。**
 >
 > 状态修订：上方状态段中的 U29“下一步先修复”是修复前历史措辞；当前以 `0695e77`、Actions #87 和本文件后续记录为准，U29 已完成，下一步进入 8.5。
@@ -45,9 +47,9 @@
 ```text
 仓库：/home/tc/work/plugin-platform
 分支：main
-HEAD（本次核验）：6143d1b 记录发布 workflow Actions 成功
-origin/main（本次核验）：6143d1b
-工作区（本次核验）：U29、8.5 和发布 workflow 修复已完成；平台验收 #93/#94（run `39952311223`/`39953118213`）成功；下一步为 8.6 Workers Builds 配置核对
+HEAD（本次核验）：f337401 记录 Workers Builds 配置核对结果
+origin/main（本次核验）：f337401
+工作区（本次核验）：U29、8.5、发布 workflow 修复和 8.6 仓库/公网核对已记录；平台验收 #93/#94/#95/#96 均成功；仅剩生产控制台 Deploy command 待直接确认
 fetch remote：https://github.com/shelter-red/plugin-platform.git
 push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 ```
@@ -896,3 +898,4 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - 2026-10-23：`364adf2`（`修复发布 workflow 的非 tag 手动触发`）已推送；Actions #93（run `39952311223`）对应 HEAD 且 `completed/success`，`changes`/`web` 成功，三个 native job skipped；该 HEAD 未触发 `release.yml`。发布 workflow 问题闭环，下一步为 8.6 核对 Workers Builds 的 Deploy command。
 - 2026-10-23：`6143d1b`（`记录发布 workflow Actions 成功`）已推送；Actions #94（run `39953118213`）对应 HEAD 且 `completed/success`，`changes`/`web` 成功，三个 native job skipped。发布 workflow 阶段完成，开始 8.6：核对 Workers Builds 的 Deploy command 是否为 `npm run deploy`。
 - 2026-10-23：8.6 仓库与生产只读核对完成：`npm run deploy` 是唯一部署入口，部署模拟 10/10；`platform.shelter.red` 的 `/api/health`、首页、`/setup` 返回 200，GitHub OAuth start 返回正确 HTTPS 回调，未见缺表或主站误判错误。因本机无 Cloudflare 凭据，Workers Builds 控制台 Deploy command 仍待用户在 Dashboard 直接确认，U06 保持未完成。
+- 2026-10-23：`f337401`（`记录 Workers Builds 配置核对结果`）已推送；Actions #96（run `39955443195`）对应 HEAD 且 `completed/success`，`changes`/`web` 成功，三个 native job skipped。8.6 记录闭环，但生产控制台 Deploy command 仍待直接确认。
