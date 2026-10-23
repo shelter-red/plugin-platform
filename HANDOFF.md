@@ -2,7 +2,7 @@
 
 > 最后整理：2026-10-23（Asia/Shanghai）
 >
-> 当前状态：**Cloudflare API Token、8 项用量监控、Token 直接配置插件域名的后端/前端实现已完成。本轮实现提交为 `ca7e54c`，Actions #71（run `39899676906`）已 `completed/success`。Cloudflare 权限面板六项权限平铺展示，逐项显示“已验证/缺少/未检测”，不再显示监控组或域名组；Account resources、Zone resources、User resources 的用途在列表下直接说明。403 会按账号列表、订阅、Zone、DNS、Worker Route 操作指出对应权限。保存插件域名后缀时，Worker 使用已保存 Token 查找 active Zone、维护 Plugmesh 通配 DNS 记录并创建/更新 `plugmesh-worker` Route；缺 Token、Zone 不匹配、已有第三方记录或 Route 冲突均返回真实 HTTP 错误，不静默保存。`ci:local` 87/87、Docker runtime 权限定向 17/17、设置页 Axe 2/2、构建和类型检查均已通过。若之后再次修改本 HANDOFF，会生成新的 docs-only commit；恢复时不要用本文代替实时 Git/Actions 查询。**
+> 当前状态：**Cloudflare API Token、8 项用量监控、Token 直接配置插件域名的后端/前端实现已完成。本轮实现提交为 `ca7e54c`，状态记录提交为 `a07193e`，Actions #71/#72（run `39899676906`/`39900278383`）均已 `completed/success`。Cloudflare 权限面板六项权限平铺展示，逐项显示“已验证/缺少/未检测”，不再显示监控组或域名组；Account resources、Zone resources、User resources 的用途在列表下直接说明。403 会按账号列表、订阅、Zone、DNS、Worker Route 操作指出对应权限。保存插件域名后缀时，Worker 使用已保存 Token 查找 active Zone、维护 Plugmesh 通配 DNS 记录并创建/更新 `plugmesh-worker` Route；缺 Token、Zone 不匹配、已有第三方记录或 Route 冲突均返回真实 HTTP 错误，不静默保存。`ci:local` 87/87、Docker runtime 权限定向 17/17、设置页 Axe 2/2、构建和类型检查均已通过。当前开始执行 8.3 界面、重复入口与中英文文案审计；审计登记完成后才允许修改代码。若之后再次修改本 HANDOFF，会生成新的 docs-only commit；恢复时不要用本文代替实时 Git/Actions 查询。**
 >
 > 本文件是上下文压缩后的第一事实源。README、旧方案、旧测试、聊天摘要或历史提交说明与本文冲突时，以用户最新要求、当前代码和本文为准。恢复后先执行第 0 节的核验命令，再按第 8 节顺序继续。
 
@@ -13,9 +13,9 @@
 ```text
 仓库：/home/tc/work/plugin-platform
 分支：main
-HEAD（最近核验）：269befa docs: 更新权限诊断验收状态
-origin/main（最近核验）：269befa
-工作区（最近核验）：有本次 HANDOFF 更新待提交；后续若再次整理 HANDOFF，以实时 Git 为准
+HEAD（最近核验）：a07193e docs: 更新权限验收状态
+origin/main（最近核验）：a07193e
+工作区（最近核验）：干净；当前步骤登记待提交，后续若再次整理 HANDOFF，以实时 Git 为准
 fetch remote：https://github.com/shelter-red/plugin-platform.git
 push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 ```
@@ -23,7 +23,10 @@ push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 最近提交（均已推送）：
 
 ```text
-269befa docs: 更新权限诊断验收状态  ← 当前已推送基线，Actions #69 成功
+a07193e docs: 更新权限验收状态  ← 当前已推送基线，Actions #72 成功
+ca7e54c fix(cloudflare): 显示 Token 权限实际状态  ← Actions #71 成功
+ce8ca1d docs: 固化最终权限验收基线
+269befa docs: 更新权限诊断验收状态
 8ec7590 fix(cloudflare): 区分监控与域名权限
 9d2f38d fix(cloudflare): 收口 Token 权限与配置文案
 de1a4e2 docs: 记录 Token 自动配置域名实现
@@ -687,7 +690,7 @@ fd80fa4  run 39754896119  #11  管理端 UI smoke 失败
 - 空态下工作区切换器高度为 46.34px，标题/副标题合计 30.34px，当前没有遮挡；真实默认工作区数据和全局图标对齐仍属于后续视觉审计。
 - 当前宿主缺少 CJK 字体，直接截图出现方框/缺字；最终像素基线必须在 CI 同款 Playwright 环境重建，不能把宿主字体缺失误当成产品文案问题。
 
-下一步只处理已记录的窄屏布局、可靠截图基线和对应回归断言；完成后再进入图标对齐、重复入口和中英文文案审计。
+当前步骤登记：执行界面、重复入口、空卡片及中英文文案审计。范围是 `src/**/*.tsx`、`src/locales/*`、`src/content/help.*.md`、设置/用量/登录页实际渲染与既有 Playwright 截图；先列出可复现问题，再逐项修改并补回归断言。不得把原生构建 workflow 或帮助教程混入本步骤；本步骤完成并记录验收后，才进入 8.4。
 
 本次已完成：`.settings-nav`、`.settings-content` 和 AntD 菜单补充 `min-width: 0`/`width: 100%`；新增 `console-ui` 的 390px 分区边界断言；在 CI 同款 Playwright 容器重建设置页 6 张截图、移动设置预览和登录页截图。结果为 `ci:local` 87/87、`npm run deploy:worker:test` 10/10；390px 下设置布局、导航和内容列均为 362px，未超出视口。当前又完成 Cloudflare Token 六项权限、自动 DNS/Worker Route 和帮助中心文案收口；下一步仍是图标/文字对齐、重复入口/空卡片以及中英文文案审计。
 
