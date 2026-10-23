@@ -2,7 +2,7 @@
 
 > 最后整理：2026-10-23（Asia/Shanghai）
 >
-> 当前状态：**Cloudflare API Token、8 项用量监控、Token 直接配置插件域名的后端/前端实现已完成并推送。最新功能提交为 `8ec7590`，Actions #68（run `39894516933`）为 `completed/success`。Cloudflare 权限面板明确分为监控组（前三项只读）和域名配置组（Zone Read 只读、DNS Write 写入、Workers Routes Edit 编辑），不再把产品要求清单伪装成当前 Token 的权限回读；403 会按账号列表、订阅、Zone、DNS、Worker Route 操作指出对应权限。保存插件域名后缀时，Worker 使用已保存 Token 查找 active Zone、维护 Plugmesh 通配 DNS 记录并创建/更新 `plugmesh-worker` Route；缺 Token、Zone 不匹配、已有第三方记录或 Route 冲突均返回真实 HTTP 错误，不静默保存。`ci:local` 87/87、Docker runtime 20/20 文件 91/91 测试、权限定向 runtime 16/16、设置页 Axe 2/2、deploy test 10/10、构建和类型检查均已通过。若之后再次修改本 HANDOFF，会生成新的 docs-only commit；恢复时不要用本文代替实时 Git/Actions 查询。**
+> 当前状态：**Cloudflare API Token、8 项用量监控、Token 直接配置插件域名的后端/前端实现已完成并推送。最新提交为 `269befa`，Actions #69（run `39895253346`）为 `completed/success`。Cloudflare 权限面板明确分为监控组（前三项只读）和域名配置组（Zone Read 只读、DNS Write 写入、Workers Routes Edit 编辑），不再把产品要求清单伪装成当前 Token 的权限回读；403 会按账号列表、订阅、Zone、DNS、Worker Route 操作指出对应权限。保存插件域名后缀时，Worker 使用已保存 Token 查找 active Zone、维护 Plugmesh 通配 DNS 记录并创建/更新 `plugmesh-worker` Route；缺 Token、Zone 不匹配、已有第三方记录或 Route 冲突均返回真实 HTTP 错误，不静默保存。`ci:local` 87/87、Docker runtime 20/20 文件 91/91 测试、权限定向 runtime 16/16、设置页 Axe 2/2、deploy test 10/10、构建和类型检查均已通过。若之后再次修改本 HANDOFF，会生成新的 docs-only commit；恢复时不要用本文代替实时 Git/Actions 查询。**
 >
 > 本文件是上下文压缩后的第一事实源。README、旧方案、旧测试、聊天摘要或历史提交说明与本文冲突时，以用户最新要求、当前代码和本文为准。恢复后先执行第 0 节的核验命令，再按第 8 节顺序继续。
 
@@ -13,8 +13,8 @@
 ```text
 仓库：/home/tc/work/plugin-platform
 分支：main
-HEAD（最近核验）：8ec7590 fix(cloudflare): 区分监控与域名权限
-origin/main（最近核验）：8ec7590
+HEAD（最近核验）：269befa docs: 更新权限诊断验收状态
+origin/main（最近核验）：269befa
 工作区（最近核验）：有本次 HANDOFF 更新待提交；后续若再次整理 HANDOFF，以实时 Git 为准
 fetch remote：https://github.com/shelter-red/plugin-platform.git
 push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
@@ -23,7 +23,8 @@ push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 最近提交（均已推送）：
 
 ```text
-8ec7590 fix(cloudflare): 区分监控与域名权限  ← 当前功能基线，Actions #68 成功
+269befa docs: 更新权限诊断验收状态  ← 当前已推送基线，Actions #69 成功
+8ec7590 fix(cloudflare): 区分监控与域名权限
 9d2f38d fix(cloudflare): 收口 Token 权限与配置文案
 de1a4e2 docs: 记录 Token 自动配置域名实现
 49c7413 docs: 明确 Token 范围与域名配置边界
@@ -124,7 +125,7 @@ git diff --check                               PASS
 npm run ci:local                               PASS（本轮 19 个路径；87/87 UI smoke）
 npm run deploy:worker:test                     10/10 PASS（含 README 新部署前提断言）
 Worker runtime（Docker node:22-bookworm）       20/20 files，91/91 tests PASS
-latest remote Actions 8ec7590 / #68             completed/success
+latest remote Actions 269befa / #69             completed/success
 本轮功能改动提交 / push / Actions 闭环            PASS
 ```
 
@@ -809,5 +810,5 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - 2026-10-23：`e349e7b`（`fix(ui): 修复设置页窄屏布局并更新视觉基线`）已推送；Actions run `39880735501`（#61）达到 `completed/success`。
 - 2026-10-23：当前工作区完成 Cloudflare Token 六项权限、Token 名称与 Account/Zone resources 指引、保存域名后缀时自动同步 Zone/DNS/Worker Route；删除帮助中心“配置 Cloudflare 不需要 OAuth 客户端”这类反向文案，改为直接说明操作步骤。`ci:local` 87/87、Docker runtime 20/20 文件 91/91 测试、`deploy:worker:test` 10/10、`worker:typecheck` 和 `build` 均通过，待提交推送。
 - 2026-10-23：功能提交 `9d2f38d` 已推送；Actions #66（run `39890875239`）`completed/success`。本次 HANDOFF 更新需另行提交并追踪其 Actions。
-- 2026-10-23：权限面板改为监控/域名两组并标注只读、写入、编辑；不再显示无法由 Cloudflare API 回读确认的逐项“缺失”状态；账号、订阅、Zone、DNS、Worker Route 的 403 错误分别指出对应权限。完整 `ci:local` 87/87、设置页 Axe 2/2、权限定向 Docker runtime 16/16 通过；`8ec7590` 已推送，Actions #68 成功。
+- 2026-10-23：权限面板改为监控/域名两组并标注只读、写入、编辑；不再显示无法由 Cloudflare API 回读确认的逐项“缺失”状态；账号、订阅、Zone、DNS、Worker Route 的 403 错误分别指出对应权限。完整 `ci:local` 87/87、设置页 Axe 2/2、权限定向 Docker runtime 16/16 通过；`8ec7590`、`269befa` 已推送，Actions #68/#69 成功。
 - 2026-10-23：确认剩余工作顺序：视觉/文案人工验收 → 原生手动构建与真正 SHARED target → 帮助中心原生教程 → Workers Builds/D1/真实服务联调 → 全量验收 → 新提交的 push/Actions 闭环。
