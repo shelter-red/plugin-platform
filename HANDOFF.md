@@ -2,7 +2,7 @@
 
 > 最后整理：2026-10-23（Asia/Shanghai）
 >
-> 当前状态：**Cloudflare API Token 前后端、8 项用量及 17 个路径的旧文案清理已推送。最近一次代码基线为 `67efa26`，`HEAD == origin/main == 67efa26`；Actions run `39881453006`（#62）为 `completed/success`。本轮完整本地验收已通过 `git diff --check`、`npm run ci:local`（87/87 UI smoke）、Worker runtime 20/20 文件与 89/89 测试、`npm run deploy:worker:test` 10/10。8.3 的窄屏布局子步骤已完成，下一步先核对 Cloudflare Token 权限/域名配置契约，再继续图标/文字对齐、重复入口/空卡片和中英文文案审计；之后才进入原生可执行/共享库手动构建、帮助中心原生教程和生产联调。若之后再次修改本 HANDOFF，会生成新的 docs-only commit；恢复时不要用本文代替实时 Git/Actions 查询。**
+> 当前状态：**Cloudflare API Token、8 项用量监控、Token 直接配置插件域名的后端/前端实现已在工作区完成，尚未提交。最近一次已推送代码基线为 `49c7413`，Actions #64（run `39883132655`）为 `completed/success`。本轮新增官方六项权限契约：监控 `Account Settings Read`、`Account Analytics Read`、`Billing Read`；域名配置 `Zone Read`、`DNS Write`、`Workers Routes Edit`。保存插件域名后缀时，Worker 使用已保存 Token 查找 active Zone、维护 Plugmesh 通配 DNS 记录并创建/更新 `plugmesh-worker` Route；缺 Token、Zone 不匹配、已有第三方记录或 Route 冲突均返回真实 HTTP 错误，不静默保存。定向 Docker runtime 已通过 21/21，前端构建与 Worker 类型检查通过；完整 `ci:local`、全量 runtime、push 和新 Actions 尚未完成。若之后再次修改本 HANDOFF，会生成新的 docs-only commit；恢复时不要用本文代替实时 Git/Actions 查询。**
 >
 > 本文件是上下文压缩后的第一事实源。README、旧方案、旧测试、聊天摘要或历史提交说明与本文冲突时，以用户最新要求、当前代码和本文为准。恢复后先执行第 0 节的核验命令，再按第 8 节顺序继续。
 
@@ -13,8 +13,8 @@
 ```text
 仓库：/home/tc/work/plugin-platform
 分支：main
-HEAD（最近核验）：67efa26 docs: 记录窄屏修复闭环与文案审计入口
-origin/main（最近核验）：67efa26
+HEAD（最近核验）：49c7413 docs: 明确 Token 范围与域名配置边界
+origin/main（最近核验）：49c7413
 工作区（最近核验）：clean；后续若再次整理 HANDOFF，以实时 Git 为准
 fetch remote：https://github.com/shelter-red/plugin-platform.git
 push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
@@ -23,7 +23,8 @@ push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 最近提交（均已推送）：
 
 ```text
-67efa26 docs: 记录窄屏修复闭环与文案审计入口  ← 当前代码基线
+49c7413 docs: 明确 Token 范围与域名配置边界  ← 当前已推送基线
+67efa26 docs: 记录窄屏修复闭环与文案审计入口
 e349e7b fix(ui): 修复设置页窄屏布局并更新视觉基线
 b6ad802 docs: 记录交接提交的 Actions 成功结果
 02dbb1a docs: 更新交接状态与 Actions 基线
@@ -303,8 +304,8 @@ doRequests        100,000
 | U21 | 文案诡异、莫名卡片、同页多个按钮跳同页 | 中英文审计；清重复说明/空卡片/重复跳转 | ⬜ 未完成 |
 | U22 | Actions 手动构建插件服务器：可执行/库、目标平台 | 仅 `workflow_dispatch`；真正共享库 + artifact + SHA256 | ⬜ 未开始 |
 | U23 | 帮助中心说明二进制/库文件服务器怎么用 | 中英文完整使用说明 | ⬜ 未开始 |
-| U24 | 都整理到磁盘 HANDOFF，避免压缩后忘 | 所有要求、事实、阻塞、步骤、验收可恢复 | ✅ 已更新到 `67efa26` 基线，明确区分完成项、剩余项、禁止事项和实时核验要求 |
-| U25 | 三项只读权限怎么配置域名；OAuth/Token 名称不一致；Token 还要选范围 | 域名 DNS/Worker Route 是控制台手工配置；设置页明确 Token 名称、三项读取权限和账号资源范围的边界，区分 GitHub OAuth | 🟡 已核对代码边界并登记实现；页面/帮助文档待补充，当前三项只读不能声称支持 DNS/Zone 配置 |
+| U24 | 都整理到磁盘 HANDOFF，避免压缩后忘 | 所有要求、事实、阻塞、步骤、验收可恢复 | ✅ 已更新到 `49c7413` 基线，明确区分完成项、剩余项、禁止事项和实时核验要求 |
+| U25 | 三项只读权限怎么配置域名；OAuth/Token 名称不一致；Token 还要选范围 | Token 固定六项权限；Cloudflare 创建页填写 Token 名称并选择 Account/Zone resources；保存插件域名后缀时自动同步 Zone、DNS 和 Worker Route | 🟡 实现与定向测试完成；完整 CI、push、Actions 和真实 Cloudflare 联调待完成 |
 
 ## 3. 当前实现清单
 
