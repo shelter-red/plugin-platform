@@ -457,11 +457,17 @@ test('用量自动加载期间刷新按钮可用，并重新请求官方与本�
 
 test('用量页只保留一个刷新入口', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 })
-  await mockWorker(page)
+  const worker = await mockWorker(page)
   await page.goto('/usage')
 
   await expect(page.getByTestId('usage-refresh')).toHaveCount(1)
   await expect(page.getByRole('button', { name: '刷新用量' })).toHaveCount(1)
+  await expect(page.getByRole('button', { name: '去配置' })).toHaveCount(1)
+
+  worker.usage = cloudflareFreeUsage
+  await page.goto('/usage')
+  await expect(page.getByText('Cloudflare Analytics 已连接')).toBeVisible()
+  await expect(page.getByRole('button', { name: '去配置' })).toHaveCount(0)
 })
 
 test('Cloudflare 免费额度显示八项已用量、上限和百分比', async ({ page }) => {
@@ -823,6 +829,7 @@ test('管理端入口可跳转并展示账号与协议页', async ({ page }) => 
   await expect(page.getByText('e2e@example.com').first()).toBeVisible()
   await expect(page.getByRole('heading', { name: '所属工作区' })).toBeVisible()
   await expect(page.getByRole('link', { name: /默认工作区/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: '管理工作区' })).toHaveCount(0)
   await expect(page.getByText('所有者').first()).toBeVisible()
 
   await page.getByRole('button', { name: '打开账号菜单' }).click()

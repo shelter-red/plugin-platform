@@ -81,6 +81,22 @@ test('管理端各页面展示真实空态', async ({ page }) => {
   await page.screenshot({ path: '/tmp/plugmesh-console-empty-states.png', fullPage: true })
 })
 
+test('列表页只保留页头主操作，不渲染重复空态卡片', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.goto('/')
+
+  await page.getByRole('menuitem', { name: '插件服务器', exact: true }).click()
+  await expect(page.getByRole('button', { name: '绑定服务器' })).toHaveCount(1)
+  await expect(page.getByText('绑定新的插件服务器')).toHaveCount(0)
+
+  await page.getByRole('menuitem', { name: '插件实例', exact: true }).click()
+  await expect(page.getByRole('button', { name: '加载插件' })).toHaveCount(1)
+
+  await page.getByRole('menuitem', { name: '公开域名', exact: true }).click()
+  await expect(page.getByRole('button', { name: '分配域名' })).toHaveCount(1)
+  await expect(page.getByText('分配新的公开域名')).toHaveCount(0)
+})
+
 test('管理端窄窗口各页面空态可用', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/')

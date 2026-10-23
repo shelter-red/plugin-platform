@@ -36,6 +36,6 @@ export function UsageStatusAlert({ usage, loading, error, onOpenCloudflareSettin
     description={connected && period
       ? t('usage.period', { start: formatDateTime(period.start), end: formatDateTime(period.end) })
       : <div className="alert-body"><span>{t('usage.periodHint')}</span><span>{t('usage.localIndependentHint')}</span></div>}
-    action={configureAction}
+    action={connected ? undefined : configureAction}
   />
 }

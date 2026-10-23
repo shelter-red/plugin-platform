@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { Button } from 'antd'
-import { Globe2, Plus, RefreshCw } from 'lucide-react'
+import { Globe2, RefreshCw } from 'lucide-react'
 import type { ApiDomain } from '../../api'
 import { EmptyState } from '../../components/EmptyState'
 import { Panel } from '../../components/Panel'
@@ -8,7 +8,7 @@ import type { Notify } from '../../components/ToastProvider'
 import { DomainTable } from './DomainTable'
 import { useCopyDomain } from './useCopyDomain'
 
-export function DomainsPage({ domains, loading, onAction, onRefresh, onAssign }: { domains: ApiDomain[]; loading: boolean; onAction: Notify; onRefresh: () => void; onAssign: () => void }) {
+export function DomainsPage({ domains, loading, onAction, onRefresh }: { domains: ApiDomain[]; loading: boolean; onAction: Notify; onRefresh: () => void }) {
   const { t } = useTranslation()
   const copyDomain = useCopyDomain(onAction)
 
@@ -18,6 +18,5 @@ export function DomainsPage({ domains, loading, onAction, onRefresh, onAssign }:
         ? <EmptyState icon={<Globe2 size={22} />} title={t('domains.emptyTitle')} body={t('domains.emptyBody')} />
         : <DomainTable domains={domains} loading={loading} onCopy={(hostname) => void copyDomain(hostname)} />}
     </Panel>
-    <EmptyState icon={<Globe2 size={22} />} title={t('domains.assignTitle')} body={t('domains.assignBody')}><Button type="primary" onClick={onAssign} icon={<Plus size={15} />}>{t('domains.assign')}</Button></EmptyState>
   </div>
 }

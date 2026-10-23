@@ -17,7 +17,7 @@ export function UsagePage({ settings, usage, localUsage, loading, error, onOpenC
     <UsageStatusAlert usage={usage} loading={loading} error={error} onOpenCloudflareSettings={onOpenCloudflareSettings} />
     <PlatformUsageSection settings={settings} localUsage={localUsage} />
     <CloudflareUsageSection usage={usage} />
-    <UsageSourcesPanel usage={usage} localUsage={localUsage} onOpenCloudflareSettings={onOpenCloudflareSettings} />
+    <UsageSourcesPanel usage={usage} localUsage={localUsage} />
     <UsageBreakdownPanel localUsage={localUsage} />
   </div>
 }
