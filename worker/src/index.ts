@@ -1032,7 +1032,12 @@ export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser, fetc
   try {
     subscriptions = await readCloudflareSubscriptions(apiToken, accountId, fetchImpl)
   } catch (error) {
-    return cloudflareTokenErrorResponse(error)
+    // Billing Read only supplies plan metadata and free limits; it must not block usage reads.
+    if (error instanceof CloudflareTokenError && error.status === 403) {
+      subscriptions = { subscriptions: [], plan: { id: null, name: null, free: false, confirmed: false } }
+    } else {
+      return cloudflareTokenErrorResponse(error)
+    }
   }
   const { limitSource, limits } = cloudflarePlanLimits(subscriptions.plan)
 
@@ -1063,8 +1068,17 @@ export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser, fetc
   } catch {
     return cloudflareAnalyticsError('无法连接 Cloudflare Resource Analytics 接口')
   }
-  if (!resourceResponse.ok) return cloudflareAnalyticsError('Cloudflare resource analytics request failed', resourceResponse.status)
-  const resourcePayload = await resourceResponse.json().catch(() => null) as {
+  let resourceAnalyticsAvailable = true
+  let resourceAnalyticsError: string | undefined
+  if (!resourceResponse.ok) {
+    if (resourceResponse.status === 403) {
+      resourceAnalyticsAvailable = false
+      resourceAnalyticsError = 'Cloudflare Resource Analytics 权限不足，已保留可读取的 Worker 用量'
+    } else {
+      return cloudflareAnalyticsError('Cloudflare resource analytics request failed', resourceResponse.status)
+    }
+  }
+  const resourcePayload = resourceAnalyticsAvailable ? await resourceResponse.json().catch(() => null) as {
     errors?: unknown[]
     data?: {
       viewer?: {
@@ -1077,10 +1091,13 @@ export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser, fetc
         }>
       }
     }
-  } | null
-  if (!resourcePayload) return json({ code: 'cloudflare_resource_analytics_error', message: 'Cloudflare Resource Analytics 响应不是有效 JSON' }, 502)
-  if (resourcePayload.errors?.length) return json({ code: 'cloudflare_resource_analytics_error', message: 'Cloudflare resource analytics returned errors' }, 502)
-  const resourceAccount = resourcePayload.data?.viewer?.accounts?.[0]
+  } | null : null
+  if (resourceAnalyticsAvailable && !resourcePayload) return json({ code: 'cloudflare_resource_analytics_error', message: 'Cloudflare Resource Analytics 响应不是有效 JSON' }, 502)
+  if (resourceAnalyticsAvailable && resourcePayload?.errors?.length) {
+    resourceAnalyticsAvailable = false
+    resourceAnalyticsError = 'Cloudflare Resource Analytics 返回错误，资源明细暂未读取'
+  }
+  const resourceAccount = resourceAnalyticsAvailable ? resourcePayload?.data?.viewer?.accounts?.[0] : undefined
   const d1 = resourceAccount?.d1AnalyticsAdaptiveGroups?.reduce((total, row) => ({
     readQueries: total.readQueries + (row.sum?.readQueries ?? 0),
     writeQueries: total.writeQueries + (row.sum?.writeQueries ?? 0),
@@ -1105,13 +1122,13 @@ export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser, fetc
     accountIdConfigured: true,
     period: { start: start.toISOString(), end: end.toISOString() },
     requests,
-    d1,
-    kv,
-    durableObjects,
     source: 'cloudflare_graphql',
     plan: subscriptions.plan,
     limitSource,
     limits,
+    resourceAnalyticsAvailable,
+    ...(resourceAnalyticsError ? { resourceAnalyticsError } : {}),
+    ...(resourceAnalyticsAvailable ? { d1, kv, durableObjects } : {}),
   }
   const updatedAt = new Date().toISOString()
   await env.DB.prepare('INSERT INTO usage_cache (key, value_json, expires_at, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, expires_at = excluded.expires_at, updated_at = excluded.updated_at').bind('cloudflare:workers', JSON.stringify(result), new Date(Date.now() + 5 * 60 * 1000).toISOString(), updatedAt).run()
@@ -1130,9 +1147,11 @@ type CloudflareUsageResult = {
   accountIdConfigured: true
   period: { start: string; end: string }
   requests: number
-  d1: { readQueries: number; writeQueries: number; rowsRead: number; rowsWritten: number }
-  kv: { read: number; write: number; delete: number; list: number }
-  durableObjects: { requests: number; cpuTime: number; storedBytes: number }
+  resourceAnalyticsAvailable?: boolean
+  resourceAnalyticsError?: string
+  d1?: { readQueries: number; writeQueries: number; rowsRead: number; rowsWritten: number }
+  kv?: { read: number; write: number; delete: number; list: number }
+  durableObjects?: { requests: number; cpuTime: number; storedBytes: number }
   source: 'cloudflare_graphql'
   plan: CloudflarePlanSummary
   limitSource: 'cloudflare_subscriptions_free_baseline' | 'unavailable'
@@ -1172,9 +1191,14 @@ function parseCloudflareUsageCache(value: string): CloudflareUsageResult | null 
     if (!isRecord(result) || result.configured !== true || result.accountIdConfigured !== true || result.source !== 'cloudflare_graphql') return null
     if (!isRecord(result.period) || typeof result.period.start !== 'string' || typeof result.period.end !== 'string') return null
     if (!isNonNegativeNumber(result.requests)) return null
-    if (!hasNonNegativeNumbers(result.d1, ['readQueries', 'writeQueries', 'rowsRead', 'rowsWritten'])) return null
-    if (!hasNonNegativeNumbers(result.kv, ['read', 'write', 'delete', 'list'])) return null
-    if (!hasNonNegativeNumbers(result.durableObjects, ['requests', 'cpuTime', 'storedBytes'])) return null
+    const resourceAnalyticsAvailable = result.resourceAnalyticsAvailable !== false
+    if (resourceAnalyticsAvailable) {
+      if (!hasNonNegativeNumbers(result.d1, ['readQueries', 'writeQueries', 'rowsRead', 'rowsWritten'])) return null
+      if (!hasNonNegativeNumbers(result.kv, ['read', 'write', 'delete', 'list'])) return null
+      if (!hasNonNegativeNumbers(result.durableObjects, ['requests', 'cpuTime', 'storedBytes'])) return null
+    } else if (result.resourceAnalyticsError !== undefined && typeof result.resourceAnalyticsError !== 'string') {
+      return null
+    }
     if (!isCloudflarePlanSummary(result.plan)) return null
     if (result.limitSource !== 'cloudflare_subscriptions_free_baseline' && result.limitSource !== 'unavailable') return null
     if (result.limits !== null && !isCloudflareUsageLimits(result.limits)) return null

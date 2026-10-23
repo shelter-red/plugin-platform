@@ -745,6 +745,17 @@ h1 {
   font-size: 10px;
   line-height: 1.4;
 }
+.permission-scope {
+  display: inline-flex !important;
+  align-items: center;
+  min-height: 18px;
+  padding: 1px 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  color: var(--text-2) !important;
+  background: var(--surface-strong);
+  font: 10px/1.4 'IBM Plex Mono', monospace !important;
+}
 .scope-list {
   list-style: none;
   margin: 10px 0;
@@ -789,6 +800,7 @@ h1 {
   line-height: 1.6;
 }
 .scope-list .permission-tag,
+.scope-list .permission-scope,
 .scope-list .permission-state {
   display: inline-flex;
   align-items: center;

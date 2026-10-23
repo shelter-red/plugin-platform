@@ -242,6 +242,8 @@ export interface CloudflareUsage {
   source?: string
   cached?: boolean
   updatedAt?: string
+  resourceAnalyticsAvailable?: boolean
+  resourceAnalyticsError?: string
   d1?: {
     readQueries: number
     writeQueries: number

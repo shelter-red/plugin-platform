@@ -13,6 +13,7 @@ export const CLOUDFLARE_STUB_API_TOKEN = 'cf-api-token-runtime'
 export const CLOUDFLARE_STUB_INVALID_TOKEN = 'cf-api-token-invalid'
 export const CLOUDFLARE_STUB_PERMISSION_DENIED_TOKEN = 'cf-api-token-permission-denied'
 export const CLOUDFLARE_STUB_MULTI_ACCOUNT_TOKEN = 'cf-api-token-multi-account'
+export const CLOUDFLARE_STUB_MISSING_WRITE_TOKEN = 'cf-api-token-missing-write'
 
 function bearerToken(request: Request): string {
   return (request.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '')

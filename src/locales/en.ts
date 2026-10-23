@@ -311,6 +311,7 @@ export default {
     loadingOfficial: 'Reading official data',
     connected: 'Cloudflare Analytics connected',
     notConnected: 'Official data not connected',
+    resourceAnalyticsUnavailable: 'Worker usage was refreshed, but D1, KV and Durable Object details were not read.',
     period: 'Worker request period: {{start}} to {{end}}',
     periodHint: 'After a Cloudflare API Token is configured, official data is cached for 5 minutes to 1 hour.',
     legacyCredential: 'A Cloudflare API Token must be entered again',
@@ -482,7 +483,8 @@ export default {
       permissionsHint: 'The icons are live probes of the saved Token: green means verified, red means missing, and a question mark means not tested. Cloudflare does not expose a direct Token policy readback.',
       permissionStates: { allowed: 'Verified', denied: 'Missing', unknown: 'Not tested' },
       permissionModes: { readOnly: 'Read only', write: 'Write', edit: 'Edit' },
-      resourceScopeHint: 'Resources: choose the target account under Account resources; choose the plugin domain Zone under Zone resources; User resources are not used by this platform.',
+      resourceScopeHint: 'Resource scopes: choose the target account under Account resources; choose the plugin domain Zone under Zone resources; User resources are not used.',
+      permissionScopes: { account: 'Account scope · Account resources', zone: 'Zone scope · Zone resources' },
       permissions: {
         accountSettings: 'Read account information to identify the single account and Account ID.',
         accountAnalytics: 'Read account-level Analytics for Worker, D1, KV and Durable Object usage.',

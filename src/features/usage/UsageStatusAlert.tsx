@@ -17,6 +17,7 @@ export function UsageStatusAlert({ usage, loading, error, onOpenCloudflareSettin
   const accountMissing = connected && usage.accountIdConfigured === false
   const legacyCredential = usage?.legacyCredential === true
   const officialError = usage?.error ?? null
+  const resourceAnalyticsUnavailable = connected && usage?.resourceAnalyticsAvailable === false
   const configureAction = <Button type="link" size="small" onClick={onOpenCloudflareSettings}>{t('usage.configure')} <ArrowUpRight size={14} /></Button>
 
   if (legacyCredential) {
@@ -34,7 +35,7 @@ export function UsageStatusAlert({ usage, loading, error, onOpenCloudflareSettin
     icon={<Cloud size={16} />}
     message={loading ? t('usage.loadingOfficial') : connected ? t('usage.connected') : t('usage.notConnected')}
     description={connected && period
-      ? t('usage.period', { start: formatDateTime(period.start), end: formatDateTime(period.end) })
+      ? <div className="alert-body"><span>{t('usage.period', { start: formatDateTime(period.start), end: formatDateTime(period.end) })}</span>{resourceAnalyticsUnavailable && <span>{t('usage.resourceAnalyticsUnavailable')}</span>}</div>
       : <div className="alert-body"><span>{t('usage.periodHint')}</span><span>{t('usage.localIndependentHint')}</span></div>}
     action={connected ? undefined : configureAction}
   />

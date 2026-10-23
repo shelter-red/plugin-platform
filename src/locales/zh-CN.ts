@@ -311,6 +311,7 @@ export default {
     loadingOfficial: '正在读取官方数据',
     connected: 'Cloudflare Analytics 已连接',
     notConnected: '官方数据尚未连接',
+    resourceAnalyticsUnavailable: 'Worker 用量已刷新，但 D1、KV 和 Durable Object 明细暂未读取。',
     period: 'Worker 请求统计周期：{{start}} 至 {{end}}',
     periodHint: '配置 Cloudflare API Token 后，官方数据会按 5 分钟至 1 小时缓存。',
     legacyCredential: '需要重新录入 Cloudflare API Token',
@@ -483,7 +484,8 @@ export default {
       permissionsHint: '图标是当前保存 Token 的实时探测结果：绿色为已验证，红色为缺少，问号为未检测。Cloudflare 不提供直接读取 Token policy 的接口。',
       permissionStates: { allowed: '已验证', denied: '缺少', unknown: '未检测' },
       permissionModes: { readOnly: '只读', write: '写入', edit: '编辑' },
-      resourceScopeHint: '范围：Account resources 选择要读取和管理的目标账号；Zone resources 选择插件域名所在的 Zone；User resources 不需要选择，本平台不使用用户级权限。',
+      resourceScopeHint: '资源范围：帐户范围（Account resources）选择目标账号；区域范围（Zone resources）选择插件域名所在 Zone；用户范围（User resources）不使用。',
+      permissionScopes: { account: '帐户范围 · Account resources', zone: '区域范围 · Zone resources' },
       permissions: {
         accountSettings: '读取账号信息，用于识别唯一账号和 Account ID。',
         accountAnalytics: '读取 Worker、D1、KV 与 Durable Object 的账号级 Analytics。',

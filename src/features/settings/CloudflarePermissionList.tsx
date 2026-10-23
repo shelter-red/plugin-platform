@@ -29,6 +29,15 @@ const MODE_KEYS: Record<(typeof CLOUDFLARE_API_TOKEN_PERMISSIONS)[number], strin
   'Workers Routes Edit': 'settings.cloudflare.permissionModes.edit',
 }
 
+const RESOURCE_SCOPE_KEYS: Record<(typeof CLOUDFLARE_API_TOKEN_PERMISSIONS)[number], string> = {
+  'Account Settings Read': 'settings.cloudflare.permissionScopes.account',
+  'Account Analytics Read': 'settings.cloudflare.permissionScopes.account',
+  'Billing Read': 'settings.cloudflare.permissionScopes.account',
+  'Zone Read': 'settings.cloudflare.permissionScopes.zone',
+  'DNS Write': 'settings.cloudflare.permissionScopes.zone',
+  'Workers Routes Edit': 'settings.cloudflare.permissionScopes.zone',
+}
+
 /** Token 权限平铺展示；图标来自当前 Token 的实际 API 探测，不提供增删或自定义范围输入。 */
 export function CloudflarePermissionList({ permissionStatus }: { permissionStatus?: Record<string, 'allowed' | 'denied' | 'unknown'> }) {
   const { t } = useTranslation()
@@ -45,7 +54,7 @@ export function CloudflarePermissionList({ permissionStatus }: { permissionStatu
         return <li key={name}>
           <span className={`permission-state ${state === 'allowed' ? 'allowed' : state === 'denied' ? 'denied' : 'unknown'}`}>{stateIcon(state)}</span>
           <div>
-            <div className="permission-name"><strong>{name}</strong><span className="permission-tag">{t(MODE_KEYS[name])}</span><span className={`permission-state ${state === 'allowed' ? 'allowed' : state === 'denied' ? 'denied' : 'unknown'}`}>{t(`settings.cloudflare.permissionStates.${state}`)}</span></div>
+            <div className="permission-name"><strong>{name}</strong><span className="permission-scope">{t(RESOURCE_SCOPE_KEYS[name])}</span><span className="permission-tag">{t(MODE_KEYS[name])}</span><span className={`permission-state ${state === 'allowed' ? 'allowed' : state === 'denied' ? 'denied' : 'unknown'}`}>{t(`settings.cloudflare.permissionStates.${state}`)}</span></div>
             <span>{t(DESCRIPTION_KEYS[name])}</span>
           </div>
         </li>

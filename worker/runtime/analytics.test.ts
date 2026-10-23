@@ -168,6 +168,29 @@ test('Free subscriptions 提供 8 项官方基线，Analytics 合并 D1/KV/DO �
   expect(secondBody).not.toHaveProperty('apiToken')
 })
 
+test('资源明细权限不足时仍返回可读取的 Worker 用量', { timeout: 20_000 }, async () => {
+  await saveCredential()
+  const calls: UsageCall[] = []
+  const response = await cloudflareUsageApi(testEnv, admin, usageFetcher(calls, {
+    graphql: (query) => query.includes('ResourceUsage(')
+      ? new Response('forbidden', { status: 403 })
+      : Response.json(requestsPayload),
+  }))
+  expect(response.status).toBe(200)
+  const body = await response.json() as Record<string, unknown>
+  expect(body).toMatchObject({
+    configured: true,
+    cached: false,
+    requests: 4321,
+    resourceAnalyticsAvailable: false,
+    resourceAnalyticsError: 'Cloudflare Resource Analytics 权限不足，已保留可读取的 Worker 用量',
+  })
+  expect(body).not.toHaveProperty('d1')
+  expect(body).not.toHaveProperty('kv')
+  expect(body).not.toHaveProperty('durableObjects')
+  expect(calls).toHaveLength(3)
+})
+
 test('缓存过期后重新读取 subscriptions 和 Analytics', { timeout: 20_000 }, async () => {
   await saveCredential()
   const firstCalls: UsageCall[] = []
@@ -242,20 +265,29 @@ test('旧缓存缺 plan/limits 时视为 miss 并重新回源', { timeout: 20_00
   expect(calls).toHaveLength(3)
 })
 
-test('subscriptions 与 Analytics 的 401/403 返回真实 HTTP，不写缓存', { timeout: 20_000 }, async () => {
+test('Billing 缺失时仍可刷新用量，Token 无效或 Analytics 缺失仍返回真实 HTTP', { timeout: 20_000 }, async () => {
   await saveCredential()
 
   const subscriptionDenied = await cloudflareUsageApi(testEnv, admin, usageFetcher([], {
     subscriptions: () => new Response('forbidden', { status: 403 }),
+    graphql: graphqlHandler,
   }))
-  expect(subscriptionDenied.status).toBe(403)
-  expect(await subscriptionDenied.json()).toMatchObject({ code: 'token_permission_denied' })
+  expect(subscriptionDenied.status).toBe(200)
+  expect(await subscriptionDenied.json()).toMatchObject({
+    configured: true,
+    requests: 4321,
+    plan: { id: null, name: null, free: false, confirmed: false },
+    limitSource: 'unavailable',
+    limits: null,
+  })
+  await clearUsageCache()
 
   const subscriptionInvalid = await cloudflareUsageApi(testEnv, admin, usageFetcher([], {
     subscriptions: () => new Response('unauthorized', { status: 401 }),
   }))
   expect(subscriptionInvalid.status).toBe(401)
   expect(await subscriptionInvalid.json()).toMatchObject({ code: 'token_invalid' })
+  await clearUsageCache()
 
   const analyticsDenied = await cloudflareUsageApi(testEnv, admin, usageFetcher([], {
     graphql: () => new Response('forbidden', { status: 403 }),
