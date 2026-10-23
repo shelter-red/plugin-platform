@@ -2,7 +2,7 @@
 
 > 最后整理：2026-10-23（Asia/Shanghai）
 >
-> 当前状态：**Cloudflare API Token、8 项用量监控、Token 直接配置插件域名的后端/前端实现已完成。本轮实现提交为 `ca7e54c`，状态记录提交为 `a07193e`，Actions #71/#72（run `39899676906`/`39900278383`）均已 `completed/success`。Cloudflare 权限面板六项权限平铺展示，逐项显示“已验证/缺少/未检测”，不再显示监控组或域名组；Account resources、Zone resources、User resources 的用途在列表下直接说明。403 会按账号列表、订阅、Zone、DNS、Worker Route 操作指出对应权限。保存插件域名后缀时，Worker 使用已保存 Token 查找 active Zone、维护 Plugmesh 通配 DNS 记录并创建/更新 `plugmesh-worker` Route；缺 Token、Zone 不匹配、已有第三方记录或 Route 冲突均返回真实 HTTP 错误，不静默保存。`ci:local` 87/87、Docker runtime 权限定向 17/17、设置页 Axe 2/2、构建和类型检查均已通过。当前开始执行 8.3 界面、重复入口与中英文文案审计；审计登记完成后才允许修改代码。若之后再次修改本 HANDOFF，会生成新的 docs-only commit；恢复时不要用本文代替实时 Git/Actions 查询。**
+> 当前状态：**Cloudflare API Token、8 项用量监控、Token 直接配置插件域名的后端/前端实现已完成。本轮实现提交为 `ca7e54c`，界面审计修复提交为 `114acee`，状态记录提交为 `a07193e`；前两项提交已完成本地验证，推送后的 Actions 尚待核验。Cloudflare 权限面板六项权限平铺展示，逐项显示“已验证/缺少/未检测”，不再显示监控组或域名组；Account resources、Zone resources、User resources 的用途在列表下直接说明。403 会按账号列表、订阅、Zone、DNS、Worker Route 操作指出对应权限。保存插件域名后缀时，Worker 使用已保存 Token 查找 active Zone、维护 Plugmesh 通配 DNS 记录并创建/更新 `plugmesh-worker` Route；缺 Token、Zone 不匹配、已有第三方记录或 Route 冲突均返回真实 HTTP 错误，不静默保存。`ci:local` 88/88、Docker runtime 权限定向 17/17、设置页 Axe 2/2、构建和类型检查均已通过。8.3 界面、重复入口与中英文文案审计已完成，下一步进入 8.4 原生手动构建 workflow。若之后再次修改本 HANDOFF，会生成新的 docs-only commit；恢复时不要用本文代替实时 Git/Actions 查询。**
 >
 > 本文件是上下文压缩后的第一事实源。README、旧方案、旧测试、聊天摘要或历史提交说明与本文冲突时，以用户最新要求、当前代码和本文为准。恢复后先执行第 0 节的核验命令，再按第 8 节顺序继续。
 
@@ -13,9 +13,9 @@
 ```text
 仓库：/home/tc/work/plugin-platform
 分支：main
-HEAD（最近核验）：a07193e docs: 更新权限验收状态
-origin/main（最近核验）：a07193e
-工作区（最近核验）：干净；当前步骤登记待提交，后续若再次整理 HANDOFF，以实时 Git 为准
+HEAD（最近核验）：114acee fix(ui): 清理重复入口和空态卡片
+origin/main（最近核验）：a07193e（代码提交待推送）
+工作区（最近核验）：有本步骤 HANDOFF 更新待提交；后续若再次整理 HANDOFF，以实时 Git 为准
 fetch remote：https://github.com/shelter-red/plugin-platform.git
 push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 ```
@@ -24,6 +24,7 @@ push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 
 ```text
 a07193e docs: 更新权限验收状态  ← 当前已推送基线，Actions #72 成功
+114acee fix(ui): 清理重复入口和空态卡片  ← 本地 `ci:local` 88/88 通过，待推送核验
 ca7e54c fix(cloudflare): 显示 Token 权限实际状态  ← Actions #71 成功
 ce8ca1d docs: 固化最终权限验收基线
 269befa docs: 更新权限诊断验收状态
@@ -310,7 +311,7 @@ doRequests        100,000
 | U18 | 平台和监控分开；平台请求不限 | 平台只统计；Cloudflare 官方额度独立 | 🟡 分组、“不限”和定向回归已实现；最终多视口视觉验收未完成 |
 | U19 | GitHub OAuth 没过期，CF 为什么过期；改 Token | 不再暗示 OAuth 过期；界面/链接/错误全部 Token 化 | ✅ 后端/API/面板/README/docs/help/deploy 提示已 Token 化，随 `6e9d0ec` 推送并通过 #56 |
 | U20 | CF 免费额度为何在系统设置手填，应从 CF 读取 | 删除手填；读 subscriptions；未确认 Free 显示未读取 | ✅ 维护/用量 UI 与文档已改；真实 subscriptions 响应仍未联调 |
-| U21 | 文案诡异、莫名卡片、同页多个按钮跳同页 | 中英文审计；清重复说明/空卡片/重复跳转 | ⬜ 未完成 |
+| U21 | 文案诡异、莫名卡片、同页多个按钮跳同页 | 中英文审计；清重复说明/空卡片/重复跳转 | 🟡 `114acee` 已完成列表页空卡片、重复入口和英文 Cloudflare 文案清理；本地 `ci:local` 88/88 通过，待推送 Actions 核验 |
 | U22 | Actions 手动构建插件服务器：可执行/库、目标平台 | 仅 `workflow_dispatch`；真正共享库 + artifact + SHA256 | ⬜ 未开始 |
 | U23 | 帮助中心说明二进制/库文件服务器怎么用 | 中英文完整使用说明 | ⬜ 未开始 |
 | U24 | 都整理到磁盘 HANDOFF，避免压缩后忘 | 所有要求、事实、阻塞、步骤、验收可恢复 | ✅ 已更新到 `9d2f38d` 基线，明确区分完成项、剩余项、禁止事项和实时核验要求 |
@@ -375,7 +376,7 @@ doRequests        100,000
 5. `legacyCredential` 在当前用量页显示，不跳转首页。
 6. 401/403 错误在当前用量页显示 HTTP 状态/错误信息。
 
-定向 worker-mock 回归 8/8、完整 UI smoke 87/87 通过；窄屏测试中“11 个阈值输入”旧注释已同步改为平台 3 项阈值，并新增设置分区 390px 边界断言。后续若修改用量契约或设置布局，必须保留这些断言，不能删测试或放宽断言。
+定向 worker-mock 回归 8/8、完整 UI smoke 88/88 通过；窄屏测试中“11 个阈值输入”旧注释已同步改为平台 3 项阈值，并新增设置分区 390px 边界断言。后续若修改用量契约或设置布局，必须保留这些断言，不能删测试或放宽断言。
 
 ### 3.4 文档/文案清理状态（已推送并通过 Actions #56）
 
@@ -690,7 +691,16 @@ fd80fa4  run 39754896119  #11  管理端 UI smoke 失败
 - 空态下工作区切换器高度为 46.34px，标题/副标题合计 30.34px，当前没有遮挡；真实默认工作区数据和全局图标对齐仍属于后续视觉审计。
 - 当前宿主缺少 CJK 字体，直接截图出现方框/缺字；最终像素基线必须在 CI 同款 Playwright 环境重建，不能把宿主字体缺失误当成产品文案问题。
 
-当前步骤登记：执行界面、重复入口、空卡片及中英文文案审计。范围是 `src/**/*.tsx`、`src/locales/*`、`src/content/help.*.md`、设置/用量/登录页实际渲染与既有 Playwright 截图；先列出可复现问题，再逐项修改并补回归断言。不得把原生构建 workflow 或帮助教程混入本步骤；本步骤完成并记录验收后，才进入 8.4。
+本步骤已完成（`114acee`）：
+
+- 服务器和域名页删除无条件额外 EmptyState 操作卡片，页头保留唯一主操作。
+- 插件页删除空态按钮和表格底部重复“加载插件”，保留页头主操作与数量信息。
+- 用量页数据源状态只显示状态；配置入口只在未连接、错误或旧凭据状态出现，已连接状态不再重复跳设置。
+- 账号页删除与工作区行重复的“管理工作区”按钮。
+- 删除对应无用 props、imports、locale key 和 `EmptyState` 的 children 接口；英文 Cloudflare 帮助同步 Account/Zone/User resources 与三种权限状态。
+- 新增重复入口负断言；定向测试列表页 1/1、用量与账号页 2/2，临时桌面/390px 截图检查通过，完整 `ci:local` 88/88 通过。
+
+本步骤不改变路由、API、权限和数据契约。下一步按 8.4 登记原生插件服务器手动构建 workflow；不得把构建功能回填到本步骤。
 
 本步骤审计发现（待实现）：
 
