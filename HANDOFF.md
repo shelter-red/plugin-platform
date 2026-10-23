@@ -775,7 +775,7 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - [ ] “默认工作区”文字不遮挡，图标/文字对齐。
 - [x] 系统设置只出现 Cloudflare API Token 和可选 Account ID。
 - [x] 活跃 Cloudflare 流程不出现 Client ID/Secret、回调、scope 编辑、PKCE、`response_type`、`grant_type`。
-- [x] 固定权限为 Account Settings Read / Account Analytics Read / Billing Read / Zone Read / DNS Write / Workers Routes Edit，不提供自定义入口。
+- [x] 固定权限按 Cloudflare 三列展示：帐户 / Account + 帐户设置 / Account Settings + 读取 / Read、帐户 / Account + 帐户分析 / Account Analytics + 读取 / Read、帐户 / Account + 账单 / Billing + 读取 / Read、区域 / Zone + 区域 / Zone + 读取 / Read、区域 / Zone + DNS + 写入 / Write、区域 / Zone + Workers 路由 / Workers Routes + 编辑 / Edit；用户 / User 不使用，不提供自定义入口。
 - [x] “创建 Token”跳到 `https://dash.cloudflare.com/profile/api-tokens`。
 - [x] Token 保存前完成 verify、账号发现、subscriptions 校验；失败用 HTTP 状态并在当前面板显示，runtime/UI 回归已有覆盖。
 - [x] 旧 Cloudflare OAuth 活跃路由、Cookie、refresh/revoke、state 和 smoke 已删除。
@@ -843,3 +843,4 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - 2026-10-23：功能提交 `9d2f38d` 已推送；Actions #66（run `39890875239`）`completed/success`。本次 HANDOFF 更新需另行提交并追踪其 Actions。
 - 2026-10-23：权限面板改为监控/域名两组并标注只读、写入、编辑；不再显示无法由 Cloudflare API 回读确认的逐项“缺失”状态；账号、订阅、Zone、DNS、Worker Route 的 403 错误分别指出对应权限。完整 `ci:local` 87/87、设置页 Axe 2/2、权限定向 Docker runtime 16/16 通过；`8ec7590`、`269befa` 已推送，Actions #68/#69 成功。
 - 2026-10-23：确认剩余工作顺序：视觉/文案人工验收 → 原生手动构建与真正 SHARED target → 帮助中心原生教程 → Workers Builds/D1/真实服务联调 → 全量验收 → 新提交的 push/Actions 闭环。
+- 2026-10-23：提交 `beb8668`（`fix(cloudflare): 按三列展示 Token 权限`）已推送。Cloudflare 权限面板现在按“范围 / Scope、权限 / Permission、级别 / Level”三列显示；权限组为中文 + Cloudflare 英文原名，范围明确为帐户、区域、用户，用户范围仅说明不使用；README、帮助中心、方案和验收矩阵同步为三列填写方式。`git diff --check`、`npm run build`、`npm run ui:conventions`、`npm run ui:css-audit`、`npm run ci:local`（Worker smoke、UI 88/88）和 Docker runtime（20 个文件、93 个测试）通过。Actions #81 / run `39920624930` 已 `completed/success`。
