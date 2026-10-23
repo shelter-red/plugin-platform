@@ -164,16 +164,16 @@ GitHub 回调失败时 Worker 直接返回对应 HTTP 状态（400/403/409/502/5
 
 ### Cloudflare API Token 所需权限（固定）
 
-平台使用 Cloudflare API Token 读取账号/用量并配置插件域名；GitHub 登录使用单独的 OAuth App 配置。创建 Token 时授予下面六项固定权限，并将 `Account resources` 限制到目标账号、`Zone resources` 限制到插件域名所在 Zone；`User resources` 不使用。系统设置 → Cloudflare 会显示这六项权限的实际探测状态，不提供自定义范围入口：
+平台使用 Cloudflare API Token 读取账号/用量并配置插件域名；GitHub 登录使用单独的 OAuth App 配置。创建 Token 时按 Cloudflare 的三个下拉框填写下面六项固定权限：范围、权限组、级别。`帐户 / Account` 选择目标账号，`区域 / Zone` 选择插件域名所在 Zone，`用户 / User` 不使用。系统设置 → Cloudflare 会显示这六项权限的实际探测状态，不提供自定义范围入口：
 
-| 官方权限名称 | 用途 |
-| --- | --- |
-| Account Settings Read | 读取账号列表，确认唯一 Account ID，并读取订阅信息 |
-| Account Analytics Read | 读取账号级 Analytics，用于 Worker、D1、KV 与 Durable Object 用量 |
-| Billing Read | 读取 subscriptions 与套餐信息，确认是否为 Cloudflare Free |
-| Zone Read | 查找插件域名后缀对应的 Cloudflare Zone |
-| DNS Write | 写入插件域名的通配 DNS 记录 |
-| Workers Routes Edit | 创建或更新通配 Worker Route |
+| 范围 / Scope | 权限 / Permission | 级别 / Level | 用途 |
+| --- | --- | --- | --- |
+| 帐户 / Account | 帐户设置 / Account Settings | 读取 / Read | 读取账号列表，确认唯一 Account ID，并读取订阅信息 |
+| 帐户 / Account | 帐户分析 / Account Analytics | 读取 / Read | 读取账号级 Analytics，用于 Worker、D1、KV 与 Durable Object 用量 |
+| 帐户 / Account | 账单 / Billing | 读取 / Read | 读取 subscriptions 与套餐信息，确认是否为 Cloudflare Free |
+| 区域 / Zone | 区域 / Zone | 读取 / Read | 查找插件域名后缀对应的 Cloudflare Zone |
+| 区域 / Zone | DNS | 写入 / Write | 写入插件域名的通配 DNS 记录 |
+| 区域 / Zone | Workers 路由 / Workers Routes | 编辑 / Edit | 创建或更新通配 Worker Route |
 
 保存 Token 时平台依次调用 Token verify、accounts 全分页和 subscriptions；未填写 Account ID 且 Token 可见多个账号时，接口返回 `409 account_ambiguous`，需要填写目标 Account ID 后重新保存。保存插件域名后缀时，平台会使用同一 Token 查找 Zone、写入通配 DNS 记录并创建 Worker Route。
 

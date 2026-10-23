@@ -25,7 +25,18 @@
 
 ### Cloudflare API Token 读取失败怎么办？
 
-在「系统设置 → Cloudflare」打开创建 API Token 链接，授予 `Account Settings Read`、`Account Analytics Read`、`Billing Read`、`Zone Read`、`DNS Write` 和 `Workers Routes Edit`。`Account resources` 选择目标账号，`Zone resources` 选择插件域名所在 Zone；`User resources` 不使用。平台会验证 Token、读取可见账号和 subscriptions；本页的 Account ID 只用于多个可见账号时选择目标账号。返回设置页后，六项权限会分别显示“已验证”“缺少”或“未检测”。
+在「系统设置 → Cloudflare」打开创建 API Token 链接，按三个下拉框填写固定权限：左侧范围选择 `帐户 / Account`、`区域 / Zone` 或 `用户 / User`，中间选择权限组，右侧选择级别：
+
+| 范围 / Scope | 权限 / Permission | 级别 / Level |
+| --- | --- | --- |
+| 帐户 / Account | 帐户设置 / Account Settings | 读取 / Read |
+| 帐户 / Account | 帐户分析 / Account Analytics | 读取 / Read |
+| 帐户 / Account | 账单 / Billing | 读取 / Read |
+| 区域 / Zone | 区域 / Zone | 读取 / Read |
+| 区域 / Zone | DNS | 写入 / Write |
+| 区域 / Zone | Workers 路由 / Workers Routes | 编辑 / Edit |
+
+`帐户 / Account` 选择目标账号，`区域 / Zone` 选择插件域名所在 Zone，`用户 / User` 不使用。平台会验证 Token、读取可见账号和 subscriptions；本页的 Account ID 只用于多个可见账号时选择目标账号。返回设置页后，六项权限会分别显示“已验证”“缺少”或“未检测”。
 
 保存「维护、域名与配额」中的插件域名后缀时，平台会用已保存 Token 找到对应 Zone，写入通配 DNS 记录并创建 Worker Route。已有其他 DNS 记录或 Worker 路由时会保留原配置并返回冲突，不能通过平台覆盖。
 

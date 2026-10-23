@@ -11,32 +11,20 @@ export const CLOUDFLARE_API_TOKEN_PERMISSIONS = [
   'Workers Routes Edit',
 ] as const
 
-const DESCRIPTION_KEYS: Record<(typeof CLOUDFLARE_API_TOKEN_PERMISSIONS)[number], string> = {
-  'Account Settings Read': 'settings.cloudflare.permissions.accountSettings',
-  'Account Analytics Read': 'settings.cloudflare.permissions.accountAnalytics',
-  'Billing Read': 'settings.cloudflare.permissions.billing',
-  'Zone Read': 'settings.cloudflare.permissions.zone',
-  'DNS Write': 'settings.cloudflare.permissions.dns',
-  'Workers Routes Edit': 'settings.cloudflare.permissions.routes',
-}
-
-const MODE_KEYS: Record<(typeof CLOUDFLARE_API_TOKEN_PERMISSIONS)[number], string> = {
-  'Account Settings Read': 'settings.cloudflare.permissionModes.readOnly',
-  'Account Analytics Read': 'settings.cloudflare.permissionModes.readOnly',
-  'Billing Read': 'settings.cloudflare.permissionModes.readOnly',
-  'Zone Read': 'settings.cloudflare.permissionModes.readOnly',
-  'DNS Write': 'settings.cloudflare.permissionModes.write',
-  'Workers Routes Edit': 'settings.cloudflare.permissionModes.edit',
-}
-
-const RESOURCE_SCOPE_KEYS: Record<(typeof CLOUDFLARE_API_TOKEN_PERMISSIONS)[number], string> = {
-  'Account Settings Read': 'settings.cloudflare.permissionScopes.account',
-  'Account Analytics Read': 'settings.cloudflare.permissionScopes.account',
-  'Billing Read': 'settings.cloudflare.permissionScopes.account',
-  'Zone Read': 'settings.cloudflare.permissionScopes.zone',
-  'DNS Write': 'settings.cloudflare.permissionScopes.zone',
-  'Workers Routes Edit': 'settings.cloudflare.permissionScopes.zone',
-}
+const PERMISSION_ROWS: Array<{
+  key: (typeof CLOUDFLARE_API_TOKEN_PERMISSIONS)[number]
+  scopeKey: string
+  nameKey: string
+  levelKey: string
+  descriptionKey: string
+}> = [
+  { key: 'Account Settings Read', scopeKey: 'settings.cloudflare.permissionScopes.account', nameKey: 'settings.cloudflare.permissionNames.accountSettings', levelKey: 'settings.cloudflare.permissionLevels.read', descriptionKey: 'settings.cloudflare.permissions.accountSettings' },
+  { key: 'Account Analytics Read', scopeKey: 'settings.cloudflare.permissionScopes.account', nameKey: 'settings.cloudflare.permissionNames.accountAnalytics', levelKey: 'settings.cloudflare.permissionLevels.read', descriptionKey: 'settings.cloudflare.permissions.accountAnalytics' },
+  { key: 'Billing Read', scopeKey: 'settings.cloudflare.permissionScopes.account', nameKey: 'settings.cloudflare.permissionNames.billing', levelKey: 'settings.cloudflare.permissionLevels.read', descriptionKey: 'settings.cloudflare.permissions.billing' },
+  { key: 'Zone Read', scopeKey: 'settings.cloudflare.permissionScopes.zone', nameKey: 'settings.cloudflare.permissionNames.zone', levelKey: 'settings.cloudflare.permissionLevels.read', descriptionKey: 'settings.cloudflare.permissions.zone' },
+  { key: 'DNS Write', scopeKey: 'settings.cloudflare.permissionScopes.zone', nameKey: 'settings.cloudflare.permissionNames.dns', levelKey: 'settings.cloudflare.permissionLevels.write', descriptionKey: 'settings.cloudflare.permissions.dns' },
+  { key: 'Workers Routes Edit', scopeKey: 'settings.cloudflare.permissionScopes.zone', nameKey: 'settings.cloudflare.permissionNames.routes', levelKey: 'settings.cloudflare.permissionLevels.edit', descriptionKey: 'settings.cloudflare.permissions.routes' },
+]
 
 /** Token 权限平铺展示；图标来自当前 Token 的实际 API 探测，不提供增删或自定义范围输入。 */
 export function CloudflarePermissionList({ permissionStatus }: { permissionStatus?: Record<string, 'allowed' | 'denied' | 'unknown'> }) {
@@ -48,15 +36,18 @@ export function CloudflarePermissionList({ permissionStatus }: { permissionStatu
       <StatusBadge tone="neutral">{t('settings.cloudflare.permissionsFixed')}</StatusBadge>
     </div>
     <p className="field-hint">{t('settings.cloudflare.permissionsHint')}</p>
+    <div className="scope-list-head" aria-hidden="true">
+      <span>{t('settings.cloudflare.permissionColumns.scope')}</span>
+      <span>{t('settings.cloudflare.permissionColumns.name')}</span>
+      <span>{t('settings.cloudflare.permissionColumns.level')}</span>
+    </div>
     <ol className="scope-list">
-      {CLOUDFLARE_API_TOKEN_PERMISSIONS.map((name) => {
-        const state = permissionStatus?.[name] ?? 'unknown'
-        return <li key={name}>
-          <span className={`permission-state ${state === 'allowed' ? 'allowed' : state === 'denied' ? 'denied' : 'unknown'}`}>{stateIcon(state)}</span>
-          <div>
-            <div className="permission-name"><strong>{name}</strong><span className="permission-scope">{t(RESOURCE_SCOPE_KEYS[name])}</span><span className="permission-tag">{t(MODE_KEYS[name])}</span><span className={`permission-state ${state === 'allowed' ? 'allowed' : state === 'denied' ? 'denied' : 'unknown'}`}>{t(`settings.cloudflare.permissionStates.${state}`)}</span></div>
-            <span>{t(DESCRIPTION_KEYS[name])}</span>
-          </div>
+      {PERMISSION_ROWS.map(({ key, scopeKey, nameKey, levelKey, descriptionKey }) => {
+        const state = permissionStatus?.[key] ?? 'unknown'
+        return <li key={key}>
+          <span className="permission-scope">{t(scopeKey)}</span>
+          <span className="permission-name"><strong>{t(nameKey)}</strong><small>{t(descriptionKey)}</small></span>
+          <span className="permission-level"><span className="permission-tag">{t(levelKey)}</span><span className={`permission-state ${state === 'allowed' ? 'allowed' : state === 'denied' ? 'denied' : 'unknown'}`}>{stateIcon(state)}{t(`settings.cloudflare.permissionStates.${state}`)}</span></span>
         </li>
       })}
     </ol>

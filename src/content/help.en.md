@@ -25,7 +25,18 @@ Domains can only be assigned to enabled plugins that pass the health check. Pref
 
 ### What if the Cloudflare API Token cannot read usage?
 
-Open **Settings → Cloudflare** and use the **Create API Token** link. Grant `Account Settings Read`, `Account Analytics Read`, `Billing Read`, `Zone Read`, `DNS Write` and `Workers Routes Edit`. Select the target account under `Account resources`, the plugin domain's Zone under `Zone resources`, and nothing under `User resources`. The platform verifies the Token, lists visible accounts and reads subscriptions before saving. The Account ID field only selects a target when the Token can see multiple accounts. The settings page reports each permission as verified, missing or not tested.
+Open **Settings → Cloudflare** and use the **Create API Token** link. Fill the three Cloudflare dropdowns for each fixed permission: scope, permission group and level.
+
+| Scope | Permission | Level |
+| --- | --- | --- |
+| Account | Account Settings | Read |
+| Account | Account Analytics | Read |
+| Account | Billing | Read |
+| Zone | Zone | Read |
+| Zone | DNS | Write |
+| Zone | Workers Routes | Edit |
+
+Choose the target account under **Account**, the plugin domain's Zone under **Zone**, and nothing under **User**. The platform verifies the Token, lists visible accounts and reads subscriptions before saving. The Account ID field only selects a target when the Token can see multiple accounts. The settings page reports each permission as verified, missing or not tested.
 
 When you save the plugin domain suffix under **Maintenance, domains & quotas**, the platform uses the stored Token to find the matching Zone, write the wildcard DNS record and create the Worker Route. Existing third-party DNS records or Worker Routes are preserved and reported as conflicts instead of being overwritten.
 
