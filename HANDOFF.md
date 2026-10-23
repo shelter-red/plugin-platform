@@ -2,6 +2,8 @@
 
 > 最后整理：2026-10-23（Asia/Shanghai）
 >
+> 本次恢复记录：U29 的主站 Host 路由修复、回归测试和应急说明已在当前工作区完成；代码提交与最新 Actions 仍待本步验收闭环。在该闭环完成前不得进入 8.5。
+>
 > 当前状态：**Cloudflare API Token、8 项用量监控、Token 直接配置插件域名、原生插件服务器手动构建和 Cloudflare 权限三列文案已完成。权限修正提交为 `3e9f89d`，原生修复提交为 `accfed0`；`accfed0` 的 Actions #84（run `39931270148`）已在 GitHub Actions 页面确认成功。权限面板现在按创建页左、中、右三列展示：账户/区域/用户范围、中文+官方英文权限组、读取/写入/编辑级别；中列不再让用户把 `Account Analytics Read` 误当成一个下拉选项。`3e9f89d` 的本地构建、UI 静态审计和 Cloudflare 设置定向 Playwright 31/31 已通过。新发现 U29：当插件域名后缀覆盖主站（例如后缀为 `shelter.red`、主站为 `platform.shelter.red`）时，主站会被误判为插件域名并返回 `Plugin domain not found`；下一步先修复主站 Host 路由，再进入 8.5。若之后再次修改本 HANDOFF，会生成新的 docs-only commit；恢复时不要用本文代替实时 Git/Actions 查询。**
 >
 > 本文件是上下文压缩后的第一事实源。README、旧方案、旧测试、聊天摘要或历史提交说明与本文冲突时，以用户最新要求、当前代码和本文为准。恢复后先执行第 0 节的核验命令，再按第 8 节顺序继续。
@@ -13,9 +15,9 @@
 ```text
 仓库：/home/tc/work/plugin-platform
 分支：main
-HEAD（最近核验）：3e9f89d fix(cloudflare): 明确权限组三列中文名称
-origin/main（最近核验）：accfed0（权限功能提交与 HANDOFF 待一并推送）
-工作区（最近核验）：仅 HANDOFF 待提交；权限三列修正已完成本地验证
+HEAD（本次核验）：68e56ee docs: 登记主站域名误判路由问题
+origin/main（本次核验）：68e56ee
+工作区（本次核验）：U29 路由修复、回归测试和 README/help/验收说明共 8 个非 HANDOFF 文件待验收提交；本次先提交 HANDOFF 状态记录
 fetch remote：https://github.com/shelter-red/plugin-platform.git
 push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 ```
@@ -23,7 +25,7 @@ push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 最近提交（均已推送）：
 
 ```text
-3e9f89d fix(cloudflare): 明确权限组三列中文名称（待随本 HANDOFF 推送）
+3e9f89d fix(cloudflare): 明确权限组三列中文名称
 a44e427 docs: 记录原生构建完成与权限三列后续
 accfed0 fix(native): 修复 Windows 共享库构建
 e4ae1f1 feat(native): 增加插件服务器手动构建与共享库
@@ -171,8 +173,8 @@ Workers Builds 控制台 Deploy command 核对
 
 1. 执行 0.1 的 Git 核验，不凭记忆判断 HEAD、分支或工作区。
 2. 阅读第 1、2 节，确认用户硬约束，尤其不要恢复任何 Cloudflare OAuth 字段。
-3. 8.2 已完成：16 个非 HANDOFF 路径在 `6e9d0ec`，HANDOFF 记录提交为 `a9e3839`、`02dbb1a`、`b6ad802`，窄屏修复为 `e349e7b`，均已推送；#56、#57、#58、#61 均成功。8.3 窄屏布局子步骤已完成，8.4 原生手动构建已实现；#83 的 Windows 失败已由 `accfed0` 修复，#84 已确认成功。U28 权限三列修正已由 `3e9f89d` 完成，推送后需追踪该提交 Actions。U29 主站 Host 误判已登记，修复前不得进入 8.5。若本次又产生 HANDOFF-only 提交，以实时 Git/Actions 为准。
-4. 之后严格按 U29 修复 → 8.5 → 8.6 → 8.7 → 8.8 执行；8.4 原生手动构建和 U28 权限三列修正已完成。
+3. 8.2 已完成：16 个非 HANDOFF 路径在 `6e9d0ec`，HANDOFF 记录提交为 `a9e3839`、`02dbb1a`、`b6ad802`，窄屏修复为 `e349e7b`，均已推送；#56、#57、#58、#61 均成功。8.3 窄屏布局子步骤已完成，8.4 原生手动构建已实现；#83 的 Windows 失败已由 `accfed0` 修复，#84 已确认成功。U28 权限三列修正已由 `3e9f89d` 完成。U29 的代码和文档已在工作区，先完成本次 HANDOFF-only 记录，再做本地验收、代码提交和新 HEAD 的 Actions 追踪。若本次又产生 HANDOFF-only 提交，以实时 Git/Actions 为准。
+4. 之后严格按 U29 提交/推送闭环 → 8.5 → 8.6 → 8.7 → 8.8 执行；8.4 原生手动构建和 U28 权限三列修正已完成。
 5. 每次更新本文件后单独提交；push 后追踪新 HEAD 的 Actions，不引用旧 run 作为新提交证据。
 6. 每次压缩恢复后都更新本文件，不把“计划”写成“已完成”。
 
@@ -328,7 +330,7 @@ doRequests        100,000
 | U25 | 监控权限怎么配置域名；OAuth/Token 名称不一致；Token 还要选范围 | Token 固定六项权限平铺展示实际状态；说明 Account/Zone/User resources；保存插件域名后缀时自动同步 Zone、DNS 和 Worker Route | ✅ `ca7e54c`：前后端状态探测、平铺 UI、文案、Docker runtime 17/17、`ci:local` 87/87、定向浏览器验收已通过；Actions #71 成功 |
 | U27 | 用量刷新不应被 DNS/Worker Route 缺失阻断；权限列表看不出账户/区域/用户范围 | 用量查询只要求监控权限；资源明细权限失败时保留可读取结果并把明细标为未读取；每项权限标明 Account/Zone resources，并明确 User resources 不使用 | ✅ `3cf3ba1`：Billing/Resource Analytics 缺失降级、账户/区域范围标签、Docker runtime 93/93、`ci:local` 88/88；Actions #79 成功 |
 | U28 | Cloudflare 创建页是范围/权限/级别三个并排选择，现有拼接英文名称搜不到 | 权限列表按左“账户/区域/用户范围”、中“中文权限组（含官方英文）”、右“读取/写入/编辑级别”三列展示；名称与 Cloudflare 官方权限组一致；同步帮助、README、验收和测试 | ✅ `3e9f89d`：本地构建、UI 静态审计、Cloudflare 设置定向 Playwright 31/31 通过；推送后追踪本提交 Actions |
-| U29 | 主站 `platform.shelter.red` 返回 `Plugin domain not found` | 插件后缀匹配不能覆盖已配置的主站 Host；主站继续交给管理端 SPA/API，真正的插件域名才进入公开代理 | 🟡 已定位为 Host 路由优先级问题，待修复和回归测试 |
+| U29 | 主站 `platform.shelter.red` 返回 `Plugin domain not found` | 插件后缀匹配不能覆盖已配置的主站 Host；主站继续交给管理端 SPA/API，真正的插件域名才进入公开代理 | 🟡 路由修复、setup 回归测试和应急 SQL/帮助说明已在工作区；待本地验收、提交、推送和最新 Actions 闭环 |
 
 ## 3. 当前实现清单
 
@@ -739,7 +741,7 @@ fd80fa4  run 39754896119  #11  管理端 UI smoke 失败
 
 ### 8.5 补帮助中心及隐私文档
 
-状态：Cloudflare API Token FAQ、privacy、README/docs 已在工作区同步；**原生二进制/共享库教程仍未写**。
+状态：Cloudflare API Token FAQ、privacy、README/docs 已在工作区同步；**原生二进制/共享库教程仍未写**。U29 的主站误判应急说明已同步到 README/help，但不替代代码修复和生产部署。
 
 剩余：完成第 3.7 节中英文教程，并更新 README、方案、验收矩阵、local-e2e、privacy、`native-server/README.md` 中与原生构建产物相关的部分。
 
