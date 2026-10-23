@@ -178,8 +178,8 @@ Billing Read
 ```
 
 - 这三项只能支持账号发现、Analytics 用量读取和套餐读取；它们不是域名配置权限。当前所谓“公开域名”是平台自身的 Host/D1 路由，不等于通过 Cloudflare DNS API 创建或修改 Zone/DNS 记录。
-- 用户最新反馈要求重新核对域名配置是否真的需要 Cloudflare DNS/Zone 能力。实现前必须查明代码是否存在 DNS/Zone 写入 API；若确实需要，必须补充 Cloudflare 官方可选权限和对应后端能力，不能仅修改权限文案，也不能把写权限混入默认只读 Token。
-- Cloudflare API Token 表单当前只接收 Token 值和可选 Account ID。Token 名称是 Cloudflare 侧元数据，不应继续称为 OAuth 名称；“Token 名称”“Permissions/Scopes”是否需要平台保存/展示，必须以 Cloudflare Token 创建页和当前产品流程核对后决定。不得自行编造权限名。
+- 用户最新反馈要求重新核对域名配置是否真的需要 Cloudflare DNS/Zone 能力。已核对当前代码：没有 Cloudflare DNS/Zone/Worker Route API，域名分配只是平台 D1 中的 Host 路由；三项只读 Token 不能也不会自动配置 DNS。README 中的 DNS/Worker Route 是部署者在 Cloudflare 控制台的一次性手工配置，不是系统设置中的 Token 能力。
+- Cloudflare API Token 创建页还需要 Token 名称和资源范围。Token 名称只是 Cloudflare 侧元数据，平台不需要保存，也不能继续称为 OAuth 名称；设置页必须明确区分 GitHub OAuth App 与 Cloudflare API Token，并说明账号资源范围由创建者在 Cloudflare 侧选择，平台的 Account ID 只用于选择已可见账号。当前只读监控 Token 不需要 Zone 资源范围；不得为未实现的 DNS 自动化自行编造写权限。
 
 - 最终用户可见界面和活跃逻辑不得出现：
 
@@ -304,7 +304,7 @@ doRequests        100,000
 | U22 | Actions 手动构建插件服务器：可执行/库、目标平台 | 仅 `workflow_dispatch`；真正共享库 + artifact + SHA256 | ⬜ 未开始 |
 | U23 | 帮助中心说明二进制/库文件服务器怎么用 | 中英文完整使用说明 | ⬜ 未开始 |
 | U24 | 都整理到磁盘 HANDOFF，避免压缩后忘 | 所有要求、事实、阻塞、步骤、验收可恢复 | ✅ 已更新到 `67efa26` 基线，明确区分完成项、剩余项、禁止事项和实时核验要求 |
-| U25 | 三项只读权限怎么配置域名；OAuth/Token 名称不一致；Token 还要选范围 | 先核对域名是否是平台路由还是 Cloudflare DNS；区分 Token 名称与 OAuth；核对真实 Token 权限/范围模型 | ⬜ 已登记，待代码与 Cloudflare 官方权限模型核对；当前三项只读不能声称支持 DNS/Zone 配置 |
+| U25 | 三项只读权限怎么配置域名；OAuth/Token 名称不一致；Token 还要选范围 | 域名 DNS/Worker Route 是控制台手工配置；设置页明确 Token 名称、三项读取权限和账号资源范围的边界，区分 GitHub OAuth | 🟡 已核对代码边界并登记实现；页面/帮助文档待补充，当前三项只读不能声称支持 DNS/Zone 配置 |
 
 ## 3. 当前实现清单
 
