@@ -2,7 +2,7 @@
 
 > 最后整理：2026-10-23（Asia/Shanghai）
 >
-> 当前状态：**Cloudflare API Token、8 项用量监控、Token 直接配置插件域名的后端/前端实现已完成。本轮实现提交为 `ca7e54c`，界面审计修复提交为 `114acee`，状态记录提交为 `a07193e`；前两项提交已完成本地验证，推送后的 Actions 尚待核验。Cloudflare 权限面板六项权限平铺展示，逐项显示“已验证/缺少/未检测”，不再显示监控组或域名组；Account resources、Zone resources、User resources 的用途在列表下直接说明。403 会按账号列表、订阅、Zone、DNS、Worker Route 操作指出对应权限。保存插件域名后缀时，Worker 使用已保存 Token 查找 active Zone、维护 Plugmesh 通配 DNS 记录并创建/更新 `plugmesh-worker` Route；缺 Token、Zone 不匹配、已有第三方记录或 Route 冲突均返回真实 HTTP 错误，不静默保存。`ci:local` 88/88、Docker runtime 权限定向 17/17、设置页 Axe 2/2、构建和类型检查均已通过。8.3 界面、重复入口与中英文文案审计已完成，下一步进入 8.4 原生手动构建 workflow。若之后再次修改本 HANDOFF，会生成新的 docs-only commit；恢复时不要用本文代替实时 Git/Actions 查询。**
+> 当前状态：**Cloudflare API Token、8 项用量监控、Token 直接配置插件域名的后端/前端实现已完成。本轮实现提交为 `ca7e54c`，界面审计修复提交为 `114acee`，状态记录提交为 `5504b62`；Actions #75（run `39904507031`）已成功。Cloudflare 权限面板六项权限平铺展示，逐项显示“已验证/缺少/未检测”，不再显示监控组或域名组；Account resources、Zone resources、User resources 的用途在列表下直接说明。403 会按账号列表、订阅、Zone、DNS、Worker Route 操作指出对应权限。保存插件域名后缀时，Worker 使用已保存 Token 查找 active Zone、维护 Plugmesh 通配 DNS 记录并创建/更新 `plugmesh-worker` Route；缺 Token、Zone 不匹配、已有第三方记录或 Route 冲突均返回真实 HTTP 错误，不静默保存。`ci:local` 88/88、Docker runtime 权限定向 17/17、设置页 Axe 2/2、构建和类型检查均已通过。8.3 界面、重复入口与中英文文案审计已完成；本次继续清理残留的“在 Cloudflare 创建页还要设置”和手动 DNS/Worker Route 提示，下一步进入 8.4 原生手动构建 workflow。若之后再次修改本 HANDOFF，会生成新的 docs-only commit；恢复时不要用本文代替实时 Git/Actions 查询。**
 >
 > 本文件是上下文压缩后的第一事实源。README、旧方案、旧测试、聊天摘要或历史提交说明与本文冲突时，以用户最新要求、当前代码和本文为准。恢复后先执行第 0 节的核验命令，再按第 8 节顺序继续。
 
@@ -13,9 +13,9 @@
 ```text
 仓库：/home/tc/work/plugin-platform
 分支：main
-HEAD（最近核验）：114acee fix(ui): 清理重复入口和空态卡片
-origin/main（最近核验）：a07193e（代码提交待推送）
-工作区（最近核验）：有本步骤 HANDOFF 更新待提交；后续若再次整理 HANDOFF，以实时 Git 为准
+HEAD（最近核验）：5504b62 docs: 记录界面重复入口修复验收
+origin/main（最近核验）：5504b62
+工作区（最近核验）：干净；本次文案清理登记待提交
 fetch remote：https://github.com/shelter-red/plugin-platform.git
 push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 ```
@@ -23,8 +23,9 @@ push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 最近提交（均已推送）：
 
 ```text
-a07193e docs: 更新权限验收状态  ← 当前已推送基线，Actions #72 成功
-114acee fix(ui): 清理重复入口和空态卡片  ← 本地 `ci:local` 88/88 通过，待推送核验
+a07193e docs: 更新权限验收状态
+114acee fix(ui): 清理重复入口和空态卡片
+5504b62 docs: 记录界面重复入口修复验收  ← Actions #75（run `39904507031`）成功
 ca7e54c fix(cloudflare): 显示 Token 权限实际状态  ← Actions #71 成功
 ce8ca1d docs: 固化最终权限验收基线
 269befa docs: 更新权限诊断验收状态
@@ -311,7 +312,8 @@ doRequests        100,000
 | U18 | 平台和监控分开；平台请求不限 | 平台只统计；Cloudflare 官方额度独立 | 🟡 分组、“不限”和定向回归已实现；最终多视口视觉验收未完成 |
 | U19 | GitHub OAuth 没过期，CF 为什么过期；改 Token | 不再暗示 OAuth 过期；界面/链接/错误全部 Token 化 | ✅ 后端/API/面板/README/docs/help/deploy 提示已 Token 化，随 `6e9d0ec` 推送并通过 #56 |
 | U20 | CF 免费额度为何在系统设置手填，应从 CF 读取 | 删除手填；读 subscriptions；未确认 Free 显示未读取 | ✅ 维护/用量 UI 与文档已改；真实 subscriptions 响应仍未联调 |
-| U21 | 文案诡异、莫名卡片、同页多个按钮跳同页 | 中英文审计；清重复说明/空卡片/重复跳转 | 🟡 `114acee` 已完成列表页空卡片、重复入口和英文 Cloudflare 文案清理；本地 `ci:local` 88/88 通过，待推送 Actions 核验 |
+| U21 | 文案诡异、莫名卡片、同页多个按钮跳同页 | 中英文审计；清重复说明/空卡片/重复跳转 | ✅ `114acee` 已完成列表页空卡片、重复入口和中英文 Cloudflare 文案清理；Actions #75（run `39904507031`）成功 |
+| U26 | “在 Cloudflare 创建页还要设置”及手动 DNS/Worker Route 提示没有必要且与 Token 自动配置冲突 | 删除旧的创建页说明和部署脚本中的手动 DNS/Worker Route 指示；保留必要的六项权限与 Account/Zone/User resources 说明；增加无误导提示的回归断言 | 🟡 已登记，待实现与 Actions 验证 |
 | U22 | Actions 手动构建插件服务器：可执行/库、目标平台 | 仅 `workflow_dispatch`；真正共享库 + artifact + SHA256 | ⬜ 未开始 |
 | U23 | 帮助中心说明二进制/库文件服务器怎么用 | 中英文完整使用说明 | ⬜ 未开始 |
 | U24 | 都整理到磁盘 HANDOFF，避免压缩后忘 | 所有要求、事实、阻塞、步骤、验收可恢复 | ✅ 已更新到 `9d2f38d` 基线，明确区分完成项、剩余项、禁止事项和实时核验要求 |
