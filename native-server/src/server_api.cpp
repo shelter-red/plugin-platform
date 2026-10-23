@@ -4,7 +4,6 @@
 #include "plugmesh/plugin_manager.h"
 #include "plugmesh/server_config.h"
 
-#include <algorithm>
 #include <cstring>
 #include <memory>
 #include <mutex>
@@ -17,7 +16,7 @@ namespace {
 
 void copy_error(char* buffer, const size_t capacity, const std::string& message) {
   if (!buffer || capacity == 0) return;
-  const auto length = std::min(capacity - 1, message.size());
+  const auto length = capacity - 1 < message.size() ? capacity - 1 : message.size();
   std::memcpy(buffer, message.data(), length);
   buffer[length] = '\0';
 }
