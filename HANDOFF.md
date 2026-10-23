@@ -38,6 +38,8 @@
 >
 > `8ad8704` 已推送；平台验收 #98（run `39957698043`）对应 HEAD 且 `completed/success`，`changes`/`web` 成功，三个 native job skipped。U16 真实数据审计已完成：1440/1024 视口下默认工作区切换器为 `46.34px`，两行文案上下各留 `8px`，图标与文案中心一致；带图标按钮和导航项的垂直中心差均为 `0px`，没有发现需要凭猜测修改的样式问题。下一步只增加对应 Playwright 回归断言，不改变现有视觉规则。
 >
+> U16 回归断言已加入 `tests/console-worker.spec.ts`：真实默认工作区下检查切换器最小高度、文字上下边界、头像/文字中心线，以及可见 AntD 图标按钮和导航项中心线。单项验证通过；完整 `npm run ci:local` 通过（UI smoke 89/89），`npm run deploy:worker:test` 通过（10/10）。下一步提交、推送并追踪最新 Actions。
+>
 > 当前状态：**Cloudflare API Token、8 项用量监控、Token 直接配置插件域名、原生插件服务器手动构建和 Cloudflare 权限三列文案已完成。权限修正提交为 `3e9f89d`，原生修复提交为 `accfed0`；`accfed0` 的 Actions #84（run `39931270148`）已在 GitHub Actions 页面确认成功。权限面板现在按创建页左、中、右三列展示：账户/区域/用户范围、中文+官方英文权限组、读取/写入/编辑级别；中列不再让用户把 `Account Analytics Read` 误当成一个下拉选项。`3e9f89d` 的本地构建、UI 静态审计和 Cloudflare 设置定向 Playwright 31/31 已通过。新发现 U29：当插件域名后缀覆盖主站（例如后缀为 `shelter.red`、主站为 `platform.shelter.red`）时，主站会被误判为插件域名并返回 `Plugin domain not found`；下一步先修复主站 Host 路由，再进入 8.5。若之后再次修改本 HANDOFF，会生成新的 docs-only commit；恢复时不要用本文代替实时 Git/Actions 查询。**
 >
 > 状态修订：上方状态段中的 U29“下一步先修复”是修复前历史措辞；当前以 `0695e77`、Actions #87 和本文件后续记录为准，U29 已完成，下一步进入 8.5。
@@ -53,7 +55,7 @@
 分支：main
 HEAD（本次核验）：8ad8704 记录最新 Actions 并登记视觉审计
 origin/main（本次核验）：8ad8704
-工作区（本次核验）：U29、8.5、发布 workflow 修复、8.6 核对和 U16 视觉测量已记录；平台验收 #93/#94/#95/#96/#97/#98 均成功；下一步增加 U16 的布局回归断言
+工作区（本次核验）：U29、8.5、发布 workflow 修复、8.6 核对和 U16 视觉测量已记录；新增 U16 回归断言尚未提交；平台验收 #93/#94/#95/#96/#97/#98/#99 均成功；下一步提交并追踪该测试变更
 fetch remote：https://github.com/shelter-red/plugin-platform.git
 push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 ```
@@ -353,7 +355,7 @@ doRequests        100,000
 | U13 | 未配置为何还能查 `/api/usage/local?range=7d` 且返回 200 | 区分 Cloudflare 与本地统计；未配置不读缓存/不发请求 | ✅ 路由与测试已覆盖 |
 | U14 | response_type 放错位置；CF OAuth 没有 PKCE | 最终 Token 方案中这些字段全部消失 | ✅ 当前 Token UI/文档不出现这些字段；测试只把它们作为“必须不存在”的负断言 |
 | U15 | `1e4fd10`、`fd80fa4` Actions 失败 | 失败修复、本地 CI、push、Actions、产物闭环 | ✅ 当前最终基线 `e349e7b` #61 成功；每次新提交仍须重新追踪 |
-| U16 | 图标没对齐；“默认工作区”很矮挡字 | 统一高度/gap/行高/居中；双主题多视口检查 | 🟡 真实数据下 1440/1024 测量无偏差；下一步补 Playwright 回归断言，仍需最终双主题截图验收 |
+| U16 | 图标没对齐；“默认工作区”很矮挡字 | 统一高度/gap/行高/居中；双主题多视口检查 | 🟡 真实数据下 1440/1024 测量无偏差；Playwright 回归断言和 89/89 CI 已通过，仍需最终双主题截图验收 |
 | U17 | 额度少，D1 写入等都要监控且显示百分比 | 8 项 used/limit/percentage | ✅ 前后端已实现 8 项，含次数、上限、百分比；专项回归已通过 |
 | U18 | 平台和监控分开；平台请求不限 | 平台只统计；Cloudflare 官方额度独立 | 🟡 分组、“不限”和定向回归已实现；最终多视口视觉验收未完成 |
 | U19 | GitHub OAuth 没过期，CF 为什么过期；改 Token | 不再暗示 OAuth 过期；界面/链接/错误全部 Token 化 | ✅ 后端/API/面板/README/docs/help/deploy 提示已 Token 化，随 `6e9d0ec` 推送并通过 #56 |
@@ -905,3 +907,4 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - 2026-10-23：`f337401`（`记录 Workers Builds 配置核对结果`）已推送；Actions #96（run `39955443195`）对应 HEAD 且 `completed/success`，`changes`/`web` 成功，三个 native job skipped。8.6 记录闭环，但生产控制台 Deploy command 仍待直接确认。
 - 2026-10-23：`8093797`（`记录 Workers Builds Actions 验收`）已推送；Actions #97（run `39956325137`）对应 HEAD 且 `completed/success`，`changes`/`web` 成功，三个 native job skipped。当前开始 U16 视觉审计，先取真实数据/双主题/桌面与窄屏证据，再决定是否修改组件或样式。
 - 2026-10-23：`8ad8704`（`记录最新 Actions 并登记视觉审计`）已推送；Actions #98（run `39957698043`）对应 HEAD 且 `completed/success`，`changes`/`web` 成功，三个 native job skipped。U16 测量确认默认工作区和图标中心线正常，下一步增加布局回归断言，不凭猜测改样式。
+- 2026-10-23：U16 回归断言已加入 `tests/console-worker.spec.ts`；单项和完整本地验收通过，`npm run ci:local` 为 89/89 UI smoke，`npm run deploy:worker:test` 为 10/10。测试改动待提交、推送和 Actions 验证。

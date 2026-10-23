@@ -347,6 +347,53 @@ test('管理端显示 Worker 实时数据并在刷新后提示', async ({ page }
   await expect(page.locator('.ant-notification-notice').filter({ hasText: '平台数据已刷新' })).toBeVisible()
 })
 
+test('默认工作区与带图标控件保持对齐且不遮挡文字', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await mockWorker(page)
+  await page.goto('/')
+
+  await expect(page.locator('.workspace-switcher')).toContainText('默认工作区')
+  const layout = await page.evaluate(() => {
+    const center = (box: DOMRect) => box.top + box.height / 2
+    const workspace = document.querySelector<HTMLElement>('.workspace-switcher')
+    const copy = workspace?.querySelector<HTMLElement>('.workspace-copy')
+    const icon = workspace?.querySelector<HTMLElement>('.workspace-icon')
+    const workspaceBox = workspace?.getBoundingClientRect()
+    const copyBox = copy?.getBoundingClientRect()
+    const iconBox = icon?.getBoundingClientRect()
+    const buttonDeltas = [...document.querySelectorAll<HTMLElement>('button.ant-btn')]
+      .filter((button) => button.getBoundingClientRect().height > 0)
+      .map((button) => {
+        const buttonIcon = button.querySelector<HTMLElement>('.ant-btn-icon')
+        if (!buttonIcon) return null
+        return Math.abs(center(buttonIcon.getBoundingClientRect()) - center(button.getBoundingClientRect()))
+      })
+      .filter((delta): delta is number => delta !== null)
+    const navDeltas = [...document.querySelectorAll<HTMLElement>('.nav-menu .ant-menu-item')]
+      .map((item) => {
+        const itemIcon = item.querySelector<HTMLElement>('.ant-menu-item-icon')
+        if (!itemIcon) return null
+        return Math.abs(center(itemIcon.getBoundingClientRect()) - center(item.getBoundingClientRect()))
+      })
+      .filter((delta): delta is number => delta !== null)
+    return {
+      workspaceHeight: workspaceBox?.height ?? 0,
+      copyTopGap: (copyBox?.top ?? 0) - (workspaceBox?.top ?? 0),
+      copyBottomGap: (workspaceBox?.bottom ?? 0) - (copyBox?.bottom ?? 0),
+      workspaceCenterDelta: Math.abs(center(iconBox!) - center(copyBox!)),
+      maxButtonDelta: Math.max(...buttonDeltas),
+      maxNavDelta: Math.max(...navDeltas),
+    }
+  })
+
+  expect(layout.workspaceHeight).toBeGreaterThanOrEqual(44)
+  expect(layout.copyTopGap).toBeGreaterThan(0)
+  expect(layout.copyBottomGap).toBeGreaterThan(0)
+  expect(layout.workspaceCenterDelta).toBeLessThan(1)
+  expect(layout.maxButtonDelta).toBeLessThan(1)
+  expect(layout.maxNavDelta).toBeLessThan(1)
+})
+
 test('管理端在后台保存 OAuth 配置且不回显密钥', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 })
   const worker = await mockWorker(page)
