@@ -28,6 +28,8 @@
 >
 > `364adf2` 已推送；平台验收 #93（run `39952311223`）对应该 HEAD，`changes`/`web` 成功，三个 native job 按路径过滤跳过；该 HEAD 没有启动 `release.yml`。发布 workflow 的非 tag 失败已闭环，下一步先提交本条 HANDOFF 记录并追踪其 docs-only Actions，再进入 8.6 核对 Workers Builds 的 Deploy command。
 >
+> `6143d1b` 已推送；HANDOFF 记录对应平台验收 #94（run `39953118213`）且 `completed/success`，`changes`/`web` 成功，三个 native job skipped。发布 workflow 阶段已完成；下一步进入 8.6，核对 Cloudflare Workers Builds 的 Deploy command 是否为 `npm run deploy`，并把结果记录在本文件后再继续。
+>
 > 当前状态：**Cloudflare API Token、8 项用量监控、Token 直接配置插件域名、原生插件服务器手动构建和 Cloudflare 权限三列文案已完成。权限修正提交为 `3e9f89d`，原生修复提交为 `accfed0`；`accfed0` 的 Actions #84（run `39931270148`）已在 GitHub Actions 页面确认成功。权限面板现在按创建页左、中、右三列展示：账户/区域/用户范围、中文+官方英文权限组、读取/写入/编辑级别；中列不再让用户把 `Account Analytics Read` 误当成一个下拉选项。`3e9f89d` 的本地构建、UI 静态审计和 Cloudflare 设置定向 Playwright 31/31 已通过。新发现 U29：当插件域名后缀覆盖主站（例如后缀为 `shelter.red`、主站为 `platform.shelter.red`）时，主站会被误判为插件域名并返回 `Plugin domain not found`；下一步先修复主站 Host 路由，再进入 8.5。若之后再次修改本 HANDOFF，会生成新的 docs-only commit；恢复时不要用本文代替实时 Git/Actions 查询。**
 >
 > 状态修订：上方状态段中的 U29“下一步先修复”是修复前历史措辞；当前以 `0695e77`、Actions #87 和本文件后续记录为准，U29 已完成，下一步进入 8.5。
@@ -41,9 +43,9 @@
 ```text
 仓库：/home/tc/work/plugin-platform
 分支：main
-HEAD（本次核验）：364adf2 修复发布 workflow 的非 tag 手动触发
-origin/main（本次核验）：364adf2
-工作区（本次核验）：U29、8.5 和发布 workflow 修复已完成；平台验收 #93（run `39952311223`）成功；当前仅待提交本条 Actions 结果记录
+HEAD（本次核验）：6143d1b 记录发布 workflow Actions 成功
+origin/main（本次核验）：6143d1b
+工作区（本次核验）：U29、8.5 和发布 workflow 修复已完成；平台验收 #93/#94（run `39952311223`/`39953118213`）成功；下一步为 8.6 Workers Builds 配置核对
 fetch remote：https://github.com/shelter-red/plugin-platform.git
 push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 ```
@@ -333,7 +335,7 @@ doRequests        100,000
 | U03 | “推送时注意 Actions，老是错误” | 本地完整 CI + push 后追踪到成功 | ✅ `e349e7b` 的代码提交 Actions #61 成功；后续新提交仍须重新追踪 |
 | U04 | 为什么错误状态靠 `/?auth_error=` | 真实 HTTP + JSON，留在当前页 | ✅ Cloudflare 当前页 HTTP 错误与 GitHub 错误页均有测试；旧 `auth_error` 文案已清理 |
 | U05 | setup 失效为什么单独返回 `Setup is not available` | 返回 null 后走普通非路由行为 | ✅ 已实现并有测试 |
-| U06 | `D1_ERROR: no such table: workspaces` | 先应用全部 migrations 再部署 | 🟡 deploy 脚本已实现并测试；Workers Builds 控制台配置待核对 |
+| U06 | `D1_ERROR: no such table: workspaces` | 先应用全部 migrations 再部署 | 🟡 deploy 脚本已实现并测试；下一步核对 Workers Builds 控制台的 Deploy command |
 | U07 | `invalid_scope` / `workers-platform.read` | 删除错误 OAuth scope，改 API Token，固定真实权限 | 🟡 前后端和文档已 Token 化并有 mock/runtime/UI 证据；真实 Cloudflare API 未联调 |
 | U08 | 授权失败为什么跳首页 | 错误留系统设置页，显示 HTTP/status/code/message | ✅ Token 表单保留 HTTP 错误并在 `/settings` 显示，runtime/UI 已覆盖 |
 | U09 | 用户不知道 Token 给什么权限，取消后权限就没了 | 权限固定展示；创建 Token 直达链接 | ✅ 六项权限固定展示、创建 Token 直达链接、UI 与文档均已同步 |
@@ -888,3 +890,4 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - 2026-10-23：8.5 实现提交为 `fcc2568` 并已推送，平台验收 #91（run `39948749104`）待完成。另核对发布原生端 #1（run `39946244958`）：事件为 `workflow_dispatch`、HEAD `fcc77e2`，三平台构建成功，发布 job 在上传 GitHub Release 失败；这是无 tag 手动发布入口的 workflow 配置问题，待删除该入口并重新验收。
 - 2026-10-23：发布 workflow 修复已完成本地验收：删除 `release.yml` 的 `workflow_dispatch`，保留 `v*` tag 发布；`npm run ci:local` 的 UI smoke 88/88、`npm run deploy:worker:test` 10/10、workflow trigger 静态审计和 `git diff --check` 全部通过。待提交、推送并追踪最新 HEAD 的 Actions。
 - 2026-10-23：`364adf2`（`修复发布 workflow 的非 tag 手动触发`）已推送；Actions #93（run `39952311223`）对应 HEAD 且 `completed/success`，`changes`/`web` 成功，三个 native job skipped；该 HEAD 未触发 `release.yml`。发布 workflow 问题闭环，下一步为 8.6 核对 Workers Builds 的 Deploy command。
+- 2026-10-23：`6143d1b`（`记录发布 workflow Actions 成功`）已推送；Actions #94（run `39953118213`）对应 HEAD 且 `completed/success`，`changes`/`web` 成功，三个 native job skipped。发布 workflow 阶段完成，开始 8.6：核对 Workers Builds 的 Deploy command 是否为 `npm run deploy`。
