@@ -195,9 +195,14 @@ function requestError(stage: CloudflareRequestStage, response: Response, payload
   const detail = envelopeErrors(payload) ?? `Cloudflare ${stage} 请求失败（HTTP ${response.status}）`
   if (response.status === 401) return invalidTokenError(detail)
   if (response.status === 403) {
-    const permissionHint = stage === 'zones' || stage === 'dns' || stage === 'routes'
-      ? 'Cloudflare API Token 缺少域名配置权限（Zone Read、DNS Write 或 Workers Routes Edit）'
-      : 'Cloudflare API Token 缺少账号读取权限（Account Settings Read、Account Analytics Read 或 Billing Read）'
+    const permissionHint = {
+      accounts: '缺少 Account Settings Read：无法读取 Cloudflare 账号列表',
+      subscriptions: '缺少 Billing Read：无法读取 Cloudflare 订阅和套餐',
+      zones: '缺少 Zone Read：无法读取插件域名对应的 Cloudflare Zone',
+      dns: '缺少 DNS Write：无法读取或写入插件域名的 DNS 记录',
+      routes: '缺少 Workers Routes Edit：无法读取或修改 Worker Route',
+      verify: 'Token 验证接口拒绝了请求，请确认 Token 有效',
+    }[stage]
     return permissionDeniedError(`${permissionHint}：${detail}`)
   }
   if (stage === 'subscriptions' && response.status === 404) {

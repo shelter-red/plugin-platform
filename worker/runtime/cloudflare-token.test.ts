@@ -118,7 +118,11 @@ test('无效 Token、权限不足和上游失败使用稳定错误码', async ()
 
   await expect(listCloudflareAccounts(TOKEN, jsonFetcher({
     '/client/v4/accounts?page=1&per_page=50': () => Response.json({ success: false, errors: [{ message: 'Authentication error' }] }, { status: 403 }),
-  }))).rejects.toMatchObject({ status: 403, code: 'token_permission_denied' })
+  }))).rejects.toMatchObject({ status: 403, code: 'token_permission_denied', message: expect.stringContaining('Account Settings Read') })
+
+  await expect(readCloudflareSubscriptions(TOKEN, ACCOUNT_A, jsonFetcher({
+    [`/client/v4/accounts/${ACCOUNT_A}/subscriptions`]: () => Response.json({ success: false, errors: [{ message: 'Billing denied' }] }, { status: 403 }),
+  }))).rejects.toMatchObject({ status: 403, code: 'token_permission_denied', message: expect.stringContaining('Billing Read') })
 
   await expect(readCloudflareSubscriptions(TOKEN, ACCOUNT_A, jsonFetcher({
     [`/client/v4/accounts/${ACCOUNT_A}/subscriptions`]: () => new Response('upstream down', { status: 503 }),

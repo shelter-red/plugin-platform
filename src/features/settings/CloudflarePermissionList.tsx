@@ -25,26 +25,45 @@ const DESCRIPTION_KEYS: Record<(typeof CLOUDFLARE_API_TOKEN_PERMISSIONS)[number]
   'Workers Routes Edit': 'settings.cloudflare.permissions.routes',
 }
 
-/** Token 权限由产品固定，只展示六项；不提供增删、取消或自定义范围输入。 */
-export function CloudflarePermissionList({ permissions }: { permissions?: string[] }) {
+const MODE_KEYS: Record<(typeof CLOUDFLARE_API_TOKEN_PERMISSIONS)[number], string> = {
+  'Account Settings Read': 'settings.cloudflare.permissionModes.readOnly',
+  'Account Analytics Read': 'settings.cloudflare.permissionModes.readOnly',
+  'Billing Read': 'settings.cloudflare.permissionModes.readOnly',
+  'Zone Read': 'settings.cloudflare.permissionModes.readOnly',
+  'DNS Write': 'settings.cloudflare.permissionModes.write',
+  'Workers Routes Edit': 'settings.cloudflare.permissionModes.edit',
+}
+
+function PermissionGroup({ title, names }: { title: string; names: readonly (typeof CLOUDFLARE_API_TOKEN_PERMISSIONS)[number][] }) {
   const { t } = useTranslation()
-  const returned = new Set(permissions ?? [])
+  return <section className="permission-group">
+    <div className="permission-group-heading">
+      <strong>{title}</strong>
+      <span className="permission-tag">{t('settings.cloudflare.permissionRequired')}</span>
+    </div>
+    <ol className="scope-list">
+      {names.map((name) => <li key={name}>
+        <Check size={14} aria-hidden="true" />
+        <div>
+          <div className="permission-name"><strong>{name}</strong><span className="permission-tag">{t(MODE_KEYS[name])}</span></div>
+          <span>{t(DESCRIPTION_KEYS[name])}</span>
+        </div>
+      </li>)}
+    </ol>
+  </section>
+}
+
+/** Token 权限由产品固定，只展示用途和操作类型；不提供增删、取消或自定义范围输入。 */
+export function CloudflarePermissionList() {
+  const { t } = useTranslation()
   return <div className="scope-permissions" id="settings-cloudflare-permissions" data-testid="cloudflare-permissions">
     <div className="scope-permissions-head">
       <span className="field-label">{t('settings.cloudflare.permissionsTitle')}</span>
       <StatusBadge tone="neutral">{t('settings.cloudflare.permissionsFixed')}</StatusBadge>
     </div>
     <p className="field-hint">{t('settings.cloudflare.permissionsHint')}</p>
-    <ol className="scope-list">
-      {CLOUDFLARE_API_TOKEN_PERMISSIONS.map((name) => <li key={name}>
-        <Check size={14} aria-hidden="true" />
-        <div>
-          <strong>{name}</strong>
-          <span>{t(DESCRIPTION_KEYS[name])}</span>
-          {permissions !== undefined && !returned.has(name) && <span className="field-warning">{t('settings.cloudflare.permissionMissing')}</span>}
-        </div>
-      </li>)}
-    </ol>
+    <PermissionGroup title={t('settings.cloudflare.monitorPermissionsTitle')} names={CLOUDFLARE_MONITOR_PERMISSIONS} />
+    <PermissionGroup title={t('settings.cloudflare.domainPermissionsTitle')} names={CLOUDFLARE_DOMAIN_PERMISSIONS} />
     <p className="field-hint">{t('settings.cloudflare.permissionsApply')}</p>
   </div>
 }

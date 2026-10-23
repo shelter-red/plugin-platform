@@ -733,12 +733,43 @@ h1 {
   justify-content: space-between;
   gap: 10px;
 }
+.permission-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 1px 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  color: var(--text);
+  background: var(--surface-solid);
+  font-size: 10px;
+  line-height: 1.4;
+}
 .scope-list {
   list-style: none;
   margin: 10px 0;
   padding: 0;
   display: grid;
   gap: 10px;
+}
+.permission-group + .permission-group {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.permission-group-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text);
+  font-size: 11px;
+}
+.permission-name {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 .scope-list li {
   display: flex;

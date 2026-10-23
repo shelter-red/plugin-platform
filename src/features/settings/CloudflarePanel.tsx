@@ -53,7 +53,7 @@ export function CloudflarePanel({ settings, onSettingsChange, apiLive, onAction 
       onSave={() => void form.saveToken()}
       onRevoke={() => void form.revokeToken()}
     />
-    <CloudflarePermissionList permissions={settings?.permissions} />
+    <CloudflarePermissionList />
     <CloudflareTokenScopeGuide />
   </Panel>
 }
