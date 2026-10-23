@@ -14,6 +14,8 @@
 >
 > `22c2f4f` 已推送，Actions #88（run `39941454181`）及其 `changes`/`web` jobs 均 `completed/success`，native jobs 按路径过滤为 skipped；U29 已闭环，下一步进入 8.5。该记录提交会触发新的 docs-only Actions，仍需追踪其结果。
 >
+> Actions #89（run `39942031490`）已完成成功，`changes`/`web` 成功，三个 native job 按路径过滤跳过。8.5 已开始：补齐中英文帮助中心的可执行文件/共享库使用教程，并同步 README、方案、验收矩阵、local-e2e、privacy 和 native README；不改变路由、API 或权限契约。
+>
 > 当前状态：**Cloudflare API Token、8 项用量监控、Token 直接配置插件域名、原生插件服务器手动构建和 Cloudflare 权限三列文案已完成。权限修正提交为 `3e9f89d`，原生修复提交为 `accfed0`；`accfed0` 的 Actions #84（run `39931270148`）已在 GitHub Actions 页面确认成功。权限面板现在按创建页左、中、右三列展示：账户/区域/用户范围、中文+官方英文权限组、读取/写入/编辑级别；中列不再让用户把 `Account Analytics Read` 误当成一个下拉选项。`3e9f89d` 的本地构建、UI 静态审计和 Cloudflare 设置定向 Playwright 31/31 已通过。新发现 U29：当插件域名后缀覆盖主站（例如后缀为 `shelter.red`、主站为 `platform.shelter.red`）时，主站会被误判为插件域名并返回 `Plugin domain not found`；下一步先修复主站 Host 路由，再进入 8.5。若之后再次修改本 HANDOFF，会生成新的 docs-only commit；恢复时不要用本文代替实时 Git/Actions 查询。**
 >
 > 状态修订：上方状态段中的 U29“下一步先修复”是修复前历史措辞；当前以 `0695e77`、Actions #87 和本文件后续记录为准，U29 已完成，下一步进入 8.5。
@@ -27,9 +29,9 @@
 ```text
 仓库：/home/tc/work/plugin-platform
 分支：main
-HEAD（本次核验）：22c2f4f docs: 记录主站修复 Actions 成功
-origin/main（本次核验）：22c2f4f
-工作区（本次核验）：U29 已完成；本次仅更新 HANDOFF 记录 Actions #88，提交后仍需追踪新 docs-only HEAD
+HEAD（本次核验）：330baf4 docs: 收口主站修复并进入插件教程
+origin/main（本次核验）：330baf4
+工作区（本次核验）：U29 已完成；Actions #89 成功；本次仅将 8.5 开始记录写入 HANDOFF，随后再编辑教程文件
 fetch remote：https://github.com/shelter-red/plugin-platform.git
 push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 ```
@@ -753,7 +755,7 @@ fd80fa4  run 39754896119  #11  管理端 UI smoke 失败
 
 ### 8.5 补帮助中心及隐私文档
 
-状态：Cloudflare API Token FAQ、privacy、README/docs 已在工作区同步；**原生二进制/共享库教程仍未写**。U29 的主站误判应急说明已同步到 README/help，但不替代代码修复和生产部署。
+状态：Cloudflare API Token FAQ、privacy、README/docs 已在工作区同步；**原生二进制/共享库教程正在 8.5 实施**。U29 的主站误判应急说明已同步到 README/help，但不替代代码修复和生产部署。
 
 剩余：完成第 3.7 节中英文教程，并更新 README、方案、验收矩阵、local-e2e、privacy、`native-server/README.md` 中与原生构建产物相关的部分。
 
@@ -868,3 +870,4 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - 2026-10-23：`0695e77` 推送前验证完成：`npm run ci:local` 的 UI smoke 88/88、UI 约定/样式审计、构建和 Worker smoke 全部通过；`npm run deploy:worker:test` 10/10，`git diff --check` 通过，工作区干净。下一步为推送并追踪最新 Actions。
 - 2026-10-23：`1636916` 已推送；Actions #87（run `39940433238`）对应 HEAD 且 `completed/success`。jobs：`changes`、`web` 成功，`macos-native`、`linux-native`、`windows-native` 按路径过滤 skipped。当前只剩提交本记录并追踪新的 docs-only HEAD。
 - 2026-10-23：`22c2f4f` 已推送；Actions #88（run `39941454181`）对应 HEAD 且 `completed/success`。jobs：`changes`、`web` 成功，`linux-native`、`macos-native`、`windows-native` 按路径过滤 skipped。U29 代码与文档闭环完成，下一步进入 8.5；本次 HANDOFF 更新仍需追踪其新 Actions。
+- 2026-10-23：Actions #89（run `39942031490`）对应 `330baf4` 且 `completed/success`；`changes`/`web` 成功，三个 native job skipped。8.5 已登记并开始，目标文件为中英文帮助中心、README、方案、验收矩阵、local-e2e、privacy 和 `native-server/README.md`，先写文档再做对应文档审计与本地验证。
