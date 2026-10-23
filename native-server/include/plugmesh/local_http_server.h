@@ -29,6 +29,7 @@ class LocalHttpServer {
 
   bool run(std::string& error);
   void stop();
+  bool has_active_requests() const;
 
  private:
   void handle_http(void* handle);
@@ -53,6 +54,7 @@ class LocalHttpServer {
   std::deque<std::chrono::steady_clock::time_point> failed_logins_;
   std::atomic<bool> stopping_{false};
   std::atomic<void*> server_{nullptr};
+  std::atomic<std::size_t> active_requests_{0};
 };
 
 }  // namespace plugmesh

@@ -58,7 +58,7 @@ WHERE key = 'platform';
 
 ### 使用二进制插件服务器
 
-从 GitHub Actions 的「手动构建插件服务器」下载与你的系统和产物类型匹配的 artifact。`executable` 是可直接启动的 `plugmesh-server`；`shared` 是供其他程序嵌入的共享库，不是独立可执行文件。下载后先校验 `SHA256SUMS`：Linux 使用 `sha256sum -c SHA256SUMS`，macOS 使用 `shasum -a 256 -c SHA256SUMS`，Windows PowerShell 用 `Get-FileHash` 对照文件中的 SHA-256。不要混用不同操作系统构建出的插件库或服务器。
+从 GitHub Actions 的「手动构建插件服务器」下载与你的系统和产物类型匹配的 artifact。`executable` 是可直接启动的 `plugmesh-server`；`shared` 是供其他程序嵌入的共享库，不是独立可执行文件。Linux artifact 已包含 `libssl.so.3` 和 `libcrypto.so.3`，Windows artifact 已包含 OpenSSL DLL；macOS 从源码构建时需要 `brew install openssl@3`。下载后先校验 `SHA256SUMS`：Linux 使用 `sha256sum -c SHA256SUMS`，macOS 使用 `shasum -a 256 -c SHA256SUMS`，Windows PowerShell 用 `Get-FileHash` 对照文件中的 SHA-256。不要混用不同操作系统构建出的插件库或服务器。
 
 插件目录必须按“一个插件一个子目录”组织，每个子目录至少包含 `manifest.json` 和与当前平台匹配的动态库，例如 Linux：
 

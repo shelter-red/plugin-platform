@@ -85,7 +85,7 @@ Linux 和 macOS 产物需要系统可用的 OpenSSL 3 运行库；Windows 产物
 
 CMake 的 `plugmesh-server-shared` target 会生成真正的共享库：Linux 为 `libplugmesh-server.so`，macOS 为 `libplugmesh-server.dylib`，Windows 为 `plugmesh-server.dll`。公共头文件 `include/plugmesh/server_api.h` 只暴露 C ABI，避免把 C++ STL 类型跨越动态库边界。
 
-共享库接收已经注册的 Worker 参数，不包含命令行注册和本地 UI setup 流程。调用方负责安全保存凭据，并在 `plugin_host_executable` 中提供 `plugmesh-plugin-host` 的路径；该路径为空时由现有 `PLUGMESH_PLUGIN_HOST` 规则解析。`plugmesh_server_create` 会复制配置字符串，最小生命周期如下：
+共享库接收已经注册的 Worker 参数，不包含命令行注册和本地 UI setup 流程。调用方负责安全保存凭据，并在 `plugin_host_executable` 中提供 `plugmesh-plugin-host` 的路径；该路径为空时由现有 `PLUGMESH_PLUGIN_HOST` 规则解析。Linux 二进制包会在服务器和共享库旁边附带 `libssl.so.3`、`libcrypto.so.3`，无需再安装系统 OpenSSL 3；从源码运行时仍需安装 OpenSSL 3。`plugmesh_server_create` 会复制配置字符串，最小生命周期如下：
 
 ```c
 #include "plugmesh/server_api.h"

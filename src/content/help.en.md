@@ -58,7 +58,7 @@ Errors stay on the current settings or usage page with the HTTP status, error co
 
 ### Use a binary plugin server
 
-Download the artifact from GitHub Actions' **Manual plugin server build** workflow that matches your operating system and artifact type. `executable` contains a standalone `plugmesh-server`; `shared` is an embeddable library and is not a standalone executable. Verify `SHA256SUMS` before extracting or running it: use `sha256sum -c SHA256SUMS` on Linux, `shasum -a 256 -c SHA256SUMS` on macOS, or compare `Get-FileHash` output with the file on Windows PowerShell. Do not mix a server or plugin library built for another operating system.
+Download the artifact from GitHub Actions' **Manual plugin server build** workflow that matches your operating system and artifact type. `executable` contains a standalone `plugmesh-server`; `shared` is an embeddable library and is not a standalone executable. Linux artifacts include `libssl.so.3` and `libcrypto.so.3`, and Windows artifacts include the OpenSSL DLLs; source builds on macOS still require `brew install openssl@3`. Verify `SHA256SUMS` before extracting or running it: use `sha256sum -c SHA256SUMS` on Linux, `shasum -a 256 -c SHA256SUMS` on macOS, or compare `Get-FileHash` output with the file on Windows PowerShell. Do not mix a server or plugin library built for another operating system.
 
 Arrange the plugin directory as one subdirectory per plugin. Each directory needs a `manifest.json` and a dynamic library for the target platform, for example on Linux:
 

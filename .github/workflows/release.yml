@@ -104,6 +104,14 @@ jobs:
           set -euo pipefail
           mkdir -p dist/plugmesh-server
           cp native-server/build/plugmesh-server dist/plugmesh-server/
+          for library in libssl.so.3 libcrypto.so.3; do
+            library_path="$(ldconfig -p | awk -v library="$library" '$1 == library { print $NF; exit }')"
+            if [ -z "$library_path" ] || [ ! -f "$library_path" ]; then
+              echo "未找到 Linux OpenSSL 运行库：$library" >&2
+              exit 1
+            fi
+            cp -L "$library_path" dist/plugmesh-server/
+          done
           cp native-server/README.md dist/plugmesh-server/README.md
           cd dist
           zip -r plugmesh-server-linux.zip plugmesh-server
@@ -178,7 +186,7 @@ jobs:
           body: |
             Plugmesh 原生端构建产物（未签名，请核对 `SHA256SUMS` 后再运行）。
 
-            - `plugmesh-server-linux.zip`：Linux x86_64（需系统 OpenSSL 3）
+            - `plugmesh-server-linux.zip`：Linux x86_64（内含 OpenSSL 3 运行库）
             - `plugmesh-server-windows.zip`：Windows x64（内含随包 OpenSSL DLL）
             - `plugmesh-server-macos.zip`：macOS（`brew install openssl@3`）
 

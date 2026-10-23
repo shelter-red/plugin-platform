@@ -79,6 +79,29 @@ std::string read_secret(const char* environment_name, const char* prompt) {
   return value;
 }
 
+bool read_local_ui_password(std::string& password, std::string& confirmation, std::string& error) {
+  const auto* password_environment = std::getenv("PLUGMESH_LOCAL_UI_PASSWORD");
+  const auto password_from_environment = password_environment && *password_environment;
+  for (;;) {
+    password = read_secret("PLUGMESH_LOCAL_UI_PASSWORD", "Local UI password: ");
+    confirmation = password_from_environment ? password : read_secret("PLUGMESH_LOCAL_UI_PASSWORD_CONFIRMATION", "Confirm local UI password: ");
+    if (password.size() >= 8 && password == confirmation) return true;
+    error = password.size() < 8 ? "local UI password must contain at least 8 characters" : "local UI password confirmation does not match";
+    std::cerr << "plugmesh-server: " << error << "; please enter it again\n";
+    if (password_from_environment || std::cin.eof()) return false;
+  }
+}
+
+bool read_required_secret(const char* environment_name, const char* prompt, std::string& value, std::string& error) {
+  for (;;) {
+    value = read_secret(environment_name, prompt);
+    if (!value.empty()) return true;
+    error = "credential file password is required";
+    std::cerr << "plugmesh-server: " << error << "; please enter it again\n";
+    if (std::cin.eof()) return false;
+  }
+}
+
 uint16_t local_port() {
   const char* value = std::getenv("PLUGMESH_LOCAL_PORT");
   if (!value || !*value) return 8787;
@@ -155,9 +178,9 @@ bool run_registration_setup(plugmesh::ServerConfig& config, uint16_t port, const
       if (!server_error.empty()) std::cerr << "plugmesh-server local setup: " << server_error << '\n';
     }
   });
-  while ((!registration_complete || callback_active) && !server_failed) std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  // 等待响应写回后再关闭监听，避免重新绑定成功后进程误判为启动失败。
-  std::this_thread::sleep_for(std::chrono::milliseconds(150));
+  while ((!registration_complete || callback_active || local_http.has_active_requests()) && !server_failed) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  // 注册回调可能已经完成，但 HTTP 响应仍在 websocketpp 的处理栈中；
+  // 等请求退出后再销毁监听器，避免 Windows 下 teardown 期间访问已释放连接。
   local_http.stop();
   if (local_thread.joinable()) local_thread.join();
   // run() 在主动 stop() 时同样返回 false；只要注册已经完成就算成功，
@@ -183,25 +206,17 @@ int register_server(int argc, char** argv) {
     return 2;
   }
   const auto code = read_value("PLUGMESH_REGISTRATION_CODE", "Registration code: ");
-  const auto* local_ui_password_environment = std::getenv("PLUGMESH_LOCAL_UI_PASSWORD");
-  const auto local_ui_password_from_environment = local_ui_password_environment && *local_ui_password_environment;
-  const auto local_ui_password = read_secret("PLUGMESH_LOCAL_UI_PASSWORD", "Local UI password: ");
-  const auto local_ui_password_confirmation = local_ui_password_from_environment ? local_ui_password : read_secret("PLUGMESH_LOCAL_UI_PASSWORD_CONFIRMATION", "Confirm local UI password: ");
-  if (local_ui_password.size() < 8 || local_ui_password != local_ui_password_confirmation) {
-    std::cerr << "plugmesh-server: " << (local_ui_password.size() < 8 ? "local UI password must contain at least 8 characters" : "local UI password confirmation does not match") << '\n';
-    return 2;
-  }
+  std::string local_ui_password;
+  std::string local_ui_password_confirmation;
   std::string local_ui_password_verifier;
   std::string error;
+  if (!read_local_ui_password(local_ui_password, local_ui_password_confirmation, error)) return 2;
   if (!plugmesh::make_local_ui_password_verifier(local_ui_password, local_ui_password_verifier, error)) {
     std::cerr << "plugmesh-server: " << error << '\n';
     return 1;
   }
-  const auto password = read_secret("PLUGMESH_CREDENTIAL_PASSWORD", "Credential file password: ");
-  if (password.empty()) {
-    std::cerr << "plugmesh-server: credential file password is required\n";
-    return 2;
-  }
+  std::string password;
+  if (!read_required_secret("PLUGMESH_CREDENTIAL_PASSWORD", "Credential file password: ", password, error)) return 2;
   plugmesh::RegistrationResult registration;
   if (!plugmesh::register_server(worker_url, code, server_name, registration, error)) {
     std::cerr << "plugmesh-server: " << error << '\n';
@@ -297,7 +312,7 @@ int main(int argc, char** argv) {
       if (!local_http.run(local_error) && !local_error.empty()) std::cerr << "plugmesh-server local UI: " << local_error << '\n';
     });
     const auto connected = client.run(error);
-    while (credential_action_active) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    while (credential_action_active || local_http.has_active_requests()) std::this_thread::sleep_for(std::chrono::milliseconds(10));
     local_http.stop();
     if (local_thread.joinable()) local_thread.join();
     if (rebind_requested) {

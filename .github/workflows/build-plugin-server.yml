@@ -108,6 +108,14 @@ jobs:
             cp native-server/build-manual/plugmesh-server "dist/$package/"
           fi
           cp native-server/build-manual/plugmesh-plugin-host "dist/$package/"
+          for library in libssl.so.3 libcrypto.so.3; do
+            library_path="$(ldconfig -p | awk -v library="$library" '$1 == library { print $NF; exit }')"
+            if [ -z "$library_path" ] || [ ! -f "$library_path" ]; then
+              echo "未找到 Linux OpenSSL 运行库：$library" >&2
+              exit 1
+            fi
+            cp -L "$library_path" "dist/$package/"
+          done
           cp native-server/include/plugmesh/plugin_api.h "dist/$package/"
           cp native-server/README.md "dist/$package/"
           printf '类型：%s\n平台：Linux x86_64\n构建类型：%s\n' "${{ inputs.artifact_type }}" "${{ inputs.build_type }}" > "dist/$package/BUILD-INFO.txt"

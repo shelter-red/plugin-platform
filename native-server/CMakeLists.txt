@@ -98,6 +98,15 @@ add_custom_command(TARGET plugmesh-cancellable-sample POST_BUILD
 add_executable(plugmesh-plugin-host src/plugin_host_main.cpp)
 target_link_libraries(plugmesh-plugin-host PRIVATE plugmesh_core)
 
+if (UNIX AND NOT APPLE)
+  # Linux artifacts carry OpenSSL beside the binaries; keep lookup relative to the package.
+  foreach(target_name plugmesh-server plugmesh-plugin-host plugmesh-server-shared)
+    if (TARGET ${target_name})
+      set_target_properties(${target_name} PROPERTIES BUILD_RPATH "$ORIGIN" INSTALL_RPATH "$ORIGIN")
+    endif()
+  endforeach()
+endif()
+
 add_executable(plugmesh-plugin-loader-smoke tests/plugin_loader_smoke.cpp)
 target_link_libraries(plugmesh-plugin-loader-smoke PRIVATE plugmesh_core)
 

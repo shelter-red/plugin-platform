@@ -227,6 +227,10 @@ bool run_password_setup_server(uint16_t port) {
     std::cerr << "password setup status was not reported\n";
     return false;
   }
+  if (!http_request(port, "POST", "/api/session/password", R"({"password":"short","passwordConfirmation":"short"})", "", response, error) || !expect_status(response, 400, "short password setup") || !expect_code(response, "password_too_short", "short password setup")) {
+    stop_server();
+    return false;
+  }
   if (!http_request(port, "POST", "/api/session", R"({"password":"new-password"})", "", response, error) || !expect_status(response, 409, "login before password setup") || !expect_code(response, "password_setup_required", "login before password setup")) {
     stop_server();
     return false;

@@ -123,6 +123,10 @@ void LocalHttpServer::stop() {
   if (server) server->stop();
 }
 
+bool LocalHttpServer::has_active_requests() const {
+  return active_requests_.load(std::memory_order_acquire) != 0;
+}
+
 bool LocalHttpServer::serve_static(void* handle, const std::string& resource, bool& forbidden) const {
   forbidden = false;
   if (ui_directory_.empty()) return false;
@@ -210,6 +214,11 @@ void LocalHttpServer::clear_session(const std::string& cookie_header) {
 void LocalHttpServer::handle_http(void* handle) {
   auto* connection = static_cast<websocketpp::connection<websocketpp::config::asio>*>(handle);
   if (!connection) return;
+  active_requests_.fetch_add(1, std::memory_order_acq_rel);
+  struct RequestGuard {
+    std::atomic<std::size_t>& active_requests;
+    ~RequestGuard() { active_requests.fetch_sub(1, std::memory_order_acq_rel); }
+  } request_guard{active_requests_};
   const auto method = connection->get_request().get_method();
   const auto raw_resource = connection->get_resource();
   const auto query_start = raw_resource.find('?');
