@@ -2,19 +2,30 @@ import { useTranslation } from 'react-i18next'
 import { Check } from 'lucide-react'
 import { StatusBadge } from '../../components/StatusBadge'
 
-export const CLOUDFLARE_API_TOKEN_PERMISSIONS = [
+export const CLOUDFLARE_MONITOR_PERMISSIONS = [
   'Account Settings Read',
   'Account Analytics Read',
   'Billing Read',
 ] as const
 
+export const CLOUDFLARE_DOMAIN_PERMISSIONS = [
+  'Zone Read',
+  'DNS Write',
+  'Workers Routes Edit',
+] as const
+
+export const CLOUDFLARE_API_TOKEN_PERMISSIONS = [...CLOUDFLARE_MONITOR_PERMISSIONS, ...CLOUDFLARE_DOMAIN_PERMISSIONS] as const
+
 const DESCRIPTION_KEYS: Record<(typeof CLOUDFLARE_API_TOKEN_PERMISSIONS)[number], string> = {
   'Account Settings Read': 'settings.cloudflare.permissions.accountSettings',
   'Account Analytics Read': 'settings.cloudflare.permissions.accountAnalytics',
   'Billing Read': 'settings.cloudflare.permissions.billing',
+  'Zone Read': 'settings.cloudflare.permissions.zone',
+  'DNS Write': 'settings.cloudflare.permissions.dns',
+  'Workers Routes Edit': 'settings.cloudflare.permissions.routes',
 }
 
-/** 权限由产品固定，只展示三项；不提供增删、取消或 scope 输入。 */
+/** Token 权限由产品固定，只展示六项；不提供增删、取消或自定义范围输入。 */
 export function CloudflarePermissionList({ permissions }: { permissions?: string[] }) {
   const { t } = useTranslation()
   const returned = new Set(permissions ?? [])

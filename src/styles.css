@@ -770,6 +770,35 @@ h1 {
   font-size: 11px;
   line-height: 1.6;
 }
+.cloudflare-token-guide {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  color: var(--text-2);
+  font-size: 11px;
+  line-height: 1.65;
+}
+.cloudflare-token-guide-heading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text);
+}
+.cloudflare-token-guide-heading svg {
+  flex: none;
+  color: var(--primary);
+}
+.cloudflare-token-guide ol {
+  margin: 8px 0 0 18px;
+  padding: 0;
+}
+.cloudflare-token-guide li {
+  padding-left: 3px;
+}
+.cloudflare-token-guide p {
+  margin: 8px 0 0;
+  color: var(--text-3);
+}
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

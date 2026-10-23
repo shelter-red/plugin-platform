@@ -6,7 +6,7 @@ import type { GithubAuthResult } from './auth'
 import type { AuthenticatedUser, CloudflarePlanSummary, CloudflareUsageLimits, Env } from './types'
 import { decryptSecret, encryptSecret } from './secrets'
 import { isEmail, parseSmtpSettings, publicSmtpSettings, sendInviteEmail, sendSmtpTest, validateSmtpSettings, type SmtpSettings } from './email'
-import { CLOUDFLARE_API_TOKEN_PERMISSIONS, CloudflareTokenError, cloudflarePlanLimits, deleteStoredCloudflareCredential, maskCloudflareAccountId, readCloudflareSubscriptions, readStoredCloudflareCredential, storeCloudflareCredential as storeCloudflareApiTokenCredential, validateCloudflareApiToken } from './cloudflare-token'
+import { CLOUDFLARE_API_TOKEN_PERMISSIONS, CloudflareTokenError, cloudflarePlanLimits, configureCloudflareDomain, deleteStoredCloudflareCredential, maskCloudflareAccountId, readCloudflareSubscriptions, readStoredCloudflareCredential, storeCloudflareCredential as storeCloudflareApiTokenCredential, validateCloudflareApiToken } from './cloudflare-token'
 import { activateMaintenance, cloudflareQuotaReason, defaultPlatformSettings, getPlatformSettings, isMaintenanceMode, normalizePluginDomainSuffix, recordRequest, releaseR2Usage, reserveR2Usage, setPlatformSettingsCache } from './usage'
 import { findPluginRoute, invalidatePluginRoute } from './route-cache'
 import { selectPublicRequestMode } from './request-mode'
@@ -753,7 +753,7 @@ async function proxyPublicHost(request: Request, env: Env, url: URL, ctx: Execut
   }
 }
 
-async function platformSettingsApi(request: Request, env: Env, user: AuthenticatedUser): Promise<Response> {
+async function platformSettingsApi(request: Request, env: Env, user: AuthenticatedUser, fetchImpl: typeof fetch = fetch): Promise<Response> {
   if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
   const settings = await getPlatformSettings(env)
   if (request.method === 'GET') return json(settings)
@@ -769,6 +769,17 @@ async function platformSettingsApi(request: Request, env: Env, user: Authenticat
     ? settings.pluginDomainSuffix
     : normalizePluginDomainSuffix(body.pluginDomainSuffix)
   if (!pluginDomainSuffix) return json({ error: 'Invalid plugin domain suffix' }, 400)
+  let cloudflareDomain: Awaited<ReturnType<typeof configureCloudflareDomain>> | null = null
+  if (pluginDomainSuffix !== settings.pluginDomainSuffix) {
+    try {
+      const stored = await readStoredCloudflareCredential(env)
+      if (!stored || stored.kind !== 'api_token') throw new CloudflareTokenError(400, 'domain_token_required', '请先在 Cloudflare 设置中保存 API Token，再配置插件域名')
+      cloudflareDomain = await configureCloudflareDomain(stored.credential.apiToken, stored.credential.accountId, pluginDomainSuffix, fetchImpl)
+    } catch (error) {
+      if (error instanceof CloudflareTokenError) return json({ code: error.code, message: error.message }, error.status)
+      return json({ code: 'domain_configuration_failed', message: 'Cloudflare 域名配置失败' }, 502)
+    }
+  }
   const next = {
     maintenance: Boolean(body?.maintenance ?? settings.maintenance),
     pluginDomainSuffix,
@@ -781,7 +792,7 @@ async function platformSettingsApi(request: Request, env: Env, user: Authenticat
   await env.DB.prepare('INSERT INTO platform_settings (key, value_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at').bind('platform', JSON.stringify(next), new Date().toISOString()).run()
   setPlatformSettingsCache(next)
   await env.DB.prepare('INSERT INTO audit_log (id, workspace_id, user_id, action, detail_json, created_at) VALUES (?, NULL, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'platform.settings.updated', JSON.stringify(next), new Date().toISOString()).run()
-  return json(next)
+  return json({ ...next, ...(cloudflareDomain ? { cloudflareDomain } : {}) })
 }
 
 function parsePositiveQuota(value: unknown, fallback: number): number {

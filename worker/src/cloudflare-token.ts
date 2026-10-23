@@ -1,12 +1,20 @@
 import { decryptSecret, encryptSecret } from './secrets'
 import type { CloudflarePlanSummary, CloudflareUsageLimits, Env } from './types'
 
-/** Cloudflare 官方只读权限。前端只展示，保存接口不接受自定义 scope。 */
-export const CLOUDFLARE_API_TOKEN_PERMISSIONS = [
+/** Token 权限按用途分组；前端只展示，保存接口不接受自定义 scope。 */
+export const CLOUDFLARE_MONITOR_PERMISSIONS = [
   'Account Settings Read',
   'Account Analytics Read',
   'Billing Read',
 ] as const
+
+export const CLOUDFLARE_DOMAIN_PERMISSIONS = [
+  'Zone Read',
+  'DNS Write',
+  'Workers Routes Edit',
+] as const
+
+export const CLOUDFLARE_API_TOKEN_PERMISSIONS = [...CLOUDFLARE_MONITOR_PERMISSIONS, ...CLOUDFLARE_DOMAIN_PERMISSIONS] as const
 
 export type CloudflareTokenErrorCode =
   | 'token_required'
@@ -15,6 +23,10 @@ export type CloudflareTokenErrorCode =
   | 'account_missing'
   | 'account_ambiguous'
   | 'cloudflare_upstream_error'
+  | 'domain_token_required'
+  | 'domain_zone_not_found'
+  | 'domain_record_conflict'
+  | 'domain_route_conflict'
   | 'secret_missing'
   | 'credential_unreadable'
 
@@ -40,6 +52,34 @@ export interface CloudflareTokenVerification {
 export interface CloudflareAccount {
   id: string
   name: string
+}
+
+interface CloudflareZone {
+  id: string
+  name: string
+  status: string
+}
+
+interface CloudflareDnsRecord {
+  id: string
+  type: string
+  name: string
+  content: string
+  proxied?: boolean
+  comment?: string | null
+}
+
+interface CloudflareWorkerRoute {
+  id: string
+  pattern: string
+  script?: string | null
+}
+
+export interface CloudflareDomainConfiguration {
+  zoneId: string
+  zoneName: string
+  hostname: string
+  routePattern: string
 }
 
 export interface CloudflareSubscriptionSummary {
@@ -131,7 +171,7 @@ function invalidTokenError(message = 'Cloudflare API Token 无效或已被撤销
   return new CloudflareTokenError(401, 'token_invalid', message)
 }
 
-function permissionDeniedError(message = 'Cloudflare API Token 缺少所需的只读权限'): CloudflareTokenError {
+function permissionDeniedError(message = 'Cloudflare API Token 缺少所需权限'): CloudflareTokenError {
   return new CloudflareTokenError(403, 'token_permission_denied', message)
 }
 
@@ -149,10 +189,17 @@ function envelopeErrors(payload: unknown): string | null {
   return messages.length > 0 ? messages.join('; ').slice(0, 512) : null
 }
 
-function requestError(stage: 'verify' | 'accounts' | 'subscriptions', response: Response, payload: unknown): CloudflareTokenError {
+type CloudflareRequestStage = 'verify' | 'accounts' | 'subscriptions' | 'zones' | 'dns' | 'routes'
+
+function requestError(stage: CloudflareRequestStage, response: Response, payload: unknown): CloudflareTokenError {
   const detail = envelopeErrors(payload) ?? `Cloudflare ${stage} 请求失败（HTTP ${response.status}）`
   if (response.status === 401) return invalidTokenError(detail)
-  if (response.status === 403) return permissionDeniedError(detail)
+  if (response.status === 403) {
+    const permissionHint = stage === 'zones' || stage === 'dns' || stage === 'routes'
+      ? 'Cloudflare API Token 缺少域名配置权限（Zone Read、DNS Write 或 Workers Routes Edit）'
+      : 'Cloudflare API Token 缺少账号读取权限（Account Settings Read、Account Analytics Read 或 Billing Read）'
+    return permissionDeniedError(`${permissionHint}：${detail}`)
+  }
   if (stage === 'subscriptions' && response.status === 404) {
     return new CloudflareTokenError(409, 'account_missing', '指定账号不可见或不存在')
   }
@@ -160,15 +207,17 @@ function requestError(stage: 'verify' | 'accounts' | 'subscriptions', response: 
 }
 
 async function requestCloudflare<T>(
-  stage: 'verify' | 'accounts' | 'subscriptions',
+  stage: CloudflareRequestStage,
   apiToken: string,
   path: string,
   fetchImpl: Fetcher,
+  init: RequestInit = {},
 ): Promise<CloudflareEnvelope<T>> {
   let response: Response
   try {
     response = await fetchImpl(`${API_ORIGIN}${path}`, {
-      headers: { authorization: `Bearer ${apiToken}`, accept: 'application/json' },
+      ...init,
+      headers: { authorization: `Bearer ${apiToken}`, accept: 'application/json', ...(init.headers ?? {}) },
     })
   } catch {
     throw upstreamError(`无法连接 Cloudflare ${stage} 接口`)
@@ -289,6 +338,82 @@ export async function validateCloudflareApiToken(
     account,
     subscriptions,
   }
+}
+
+async function listCloudflareZones(apiToken: string, accountId: string, fetchImpl: Fetcher): Promise<CloudflareZone[]> {
+  const zones: CloudflareZone[] = []
+  for (let page = 1; page <= MAX_ACCOUNT_PAGES; page += 1) {
+    const payload = await requestCloudflare<CloudflareZone[]>('zones', apiToken, `/zones?account.id=${encodeURIComponent(accountId)}&status=active&page=${page}&per_page=${ACCOUNTS_PER_PAGE}`, fetchImpl)
+    if (payload.success === false || !Array.isArray(payload.result)) throw upstreamError(envelopeErrors(payload) ?? 'Cloudflare zones 响应结构无效')
+    zones.push(...payload.result.filter((zone): zone is CloudflareZone => typeof zone?.id === 'string' && typeof zone.name === 'string' && zone.status === 'active'))
+    const totalPages = payload.result_info?.total_pages
+    if (typeof totalPages === 'number' ? page >= totalPages : payload.result.length < ACCOUNTS_PER_PAGE) return zones
+  }
+  throw upstreamError('Cloudflare zones 分页超过安全上限')
+}
+
+function selectCloudflareZone(zones: CloudflareZone[], hostname: string): CloudflareZone {
+  const matched = zones
+    .filter((zone) => hostname === zone.name || hostname.endsWith(`.${zone.name}`))
+    .sort((left, right) => right.name.length - left.name.length)[0]
+  if (!matched) throw new CloudflareTokenError(409, 'domain_zone_not_found', `Cloudflare 账号中没有覆盖 ${hostname} 的 active Zone`)
+  return matched
+}
+
+async function configureCloudflareDnsRecord(apiToken: string, zoneId: string, hostname: string, fetchImpl: Fetcher): Promise<string> {
+  const query = `/zones/${encodeURIComponent(zoneId)}/dns_records?name=${encodeURIComponent(hostname)}`
+  const listed = await requestCloudflare<CloudflareDnsRecord[]>('dns', apiToken, query, fetchImpl)
+  if (listed.success === false || !Array.isArray(listed.result)) throw upstreamError(envelopeErrors(listed) ?? 'Cloudflare DNS 响应结构无效')
+  const existing = listed.result[0]
+  const desired = { type: 'A', name: hostname, content: '192.0.2.1', ttl: 1, proxied: true, comment: 'Managed by Plugmesh' }
+  if (existing && (existing.type !== 'A' || (existing.comment && existing.comment !== 'Managed by Plugmesh'))) {
+    throw new CloudflareTokenError(409, 'domain_record_conflict', `${hostname} 已存在非 Plugmesh DNS 记录，未覆盖现有记录`)
+  }
+  const path = existing
+    ? `/zones/${encodeURIComponent(zoneId)}/dns_records/${encodeURIComponent(existing.id)}`
+    : `/zones/${encodeURIComponent(zoneId)}/dns_records`
+  const saved = await requestCloudflare<CloudflareDnsRecord>('dns', apiToken, path, fetchImpl, {
+    method: existing ? 'PUT' : 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(desired),
+  })
+  if (saved.success === false || !saved.result || typeof saved.result.id !== 'string') throw upstreamError(envelopeErrors(saved) ?? 'Cloudflare DNS 记录保存失败')
+  return saved.result.id
+}
+
+async function configureCloudflareWorkerRoute(apiToken: string, zoneId: string, routePattern: string, fetchImpl: Fetcher): Promise<string> {
+  const listed = await requestCloudflare<CloudflareWorkerRoute[]>('routes', apiToken, `/zones/${encodeURIComponent(zoneId)}/workers/routes`, fetchImpl)
+  if (listed.success === false || !Array.isArray(listed.result)) throw upstreamError(envelopeErrors(listed) ?? 'Cloudflare Worker Route 响应结构无效')
+  const existing = listed.result.find((route) => route.pattern === routePattern)
+  if (existing?.script && existing.script !== 'plugmesh-worker') {
+    throw new CloudflareTokenError(409, 'domain_route_conflict', `${routePattern} 已绑定其他 Worker，未覆盖现有路由`)
+  }
+  const path = existing?.id
+    ? `/zones/${encodeURIComponent(zoneId)}/workers/routes/${encodeURIComponent(existing.id)}`
+    : `/zones/${encodeURIComponent(zoneId)}/workers/routes`
+  const saved = await requestCloudflare<CloudflareWorkerRoute>('routes', apiToken, path, fetchImpl, {
+    method: existing?.id ? 'PUT' : 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ pattern: routePattern, script: 'plugmesh-worker' }),
+  })
+  if (saved.success === false || !saved.result || typeof saved.result.id !== 'string') throw upstreamError(envelopeErrors(saved) ?? 'Cloudflare Worker Route 保存失败')
+  return saved.result.id
+}
+
+/** 用已保存的 API Token 把插件通配域名接到当前 Worker。 */
+export async function configureCloudflareDomain(
+  apiToken: string,
+  accountId: string,
+  domainSuffix: string,
+  fetchImpl: Fetcher = fetch,
+): Promise<CloudflareDomainConfiguration> {
+  const domain = domainSuffix.trim().toLowerCase().replace(/^\.+/, '')
+  const hostname = `*.${domain}`
+  const routePattern = `${hostname}/*`
+  const zone = selectCloudflareZone(await listCloudflareZones(apiToken.trim(), accountId, fetchImpl), domain)
+  await configureCloudflareDnsRecord(apiToken.trim(), zone.id, hostname, fetchImpl)
+  await configureCloudflareWorkerRoute(apiToken.trim(), zone.id, routePattern, fetchImpl)
+  return { zoneId: zone.id, zoneName: zone.name, hostname, routePattern }
 }
 
 export function maskCloudflareAccountId(accountId: string | null | undefined): string | null {

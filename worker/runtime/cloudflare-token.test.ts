@@ -2,6 +2,7 @@ import { beforeEach, expect, test } from 'vitest'
 import {
   CLOUDFLARE_API_TOKEN_PERMISSIONS,
   CloudflareTokenError,
+  configureCloudflareDomain,
   deleteStoredCloudflareCredential,
   listCloudflareAccounts,
   readCloudflareSubscriptions,
@@ -18,13 +19,13 @@ const TOKEN = 'cf-api-token-secret'
 const ACCOUNT_A = '0123456789abcdef0123456789abcdef'
 const ACCOUNT_B = 'fedcba9876543210fedcba9876543210'
 
-type Call = { path: string; authorization: string | null }
+type Call = { path: string; authorization: string | null; method: string }
 
 function jsonFetcher(routes: Record<string, (call: Call) => Response>, calls: Call[] = []): typeof fetch {
   return (async (input: RequestInfo | URL, init?: RequestInit) => {
     const request = new Request(input as RequestInfo, init)
     const url = new URL(request.url)
-    const call = { path: `${url.pathname}${url.search}`, authorization: request.headers.get('authorization') }
+    const call = { path: `${url.pathname}${url.search}`, authorization: request.headers.get('authorization'), method: request.method }
     calls.push(call)
     const handler = routes[call.path]
     if (!handler) return new Response(`unexpected request: ${call.path}`, { status: 500 })
@@ -53,11 +54,14 @@ beforeEach(async () => {
   await resetDatabase()
 })
 
-test('固定权限列表只包含 Cloudflare 官方只读权限', () => {
+test('固定权限列表使用 Cloudflare 官方监控与域名权限', () => {
   expect([...CLOUDFLARE_API_TOKEN_PERMISSIONS]).toEqual([
     'Account Settings Read',
     'Account Analytics Read',
     'Billing Read',
+    'Zone Read',
+    'DNS Write',
+    'Workers Routes Edit',
   ])
 })
 
@@ -119,6 +123,32 @@ test('无效 Token、权限不足和上游失败使用稳定错误码', async ()
   await expect(readCloudflareSubscriptions(TOKEN, ACCOUNT_A, jsonFetcher({
     [`/client/v4/accounts/${ACCOUNT_A}/subscriptions`]: () => new Response('upstream down', { status: 503 }),
   }))).rejects.toMatchObject({ status: 502, code: 'cloudflare_upstream_error', upstreamStatus: 503 })
+})
+
+test('使用 Token 自动配置 Zone、通配 DNS 和 Worker Route', async () => {
+  const calls: Call[] = []
+  const fetchImpl = jsonFetcher({
+    [`/client/v4/zones?account.id=${ACCOUNT_A}&status=active&page=1&per_page=50`]: () => Response.json({
+      success: true,
+      result: [{ id: 'zone-1', name: 'example.com', status: 'active' }],
+      result_info: { page: 1, per_page: 50, count: 1, total_pages: 1 },
+    }),
+    '/client/v4/zones/zone-1/dns_records?name=*.plugins.example.com': () => Response.json({ success: true, result: [] }),
+    '/client/v4/zones/zone-1/dns_records': () => Response.json({ success: true, result: { id: 'dns-1', type: 'A', name: '*.plugins.example.com', content: '192.0.2.1' } }),
+    '/client/v4/zones/zone-1/workers/routes': (call) => call.method === 'GET'
+      ? Response.json({ success: true, result: [] })
+      : Response.json({ success: true, result: { id: 'route-1', pattern: '*.plugins.example.com/*', script: 'plugmesh-worker' } }),
+  }, calls)
+
+  const configured = await configureCloudflareDomain(TOKEN, ACCOUNT_A, '.plugins.example.com', fetchImpl)
+  expect(configured).toEqual({ zoneId: 'zone-1', zoneName: 'example.com', hostname: '*.plugins.example.com', routePattern: '*.plugins.example.com/*' })
+  expect(calls.map((call) => call.path)).toEqual([
+    `/client/v4/zones?account.id=${ACCOUNT_A}&status=active&page=1&per_page=50`,
+    '/client/v4/zones/zone-1/dns_records?name=*.plugins.example.com',
+    '/client/v4/zones/zone-1/dns_records',
+    '/client/v4/zones/zone-1/workers/routes',
+    '/client/v4/zones/zone-1/workers/routes',
+  ])
 })
 
 test('只有 rate_plan.id 为 free 时确认免费计划', async () => {

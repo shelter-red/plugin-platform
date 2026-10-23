@@ -5,6 +5,7 @@ import { Panel } from '../../components/Panel'
 import { StatusBadge } from '../../components/StatusBadge'
 import type { Notify } from '../../components/ToastProvider'
 import { CloudflarePermissionList } from './CloudflarePermissionList'
+import { CloudflareTokenScopeGuide } from './CloudflareTokenScopeGuide'
 import { CloudflareTokenForm } from './CloudflareTokenForm'
 import { CloudflareTokenStatus } from './CloudflareTokenStatus'
 import { useCloudflareTokenForm } from './useCloudflareTokenForm'
@@ -53,5 +54,6 @@ export function CloudflarePanel({ settings, onSettingsChange, apiLive, onAction 
       onRevoke={() => void form.revokeToken()}
     />
     <CloudflarePermissionList permissions={settings?.permissions} />
+    <CloudflareTokenScopeGuide />
   </Panel>
 }

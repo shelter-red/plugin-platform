@@ -25,7 +25,9 @@ Domains can only be assigned to enabled plugins that pass the health check. Pref
 
 ### What if the Cloudflare API Token cannot read usage?
 
-Configuring Cloudflare does not require an OAuth client. Open **Settings → Cloudflare**, select **Create API Token**, grant the three fixed read-only permissions `Account Settings Read`, `Account Analytics Read` and `Billing Read`, then paste the Token back. The platform verifies the Token, lists visible accounts and reads subscriptions before saving. These permissions cannot be selected, removed or edited inside the platform.
+Open **Settings → Cloudflare**, select **Create API Token**, set a Token name on Cloudflare's creation page, choose `Account Settings Read`, `Account Analytics Read`, `Billing Read`, `Zone Read`, `DNS Write` and `Workers Routes Edit`, then restrict `Account resources` and `Zone resources` to the account and domains you use. The Token name is Cloudflare dashboard metadata and is not read or stored by the platform. The platform verifies the Token, lists visible accounts and reads subscriptions before saving. The Account ID field only selects a target when the Token can see multiple accounts.
+
+When you save the plugin domain suffix under **Maintenance, domains & quotas**, the platform uses the stored Token to find the matching Zone, write the wildcard DNS record and create the Worker Route. Existing third-party DNS records or Worker Routes are preserved and reported as conflicts instead of being overwritten.
 
 - `401 token_invalid`: the Token is invalid, revoked, or has passed its configured expiry date; create a new Token.
 - `403 token_permission_denied`: one of the fixed permissions is missing; update the permissions or recreate the Token.

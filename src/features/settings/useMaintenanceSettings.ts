@@ -66,7 +66,7 @@ export function useMaintenanceSettings(settings: PlatformSettings | null, onChan
       onAction('success', t('settings.domainSuffix.saved'))
     } catch (error) {
       const invalid = error instanceof ApiError && error.status === 400
-      onAction(invalid ? 'warning' : 'error', invalid ? t('settings.domainSuffix.invalid') : t('settings.domainSuffix.saveFailed'))
+      onAction(invalid ? 'warning' : 'error', invalid ? t('settings.domainSuffix.invalid') : error instanceof ApiError ? error.message : t('settings.domainSuffix.saveFailed'))
     } finally {
       setSuffixSaving(false)
     }

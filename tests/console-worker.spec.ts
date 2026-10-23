@@ -17,7 +17,7 @@ const oauthSettings = {
   unreadable: false,
 }
 
-const cloudflarePermissions = ['Account Settings Read', 'Account Analytics Read', 'Billing Read']
+const cloudflarePermissions = ['Account Settings Read', 'Account Analytics Read', 'Billing Read', 'Zone Read', 'DNS Write', 'Workers Routes Edit']
 const cloudflareSettings = {
   configured: false,
   credentialKind: null,
@@ -366,7 +366,7 @@ test('管理端在后台保存 OAuth 配置且不回显密钥', async ({ page })
   await expect(panel).toContainText('后台配置')
 })
 
-test('Cloudflare 使用固定只读权限和 API Token 直达链接', async ({ page }) => {
+test('Cloudflare 使用固定权限和 API Token 直达链接', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 })
   const worker = await mockWorker(page)
   await page.goto('/')
@@ -388,9 +388,17 @@ test('Cloudflare 使用固定只读权限和 API Token 直达链接', async ({ p
   await expect(permissions).toContainText('Account Settings Read')
   await expect(permissions).toContainText('Account Analytics Read')
   await expect(permissions).toContainText('Billing Read')
-  await expect(permissions.locator('.scope-list li')).toHaveCount(3)
+  await expect(permissions).toContainText('Zone Read')
+  await expect(permissions).toContainText('DNS Write')
+  await expect(permissions).toContainText('Workers Routes Edit')
+  await expect(permissions.locator('.scope-list li')).toHaveCount(6)
   await expect(permissions.locator('input')).toHaveCount(0)
   await expect(permissions.getByRole('button')).toHaveCount(0)
+
+  const scopeGuide = panel.getByTestId('cloudflare-token-guide')
+  await expect(scopeGuide).toContainText('Token 名称')
+  await expect(scopeGuide).toContainText('Account resources')
+  await expect(scopeGuide).toContainText('DNS')
 
   const createToken = panel.getByRole('link', { name: /创建 API Token/ })
   await expect(createToken).toHaveAttribute('href', 'https://dash.cloudflare.com/profile/api-tokens')
@@ -586,7 +594,7 @@ test('管理端在后台保存插件域名后缀', async ({ page }) => {
   await expect(panel.getByLabel('插件域名后缀')).toHaveValue('.plugins.example.com')
   await panel.getByLabel('插件域名后缀').fill('plugins.example.net')
   await panel.getByRole('button', { name: '保存域名后缀' }).click()
-  await expect(page.getByText('插件域名后缀已保存')).toBeVisible()
+  await expect(page.getByText('插件域名后缀已保存，Cloudflare DNS 和 Worker Route 已同步')).toBeVisible()
   expect(worker.platformUpdates).toHaveLength(1)
   expect(worker.platformUpdates[0]).toMatchObject({ pluginDomainSuffix: 'plugins.example.net' })
 })

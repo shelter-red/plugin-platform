@@ -2,7 +2,7 @@
 
 > 最后整理：2026-10-23（Asia/Shanghai）
 >
-> 当前状态：**Cloudflare API Token、8 项用量监控、Token 直接配置插件域名的后端/前端实现已在工作区完成，尚未提交。最近一次已推送代码基线为 `49c7413`，Actions #64（run `39883132655`）为 `completed/success`。本轮新增官方六项权限契约：监控 `Account Settings Read`、`Account Analytics Read`、`Billing Read`；域名配置 `Zone Read`、`DNS Write`、`Workers Routes Edit`。保存插件域名后缀时，Worker 使用已保存 Token 查找 active Zone、维护 Plugmesh 通配 DNS 记录并创建/更新 `plugmesh-worker` Route；缺 Token、Zone 不匹配、已有第三方记录或 Route 冲突均返回真实 HTTP 错误，不静默保存。定向 Docker runtime 已通过 21/21，前端构建与 Worker 类型检查通过；完整 `ci:local`、全量 runtime、push 和新 Actions 尚未完成。若之后再次修改本 HANDOFF，会生成新的 docs-only commit；恢复时不要用本文代替实时 Git/Actions 查询。**
+> 当前状态：**Cloudflare API Token、8 项用量监控、Token 直接配置插件域名的后端/前端实现已在工作区完成，尚未提交。最近一次已推送代码基线为 `de1a4e2`，Actions #65（run `39883132655`）为 `completed/success`。本轮新增官方六项权限契约：监控 `Account Settings Read`、`Account Analytics Read`、`Billing Read`；域名配置 `Zone Read`、`DNS Write`、`Workers Routes Edit`。保存插件域名后缀时，Worker 使用已保存 Token 查找 active Zone、维护 Plugmesh 通配 DNS 记录并创建/更新 `plugmesh-worker` Route；缺 Token、Zone 不匹配、已有第三方记录或 Route 冲突均返回真实 HTTP 错误，不静默保存。当前工作区的 `ci:local` 87/87、Docker runtime 20/20 文件 91/91 测试、deploy test 10/10、构建和类型检查均已通过；本轮改动仍待提交、push 和新 Actions。若之后再次修改本 HANDOFF，会生成新的 docs-only commit；恢复时不要用本文代替实时 Git/Actions 查询。**
 >
 > 本文件是上下文压缩后的第一事实源。README、旧方案、旧测试、聊天摘要或历史提交说明与本文冲突时，以用户最新要求、当前代码和本文为准。恢复后先执行第 0 节的核验命令，再按第 8 节顺序继续。
 
@@ -13,9 +13,9 @@
 ```text
 仓库：/home/tc/work/plugin-platform
 分支：main
-HEAD（最近核验）：49c7413 docs: 明确 Token 范围与域名配置边界
-origin/main（最近核验）：49c7413
-工作区（最近核验）：clean；后续若再次整理 HANDOFF，以实时 Git 为准
+HEAD（最近核验）：de1a4e2 docs: 记录 Token 自动配置域名实现
+origin/main（最近核验）：de1a4e2
+工作区（最近核验）：有本轮未提交改动；后续若再次整理 HANDOFF，以实时 Git 为准
 fetch remote：https://github.com/shelter-red/plugin-platform.git
 push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 ```
@@ -23,7 +23,8 @@ push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 最近提交（均已推送）：
 
 ```text
-49c7413 docs: 明确 Token 范围与域名配置边界  ← 当前已推送基线
+de1a4e2 docs: 记录 Token 自动配置域名实现  ← 当前已推送基线
+49c7413 docs: 明确 Token 范围与域名配置边界
 67efa26 docs: 记录窄屏修复闭环与文案审计入口
 e349e7b fix(ui): 修复设置页窄屏布局并更新视觉基线
 b6ad802 docs: 记录交接提交的 Actions 成功结果
@@ -118,20 +119,20 @@ tests/console-real-stack.spec.ts
 
 ```text
 git diff --check                               PASS
-npm run ci:local                               PASS（本轮 17 个路径；87/87 UI smoke）
+npm run ci:local                               PASS（本轮 19 个路径；87/87 UI smoke）
 npm run deploy:worker:test                     10/10 PASS（含 README 新部署前提断言）
-Worker runtime（Docker node:22-bookworm）       20/20 files，89/89 tests PASS
-latest remote Actions e349e7b / #61             completed/success
-本轮 17 个路径提交 / push / Actions 闭环        PASS
+Worker runtime（Docker node:22-bookworm）       20/20 files，91/91 tests PASS
+latest remote Actions de1a4e2 / #65             completed/success
+本轮改动尚未提交 / push / Actions 闭环            待完成
 ```
 
 已记录的代码验收：
 
 ```text
 npm run build                                  PASS
-npm run ui:conventions                         89 个 TSX，0 违规
-npm run ui:css-audit                           476 条规则，0 死代码/重复
-npm run ui:smoke                               86 passed
+npm run ui:conventions                         90 个 TSX，0 违规
+npm run ui:css-audit                           482 条规则，0 死代码/重复
+npm run ui:smoke                               87 passed
 npm run deploy:worker:test                     10/10 PASS
 Worker runtime                                 20/20 files，89/89 tests PASS
 npm run ci:local                               PASS（最近的完整基线）
@@ -170,17 +171,19 @@ Workers Builds 控制台 Deploy command 核对
 https://dash.cloudflare.com/profile/api-tokens
 ```
 
-- 用户创建 Token 时当前界面固定展示只读权限，不能勾选、取消、增删或编辑：
+- 用户创建 Token 时当前界面固定展示六项权限，不能勾选、取消、增删或编辑：
 
 ```text
 Account Settings Read
 Account Analytics Read
 Billing Read
+Zone Read
+DNS Write
+Workers Routes Edit
 ```
 
-- 这三项只能支持账号发现、Analytics 用量读取和套餐读取；它们不是域名配置权限。当前所谓“公开域名”是平台自身的 Host/D1 路由，不等于通过 Cloudflare DNS API 创建或修改 Zone/DNS 记录。
-- 用户最新反馈要求重新核对域名配置是否真的需要 Cloudflare DNS/Zone 能力。已核对当前代码：没有 Cloudflare DNS/Zone/Worker Route API，域名分配只是平台 D1 中的 Host 路由；三项只读 Token 不能也不会自动配置 DNS。README 中的 DNS/Worker Route 是部署者在 Cloudflare 控制台的一次性手工配置，不是系统设置中的 Token 能力。
-- Cloudflare API Token 创建页还需要 Token 名称和资源范围。Token 名称只是 Cloudflare 侧元数据，平台不需要保存，也不能继续称为 OAuth 名称；设置页必须明确区分 GitHub OAuth App 与 Cloudflare API Token，并说明账号资源范围由创建者在 Cloudflare 侧选择，平台的 Account ID 只用于选择已可见账号。当前只读监控 Token 不需要 Zone 资源范围；不得为未实现的 DNS 自动化自行编造写权限。
+- 前三项用于账号发现、Analytics 用量和套餐读取；后三项用于查找 Zone、写入插件通配 DNS 记录和创建 Worker Route。插件域名后缀保存时由平台使用已保存 Token 自动同步这些资源；已有第三方记录或路由时返回冲突，不覆盖。
+- Cloudflare API Token 创建页还需要 Token 名称和资源范围。Token 名称只是 Cloudflare 侧元数据，平台不保存；Account resources 与 Zone resources 由用户在 Cloudflare 创建页选择，平台的 Account ID 只用于多个可见账号时选择目标账号。
 
 - 最终用户可见界面和活跃逻辑不得出现：
 
@@ -289,7 +292,7 @@ doRequests        100,000
 | U06 | `D1_ERROR: no such table: workspaces` | 先应用全部 migrations 再部署 | 🟡 deploy 脚本已实现并测试；Workers Builds 控制台配置待核对 |
 | U07 | `invalid_scope` / `workers-platform.read` | 删除错误 OAuth scope，改 API Token，固定真实权限 | 🟡 前后端和文档已 Token 化并有 mock/runtime/UI 证据；真实 Cloudflare API 未联调 |
 | U08 | 授权失败为什么跳首页 | 错误留系统设置页，显示 HTTP/status/code/message | ✅ Token 表单保留 HTTP 错误并在 `/settings` 显示，runtime/UI 已覆盖 |
-| U09 | 用户不知道 OAuth 给什么权限，取消后权限就没了 | 权限固定只读；创建 Token 直达链接 | ✅ 三项权限只读展示、创建 Token 直达链接、UI 与文档均已同步 |
+| U09 | 用户不知道 Token 给什么权限，取消后权限就没了 | 权限固定展示；创建 Token 直达链接 | ✅ 六项权限固定展示、创建 Token 直达链接、UI 与文档均已同步 |
 | U10 | “未识别唯一账号”也是权限问题 | verify → accounts 全分页 → subscriptions，不猜账号 | ✅ 后端和 runtime 测试覆盖 |
 | U11 | 用量/配额为什么没刷新按钮 | 一个清晰刷新入口，自动加载期间不禁用 | ✅ `PageHeader` 唯一刷新入口、独立 `usageRefreshing` 和点击后再次请求的回归测试均已通过 |
 | U12 | OAuth 根本没有 offline_access | 删除 offline_access/refresh/过期语义 | ✅ 活跃 Cloudflare 流程与文档已删除；仅测试负断言和历史 migration/兼容标记保留 |
@@ -305,7 +308,7 @@ doRequests        100,000
 | U22 | Actions 手动构建插件服务器：可执行/库、目标平台 | 仅 `workflow_dispatch`；真正共享库 + artifact + SHA256 | ⬜ 未开始 |
 | U23 | 帮助中心说明二进制/库文件服务器怎么用 | 中英文完整使用说明 | ⬜ 未开始 |
 | U24 | 都整理到磁盘 HANDOFF，避免压缩后忘 | 所有要求、事实、阻塞、步骤、验收可恢复 | ✅ 已更新到 `49c7413` 基线，明确区分完成项、剩余项、禁止事项和实时核验要求 |
-| U25 | 三项只读权限怎么配置域名；OAuth/Token 名称不一致；Token 还要选范围 | Token 固定六项权限；Cloudflare 创建页填写 Token 名称并选择 Account/Zone resources；保存插件域名后缀时自动同步 Zone、DNS 和 Worker Route | 🟡 实现与定向测试完成；完整 CI、push、Actions 和真实 Cloudflare 联调待完成 |
+| U25 | 监控权限怎么配置域名；OAuth/Token 名称不一致；Token 还要选范围 | Token 固定六项权限；Cloudflare 创建页填写 Token 名称并选择 Account/Zone resources；保存插件域名后缀时自动同步 Zone、DNS 和 Worker Route | ✅ 实现、文档、UI smoke、Worker runtime、类型检查和构建已通过；真实 Cloudflare 联调仍未进行 |
 
 ## 3. 当前实现清单
 
@@ -340,7 +343,7 @@ doRequests        100,000
 
 - 旧 Cloudflare OAuth 前端 10 个文件已删除。
 - 新增：
-  - `CloudflarePermissionList.tsx`：固定三项权限、只读、不提供 input/button；
+  - `CloudflarePermissionList.tsx`：固定六项权限、不提供 input/button；
   - `CloudflareTokenForm.tsx`：Token、可选 Account ID、保存/验证/撤销、创建 Token 链接；
   - `CloudflareTokenStatus.tsx`：脱敏账号、最后验证时间、旧凭据提示；
   - `useCloudflareTokenForm.ts`：HTTP 错误保留 status/code/message。
@@ -660,8 +663,8 @@ fd80fa4  run 39754896119  #11  管理端 UI smoke 失败
 
 状态：**本轮 17 个路径已通过完整本地验收并推送；16 个非 HANDOFF 路径为 `6e9d0ec`，HANDOFF 由 `a9e3839`、`02dbb1a` 逐步收口，#56/#57 成功。不得再写成“尚未修改”“待 push”或“尚未验证”**。
 
-- README：GitHub OAuth 与 Cloudflare API Token 已明确区分；Cloudflare 固定三项权限为 Account Settings Read / Account Analytics Read / Billing Read；不再写 refresh/offline、OAuth 客户端或手填免费额度。
-- `docs/acceptance-matrix.md`：Cloudflare 行改为 Token verify / accounts / subscriptions / 密文保存 / 本地删除；组件化行改为 `CloudflareTokenForm` / `CloudflareTokenStatus` / `CloudflarePermissionList` / `useCloudflareTokenForm`；维护配额行只写平台 3 项阈值；真实栈说明不再手填 Cloudflare 额度。
+- README：GitHub OAuth 与 Cloudflare API Token 已明确区分；Cloudflare 固定六项权限并说明 Token 名称、Account/Zone resources 与自动 DNS/Worker Route；不再写 refresh/offline、Cloudflare OAuth 客户端或手填免费额度。
+- `docs/acceptance-matrix.md`：Cloudflare 行改为 Token verify / accounts / subscriptions / Zone / DNS / Worker Route / 密文保存 / 本地删除；组件化行改为 `CloudflareTokenForm` / `CloudflareTokenStatus` / `CloudflarePermissionList` / `CloudflareTokenScopeGuide` / `useCloudflareTokenForm`；维护配额行只写平台 3 项阈值；真实栈说明不再手填 Cloudflare 额度。
 - `docs/local-e2e.md`：移除 `cloudflareQuotas.d1RowsRead` 手填流程，改为确认面板没有免费额度输入框；联调边界改为 Cloudflare API Token / Analytics / subscriptions。
 - `方案.md`：Cloudflare 区块、接口、权限矩阵、验证项改为 API Token；平台设置权限矩阵明确 GitHub OAuth，不再用含糊的 OAuth 指代 Cloudflare。
 - `scripts/deploy-worker.sh` / `deploy-worker.test.sh`：部署完成提示与断言同步为 GitHub OAuth + Cloudflare API Token + SMTP + 平台阈值。
@@ -676,14 +679,14 @@ fd80fa4  run 39754896119  #11  管理端 UI smoke 失败
 开始本步骤前必须先检查本地 Git/Actions；本次已在 `b6ad802` 的 HANDOFF 中登记，并在 `cf130d1` 的 Actions #59 成功后执行。当前证据与问题：
 
 - 登录页实际页面是 `AuthFrame`/`LoginPage` 组件，桌面与窄屏没有横向溢出；不是旧登录页。
-- Cloudflare 设置区实际页面使用 Token 表单、固定三项权限和创建 Token 链接；页面没有 Cloudflare Client ID、Secret 或回调字段。现有 tracked settings 截图仍是旧 OAuth 外观，且 5% 像素容差使 targeted screenshot 仍通过，不能继续作为可靠视觉基线。
-- 390px 设置页的 `.settings-nav` 与 `.settings-content` 计算宽度为 462px，而可用内容列只有 362px；`.app-shell` 的裁剪掩盖了横向溢出，导航和面板右侧内容被截断，必须修复并增加窄屏宽度断言。
-- 空态下工作区切换器高度为 46.34px，标题/副标题合计 30.34px，当前没有遮挡；仍需用“默认工作区”真实数据覆盖两行文案，避免回归。
+- Cloudflare 设置区实际页面使用 Token 表单、固定六项权限、Token 创建说明和创建 Token 链接；页面没有 Cloudflare Client ID、Secret 或回调字段。现有 tracked settings 截图仍是旧 OAuth 外观，且 5% 像素容差使 targeted screenshot 仍通过，不能继续作为可靠视觉基线。
+- 390px 设置页的 `.settings-nav` 与 `.settings-content` 已通过 `min-width: 0`、`width: 100%` 和布局断言收敛到 362px 内容列，没有横向溢出。
+- 空态下工作区切换器高度为 46.34px，标题/副标题合计 30.34px，当前没有遮挡；真实默认工作区数据和全局图标对齐仍属于后续视觉审计。
 - 当前宿主缺少 CJK 字体，直接截图出现方框/缺字；最终像素基线必须在 CI 同款 Playwright 环境重建，不能把宿主字体缺失误当成产品文案问题。
 
 下一步只处理已记录的窄屏布局、可靠截图基线和对应回归断言；完成后再进入图标对齐、重复入口和中英文文案审计。
 
-本次已完成：`.settings-nav`、`.settings-content` 和 AntD 菜单补充 `min-width: 0`/`width: 100%`；新增 `console-ui` 的 390px 分区边界断言；在 CI 同款 Playwright 容器重建设置页 6 张截图、移动设置预览和登录页截图。结果为 `ci:local` 87/87、`npm run deploy:worker:test` 10/10；390px 下设置布局、导航和内容列均为 362px，未超出视口。下一步登记为：图标/文字对齐、重复入口/空卡片以及中英文文案审计。
+本次已完成：`.settings-nav`、`.settings-content` 和 AntD 菜单补充 `min-width: 0`/`width: 100%`；新增 `console-ui` 的 390px 分区边界断言；在 CI 同款 Playwright 容器重建设置页 6 张截图、移动设置预览和登录页截图。结果为 `ci:local` 87/87、`npm run deploy:worker:test` 10/10；390px 下设置布局、导航和内容列均为 362px，未超出视口。当前又完成 Cloudflare Token 六项权限、自动 DNS/Worker Route 和帮助中心文案收口；下一步仍是图标/文字对齐、重复入口/空卡片以及中英文文案审计。
 
 - 登录页实际截图，确认不是旧页面或旧组件。
 - 检查设置页 Cloudflare Token 区块、固定权限、创建 Token 链接。
@@ -738,7 +741,7 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - [ ] “默认工作区”文字不遮挡，图标/文字对齐。
 - [x] 系统设置只出现 Cloudflare API Token 和可选 Account ID。
 - [x] 活跃 Cloudflare 流程不出现 Client ID/Secret、回调、scope 编辑、PKCE、`response_type`、`grant_type`。
-- [x] 固定权限为 Account Settings Read / Account Analytics Read / Billing Read，只读不可取消。
+- [x] 固定权限为 Account Settings Read / Account Analytics Read / Billing Read / Zone Read / DNS Write / Workers Routes Edit，不提供自定义入口。
 - [x] “创建 Token”跳到 `https://dash.cloudflare.com/profile/api-tokens`。
 - [x] Token 保存前完成 verify、账号发现、subscriptions 校验；失败用 HTTP 状态并在当前面板显示，runtime/UI 回归已有覆盖。
 - [x] 旧 Cloudflare OAuth 活跃路由、Cookie、refresh/revoke、state 和 smoke 已删除。
@@ -781,7 +784,7 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 
 ## 11. 最近动作日志
 
-- 2026-10-23：提交 `850928e`（`feat(console): 完成 Cloudflare Token 与八项用量迁移`），前端 Token 表单、固定三项权限、8 项额度、HTTP 错误与设置导航竞态修复收口；定向 UI 回归通过。
+- 2026-10-23：提交 `850928e`（`feat(console): 完成 Cloudflare Token 与八项用量迁移`），前端 Token 表单、8 项额度、HTTP 错误与设置导航竞态修复收口；其权限清单已在本轮扩展为六项并补充自动域名配置说明。
 - 2026-10-23：提交 `9882c76`（`fix(worker): 收口 Cloudflare API Token 与只读额度契约`）；Worker runtime 20 个文件、89 个测试通过。
 - 2026-10-23：完成 Cloudflare 硬约束：只用长期 API Token；固定 `Account Settings Read`、`Account Analytics Read`、`Billing Read`；删除 `offline_access`、`workers-platform.read`、PKCE、`response_type`、`grant_type`、Client ID/Secret、回调和 refresh/revoke 活跃逻辑。
 - 2026-10-23：确认未配置 Cloudflare 时 `/api/usage/cloudflare` 返回 `{"configured":false,"cached":false}`，不读旧缓存、不发外部请求；`/api/usage/local?range=7d` 独立返回 200。
@@ -802,4 +805,5 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - 2026-10-23：提交 `b6ad802` 已推送；Actions run `39877275016`（#58）达到 `completed/success`。
 - 2026-10-23：完成视觉验收登记的窄屏布局子步骤：发现并修复 390px 设置页 462px 溢出，新增布局边界回归；CI 同款容器重建设置页 6 张、移动设置预览和登录页截图；`ci:local` 87/87、`npm run deploy:worker:test` 10/10 通过。下一步为图标/文字对齐、重复入口/空卡片和中英文文案审计。
 - 2026-10-23：`e349e7b`（`fix(ui): 修复设置页窄屏布局并更新视觉基线`）已推送；Actions run `39880735501`（#61）达到 `completed/success`。
+- 2026-10-23：当前工作区完成 Cloudflare Token 六项权限、Token 名称与 Account/Zone resources 指引、保存域名后缀时自动同步 Zone/DNS/Worker Route；删除帮助中心“配置 Cloudflare 不需要 OAuth 客户端”这类反向文案，改为直接说明操作步骤。`ci:local` 87/87、Docker runtime 20/20 文件 91/91 测试、`deploy:worker:test` 10/10、`worker:typecheck` 和 `build` 均通过，待提交推送。
 - 2026-10-23：确认剩余工作顺序：视觉/文案人工验收 → 原生手动构建与真正 SHARED target → 帮助中心原生教程 → Workers Builds/D1/真实服务联调 → 全量验收 → 新提交的 push/Actions 闭环。

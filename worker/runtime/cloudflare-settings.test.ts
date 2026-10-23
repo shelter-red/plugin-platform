@@ -2,6 +2,7 @@ import { SELF } from 'cloudflare:test'
 import { beforeEach, expect, test } from 'vitest'
 import { cloudflareSettingsApi } from '../src/index'
 import { encryptSecret } from '../src/secrets'
+import { defaultPlatformSettings, setPlatformSettingsCache } from '../src/usage'
 import type { AuthenticatedUser, Env } from '../src/types'
 import { hashToken, resetDatabase, seedServer, testEnv } from './helpers'
 import {
@@ -46,15 +47,16 @@ beforeEach(async () => {
   await resetDatabase()
   await seedServer()
   await seedAccounts()
+  setPlatformSettingsCache(defaultPlatformSettings)
 })
 
-test('Cloudflare 设置 GET 不泄露凭据并返回固定只读权限', async () => {
+test('Cloudflare 设置 GET 不泄露凭据并返回固定权限', async () => {
   const empty = await api('/api/settings/cloudflare', ADMIN_TOKEN)
   expect(empty.status).toBe(200)
   expect(await empty.json()).toEqual({
     configured: false,
     credentialKind: null,
-    permissions: ['Account Settings Read', 'Account Analytics Read', 'Billing Read'],
+    permissions: ['Account Settings Read', 'Account Analytics Read', 'Billing Read', 'Zone Read', 'DNS Write', 'Workers Routes Edit'],
     accountIdConfigured: false,
     accountId: null,
     updatedAt: null,
@@ -81,7 +83,7 @@ test('保存 Token 前完成校验、加密落库、清缓存且不回显 Token'
   expect(savedBody).toMatchObject({
     configured: true,
     credentialKind: 'api_token',
-    permissions: ['Account Settings Read', 'Account Analytics Read', 'Billing Read'],
+    permissions: ['Account Settings Read', 'Account Analytics Read', 'Billing Read', 'Zone Read', 'DNS Write', 'Workers Routes Edit'],
     accountIdConfigured: true,
     accountId: '0123...cdef',
     legacyCredential: false,
@@ -107,6 +109,16 @@ test('保存 Token 前完成校验、加密落库、清缓存且不回显 Token'
   expect(audit.results.map((row) => row.action)).toEqual(['cloudflare.credentials.updated'])
   expect(audit.results[0].detail_json).not.toContain(CLOUDFLARE_STUB_API_TOKEN)
   expect(audit.results[0].detail_json).not.toContain(CLOUDFLARE_STUB_ACCOUNT_ID)
+
+  const domain = await api('/api/settings/platform', ADMIN_TOKEN, {
+    method: 'PUT',
+    body: JSON.stringify({ pluginDomainSuffix: 'plugins.example.net' }),
+  })
+  expect(domain.status).toBe(200)
+  expect(await domain.json()).toMatchObject({
+    pluginDomainSuffix: '.plugins.example.net',
+    cloudflareDomain: { zoneId: 'zone-runtime', zoneName: 'example.net', routePattern: '*.plugins.example.net/*' },
+  })
 })
 
 test('Token、权限和账号错误返回真实 HTTP 与稳定错误码且不落库', async () => {
@@ -147,6 +159,15 @@ test('Token、权限和账号错误返回真实 HTTP 与稳定错误码且不落
 
   const stored = await testEnv.DB.prepare('SELECT COUNT(*) AS count FROM cloudflare_credentials').first<{ count: number }>()
   expect(stored?.count).toBe(1)
+})
+
+test('未配置 Token 时不能静默保存域名后缀', async () => {
+  const response = await api('/api/settings/platform', ADMIN_TOKEN, {
+    method: 'PUT',
+    body: JSON.stringify({ pluginDomainSuffix: 'no-token.example.net' }),
+  })
+  expect(response.status).toBe(400)
+  expect(await response.json()).toMatchObject({ code: 'domain_token_required' })
 })
 
 test('旧 OAuth 密文只提示重新录入，不返回旧令牌', async () => {

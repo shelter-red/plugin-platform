@@ -2,6 +2,7 @@ import { SELF } from 'cloudflare:test'
 import { beforeEach, expect, test } from 'vitest'
 import { defaultPlatformSettings, setPlatformSettingsCache } from '../src/usage'
 import { addWorkspaceMember, hashToken, openControl, publicRequest, reply, resetDatabase, seedServer, sendFrame, testEnv } from './helpers'
+import { CLOUDFLARE_STUB_API_TOKEN } from './outbound-stub'
 
 const ADMIN_TOKEN = 'admin-session-token'
 const MEMBER_TOKEN = 'member-session-token'
@@ -138,6 +139,8 @@ test('域名分配校验前缀、插件状态、服务器在线与健康检查',
   await seedServer()
   await seedAdmin()
   await seedMemberSession()
+  const token = await api('/api/settings/cloudflare', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify({ apiToken: CLOUDFLARE_STUB_API_TOKEN }) })
+  expect(token.status).toBe(200)
   const configured = await api('/api/settings/platform', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify({ pluginDomainSuffix: 'plugins.example.net' }) })
   expect(configured.status).toBe(200)
   await testEnv.DB.prepare('DELETE FROM domains WHERE id = ?').bind('domain-runtime').run()
@@ -192,6 +195,8 @@ test('管理 API 保存配额并让维护模式阻止注册码与域名分配', 
   await seedServer()
   await seedAdmin()
   await seedMemberSession()
+  const token = await api('/api/settings/cloudflare', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify({ apiToken: CLOUDFLARE_STUB_API_TOKEN }) })
+  expect(token.status).toBe(200)
 
   const forbidden = await api('/api/settings/platform', MEMBER_TOKEN, { method: 'PUT', body: JSON.stringify({ maintenance: true }) })
   expect(forbidden.status).toBe(403)
