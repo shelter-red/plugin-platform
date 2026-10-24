@@ -129,6 +129,8 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist/plugmesh-server/native-ui/dist | Out-Null
           Copy-Item native-ui/dist/* dist/plugmesh-server/native-ui/dist/ -Recurse -Force
           Copy-Item native-server/README.md dist/plugmesh-server/README.md
+          Copy-Item native-server/build-win/Release/plugmesh-plugin-host.exe dist/plugmesh-server/
+          Copy-Item native-server/include/plugmesh/plugin_api.h dist/plugmesh-server/
           Get-ChildItem "$vcpkg\installed\x64-windows\bin\*.dll" -ErrorAction SilentlyContinue |
             Copy-Item -Destination dist/plugmesh-server/
           Compress-Archive -Path dist/plugmesh-server -DestinationPath dist/plugmesh-server-windows.zip -Force
@@ -144,6 +146,8 @@ jobs:
           mkdir -p dist/plugmesh-server/native-ui/dist
           cp -R native-ui/dist/. dist/plugmesh-server/native-ui/dist/
           cp native-server/README.md dist/plugmesh-server/README.md
+          cp native-server/build/plugmesh-plugin-host dist/plugmesh-server/
+          cp native-server/include/plugmesh/plugin_api.h dist/plugmesh-server/
           cd dist
           zip -r plugmesh-server-macos.zip plugmesh-server
           shasum -a 256 plugmesh-server-macos.zip > plugmesh-server-macos.zip.sha256

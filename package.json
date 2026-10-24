@@ -40,6 +40,7 @@
     "worker:dev": "wrangler dev --config wrangler.toml",
     "deploy:worker": "bash scripts/deploy-worker.sh",
     "deploy:worker:test": "bash scripts/deploy-worker.test.sh",
+    "release:workflow:test": "bash scripts/release-workflow.test.sh",
     "native-ui:smoke:wine": "bash native-ui/run-wine-smoke.sh",
     "stack:load": "playwright test --config playwright.load.config.ts",
     "stack:streams": "playwright test --config playwright.streams.config.ts",
