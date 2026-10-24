@@ -58,7 +58,7 @@ git log --oneline --decorate -12
 - `unconfigured`：管理页面 302 到 `/setup`；管理 API 返回 `503 setup_required`。
 - `migration_required`：`/api/health`、setup 和管理 API 返回结构化 `503 migration_required`；setup 不显示可提交密码表单。
 - `/setup` 接受至少 12 个字符的密码和确认密码；校验失败留在原页面并允许重新输入。
-- 密码使用 Web Crypto PBKDF2-SHA-256、随机 salt 和 310000 次迭代派生，D1 不保存明文。
+- 密码使用 Web Crypto PBKDF2-SHA-256 和随机 salt 派生；当前版本化格式使用 100000 次迭代以符合 Cloudflare Workers 生产限制，旧版无前缀的 310000 次哈希仍可校验，D1 不保存明文。
 - 初始化完成后 setup 关闭；后续使用 `POST /auth/login` 登录。
 - 修改管理员密码必须校验当前密码，并撤销全部旧会话。
 - 已初始化后访问 `/setup` 按普通 SPA/非路由行为处理，不返回专属不可用文案。
@@ -244,3 +244,4 @@ git diff --check                         通过
 - 2026-10-24：凭据术语与原生产物文档清理完成：Cloudflare 设置测试统一使用 Global API Key/凭据术语，响应变量不再误称 token；本地 E2E 文档明确 executable 自带 `native-ui/dist`、shared 不带 setup UI、示例插件需单独准备。两份 runtime 定向测试 12/12、最终 Cloudflare 设置测试 7/7、残留搜索和 `git diff --check` 均通过，没有运行时行为变更。
 - 2026-10-24：生产只读复核仍为 `/api/health` 200、`/` 302 到 `/setup`、`/setup` 200、`/api/me` 503 `setup_required`、`/auth/login` 302 到 `/setup`；用户尚未设置管理员密码。环境仍无 Cloudflare 业务凭据或 Workers CI Read 凭据，Wrangler OAuth 权限未变化。代码/文案 TODO 与废止方案残留扫描无新增结果；没有执行生产写入。
 - 2026-10-24：下一步登记（生产 setup 保存失败）：用户在生产 `/setup` 提交密码后收到“请检查 D1 migration”的 503。只读核验确认 `0001` 至 `0009` 无待执行项，相关九张表及索引存在，`PRAGMA foreign_key_check` 无异常，默认工作区、现有 super admin 与 owner 成员关系完整，`admin_credentials` 仍为 0 行；因此现有页面把所有异常归因于 migration 是错误的。下一步核对线上部署版本与运行时限制，重构初始化写入为可分类、可重试且避免部分成功的流程，增加生产数据形态回归；验证完成后再集中推送，不代用户写入密码。
+- 2026-10-24：生产 setup 保存修复已实现：Cloudflare `workerd` 官方源码确认 PBKDF2 存在生产环境迭代上限，新凭据改为带算法和迭代数的 `pbkdf2-sha256$100000$...` 格式，并兼容旧版 310000 次无前缀哈希；管理员补建、默认工作区成员、凭据、旧认证清理和审计现在处于同一个 D1 batch，任一步失败都会回滚。setup 按密码派生/数据库写入阶段记录不含秘密的错误编号，不再伪报 migration。Debian 12 容器定向 runtime 9/9、Worker typecheck 和 `git diff --check` 通过；完整验证与生产部署仍待下一步。

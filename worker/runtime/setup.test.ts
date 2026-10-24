@@ -1,6 +1,6 @@
 import { SELF } from 'cloudflare:test'
-import { beforeEach, expect, test } from 'vitest'
-import { MIN_PASSWORD_LENGTH, setAdminPassword } from '../src/auth'
+import { beforeEach, expect, test, vi } from 'vitest'
+import { MIN_PASSWORD_LENGTH, setAdminPassword, verifyPassword } from '../src/auth'
 import { resetDatabase, testEnv } from './helpers'
 
 beforeEach(async () => {
@@ -83,8 +83,53 @@ test('管理员密码只保存为派生结果，不保存明文', async () => {
   await setAdminPassword(testEnv, 'correct-horse-battery')
   const stored = await testEnv.DB.prepare('SELECT password_hash, password_salt FROM admin_credentials WHERE id = ?').bind('primary').first<{ password_hash: string; password_salt: string }>()
   expect(stored?.password_hash).toBeTruthy()
+  expect(stored?.password_hash).toMatch(/^pbkdf2-sha256\$100000\$/)
   expect(stored?.password_salt).toBeTruthy()
   expect(stored?.password_hash).not.toContain('correct-horse-battery')
+})
+
+test('仍可校验旧版无前缀的 310000 次 PBKDF2 哈希', async () => {
+  const password = 'legacy-correct-horse-battery'
+  const salt = crypto.getRandomValues(new Uint8Array(16))
+  const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits'])
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 310000, hash: 'SHA-256' }, material, 256)
+  const encode = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes))
+  expect(await verifyPassword(password, encode(new Uint8Array(bits)), encode(salt))).toBe(true)
+  expect(await verifyPassword('wrong-password', encode(new Uint8Array(bits)), encode(salt))).toBe(false)
+})
+
+test('生产已有管理员和默认工作区时可以原子完成初始化', async () => {
+  const now = new Date().toISOString()
+  await testEnv.DB.batch([
+    testEnv.DB.prepare('INSERT INTO users (id, github_id, email, display_name, role, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind('existing-admin', 'legacy-admin', 'admin@example.com', 'Existing administrator', 'super_admin', now),
+    testEnv.DB.prepare('UPDATE workspaces SET created_by = ? WHERE id = ?').bind('existing-admin', 'ws_default'),
+    testEnv.DB.prepare('INSERT INTO workspace_members (workspace_id, user_id, role, created_at) VALUES (?, ?, ?, ?)').bind('ws_default', 'existing-admin', 'owner', now),
+  ])
+
+  const response = await submitSetup()
+  expect(response.status).toBe(303)
+  expect((await testEnv.DB.prepare('SELECT COUNT(*) AS count FROM users').first<{ count: number }>())?.count).toBe(1)
+  expect((await testEnv.DB.prepare('SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ?').bind('ws_default', 'existing-admin').first<{ role: string }>())?.role).toBe('owner')
+  expect((await testEnv.DB.prepare("SELECT COUNT(*) AS count FROM audit_log WHERE action = 'setup.password.configured'").first<{ count: number }>())?.count).toBe(1)
+})
+
+test('初始化批次失败时不留下部分凭据且不再误报 migration', async () => {
+  await testEnv.DB.prepare("CREATE TRIGGER fail_setup_audit BEFORE INSERT ON audit_log WHEN NEW.action = 'setup.password.configured' BEGIN SELECT RAISE(ABORT, 'forced setup audit failure'); END").run()
+  const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  try {
+    const response = await submitSetup()
+    expect(response.status).toBe(503)
+    const html = await response.text()
+    expect(html).toContain('管理员密码暂时无法保存')
+    expect(html).toContain('错误编号：')
+    expect(html).not.toContain('migration')
+    expect((await testEnv.DB.prepare('SELECT COUNT(*) AS count FROM admin_credentials').first<{ count: number }>())?.count).toBe(0)
+    expect((await testEnv.DB.prepare('SELECT COUNT(*) AS count FROM users').first<{ count: number }>())?.count).toBe(0)
+    expect((await testEnv.DB.prepare('SELECT COUNT(*) AS count FROM workspace_members').first<{ count: number }>())?.count).toBe(0)
+  } finally {
+    consoleError.mockRestore()
+    await testEnv.DB.prepare('DROP TRIGGER fail_setup_audit').run()
+  }
 })
 
 test('修改管理员密码会校验当前密码并撤销全部旧会话', async () => {

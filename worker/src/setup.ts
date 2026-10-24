@@ -1,4 +1,4 @@
-import { MIN_PASSWORD_LENGTH, setAdminPassword, type AdminPasswordState } from './auth'
+import { AdminPasswordSetupError, MIN_PASSWORD_LENGTH, setAdminPassword, type AdminPasswordState } from './auth'
 import type { Env } from './types'
 
 const SECURITY_HEADERS = {
@@ -47,8 +47,18 @@ export async function setupApi(request: Request, env: Env, passwordState: AdminP
   if (password !== confirmPassword) return setupPage('两次输入的密码不一致。', 400)
   try {
     await setAdminPassword(env, password)
-  } catch {
-    return setupPage('管理员密码保存失败，请检查 D1 migration 是否已执行。', 503)
+  } catch (error) {
+    const errorId = request.headers.get('cf-ray') ?? crypto.randomUUID()
+    const code = error instanceof AdminPasswordSetupError ? error.code : 'unexpected_error'
+    console.error('Admin password setup failed', {
+      errorId,
+      code,
+      error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+    })
+    const message = code === 'password_derivation_failed'
+      ? '当前运行环境无法安全处理管理员密码。'
+      : '管理员密码暂时无法保存，请稍后重试。'
+    return setupPage(`${message} 错误编号：${errorId}`, 503)
   }
   return new Response(null, { status: 303, headers: { ...SECURITY_HEADERS, location: '/' } })
 }

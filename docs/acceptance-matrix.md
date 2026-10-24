@@ -12,7 +12,7 @@
 
 | 验收项 | 状态 | 证据与边界 |
 | --- | --- | --- |
-| 首次管理员密码初始化 | 本地已验证 | `worker/runtime/setup.test.ts` 验证未初始化页面/API 门禁、密码长度与确认校验、PBKDF2 派生结果落库、setup 关闭；`0009_password_auth.sql` 创建凭据表。缺少该表时健康检查、setup 和管理 API 返回结构化 `503 migration_required`，不泄漏为 Cloudflare 1101。 |
+| 首次管理员密码初始化 | 本地已验证 | `worker/runtime/setup.test.ts` 验证未初始化页面/API 门禁、密码长度与确认校验、版本化 PBKDF2 派生结果、旧哈希兼容、生产数据形态下原子落库、失败回滚和 setup 关闭；`0009_password_auth.sql` 创建凭据表。缺少该表时健康检查、setup 和管理 API 返回结构化 `503 migration_required`，不泄漏为 Cloudflare 1101。 |
 | 管理员密码登录与修改 | 本地已验证 | runtime 验证错误密码 401、成功签发 HttpOnly 会话、修改密码校验当前密码并撤销全部旧会话；Playwright 覆盖组件化登录页和设置页修改密码。 |
 | 旧认证入口移除 | 本地已验证 | Worker 不再注册第三方登录、OAuth 设置和邀请接口；管理端无对应入口；历史表只用于升级兼容和初始化清理。 |
 | Cloudflare Email + Global API Key | 模块已验证 | `cloudflare-credentials.test.ts` 与 `cloudflare-settings.test.ts` 覆盖 `/user` 验证、账号分页、唯一/指定账号、subscriptions、密文保存、GET 不回显、删除本地密文和 401/403/409/502。 |
