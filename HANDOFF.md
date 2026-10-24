@@ -19,6 +19,8 @@
 > **下一步登记（Workers Builds migration 根因修复）**：先使用 Wrangler 官方命令/Cloudflare 官方 API 的只读能力核对 `plugmesh-worker` 的 Builds 配置和实际 Deploy command，不读取或输出凭据值；确认是否绕过仓库 `npm run deploy`。代码侧同时审查初始化门禁对“新代码已发布但新表尚未迁移”的行为，只在 D1 明确返回缺表时降级为 setup-required/迁移提示，其他数据库错误仍必须抛出，避免再次暴露 Cloudflare 1101。优先使用 Wrangler、D1 migration 和标准 `Response`/错误处理，不自造迁移框架。补 runtime/smoke/部署脚本回归、更新文档并提交完整记录后，若确需修改生产 Builds 配置，必须另行登记该生产写入；本步骤登记完成前不检查或修改下一项。
 
 > **Workers Builds migration 门禁修复完成**：`bf68565` 已提交三态初始化门禁、页面跳转回归及 CI 容器所有权修复。最终版 `npm run ci:local` 前置检查全部通过，完整 Playwright 为 89/89；完整 workerd runtime 为 17/17 文件、77/77 测试；部署模拟为 9/9。生产 `0009_password_auth.sql` 已应用且 1101 消失。Wrangler 官方 CLI 未提供 Workers Builds Deploy command 的读取/修改入口，故生产控制台实际值仍保持未核验；如需修改，必须先在本文件另行登记生产写入步骤。下一步是推送当前累计提交，并只按推送后的完整 HEAD SHA 低频核对 Actions。
+
+> **本步骤 Actions 验收**：`4ce207cc9fe5f1ad292661b4fd85eeb71026f211` 已推送；平台验收 run `40082466727` 为 `completed/success`，`changes` 与 `web` 成功，Linux、Windows、macOS native jobs 按路径过滤跳过。本条结果作为普通交接记录只提交、不再次推送；当前外部待办仅为用户完成生产管理员密码初始化，以及在 Cloudflare 控制台确认 Workers Builds Deploy command 为 `npm run deploy`。
 >
 > 本次恢复记录：U29 的主站 Host 路由修复、回归测试和应急说明已完成并通过平台 Actions；8.5 原生教程、发布 workflow、原生运行时修复和 `v0.1.1` Release 已完成。未验证边界仅保留真实 Cloudflare/Workers Builds 控制台联调。
 
