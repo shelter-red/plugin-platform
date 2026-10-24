@@ -2,7 +2,7 @@
 
 > 最后整理：2026-10-24（Asia/Shanghai）
 >
-> 本次恢复记录：U29 的主站 Host 路由修复、回归测试和应急说明已完成并通过平台 Actions；8.5 原生教程、发布 workflow、`v0.1.0` Release 和原生运行时修复也已完成。当前正在发布包含原生兼容性修复的 `v0.1.1`，未验证边界仅保留真实 Cloudflare/Workers Builds 控制台联调。
+> 本次恢复记录：U29 的主站 Host 路由修复、回归测试和应急说明已完成并通过平台 Actions；8.5 原生教程、发布 workflow、原生运行时修复和 `v0.1.1` Release 已完成。未验证边界仅保留真实 Cloudflare/Workers Builds 控制台联调。
 >
 > 本步本地验收已通过：`npm run worker:typecheck`、`npm run build`、`npm run worker:smoke`、`worker/runtime/setup.test.ts` 2/2（含重叠后缀下主站根路径和 `/api/health`），以及 Docker Worker runtime 20/20 文件、93/93 测试；下一步提交 U29 代码/文档并重新执行完整 CI。
 >
@@ -65,6 +65,8 @@
 > `3182307` 已推送；平台验收 run `40047861014` 已 `completed/success`，`web`、`changes`、`linux-native`、`windows-native`、`macos-native` 全部成功。Windows 注册完成后的真实 Wine 回归、Linux glibc/OpenSSL ABI 兼容构建和可执行包首次绑定入口已完成平台验收；当前只需收口本条记录并继续遵守 Actions 低频检查。
 
 > 新步骤登记（2026-10-24）：当前 `v0.1.0` Release 仍指向旧提交 `c56964b`，不包含 `3182307` 的 Windows 注册 teardown、首次双击 setup 和 Linux glibc 兼容修复。下一步将把项目版本提升为 `0.1.1`，以最新 `main` 创建并验证新的 Release，核对公开资产确实包含 native UI、兼容基线 OpenSSL 和修复后的 Windows 产物；同时更新本文件恢复卡和最终状态。登记提交 `e8c9124` 的 Actions run `40049792370` 已成功，现在进入版本文件修改和发布前验证；Actions 继续低频检查。
+
+> `25c0b20` 已将版本更新为 `0.1.1` 并通过平台验收 run `40050333575`；tag `v0.1.1` 已指向该提交，发布 run `40050681670` 的标签校验、三平台构建和创建 Release 全部成功。公开 Release 资产已通过 SHA256 核验：Linux 包含兼容基线 OpenSSL 3、可执行文件和 native UI，Windows 包含可执行文件、OpenSSL DLL 和 native UI，macOS 归档也已核验。Release：<https://github.com/shelter-red/plugin-platform/releases/tag/v0.1.1>。
 >
 > `8ad8704` 已推送；平台验收 #98（run `39957698043`）对应 HEAD 且 `completed/success`，`changes`/`web` 成功，三个 native job skipped。U16 真实数据审计已完成：1440/1024 视口下默认工作区切换器为 `46.34px`，两行文案上下各留 `8px`，图标与文案中心一致；带图标按钮和导航项的垂直中心差均为 `0px`，没有发现需要凭猜测修改的样式问题。下一步只增加对应 Playwright 回归断言，不改变现有视觉规则。
 >
@@ -83,9 +85,9 @@
 ```text
 仓库：/home/tc/work/plugin-platform
 分支：main
-HEAD（本次核验）：a034701 记录验收状态清理结果
-origin/main（本次核验）：a034701
-工作区（本次核验）：U29、8.5、发布 workflow 修复、8.6 核对和 U16 视觉测量/回归已记录；原生运行时/交互配置修复已通过平台验收 #103；`v0.1.0` 已发布且公开资产已核验；交接文档状态清理已通过平台验收 #109（run `40044540676`）
+HEAD（本次核验）：25c0b20 升级原生修复版本到 0.1.1
+origin/main（本次核验）：25c0b20
+工作区（本次核验）：U29、8.5、发布 workflow 修复、8.6 核对、U16 视觉测量/回归和原生运行时/交互配置修复均已通过对应 Actions；`v0.1.0` 旧 Release 保留，`v0.1.1` 已指向修复后的 `25c0b20` 且公开资产已核验；真实 Cloudflare/Workers Builds 控制台联调仍未直接验证
 fetch remote：https://github.com/shelter-red/plugin-platform.git
 push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 ```
@@ -93,7 +95,9 @@ push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 最近提交（均已推送）：
 
 ```text
-a034701 docs: 记录验收状态清理结果
+25c0b20 chore: 升级原生修复版本到 0.1.1
+e8c9124 docs: 登记修复版本发布步骤
+0a5e1f7 docs: 记录原生兼容性 Actions 验收
 5736105 docs: 清理过期验收状态
 f9a0752 docs: 登记交接文档状态清理
 3c9fce9 docs: 确认最终 Actions 验收成功
