@@ -52,7 +52,7 @@
 >
 > 下一步登记：清理本文件及 `docs/acceptance-matrix.md` 中与当前实现矛盾的过期“待实现/未完成”状态，重点收口 U26、帮助中心、U22/U23、最终验收清单和当前 HEAD；本步只整理事实记录，不改运行时代码、路由、API 或权限契约。必须先完成本登记提交和 Actions 验收，再执行文档清理。
 >
-> 本步清理已完成：删除 8.3 下重复的历史“待实现”清单，更新 U01/U16/U22/U23/U26、8.4/8.5/8.7、最终验收清单、当前 HEAD 和原生/Release 证据；保留 U06 的真实 Workers Builds 控制台命令与真实 Cloudflare 外部联调边界为未验证。文档旧状态搜索无命中，`git diff --check`、`npm run ci:local`（UI smoke 89/89）和 `npm run deploy:worker:test`（10/10）均通过；待提交、推送并追踪最新 Actions。
+> 本步清理已完成：删除 8.3 下重复的历史“待实现”清单，更新 U01/U16/U22/U23/U26、8.4/8.5/8.7、最终验收清单、当前 HEAD 和原生/Release 证据；保留 U06 的真实 Workers Builds 控制台命令与真实 Cloudflare 外部联调边界为未验证。文档旧状态搜索无命中，`git diff --check`、`npm run ci:local`（UI smoke 89/89）和 `npm run deploy:worker:test`（10/10）均通过；`5736105` 已推送，平台验收 #108（run `40044067102`）的 `changes`/`web` 成功，native jobs 按路径过滤跳过。
 >
 > `8ad8704` 已推送；平台验收 #98（run `39957698043`）对应 HEAD 且 `completed/success`，`changes`/`web` 成功，三个 native job skipped。U16 真实数据审计已完成：1440/1024 视口下默认工作区切换器为 `46.34px`，两行文案上下各留 `8px`，图标与文案中心一致；带图标按钮和导航项的垂直中心差均为 `0px`，没有发现需要凭猜测修改的样式问题。下一步只增加对应 Playwright 回归断言，不改变现有视觉规则。
 >
@@ -71,9 +71,9 @@
 ```text
 仓库：/home/tc/work/plugin-platform
 分支：main
-HEAD（本次核验）：f9a0752 登记交接文档状态清理
-origin/main（本次核验）：f9a0752
-工作区（本次核验）：U29、8.5、发布 workflow 修复、8.6 核对和 U16 视觉测量/回归已记录；原生运行时/交互配置修复已通过平台验收 #103；`v0.1.0` 已发布且公开资产已核验；当前已登记清理过期交接状态，平台验收 #105（run `40001803087`）成功
+HEAD（本次核验）：5736105 清理过期验收状态
+origin/main（本次核验）：5736105
+工作区（本次核验）：U29、8.5、发布 workflow 修复、8.6 核对和 U16 视觉测量/回归已记录；原生运行时/交互配置修复已通过平台验收 #103；`v0.1.0` 已发布且公开资产已核验；交接文档状态清理已通过平台验收 #108（run `40044067102`）
 fetch remote：https://github.com/shelter-red/plugin-platform.git
 push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 ```
@@ -81,6 +81,7 @@ push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 最近提交（均已推送）：
 
 ```text
+5736105 docs: 清理过期验收状态
 f9a0752 docs: 登记交接文档状态清理
 3c9fce9 docs: 确认最终 Actions 验收成功
 a6f8569 docs: 记录 v0.1.0 Release 产物
@@ -918,3 +919,4 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - 2026-10-24：创建并推送 `v0.1.0` 指向 `c56964b`；发布原生端 run `39995358724` 的校验、三平台构建和创建 Release job 全部成功。Release URL 为 `https://github.com/shelter-red/plugin-platform/releases/tag/v0.1.0`，公开下载包已核验 Linux OpenSSL 3 与 Windows OpenSSL DLL 均随包提供；“requires a tag” 已闭环。
 - 2026-10-24：`a6f8569` 的平台验收 #104（run `39997388485`）已在 Actions 页面核对为 `completed/success`，Release 与最终交接记录闭环。
 - 2026-10-24：交接状态清理本地验收完成：旧“待实现/手动 workflow 未触发/帮助教程待闭环”等搜索无命中；`git diff --check`、`npm run ci:local`（UI smoke 89/89）和 `npm run deploy:worker:test`（10/10）通过。待提交、推送和最新 Actions 验证。
+- 2026-10-24：`5736105`（`清理过期验收状态`）已推送；平台验收 #108（run `40044067102`）完成成功，`changes`/`web` 成功，三个 native job 按路径过滤跳过。当前文档清理步骤闭环，U06/真实 Cloudflare 外部联调仍按证据保留为未验证边界。
