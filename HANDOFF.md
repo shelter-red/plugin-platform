@@ -16,6 +16,8 @@
 >
 > **生产 0009 migration 已完成**：`wrangler d1 migrations apply plugmesh --remote --config wrangler.toml` 成功执行仓库内 `0009_password_auth.sql` 的 6 条命令，复核结果为 `No migrations to apply`。生产 `/api/health` 返回 200，`/` 返回 302 且 Location 为 `/setup`，`/setup` 返回 200 并显示“初始化 Plugmesh”密码表单，`/api/me` 返回 503 `setup_required`，`/auth/login` 在未初始化时返回 302 到 `/setup`；原 Cloudflare 1101 已消失。未代用户设置密码，未修改 Cloudflare 业务凭据、DNS 或 Worker Route。下一步须另行登记并修复 Workers Builds 绕过 `npm run deploy` 导致代码先于 migration 发布的根因。
 >
+> **下一步登记（Workers Builds migration 根因修复）**：先使用 Wrangler 官方命令/Cloudflare 官方 API 的只读能力核对 `plugmesh-worker` 的 Builds 配置和实际 Deploy command，不读取或输出凭据值；确认是否绕过仓库 `npm run deploy`。代码侧同时审查初始化门禁对“新代码已发布但新表尚未迁移”的行为，只在 D1 明确返回缺表时降级为 setup-required/迁移提示，其他数据库错误仍必须抛出，避免再次暴露 Cloudflare 1101。优先使用 Wrangler、D1 migration 和标准 `Response`/错误处理，不自造迁移框架。补 runtime/smoke/部署脚本回归、更新文档并提交完整记录后，若确需修改生产 Builds 配置，必须另行登记该生产写入；本步骤登记完成前不检查或修改下一项。
+>
 > 本次恢复记录：U29 的主站 Host 路由修复、回归测试和应急说明已完成并通过平台 Actions；8.5 原生教程、发布 workflow、原生运行时修复和 `v0.1.1` Release 已完成。未验证边界仅保留真实 Cloudflare/Workers Builds 控制台联调。
 
 > 新目标登记（2026-10-24）：将应用登录改为仅密码模式，首次未配置密码时所有业务页面和 API 均进入 `/setup`，setup 页面负责设置管理员密码；彻底移除 GitHub OAuth、GitHub 回调、白名单和依赖 GitHub 身份的邀请登录。Cloudflare 取消 OAuth 和 API Token，统一改为加密保存 Cloudflare Email + Global API Key，验证后选择目标 Account ID。保留工作区、插件、服务器、域名和审计业务数据，清理旧 OAuth、Token、邀请令牌、注册码和会话认证状态；旧 API Token 不自动转换，必须重新配置。密码使用 Web Crypto PBKDF2-SHA-256 + 随机 salt，不明文存储；密码修改撤销旧会话，忘记密码不提供未认证网页重置。先完成本登记提交和对应 Actions 验收，再按认证、Cloudflare、UI/文档、迁移测试分步实现；Actions 查询至少间隔约 1 分钟，不重复触发 workflow。
