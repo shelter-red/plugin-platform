@@ -10,6 +10,8 @@
 
 > 本步骤最终记录：`47e5ea4` 已推送；平台验收 run `40058332836`（完整 SHA `47e5ea450d0379737be959a2cbbd301b87bf1a01`）为 `completed/success`，`changes`/`web` 成功，三个 native job 按路径过滤 skipped。
 
+> 新步骤登记（2026-10-24）：核对真实 Cloudflare API / Workers Builds 联调是否具备当前环境凭据，并同步活跃代码、workflow、注释和文档中的可证明死代码/重复内容；若无凭据，只完成仓库侧校验并明确保留外部未验证边界，不猜测生产状态、不改变运行时代码契约。登记提交及其 Actions 验收前不开始本步骤修改；Actions 继续低频追踪。
+
 > 新步骤登记（2026-10-24）：继续执行当前目标，先固化 Actions 低频追踪约束，再对当前代码和文档做有证据的过期文案、重复注释和死代码审计。登记提交完成并验证对应 Actions 前，不开始后续修改；Actions 查询至少间隔 1 分钟，不重复触发 workflow，不把轮询状态误判为成功。
 
 > 本步审计完成：活跃代码、文案、注释和 workflow 扫描未发现可删除的 Cloudflare OAuth 运行时、兼容 migration、负断言或重复入口；确认 `useConsoleData.refreshData()` 中 `setDomains` 当前只有一处。仅将 runtime 测试标题明确为“已废弃 Cloudflare OAuth”，代码提交为 `10947a3`。`npm run worker:typecheck`、`npm run build`、容器 runtime 定向测试 3/3、`npm run ci:local`（89/89）和 `npm run deploy:worker:test`（10/10）通过；宿主机 runtime 因 glibc 低于 workerd 要求未启动，按仓库既有 `node:22-bookworm-slim` + CA 挂载命令复验通过。`10947a3` 的 Actions run `40053060250` 已完成成功。下一步需重新登记明确范围后再修改。
