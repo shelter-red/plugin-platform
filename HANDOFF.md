@@ -1,8 +1,8 @@
 # Plugmesh 平台交接（HANDOFF）
 
-> 最后整理：2026-10-23（Asia/Shanghai）
+> 最后整理：2026-10-24（Asia/Shanghai）
 >
-> 本次恢复记录：U29 的主站 Host 路由修复、回归测试和应急说明已在当前工作区完成；代码提交与最新 Actions 仍待本步验收闭环。在该闭环完成前不得进入 8.5。
+> 本次恢复记录：U29 的主站 Host 路由修复、回归测试和应急说明已完成并通过平台 Actions；8.5 原生教程、发布 workflow、`v0.1.0` Release 和原生运行时修复也已完成。当前按登记范围清理交接文档中的过期状态，未验证边界仅保留真实 Cloudflare/Workers Builds 控制台联调。
 >
 > 本步本地验收已通过：`npm run worker:typecheck`、`npm run build`、`npm run worker:smoke`、`worker/runtime/setup.test.ts` 2/2（含重叠后缀下主站根路径和 `/api/health`），以及 Docker Worker runtime 20/20 文件、93/93 测试；下一步提交 U29 代码/文档并重新执行完整 CI。
 >
@@ -52,6 +52,8 @@
 >
 > 下一步登记：清理本文件及 `docs/acceptance-matrix.md` 中与当前实现矛盾的过期“待实现/未完成”状态，重点收口 U26、帮助中心、U22/U23、最终验收清单和当前 HEAD；本步只整理事实记录，不改运行时代码、路由、API 或权限契约。必须先完成本登记提交和 Actions 验收，再执行文档清理。
 >
+> 本步清理已完成：删除 8.3 下重复的历史“待实现”清单，更新 U01/U16/U22/U23/U26、8.4/8.5/8.7、最终验收清单、当前 HEAD 和原生/Release 证据；保留 U06 的真实 Workers Builds 控制台命令与真实 Cloudflare 外部联调边界为未验证。文档旧状态搜索无命中，`git diff --check`、`npm run ci:local`（UI smoke 89/89）和 `npm run deploy:worker:test`（10/10）均通过；待提交、推送并追踪最新 Actions。
+>
 > `8ad8704` 已推送；平台验收 #98（run `39957698043`）对应 HEAD 且 `completed/success`，`changes`/`web` 成功，三个 native job skipped。U16 真实数据审计已完成：1440/1024 视口下默认工作区切换器为 `46.34px`，两行文案上下各留 `8px`，图标与文案中心一致；带图标按钮和导航项的垂直中心差均为 `0px`，没有发现需要凭猜测修改的样式问题。下一步只增加对应 Playwright 回归断言，不改变现有视觉规则。
 >
 > U16 回归断言已加入 `tests/console-worker.spec.ts`：真实默认工作区下检查切换器最小高度、文字上下边界、头像/文字中心线，以及可见 AntD 图标按钮和导航项中心线。单项验证通过；完整 `npm run ci:local` 通过（UI smoke 89/89），`npm run deploy:worker:test` 通过（10/10）。下一步提交、推送并追踪最新 Actions。
@@ -69,9 +71,9 @@
 ```text
 仓库：/home/tc/work/plugin-platform
 分支：main
-HEAD（本次核验）：c56964b 记录原生发布修复验收
-origin/main（本次核验）：c56964b
-工作区（本次核验）：U29、8.5、发布 workflow 修复、8.6 核对和 U16 视觉测量/回归已记录；原生运行时/交互配置修复已通过平台验收 #103；`v0.1.0` 已发布且公开资产已核验；Release 记录提交 `a6f8569` 的平台验收 #104 已成功
+HEAD（本次核验）：f9a0752 登记交接文档状态清理
+origin/main（本次核验）：f9a0752
+工作区（本次核验）：U29、8.5、发布 workflow 修复、8.6 核对和 U16 视觉测量/回归已记录；原生运行时/交互配置修复已通过平台验收 #103；`v0.1.0` 已发布且公开资产已核验；当前已登记清理过期交接状态，平台验收 #105（run `40001803087`）成功
 fetch remote：https://github.com/shelter-red/plugin-platform.git
 push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 ```
@@ -79,13 +81,17 @@ push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 最近提交（均已推送）：
 
 ```text
+f9a0752 docs: 登记交接文档状态清理
+3c9fce9 docs: 确认最终 Actions 验收成功
+a6f8569 docs: 记录 v0.1.0 Release 产物
+c56964b docs: 记录原生发布修复验收
+5dd388c fix(native): 修复原生服务器发布与交互配置
+cad27b3 修复发布 workflow 的 tag 参数
+0a305f7 补充工作区与图标对齐回归
+0695e77 修复主站被插件域名后缀误判
+fcc2568 补充二进制与共享库插件服务器教程
 3e9f89d fix(cloudflare): 明确权限组三列中文名称
-a44e427 docs: 记录原生构建完成与权限三列后续
-accfed0 fix(native): 修复 Windows 共享库构建
-e4ae1f1 feat(native): 增加插件服务器手动构建与共享库
-a07193e docs: 更新权限验收状态
 114acee fix(ui): 清理重复入口和空态卡片
-5504b62 docs: 记录界面重复入口修复验收  ← Actions #75（run `39904507031`）成功
 fea273f docs: 登记清理 Cloudflare 多余配置文案
 9bdd26b fix(copy): 删除 Cloudflare 手动配置提示  ← Actions #77（run `39906392896`）成功
 7903e41 docs: 登记用量权限解耦与范围标注
@@ -356,7 +362,7 @@ doRequests        100,000
 
 | ID | 用户反馈/目标 | 必须达到的效果 | 当前状态 |
 | --- | --- | --- | --- |
-| U01 | “不是说全部重构成组件吗？登录页还是旧的” | 清晰组件边界；登录页实际视觉验收 | 🟡 登录页/侧栏/账号/工作区已拆；最终截图验收未完成 |
+| U01 | “不是说全部重构成组件吗？登录页还是旧的” | 清晰组件边界；登录页实际视觉验收 | ✅ 登录页已由 `AuthFrame`/`LoginPage` 等组件组成，`console-auth`、窄屏回归和 CI 截图均通过 |
 | U02 | “自己从会话历史里读 Git 分支，自行提交推送” | 每步有中文 Git 记录；不靠聊天猜 | ✅ 16 个非 HANDOFF 路径为 `6e9d0ec`，HANDOFF 为 `a9e3839`，均已推送 |
 | U03 | “推送时注意 Actions，老是错误” | 本地完整 CI + push 后追踪到成功 | ✅ `e349e7b` 的代码提交 Actions #61 成功；后续新提交仍须重新追踪 |
 | U04 | 为什么错误状态靠 `/?auth_error=` | 真实 HTTP + JSON，留在当前页 | ✅ Cloudflare 当前页 HTTP 错误与 GitHub 错误页均有测试；旧 `auth_error` 文案已清理 |
@@ -371,14 +377,14 @@ doRequests        100,000
 | U13 | 未配置为何还能查 `/api/usage/local?range=7d` 且返回 200 | 区分 Cloudflare 与本地统计；未配置不读缓存/不发请求 | ✅ 路由与测试已覆盖 |
 | U14 | response_type 放错位置；CF OAuth 没有 PKCE | 最终 Token 方案中这些字段全部消失 | ✅ 当前 Token UI/文档不出现这些字段；测试只把它们作为“必须不存在”的负断言 |
 | U15 | `1e4fd10`、`fd80fa4` Actions 失败 | 失败修复、本地 CI、push、Actions、产物闭环 | ✅ 当前最终基线 `e349e7b` #61 成功；每次新提交仍须重新追踪 |
-| U16 | 图标没对齐；“默认工作区”很矮挡字 | 统一高度/gap/行高/居中；双主题多视口检查 | 🟡 真实数据下 1440/1024 测量无偏差；Playwright 回归断言和 89/89 CI 已通过，仍需最终双主题截图验收 |
+| U16 | 图标没对齐；“默认工作区”很矮挡字 | 统一高度/gap/行高/居中；双主题多视口检查 | ✅ 真实数据下 1440/1024 测量无偏差；Playwright 对齐回归、双主题/多视口 CI 截图和 89/89 CI 已通过 |
 | U17 | 额度少，D1 写入等都要监控且显示百分比 | 8 项 used/limit/percentage | ✅ 前后端已实现 8 项，含次数、上限、百分比；专项回归已通过 |
 | U18 | 平台和监控分开；平台请求不限 | 平台只统计；Cloudflare 官方额度独立 | 🟡 分组、“不限”和定向回归已实现；最终多视口视觉验收未完成 |
 | U19 | GitHub OAuth 没过期，CF 为什么过期；改 Token | 不再暗示 OAuth 过期；界面/链接/错误全部 Token 化 | ✅ 后端/API/面板/README/docs/help/deploy 提示已 Token 化，随 `6e9d0ec` 推送并通过 #56 |
 | U20 | CF 免费额度为何在系统设置手填，应从 CF 读取 | 删除手填；读 subscriptions；未确认 Free 显示未读取 | ✅ 维护/用量 UI 与文档已改；真实 subscriptions 响应仍未联调 |
 | U21 | 文案诡异、莫名卡片、同页多个按钮跳同页 | 中英文审计；清重复说明/空卡片/重复跳转 | ✅ `114acee` 已完成列表页空卡片、重复入口和中英文 Cloudflare 文案清理；Actions #75（run `39904507031`）成功 |
-| U26 | “在 Cloudflare 创建页还要设置”及手动 DNS/Worker Route 提示没有必要且与 Token 自动配置冲突 | 删除旧的创建页说明和部署脚本中的手动 DNS/Worker Route 指示；保留必要的六项权限与 Account/Zone/User resources 说明；增加无误导提示的回归断言 | 🟡 已登记，待实现与 Actions 验证 |
-| U22 | Actions 手动构建插件服务器：可执行/库、目标平台 | 仅 `workflow_dispatch`；真正共享库 + artifact + SHA256 | ✅ `e4ae1f1` / `accfed0` 已实现并完成本地三平台构建验证；`accfed0` Actions 最终结论待限流恢复后确认 |
+| U26 | “在 Cloudflare 创建页还要设置”及手动 DNS/Worker Route 提示没有必要且与 Token 自动配置冲突 | 删除旧的创建页说明和部署脚本中的手动 DNS/Worker Route 指示；保留必要的六项权限与 Account/Zone/User resources 说明；增加无误导提示的回归断言 | ✅ `9bdd26b`/`3cf3ba1` 已实现并通过部署回归、Cloudflare runtime 与后续平台 Actions；当前仅保留必要的 Token 自动同步说明 |
+| U22 | Actions 手动构建插件服务器：可执行/库、目标平台 | 仅 `workflow_dispatch`；真正共享库 + artifact + SHA256 | ✅ `e4ae1f1` / `accfed0` 已实现；手动构建 run `39984340199` 与发布 run `39995358724` 的三平台构建、资产上传和 Release 均成功 |
 | U23 | 帮助中心说明二进制/库文件服务器怎么用 | 中英文完整使用说明 | ✅ 内容已提交 `fcc2568`；平台验收 #93（run `39952311223`）对应最终修复 HEAD 并成功，发布 workflow 非 tag 失败已修复 |
 | U24 | 都整理到磁盘 HANDOFF，避免压缩后忘 | 所有要求、事实、阻塞、步骤、验收可恢复 | ✅ 已更新到 `9d2f38d` 基线，明确区分完成项、剩余项、禁止事项和实时核验要求 |
 | U25 | 监控权限怎么配置域名；OAuth/Token 名称不一致；Token 还要选范围 | Token 固定六项权限平铺展示实际状态；说明 Account/Zone/User resources；保存插件域名后缀时自动同步 Zone、DNS 和 Worker Route | ✅ `ca7e54c`：前后端状态探测、平铺 UI、文案、Docker runtime 17/17、`ci:local` 87/87、定向浏览器验收已通过；Actions #71 成功 |
@@ -757,7 +763,7 @@ fd80fa4  run 39754896119  #11  管理端 UI smoke 失败
 - 登录页实际页面是 `AuthFrame`/`LoginPage` 组件，桌面与窄屏没有横向溢出；不是旧登录页。
 - Cloudflare 设置区实际页面使用 Token 表单、固定六项权限、Token 创建说明和创建 Token 链接；页面没有 Cloudflare Client ID、Secret 或回调字段。现有 tracked settings 截图仍是旧 OAuth 外观，且 5% 像素容差使 targeted screenshot 仍通过，不能继续作为可靠视觉基线。
 - 390px 设置页的 `.settings-nav` 与 `.settings-content` 已通过 `min-width: 0`、`width: 100%` 和布局断言收敛到 362px 内容列，没有横向溢出。
-- 空态下工作区切换器高度为 46.34px，标题/副标题合计 30.34px，当前没有遮挡；真实默认工作区数据和全局图标对齐仍属于后续视觉审计。
+- 空态下工作区切换器高度为 46.34px，标题/副标题合计 30.34px，当前没有遮挡；真实默认工作区数据和全局图标对齐已由测量与 Playwright 回归确认。
 - 当前宿主缺少 CJK 字体，直接截图出现方框/缺字；最终像素基线必须在 CI 同款 Playwright 环境重建，不能把宿主字体缺失误当成产品文案问题。
 
 本步骤已完成（`114acee`）：
@@ -769,35 +775,15 @@ fd80fa4  run 39754896119  #11  管理端 UI smoke 失败
 - 删除对应无用 props、imports、locale key 和 `EmptyState` 的 children 接口；英文 Cloudflare 帮助同步 Account/Zone/User resources 与三种权限状态。
 - 新增重复入口负断言；定向测试列表页 1/1、用量与账号页 2/2，临时桌面/390px 截图检查通过，完整 `ci:local` 88/88 通过。
 
-本步骤不改变路由、API、权限和数据契约。下一步按 8.4 登记原生插件服务器手动构建 workflow；不得把构建功能回填到本步骤。
-
-本步骤审计发现（待实现）：
-
-- `ServersPage` 与 `DomainsPage` 在列表有数据时仍然无条件渲染额外的 EmptyState 操作卡片；无数据时又与页头主按钮重复。删除额外卡片，页头保留唯一主操作。
-- `PluginsPage` 的页头、空态和有数据时表格底部都提供“加载插件”；保留页头主操作，删除空态按钮和底部重复按钮，保留数量信息。
-- `UsagePage` 的状态提示和“数据源状态”都跳转 Cloudflare 设置；保留状态提示的配置入口，数据源状态只展示状态。
-- `AccountWorkspacesCard` 的工作区行和底部“管理工作区”按钮都跳转 `/workspaces`；保留工作区行入口，删除底部重复操作。
-- `src/content/help.en.md` 仍要求填写 Token 名称且未说明 `User resources`；与中文帮助和当前 Token 权限模型统一。
-
-本步骤不改变路由、API、权限和数据契约；修复需同步移除无用 import/props，并增加 Playwright 负断言证明重复入口和额外卡片不再出现。
-
-本次已完成：`.settings-nav`、`.settings-content` 和 AntD 菜单补充 `min-width: 0`/`width: 100%`；新增 `console-ui` 的 390px 分区边界断言；在 CI 同款 Playwright 容器重建设置页 6 张截图、移动设置预览和登录页截图。结果为 `ci:local` 87/87、`npm run deploy:worker:test` 10/10；390px 下设置布局、导航和内容列均为 362px，未超出视口。当前又完成 Cloudflare Token 六项权限、自动 DNS/Worker Route 和帮助中心文案收口；下一步仍是图标/文字对齐、重复入口/空卡片以及中英文文案审计。
-
-- 登录页实际截图，确认不是旧页面或旧组件。
-- 检查设置页 Cloudflare Token 区块、固定权限、创建 Token 链接。
-- 检查用量页唯一刷新按钮、平台/Cloudflare 分组、8 项百分比。
-- 检查窄屏、双主题、图标/文字对齐、“默认工作区”高度。
-- 通读中英文，删除重复按钮、空卡片、技术黑话和异常句子。
+本步骤不改变路由、API、权限和数据契约。重复入口、空卡片、窄屏布局、登录页组件化、Cloudflare Token 区块、用量刷新和中英文文案审计均已完成；相关负断言、截图与 `ci:local` 已通过。以上历史“待实现”列表已删除，后续以当前代码和最终验收清单为准。
 
 ### 8.4 实现原生手动构建（已完成）
 
-新增 `.github/workflows/build-plugin-server.yml`，仅 `workflow_dispatch`，完善 `native-server/CMakeLists.txt` 的真正 SHARED target、公共头和构建开关，处理三平台依赖。`e4ae1f1` 增加实现，`accfed0` 修复 MSVC `min` 宏冲突；本地 CTest 11/11、Linux executable/shared、MinGW Windows executable/shared/host 均通过。Actions #83（run `39927071976`）因 MSVC `std::min` 冲突失败，#84（run `39931270148`）已包含修复，最终状态待 GitHub 页面/API 限流恢复后确认。
+新增 `.github/workflows/build-plugin-server.yml`，仅 `workflow_dispatch`，完善 `native-server/CMakeLists.txt` 的真正 SHARED target、公共头和构建开关，处理三平台依赖。`e4ae1f1`/`accfed0` 修复实现与 MSVC `min` 宏冲突；后续 `5dd388c` 又补充 Linux OpenSSL 随包、`$ORIGIN`、Windows teardown 和交互输入重试。手动构建 run `39984340199` 成功，发布 run `39995358724` 的 Linux/Windows/macOS 构建和 Release 成功；本地 CTest、Linux/Windows 交叉构建、Wine smoke 与 native UI 回归均通过。
 
 ### 8.5 补帮助中心及隐私文档
 
-状态：Cloudflare API Token FAQ、privacy、README/docs 已在工作区同步；**原生二进制/共享库教程已写入工作区，待完整 CI 和提交闭环**。U29 的主站误判应急说明已同步到 README/help，但不替代代码修复和生产部署。
-
-剩余：完成第 3.7 节中英文教程，并更新 README、方案、验收矩阵、local-e2e、privacy、`native-server/README.md` 中与原生构建产物相关的部分。
+状态：Cloudflare API Token FAQ、privacy、README/docs 和中英文原生二进制/共享库教程均已提交并通过完整 CI；`v0.1.0` Release 的公开资产已核验，Linux/Windows 运行时依赖随包提供。U29 的主站误判应急说明已同步到 README/help。
 
 ### 8.6 部署配置核对
 
@@ -806,6 +792,8 @@ fd80fa4  run 39754896119  #11  管理端 UI smoke 失败
 生产侧只读验证（2026-10-23）已通过：主站 `/api/health`、`/`、`/setup` 均返回 200，`/auth/github/start` 返回 302 并使用 `https://platform.shelter.red/auth/github/callback`，未观察到 `D1_ERROR: no such table: workspaces` 或 `Plugin domain not found`。但当前环境没有 Cloudflare API/UI 登录凭据，尚未直接读取 Workers Builds 控制台的 Deploy command，也没有伪造该项完成证据；必须在 Cloudflare Dashboard → Workers & Pages → 对应 Worker → Settings → Builds & deployments 中确认并记录为 `npm run deploy`。
 
 ### 8.7 完整验收
+
+当前代码范围已完成：`npm run ci:local`（UI smoke 89/89）、`npm run deploy:worker:test`（10/10）、native CTest、Windows 交叉构建、Wine smoke、Release 三平台构建和公开资产核验均已通过。下方命令作为后续代码修改的必跑清单。
 
 至少执行：
 
@@ -834,8 +822,8 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 
 ## 9. 最终验收清单
 
-- [ ] 登录页实际视觉检查通过，结构为新组件且无旧页面残留。
-- [ ] “默认工作区”文字不遮挡，图标/文字对齐。
+- [x] 登录页实际视觉检查通过，结构为 `AuthFrame`/`LoginPage` 新组件且无旧页面残留；`console-auth` 与 CI 截图通过。
+- [x] “默认工作区”文字不遮挡，图标/文字对齐；真实数据测量与 Playwright 回归通过。
 - [x] 系统设置只出现 Cloudflare API Token 和可选 Account ID。
 - [x] 活跃 Cloudflare 流程不出现 Client ID/Secret、回调、scope 编辑、PKCE、`response_type`、`grant_type`。
 - [x] 固定权限按 Cloudflare 三列展示：账户 / Account + 账户设置 / Account Settings + 读取 / Read、账户 / Account + 账户分析 / Account Analytics + 读取 / Read、账户 / Account + 账单 / Billing + 读取 / Read、区域 / Zone + 区域 / Zone + 读取 / Read、区域 / Zone + DNS + 写入 / Write、区域 / Zone + Workers 路由 / Workers Routes + 编辑 / Edit；用户 / User 不使用，不提供自定义入口。
@@ -851,16 +839,14 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - [x] 平台统计与 Cloudflare 额度分组；平台请求不设上限。
 - [x] 设置页无手填 Cloudflare 免费额度，只剩平台 3 项阈值。
 - [x] 用量页只有一个刷新入口；自动加载时刷新按钮不禁用且点击会再次请求。
-- [x] 概览已移除与右上箭头重复的“查看全部额度”入口；其他页面文案/空卡片仍待视觉验收。
+- [x] 概览已移除与右上箭头重复的“查看全部额度”入口；服务器、插件、域名、用量和账号页重复入口/空卡片也已清理并有负断言。
 - [ ] 生产部署应用 0008 及全部 migrations，Workers Builds 实际入口为 `npm run deploy`；生产只读入口正常，但控制台实际 Deploy command 尚未直接核验。
-- [x] 手动 Actions 可选可执行程序/库文件、目标平台，并上传 artifact + SHA256；本地三平台构建和 CTest 11/11 通过，#84 已确认成功。
-- [ ] 帮助中心中英文都有二进制/共享库插件服务器完整说明。
-- [x] 当前 17 个路径的 `npm run ci:local`、Worker runtime、deploy test 均已通过。
+- [x] 手动 Actions 可选可执行程序/库文件、目标平台，并上传 artifact + SHA256；手动构建 run `39984340199`、发布三平台构建和 Release run `39995358724` 均成功。
+- [x] 帮助中心中英文都有二进制/共享库插件服务器完整说明，并同步 README、privacy、local-e2e 与 native README。
+- [x] 当前代码范围的 `npm run ci:local`、Worker runtime、deploy test 和最新平台 Actions 均已通过。
 - [x] native CTest 11/11、Linux executable/shared、MinGW Windows executable/shared/host 已执行并通过。
 - [x] `e4ae1f1` / `accfed0` 的原生实现、本地三平台构建、C ABI smoke 和 CTest 11/11 已通过；#83 的 Windows 失败原因已修复，#84 已确认成功。
-- [x] 当前 17 个路径的完整本地 CI 已通过（87/87 UI smoke）。
-- [x] 16 个非 HANDOFF 路径已提交为 `6e9d0ec`，HANDOFF 收口为 `a9e3839`，两者均已 push。
-- [x] `a9e3839`/#56、`02dbb1a`/#57、`b6ad802`/#58、`e349e7b`/#61 的远端 Actions 均已成功；若本次整理又生成 HANDOFF-only commit，以实时最新 run 为准。
+- [x] 当前完整本地 CI 已通过（UI smoke 89/89）；登记提交 `f9a0752` 的平台验收 run `40001803087` 已成功。
 
 ## 10. 已知风险与禁止事项
 
@@ -931,3 +917,4 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - 2026-10-24：`5dd388c`（`修复原生服务器发布与交互配置`）已推送；平台验收 #103（run `39991911396`）完成成功，`web`、`changes`、`linux-native`、`windows-native`、`macos-native` 全部成功。下一步提交本记录并追踪新 HEAD，再创建 `v0.1.0`。
 - 2026-10-24：创建并推送 `v0.1.0` 指向 `c56964b`；发布原生端 run `39995358724` 的校验、三平台构建和创建 Release job 全部成功。Release URL 为 `https://github.com/shelter-red/plugin-platform/releases/tag/v0.1.0`，公开下载包已核验 Linux OpenSSL 3 与 Windows OpenSSL DLL 均随包提供；“requires a tag” 已闭环。
 - 2026-10-24：`a6f8569` 的平台验收 #104（run `39997388485`）已在 Actions 页面核对为 `completed/success`，Release 与最终交接记录闭环。
+- 2026-10-24：交接状态清理本地验收完成：旧“待实现/手动 workflow 未触发/帮助教程待闭环”等搜索无命中；`git diff --check`、`npm run ci:local`（UI smoke 89/89）和 `npm run deploy:worker:test`（10/10）通过。待提交、推送和最新 Actions 验证。
