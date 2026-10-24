@@ -14,8 +14,8 @@
 远端：origin
 fetch：https://github.com/shelter-red/plugin-platform.git
 push：git@github-plugin-platform:shelter-red/plugin-platform.git
-已推送代码/文档基线：4ce207cc9fe5f1ad292661b4fd85eeb71026f211
-基线 Actions：平台验收 run 40082466727，completed/success
+已推送代码/文档基线：2f1ad78ecd70642061927868deee79576e431d71
+基线 Actions：平台验收 run 40088916661，completed/success
 ```
 
 恢复后先运行，不能用本文中的历史 SHA 代替实时 Git 状态：
@@ -27,16 +27,16 @@ git rev-parse HEAD origin/main
 git log --oneline --decorate -12
 ```
 
-`4ce207c` 之后的提交是普通交接记录，按约定只提交、未再次推送。是否仍然如此必须以实时 Git 输出为准。
+`2f1ad78` 之后若有提交，应当只是普通交接记录，按约定只提交、不重复推送。是否仍然如此必须以实时 Git 输出为准。
 
 ### 当前结论
 
 - 登录只使用管理员密码。首次未配置时进入 `/setup`，不再使用 GitHub OAuth、邀请登录或 `SETUP_TOKEN`。
 - Cloudflare 业务凭据只接受账号 Email、Global API Key 和 Account ID，不接受 Cloudflare OAuth 或 API Token。
-- 生产 D1 已应用 `0001` 至 `0009`，Cloudflare 1101 已消失；用户提交管理员密码时收到误导性的 migration 错误，凭据未落库。
+- 生产 D1 已应用 `0001` 至 `0009`，Cloudflare 1101 已消失；管理员密码初始化保存修复已部署，等待用户重新提交密码验收。
 - 缺少 `admin_credentials` 表时返回结构化 `503 migration_required`，不会泄漏为 Worker 1101；其他 D1 错误继续抛出。
 - Workers Builds 的 Deploy command 必须是 `npm run deploy`，但生产实际值尚未取得可信证据。
-- 最新推送的完整 SHA `4ce207cc9fe5f1ad292661b4fd85eeb71026f211` 已通过平台 Actions。
+- 最新推送的完整 SHA `2f1ad78ecd70642061927868deee79576e431d71` 已通过平台 Actions 并由 Workers Builds 自动部署。
 
 ## 1. 协作与 Git 约束
 
@@ -141,7 +141,7 @@ npx wrangler d1 migrations apply plugmesh --remote --config wrangler.toml
 
 ## 4. 验证基线
 
-提交 `bf68565` 及推送基线 `4ce207c` 已有以下证据：
+推送基线 `2f1ad78` 已有以下证据：
 
 ```text
 npm run worker:typecheck                 通过
@@ -156,8 +156,8 @@ git diff --check                         通过
 ```
 
 - Playwright 容器使用当前 UID/GID 和 `HOME=/tmp`，避免生成 root 所有权的 Vite 缓存。
-- 推送 SHA：`4ce207cc9fe5f1ad292661b4fd85eeb71026f211`。
-- 平台验收 run：`40082466727`，`changes`/`web` 成功，三个 native job 按路径过滤跳过。
+- 推送 SHA：`2f1ad78ecd70642061927868deee79576e431d71`。
+- 平台验收 run：`40088916661`，`changes`/`web` 成功，三个 native job 按路径过滤跳过。
 - Worker runtime 日志中的强制约束和连接中断是故障注入用例预期输出，以测试退出码和汇总为准。
 
 代码再次变更后必须重新运行与风险范围匹配的验证，不能沿用上述结果。
@@ -173,11 +173,13 @@ git diff --check                         通过
 - `/api/me` 返回 `503 setup_required`。
 - `/auth/login` 在未初始化时返回 302 到 `/setup`。
 - 原 Cloudflare 1101 已消失。
+- setup 保存修复已由 Workers Builds 自动部署为版本 `5354e2bc-c0c3-42d8-9819-ec5b2137f27c`（2026-10-24 11:12:22Z）。
+- 修复后 `/api/health` 200、`/setup` 200；短密码 POST 原地返回 400。D1 中 `admin_credentials=0`、setup 审计为 0，外键检查无异常。
 - 未代用户设置密码，未修改 Cloudflare 业务凭据、DNS 或 Worker Route。
 
 需要真实环境继续验收：
 
-1. 修复生产 `/setup` 保存失败：先区分密码派生、D1 写入和审计错误，再由用户重新设置密码并验证登录、修改密码和旧会话撤销。
+1. 用户在已修复的生产 `/setup` 重新设置密码，并验证登录、修改密码和旧会话撤销。
 2. 确认 Workers Builds Deploy command 为 `npm run deploy`。
 3. 登录后保存真实 Email、Global API Key 和 Account ID，验证 subscriptions、Analytics、Zone、DNS 与 Worker Route。
 4. 配置公网 SMTP，验证 STARTTLS/SMTPS、维护通知和退信处理。
@@ -214,6 +216,8 @@ git diff --check                         通过
 | `25c0b20` / `v0.1.1` | 当前原生发布版本 |
 | `bf68565` | 缺少密码 migration 时返回结构化初始化状态 |
 | `4ce207c` | 已推送验收基线，Actions run `40082466727` 成功 |
+| `989188e` | 修复生产管理员密码初始化、版本化 PBKDF2 与原子写入 |
+| `2f1ad78` | 当前已推送验收基线，Actions run `40088916661` 成功 |
 
 ## 8. 禁止回流的旧方案
 
@@ -246,3 +250,4 @@ git diff --check                         通过
 - 2026-10-24：下一步登记（生产 setup 保存失败）：用户在生产 `/setup` 提交密码后收到“请检查 D1 migration”的 503。只读核验确认 `0001` 至 `0009` 无待执行项，相关九张表及索引存在，`PRAGMA foreign_key_check` 无异常，默认工作区、现有 super admin 与 owner 成员关系完整，`admin_credentials` 仍为 0 行；因此现有页面把所有异常归因于 migration 是错误的。下一步核对线上部署版本与运行时限制，重构初始化写入为可分类、可重试且避免部分成功的流程，增加生产数据形态回归；验证完成后再集中推送，不代用户写入密码。
 - 2026-10-24：生产 setup 保存修复已实现：Cloudflare `workerd` 官方源码确认 PBKDF2 存在生产环境迭代上限，新凭据改为带算法和迭代数的 `pbkdf2-sha256$100000$...` 格式，并兼容旧版 310000 次无前缀哈希；管理员补建、默认工作区成员、凭据、旧认证清理和审计现在处于同一个 D1 batch，任一步失败都会回滚。setup 按密码派生/数据库写入阶段记录不含秘密的错误编号，不再伪报 migration。Debian 12 容器定向 runtime 9/9、Worker typecheck 和 `git diff --check` 通过；完整验证与生产部署仍待下一步。
 - 2026-10-24：生产 setup 修复推送前完整验收通过：Worker runtime 17 个文件 80/80、Worker smoke 22/22、UI smoke 89/89、部署脚本 9/9，管理端构建、Worker typecheck、82 个 TSX 约定审计、467 条 CSS 审计和 `git diff --check` 全部通过。runtime 中的强制 D1 约束、网络中断与 SMTP 重试日志均来自预期故障注入；下一步一次性推送当前 `main`，按完整 SHA 低频查看 Actions，通过后用唯一部署入口 `npm run deploy` 发布生产并只读复核，仍不代用户提交密码。
+- 2026-10-24：`2f1ad78` 已推送，平台验收 run `40088916661` 完成成功；`changes`/`web` 成功，三个未涉及的 native job 正常跳过。Workers Builds 在 11:12:22Z 自动部署版本 `5354e2bc-c0c3-42d8-9819-ec5b2137f27c`。本地 `npm run deploy` 因没有独立 `CLOUDFLARE_API_TOKEN` 在上传前按设计停止，未绕过门禁；自动部署已完成，无需重复发布。生产只读复核为 health 200、setup 200、短密码校验 400，D1 凭据和 setup 审计仍为 0、外键检查为空；下一步由用户自行重新设置管理员密码。
