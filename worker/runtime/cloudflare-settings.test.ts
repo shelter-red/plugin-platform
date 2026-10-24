@@ -50,7 +50,7 @@ beforeEach(async () => {
   setPlatformSettingsCache(defaultPlatformSettings)
 })
 
-test('Cloudflare 设置 GET 不泄露凭据并返回固定权限', async () => {
+test('Cloudflare 设置 GET 不泄露凭据并限制为管理员访问', async () => {
   const empty = await api('/api/settings/cloudflare', ADMIN_TOKEN)
   expect(empty.status).toBe(200)
   expect(await empty.json()).toEqual({
@@ -65,7 +65,7 @@ test('Cloudflare 设置 GET 不泄露凭据并返回固定权限', async () => {
   expect((await api('/api/settings/cloudflare', MEMBER_TOKEN)).status).toBe(403)
 })
 
-test('保存 Token 前完成校验、加密落库、清缓存且不回显 Token', async () => {
+test('保存 Global API Key 前完成校验、加密落库、清缓存且不回显密钥', async () => {
   await testEnv.DB.prepare('INSERT INTO usage_cache (key, value_json, expires_at, updated_at) VALUES (?, ?, ?, ?)').bind(
     'cloudflare:workers',
     JSON.stringify({ configured: true, requests: 99 }),
@@ -119,7 +119,7 @@ test('保存 Token 前完成校验、加密落库、清缓存且不回显 Token'
   })
 })
 
-test('Token、权限和账号错误返回真实 HTTP 与稳定错误码且不落库', async () => {
+test('Cloudflare 凭据、权限和账号错误返回真实 HTTP 与稳定错误码且不落库', async () => {
   const invalid = await api('/api/settings/cloudflare', ADMIN_TOKEN, {
     method: 'PUT',
     body: JSON.stringify({ email: CLOUDFLARE_STUB_EMAIL, globalApiKey: CLOUDFLARE_STUB_INVALID_GLOBAL_API_KEY }),
@@ -159,10 +159,10 @@ test('Token、权限和账号错误返回真实 HTTP 与稳定错误码且不落
   expect(stored?.count).toBe(1)
 })
 
-test('未配置 Token 时不能静默保存域名后缀', async () => {
+test('未配置 Cloudflare 凭据时不能静默保存域名后缀', async () => {
   const response = await api('/api/settings/platform', ADMIN_TOKEN, {
     method: 'PUT',
-    body: JSON.stringify({ pluginDomainSuffix: 'no-token.example.net' }),
+    body: JSON.stringify({ pluginDomainSuffix: 'no-credential.example.net' }),
   })
   expect(response.status).toBe(400)
   expect(await response.json()).toMatchObject({ code: 'credential_required' })
