@@ -14,8 +14,8 @@
 远端：origin
 fetch：https://github.com/shelter-red/plugin-platform.git
 push：git@github-plugin-platform:shelter-red/plugin-platform.git
-已推送代码/文档基线：2f1ad78ecd70642061927868deee79576e431d71
-基线 Actions：平台验收 run 40088916661，completed/success
+已推送代码/文档基线：680adb6d3ac5c3c37513022d1df5cfecf94f17c4
+基线 Actions：平台验收 run 40090177061，completed/success
 ```
 
 恢复后先运行，不能用本文中的历史 SHA 代替实时 Git 状态：
@@ -27,16 +27,16 @@ git rev-parse HEAD origin/main
 git log --oneline --decorate -12
 ```
 
-`2f1ad78` 之后若有提交，应当只是普通交接记录，按约定只提交、不重复推送。是否仍然如此必须以实时 Git 输出为准。
+`680adb6` 之后若有提交，应当只是普通交接记录，按约定只提交、不重复推送。是否仍然如此必须以实时 Git 输出为准。
 
 ### 当前结论
 
 - 登录只使用管理员密码。首次未配置时进入 `/setup`，不再使用 GitHub OAuth、邀请登录或 `SETUP_TOKEN`。
 - Cloudflare 业务凭据只接受账号 Email、Global API Key 和 Account ID，不接受 Cloudflare OAuth 或 API Token。
-- 生产 D1 已应用 `0001` 至 `0009`，Cloudflare 1101 已消失；管理员密码初始化保存修复已部署，等待用户重新提交密码验收。
+- 生产 D1 已应用 `0001` 至 `0009`，Cloudflare 1101 已消失；管理员密码已由用户完成初始化，D1 中 `admin_credentials=1`。
 - 缺少 `admin_credentials` 表时返回结构化 `503 migration_required`，不会泄漏为 Worker 1101；其他 D1 错误继续抛出。
 - Workers Builds 的 Deploy command 必须是 `npm run deploy`，但生产实际值尚未取得可信证据。
-- 最新推送的完整 SHA `2f1ad78ecd70642061927868deee79576e431d71` 已通过平台 Actions 并由 Workers Builds 自动部署。
+- 最新推送的完整 SHA `680adb6d3ac5c3c37513022d1df5cfecf94f17c4` 已通过平台 Actions，并由 Workers Builds 自动部署为版本 `9ba7c6c5-71e2-4040-b9ff-31c4f4db68b4`。
 
 ## 1. 协作与 Git 约束
 
@@ -258,3 +258,4 @@ git diff --check                         通过
 - 2026-10-24：主站路由修复推送前完整验收通过：Worker runtime 17 个文件 80/80、Worker smoke 22/22、UI smoke 89/89、部署脚本 9/9，管理端构建、Worker typecheck、82 个 TSX 约定审计、467 条 CSS 审计和 `git diff --check` 全部通过。runtime 中的网络断连日志来自预期故障注入且测试进程退出码为 0；下一步仅一次性推送当前 `main`，按完整 SHA 低频查看 Actions，通过后等待 Workers Builds 自动部署并只读复核 `/`、`/setup` 与 `/api/me`，不修改生产密码、插件后缀、DNS 或 D1 域名。
 - 2026-10-24：`680adb6d3ac5c3c37513022d1df5cfecf94f17c4` 已一次性推送，平台验收 run `40090177061` 完成成功；`changes`/`web` 成功，三个未涉及的 native job 正常跳过。Workers Builds 自动产生版本 `9ba7c6c5-71e2-4040-b9ff-31c4f4db68b4`（版本 147，2026-10-24 11:31:04Z）。生产只读复核为 `/` 200 管理端 HTML、`/setup` 200 管理端 HTML、`/api/me` 401、`/api/health` 200，均不含 `Plugin domain not found`；D1 `admin_credentials=1` 且查询 `rows_written=0`。未修改用户密码、插件后缀、DNS 或 D1 域名，问题已闭环。
 - 2026-10-24：下一步登记（生产协议验收前置清点与文档校准）：只读统计生产 `servers`、`plugin_instances`、`domains` 与近期 `request_logs` 的数量和状态，判断是否已有可用于 HTTP/SSE/WebSocket/文件流验收的目标；不读取 token/hash/会话/密码，不写 D1，不自行创建生产实体。根据结果校准恢复卡、验收矩阵中的当前 SHA、Actions、版本、setup 状态和自动化数量；若无现成在线目标，则明确记录真实端到端验收所缺的外部前置条件，不用桩测试冒充生产验收。完成只读查询、文档一致性检查和 `git diff --check` 后提交，普通记录不推送。
+- 2026-10-24：生产协议验收前置清点完成：通过 Wrangler/D1 官方接口只读查询，生产 `servers`、`plugin_instances`、`domains`、`request_logs` 均为 0，在线服务器、已启用插件、在线域名及近 24 小时请求也均为 0；成功查询元数据为 `rows_written=0`。当前没有可用于生产 HTTP/SSE/WebSocket/文件流与断线恢复测试的目标，继续验收需用户先在真实主机注册服务器、加载插件并分配域名，不能由维护过程擅自造生产数据。恢复卡和验收矩阵已校准到推送 SHA `680adb6`、Actions run `40090177061`、Worker 版本 147、已完成 setup 及 runtime 80/80；文档一致性检查和 `git diff --check` 通过后提交，普通记录不推送。

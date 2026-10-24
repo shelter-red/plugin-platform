@@ -39,7 +39,7 @@ npm run build                            通过
 npm run ui:conventions                   82 个 TSX，0 违规
 npm run ui:css-audit                     467 条规则，0 死代码/重复定义
 npm run worker:smoke                     22 个 smoke 脚本通过
-npm run worker:runtime-test              17 个文件，77 个测试通过
+npm run worker:runtime-test              17 个文件，80 个测试通过
 npm run ui:smoke                         89 个测试通过
 npm run deploy:worker:test               9 条部署路径通过
 git diff --check                         通过
@@ -50,9 +50,9 @@ runtime 在 `node:22-bookworm` 容器中运行，避免宿主机 glibc 与 worke
 ## 生产待验收
 
 1. 生产 D1 已应用 `0001` 至 `0009` 且复核无待执行 migration；仍需确认 Workers Builds Deploy command 为 `npm run deploy`。官方 Triggers GET 已定位，但当前 Wrangler OAuth 返回 403，需在 Dashboard 查看或使用 Workers CI Read 凭据读取。
-2. 首次访问 `/setup` 设置管理员密码，验证后续密码登录和修改密码后的会话撤销。
+2. 管理员密码已由用户完成初始化；仍需由用户使用真实密码验证登录、修改密码和修改后的旧会话撤销。
 3. 在后台保存真实 Cloudflare Email、Global API Key 和 Account ID，验证 subscriptions、Analytics、Zone、DNS 与 Worker Route。
-4. 为自定义管理端域名配置 `CONSOLE_HOSTNAME`；插件域名使用独立子域后缀。
+4. 未配置 `CONSOLE_HOSTNAME` 时，生产主站回退已验证；若需要显式隔离管理端 Host，仍需在部署环境配置该变量。插件域名应使用独立子域后缀。
 5. 配置公网 SMTP，验证 STARTTLS/SMTPS、维护通知和退信处理。
 6. 在真实 Windows 主机验证可执行程序首次绑定、配置失败后重试、插件宿主子进程和 DLL；在目标 Linux 发行版验证打包产物无需系统 OpenSSL 且兼容 glibc 2.31。
-7. 在已部署 Worker 上完成 HTTP、SSE、WebSocket、大文件、断线恢复和持续并发压力测试。
+7. 在已部署 Worker 上完成 HTTP、SSE、WebSocket、大文件、断线恢复和持续并发压力测试。2026-10-24 只读清点确认生产服务器、插件、域名和请求日志均为 0；必须先由用户在真实主机注册服务器、加载插件并分配域名，当前没有可测试目标。
