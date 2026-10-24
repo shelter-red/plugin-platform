@@ -16,6 +16,8 @@
 
 > 本步骤最终闭环：`615da84` 已推送；完整 SHA `615da84ad4d3fb1cee3209e1b00791e37b8aceea` 对应平台验收 run `40059989463`，已 `completed/success`。本步骤没有运行时代码修改，真实 Cloudflare/Workers Builds 外部联调继续保留为未验证边界。
 
+> 本步骤 Actions 记录：`467b698` 对应平台验收 run `40070416788`，已 `completed/success`。下一步登记（2026-10-24）：执行公开生产只读端点与部署迁移证据核验；仅使用 GET/HEAD 和本地静态审计，核对 `/api/health`、首页、`/setup`、GitHub 登录入口、部署脚本、Wrangler 配置及 migration 清单，确认不存在绕过 migrations 的仓库路径；不执行 Cloudflare 写入，不伪造 Workers Builds 控制台已核验结论。登记提交及其 Actions 验收前不开始该核验。
+
 > 新步骤登记（2026-10-24）：继续执行当前目标，先固化 Actions 低频追踪约束，再对当前代码和文档做有证据的过期文案、重复注释和死代码审计。登记提交完成并验证对应 Actions 前，不开始后续修改；Actions 查询至少间隔 1 分钟，不重复触发 workflow，不把轮询状态误判为成功。
 
 > 本步审计完成：活跃代码、文案、注释和 workflow 扫描未发现可删除的 Cloudflare OAuth 运行时、兼容 migration、负断言或重复入口；确认 `useConsoleData.refreshData()` 中 `setDomains` 当前只有一处。仅将 runtime 测试标题明确为“已废弃 Cloudflare OAuth”，代码提交为 `10947a3`。`npm run worker:typecheck`、`npm run build`、容器 runtime 定向测试 3/3、`npm run ci:local`（89/89）和 `npm run deploy:worker:test`（10/10）通过；宿主机 runtime 因 glibc 低于 workerd 要求未启动，按仓库既有 `node:22-bookworm-slim` + CA 挂载命令复验通过。`10947a3` 的 Actions run `40053060250` 已完成成功。下一步需重新登记明确范围后再修改。
@@ -245,7 +247,7 @@ npm run deploy:worker:test                     10/10 PASS（含 README 新部署
 Worker runtime（Docker node:22-bookworm）       20/20 files，93/93 tests PASS
 U18 临时视觉验收                               2 主题 × 3 视口通过，含无溢出/分组/百分比断言
 f38cce5 Actions REST 查询                       HTTP 200，`total_count=0`，未发现对应 run
-615da84 Actions                                 run `40059989463`，`completed/success`
+467b698 Actions                                 run `40070416788`，`completed/success`
 ```
 
 已记录的代码验收：
