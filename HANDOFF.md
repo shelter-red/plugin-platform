@@ -61,6 +61,8 @@
 > 本轮实现已完成待提交：`LocalHttpServer::stop()` 改为向 Asio 事件循环投递停止监听，避免 Windows 注册响应发送前被跨线程 `io_service.stop()` 打断；新增运行状态等待和可执行文件目录 UI 定位，未注册启动自动打开本地 setup 页。发布/手动 workflow 为 executable 打包 `native-ui/dist`，shared 明确不提供 setup UI；Linux 改用 Debian 11/glibc 2.31 基线、OpenSSL 3 源码和静态 C++ 运行时，并检查 ELF 最高 glibc 及 C++ ABI。Wine 真实 `plugmesh-server.exe` 注册回归返回 HTTP 201 且注册后进程保持运行；Linux executable/shared 兼容包、包内 OpenSSL 加载和 ABI 检查均已通过。待完整本地 CI、提交、推送和最新 Actions 验证。
 
 > 推送前本地验收已通过：`npm run ci:local`（89/89 UI smoke、UI 约定和 CSS 审计、Worker smoke、构建）以及 `npm run deploy:worker:test`（10/10）。Docker Debian 11 实测 executable/shared 构建和包内动态库加载通过；Wine 实际 Windows 注册路径 HTTP 201，注册完成后进程未崩溃。当前只剩提交、推送和低频核对最新 Actions。
+
+> `3182307` 已推送；平台验收 run `40047861014` 已 `completed/success`，`web`、`changes`、`linux-native`、`windows-native`、`macos-native` 全部成功。Windows 注册完成后的真实 Wine 回归、Linux glibc/OpenSSL ABI 兼容构建和可执行包首次绑定入口已完成平台验收；当前只需收口本条记录并继续遵守 Actions 低频检查。
 >
 > `8ad8704` 已推送；平台验收 #98（run `39957698043`）对应 HEAD 且 `completed/success`，`changes`/`web` 成功，三个 native job skipped。U16 真实数据审计已完成：1440/1024 视口下默认工作区切换器为 `46.34px`，两行文案上下各留 `8px`，图标与文案中心一致；带图标按钮和导航项的垂直中心差均为 `0px`，没有发现需要凭猜测修改的样式问题。下一步只增加对应 Playwright 回归断言，不改变现有视觉规则。
 >
