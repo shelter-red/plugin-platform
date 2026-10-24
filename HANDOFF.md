@@ -7,6 +7,8 @@
 > 新步骤登记（2026-10-24）：继续执行当前目标，先固化 Actions 低频追踪约束，再对当前代码和文档做有证据的过期文案、重复注释和死代码审计。登记提交完成并验证对应 Actions 前，不开始后续修改；Actions 查询至少间隔 1 分钟，不重复触发 workflow，不把轮询状态误判为成功。
 
 > 本步审计完成：活跃代码、文案、注释和 workflow 扫描未发现可删除的 Cloudflare OAuth 运行时、兼容 migration、负断言或重复入口；确认 `useConsoleData.refreshData()` 中 `setDomains` 当前只有一处。仅将 runtime 测试标题明确为“已废弃 Cloudflare OAuth”，代码提交为 `10947a3`。`npm run worker:typecheck`、`npm run build`、容器 runtime 定向测试 3/3、`npm run ci:local`（89/89）和 `npm run deploy:worker:test`（10/10）通过；宿主机 runtime 因 glibc 低于 workerd 要求未启动，按仓库既有 `node:22-bookworm-slim` + CA 挂载命令复验通过。`10947a3` 的 Actions run `40053060250` 已完成成功。下一步需重新登记明确范围后再修改。
+
+> 新步骤登记（2026-10-24）：清理 HANDOFF 与 `docs/acceptance-matrix.md` 中仍与当前代码/最新验收相矛盾的原生共享库、UI 审计数量、UI smoke 数量和完成状态。只修正可由当前文件与命令输出证明的事实，不改变运行时代码、路由、API、权限或测试契约；登记提交和对应 Actions 成功前不修改正文。
 >
 > 本步本地验收已通过：`npm run worker:typecheck`、`npm run build`、`npm run worker:smoke`、`worker/runtime/setup.test.ts` 2/2（含重叠后缀下主站根路径和 `/api/health`），以及 Docker Worker runtime 20/20 文件、93/93 测试；下一步提交 U29 代码/文档并重新执行完整 CI。
 >
