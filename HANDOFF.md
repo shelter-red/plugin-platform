@@ -21,6 +21,8 @@
 > **Workers Builds migration 门禁修复完成**：`bf68565` 已提交三态初始化门禁、页面跳转回归及 CI 容器所有权修复。最终版 `npm run ci:local` 前置检查全部通过，完整 Playwright 为 89/89；完整 workerd runtime 为 17/17 文件、77/77 测试；部署模拟为 9/9。生产 `0009_password_auth.sql` 已应用且 1101 消失。Wrangler 官方 CLI 未提供 Workers Builds Deploy command 的读取/修改入口，故生产控制台实际值仍保持未核验；如需修改，必须先在本文件另行登记生产写入步骤。下一步是推送当前累计提交，并只按推送后的完整 HEAD SHA 低频核对 Actions。
 
 > **本步骤 Actions 验收**：`4ce207cc9fe5f1ad292661b4fd85eeb71026f211` 已推送；平台验收 run `40082466727` 为 `completed/success`，`changes` 与 `web` 成功，Linux、Windows、macOS native jobs 按路径过滤跳过。本条结果作为普通交接记录只提交、不再次推送；当前外部待办仅为用户完成生产管理员密码初始化，以及在 Cloudflare 控制台确认 Workers Builds Deploy command 为 `npm run deploy`。
+
+> **下一步登记（Workers Builds 控制台只读核验）**：使用独立浏览器会话检查当前环境是否已有可复用的 Cloudflare Dashboard 登录态，并查阅 Cloudflare 官方文档/公开 API 能否只读获取 `plugmesh-worker` 的 Workers Builds Deploy command。不得输入或导出用户凭据，不得提交生产 `/setup`，不得修改 Builds、DNS、Route、D1 或业务配置；若没有登录态且官方 CLI/API 不提供读取能力，就记录可复现证据并将该项明确留给用户在控制台确认，不通过未公开接口猜测或写入。完成结论记录和提交前不进入其他修改。
 >
 > 本次恢复记录：U29 的主站 Host 路由修复、回归测试和应急说明已完成并通过平台 Actions；8.5 原生教程、发布 workflow、原生运行时修复和 `v0.1.1` Release 已完成。未验证边界仅保留真实 Cloudflare/Workers Builds 控制台联调。
 
