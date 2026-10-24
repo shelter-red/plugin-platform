@@ -6,7 +6,7 @@
 >
 > **本地验收**：提交 `bf68565` 增加管理员密码状态三态门禁：`admin_credentials` 表缺失时，健康检查、setup 和管理 API 返回结构化 `503 migration_required`；表存在时的其他 D1 异常继续抛出。`npm run ci:local` 的类型检查、生产构建、22 个 Worker smoke 和 UI smoke 89/89 通过；Docker `node:22-bookworm` workerd runtime 17/17 文件、77/77 测试通过；`npm run deploy:worker:test` 9/9、`git diff --check` 通过。Playwright 容器现以当前 UID/GID 和 `HOME=/tmp` 运行，不再生成 root 所有权的 Vite 缓存。恢复后先核对 `git status --short --branch` 与 `git rev-parse HEAD origin/main`，并只用待确认提交的完整 SHA 低频查询 Actions，不重复触发 workflow。
 >
-> **生产状态与待验收**：生产 D1 已通过 Wrangler 官方命令应用 `0001` 至 `0009`，并复核无待执行 migration；Cloudflare 1101 已消失，当前 `/` 进入 `/setup`，但尚未代用户设置管理员密码。仍需在 Cloudflare Workers Builds 控制台确认 Deploy command 为 `npm run deploy`，防止以后仅发布代码而跳过 migration；Wrangler CLI 当前没有读取或修改该 Builds 配置的子命令，因此不得把仓库配置当成生产控制台证据。完成密码初始化后，再保存真实 Email + Global API Key + Account ID，分别验证 subscriptions、Analytics、Zone、通配 DNS 和 Worker Route。Cloudflare 未配置时 `/api/usage/cloudflare` 返回 `{configured:false,cached:false}`，`/api/usage/local` 仍独立返回 200 的平台本地统计。
+> **生产状态与待验收**：生产 D1 已通过 Wrangler 官方命令应用 `0001` 至 `0009`，并复核无待执行 migration；Cloudflare 1101 已消失，当前 `/` 进入 `/setup`，但尚未代用户设置管理员密码。仍需确认 Workers Builds Deploy command 为 `npm run deploy`，防止以后仅发布代码而跳过 migration。Wrangler CLI 没有该配置子命令；Cloudflare 官方只读 Triggers API 可以返回 `deploy_command`，但当前 Wrangler OAuth 对该端点返回 403，Dashboard 也没有可复用登录态，因此不得把仓库配置当成生产控制台证据。完成密码初始化后，再保存真实 Email + Global API Key + Account ID，分别验证 subscriptions、Analytics、Zone、通配 DNS 和 Worker Route。Cloudflare 未配置时 `/api/usage/cloudflare` 返回 `{configured:false,cached:false}`，`/api/usage/local` 仍独立返回 200 的平台本地统计。
 >
 > **下一步登记（生产只读核验）**：以当前生产地址 `https://platform.shelter.red` 为对象，只使用 GET/HEAD 核对 `/api/health`、`/`、`/setup`、`/auth/login`、已废弃 GitHub OAuth/邀请接口及未登录管理 API 的状态码、重定向和响应结构，判断最新密码登录版本是否已由 Workers Builds 部署、D1 schema 是否仍暴露缺表错误。同步检查当前环境是否存在 Wrangler 登录态，但不运行 deploy、migration，不提交 setup 表单，不保存或删除 Cloudflare 凭据，不进行 DNS/Route 写入。核验结论必须写回本文件并提交；在该记录完成前不进入生产写入或下一项代码修改。
 >
@@ -23,6 +23,8 @@
 > **本步骤 Actions 验收**：`4ce207cc9fe5f1ad292661b4fd85eeb71026f211` 已推送；平台验收 run `40082466727` 为 `completed/success`，`changes` 与 `web` 成功，Linux、Windows、macOS native jobs 按路径过滤跳过。本条结果作为普通交接记录只提交、不再次推送；当前外部待办仅为用户完成生产管理员密码初始化，以及在 Cloudflare 控制台确认 Workers Builds Deploy command 为 `npm run deploy`。
 
 > **下一步登记（Workers Builds 控制台只读核验）**：使用独立浏览器会话检查当前环境是否已有可复用的 Cloudflare Dashboard 登录态，并查阅 Cloudflare 官方文档/公开 API 能否只读获取 `plugmesh-worker` 的 Workers Builds Deploy command。不得输入或导出用户凭据，不得提交生产 `/setup`，不得修改 Builds、DNS、Route、D1 或业务配置；若没有登录态且官方 CLI/API 不提供读取能力，就记录可复现证据并将该项明确留给用户在控制台确认，不通过未公开接口猜测或写入。完成结论记录和提交前不进入其他修改。
+
+> **Workers Builds 只读核验结论**：Cloudflare 官方 API 定义 `GET /accounts/{account_id}/builds/workers/{external_script_id}/triggers`，响应包含 `deploy_command`，要求 Workers CI Read 或 Write；`external_script_id` 是 Worker 的 immutable tag，不是名称。使用当前 Wrangler OAuth 经官方 Workers scripts list 成功读取 `plugmesh-worker` 的 tag，但以该 tag 请求 Triggers 仍返回 403 `Authentication error`；环境中没有 Cloudflare API Token、Global API Key 变量或项目密钥文件。独立 Dashboard 会话停在人工 Turnstile 验证且无登录态，已关闭，没有绕过验证。全程仅执行 GET，没有修改 Builds、D1、DNS、Route、setup 或业务配置。该项需要用户在 Dashboard 查看，或提供具备 Workers CI Read 的 API 凭据后再核验。
 >
 > 本次恢复记录：U29 的主站 Host 路由修复、回归测试和应急说明已完成并通过平台 Actions；8.5 原生教程、发布 workflow、原生运行时修复和 `v0.1.1` Release 已完成。未验证边界仅保留真实 Cloudflare/Workers Builds 控制台联调。
 
@@ -437,7 +439,7 @@ doRequests        100,000
 | U03 | “推送时注意 Actions，老是错误” | 本地完整 CI + push 后追踪到成功 | ✅ `e349e7b` 的代码提交 Actions #61 成功；后续新提交仍须重新追踪 |
 | U04 | 为什么错误状态靠 `/?auth_error=` | 真实 HTTP + JSON，留在当前页 | ✅ Cloudflare 当前页 HTTP 错误与 GitHub 错误页均有测试；旧 `auth_error` 文案已清理 |
 | U05 | setup 失效为什么单独返回 `Setup is not available` | 返回 null 后走普通非路由行为 | ✅ 已实现并有测试 |
-| U06 | `D1_ERROR: no such table: workspaces` | 先应用全部 migrations 再部署 | 🟡 仓库脚本与 10/10 部署回归通过；生产只读入口正常且无缺表错误，但 Workers Builds 控制台实际 Deploy command 仍待直接确认 |
+| U06 | `D1_ERROR: no such table: workspaces` | 先应用全部 migrations 再部署 | 🟡 生产 `0001` 至 `0009` 已应用且 1101 消失，仓库部署回归 9/9；官方 Triggers GET 因当前 Wrangler OAuth 返回 403，实际 Deploy command 仍待 Dashboard 或 Workers CI Read 凭据确认 |
 | U07 | `invalid_scope` / `workers-platform.read` | 删除错误 OAuth scope，改 API Token，固定真实权限 | 🟡 前后端和文档已 Token 化并有 mock/runtime/UI 证据；真实 Cloudflare API 未联调 |
 | U08 | 授权失败为什么跳首页 | 错误留系统设置页，显示 HTTP/status/code/message | ✅ Token 表单保留 HTTP 错误并在 `/settings` 显示，runtime/UI 已覆盖 |
 | U09 | 用户不知道 Token 给什么权限，取消后权限就没了 | 权限固定展示；创建 Token 直达链接 | ✅ 六项权限固定展示、创建 Token 直达链接、UI 与文档均已同步 |
@@ -909,7 +911,7 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - [x] 设置页无手填 Cloudflare 免费额度，只剩平台 3 项阈值。
 - [x] 用量页只有一个刷新入口；自动加载时刷新按钮不禁用且点击会再次请求。
 - [x] 概览已移除与右上箭头重复的“查看全部额度”入口；服务器、插件、域名、用量和账号页重复入口/空卡片也已清理并有负断言。
-- [ ] 生产部署应用 0008 及全部 migrations，Workers Builds 实际入口为 `npm run deploy`；生产只读入口正常，但控制台实际 Deploy command 尚未直接核验。
+- [ ] 生产 `0001` 至 `0009` migrations 已应用且无待执行项；仍需确认 Workers Builds 实际入口为 `npm run deploy`。官方 Triggers GET 已定位，但当前 Wrangler OAuth 返回 403，需 Dashboard 或 Workers CI Read 凭据。
 - [x] 手动 Actions 可选可执行程序/库文件、目标平台，并上传 artifact + SHA256；手动构建 run `39984340199`、发布三平台构建和 Release run `39995358724` 均成功。
 - [x] 帮助中心中英文都有二进制/共享库插件服务器完整说明，并同步 README、privacy、local-e2e 与 native README。
 - [x] 当前代码范围的 `npm run ci:local`、Worker runtime、deploy test 和最新平台 Actions 均已通过。

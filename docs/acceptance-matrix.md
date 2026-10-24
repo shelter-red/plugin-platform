@@ -49,7 +49,7 @@ runtime 在 `node:22-bookworm` 容器中运行，避免宿主机 glibc 与 worke
 
 ## 生产待验收
 
-1. 生产 D1 已应用 `0001` 至 `0009` 且复核无待执行 migration；仍需在 Workers Builds 控制台确认 Deploy command 为 `npm run deploy`，防止后续 schema 变更再次绕过 migration。
+1. 生产 D1 已应用 `0001` 至 `0009` 且复核无待执行 migration；仍需确认 Workers Builds Deploy command 为 `npm run deploy`。官方 Triggers GET 已定位，但当前 Wrangler OAuth 返回 403，需在 Dashboard 查看或使用 Workers CI Read 凭据读取。
 2. 首次访问 `/setup` 设置管理员密码，验证后续密码登录和修改密码后的会话撤销。
 3. 在后台保存真实 Cloudflare Email、Global API Key 和 Account ID，验证 subscriptions、Analytics、Zone、DNS 与 Worker Route。
 4. 为自定义管理端域名配置 `CONSOLE_HOSTNAME`；插件域名使用独立子域后缀。
