@@ -1,13 +1,11 @@
 #include "plugmesh/registration_client.h"
 #include "plugmesh/server_config.h"
+#include "plugmesh/tls_support.h"
 
 #include <websocketpp/client.hpp>
 #include <websocketpp/config/asio_client.hpp>
 
-#include <asio/ssl/context.hpp>
-#include <asio/ssl/rfc2818_verification.hpp>
 #include <nlohmann/json.hpp>
-#include <openssl/ssl.h>
 
 #include <type_traits>
 
@@ -17,16 +15,7 @@ namespace {
 
 using PlainClient = websocketpp::client<websocketpp::config::asio_client>;
 using TlsClient = websocketpp::client<websocketpp::config::asio_tls_client>;
-using TlsContext = websocketpp::lib::shared_ptr<websocketpp::lib::asio::ssl::context>;
 using Json = nlohmann::json;
-
-TlsContext tls_init(websocketpp::connection_hdl) {
-  auto context = websocketpp::lib::make_shared<websocketpp::lib::asio::ssl::context>(websocketpp::lib::asio::ssl::context::sslv23);
-  context->set_options(websocketpp::lib::asio::ssl::context::default_workarounds | websocketpp::lib::asio::ssl::context::no_sslv2 | websocketpp::lib::asio::ssl::context::no_sslv3 | websocketpp::lib::asio::ssl::context::single_dh_use);
-  context->set_default_verify_paths();
-  context->set_verify_mode(websocketpp::lib::asio::ssl::verify_peer);
-  return context;
-}
 
 std::string endpoint(std::string worker_url) {
   if (worker_url.rfind("https://", 0) == 0) worker_url.replace(0, 8, "wss://");
@@ -46,11 +35,8 @@ bool register_with_client(const std::string& worker_url, const std::string& code
   if constexpr (std::is_same_v<Client, TlsClient>) {
     const websocketpp::uri uri(endpoint(worker_url));
     const auto host = uri.get_host();
-    client.set_tls_init_handler(&tls_init);
-    client.set_socket_init_handler([host](websocketpp::connection_hdl, asio::ssl::stream<asio::ip::tcp::socket>& socket) {
-      socket.set_verify_callback(asio::ssl::rfc2818_verification(host));
-      if (!host.empty()) SSL_set_tlsext_host_name(socket.native_handle(), host.c_str());
-    });
+    client.set_tls_init_handler([](websocketpp::connection_hdl) { return make_tls_context(); });
+    client.set_socket_init_handler([host](websocketpp::connection_hdl, asio::ssl::stream<asio::ip::tcp::socket>& socket) { configure_tls_socket(socket, host); });
   }
   bool success = false;
   client.set_open_handler([&client, &code, &name](websocketpp::connection_hdl handle) {

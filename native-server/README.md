@@ -7,6 +7,7 @@
 - `plugmesh-plugin-host` 是可执行宿主进程，按 `<library>` 参数加载单个插件动态库，并通过 stdin/stdout 的逐行 JSON 协议响应父进程请求。支持的操作为 `describe`、`start`、`stop`、`health`、`http`、`sse`、`sse.cancel`、`file`、`websocket.open`、`websocket.data`、`websocket.close` 和 `shutdown`；二进制数据统一使用 Base64。
 - `PluginManager` 负责扫描包含 `manifest.json` 的插件目录、校验 manifest 与 C ABI v2/v3/v4 描述、编排加载/启停/重载、健康检查、文件流、SSE 取消和 WebSocket 生命周期。每个已加载插件对应一个 `PluginHostClient` 子进程；插件发生访问违规等原生崩溃时只终止宿主进程，管理器把插件标记为 `failed` 并记录 `last_error`，服务器进程本身继续运行。
 - `ControlClient` 使用 WebSocket++、standalone Asio 和 nlohmann/json 建立出站控制连接；生产地址使用 `wss`，localhost 开发地址可使用 `ws`。控制连接处理注册、心跳、插件命令、健康检查和 HTTP 请求帧，注册描述来自已校验的 manifest。收到 `server.sync` 时，客户端通过 `server.register` 的 `syncRequestId` 关联本次同步，不在注册落库前提前返回成功。
+- TLS 使用 OpenSSL 默认信任路径并强制校验 Worker 主机名；Windows 额外从系统 `ROOT` 证书库加载受信任根证书，避免发布包依赖机器上另装一份 CA bundle。
 - `examples/sample_plugin.cpp`、`examples/lifecycle_plugin.cpp`、`examples/cancellable_plugin.cpp` 和对应 smoke 测试验证动态库导出、ABI 检查、基本生命周期、WebSocket 建立/关闭回调以及 ABI v4 SSE 协作式取消。`examples/crashing_plugin.cpp` 故意触发空指针崩溃，由 `plugin-manager-crash-smoke` 验证宿主隔离和失败标记。
 
 非 MSVC 构建默认启用 `-Wall -Wextra`；`third_party/include` 以 SYSTEM 方式包含，第三方头文件的警告不会混入自家源码。

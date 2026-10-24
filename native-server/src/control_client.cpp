@@ -1,11 +1,9 @@
 #include "plugmesh/control_client.h"
+#include "plugmesh/tls_support.h"
 
 #include <chrono>
 #include <iostream>
 
-#include <asio/ssl/context.hpp>
-#include <asio/ssl/rfc2818_verification.hpp>
-#include <openssl/ssl.h>
 #include <websocketpp/base64/base64.hpp>
 
 namespace plugmesh {
@@ -60,10 +58,7 @@ ControlClient::ControlClient(ServerConfig config, PluginManager& plugins) : conf
   if (!secure_) return;
   tls_hostname_ = websocketpp::uri(endpoint()).get_host();
   tls_client_.set_tls_init_handler(&ControlClient::tls_init);
-  tls_client_.set_socket_init_handler([this](websocketpp::connection_hdl, asio::ssl::stream<asio::ip::tcp::socket>& socket) {
-    socket.set_verify_callback(asio::ssl::rfc2818_verification(tls_hostname_));
-    if (!tls_hostname_.empty()) SSL_set_tlsext_host_name(socket.native_handle(), tls_hostname_.c_str());
-  });
+  tls_client_.set_socket_init_handler([this](websocketpp::connection_hdl, asio::ssl::stream<asio::ip::tcp::socket>& socket) { configure_tls_socket(socket, tls_hostname_); });
 }
 
 ControlClient::~ControlClient() {
@@ -152,11 +147,7 @@ bool ControlClient::revoke_binding(std::string& error) {
 }
 
 ControlClient::TlsContext ControlClient::tls_init(websocketpp::connection_hdl) {
-  auto context = websocketpp::lib::make_shared<websocketpp::lib::asio::ssl::context>(websocketpp::lib::asio::ssl::context::sslv23);
-  context->set_options(websocketpp::lib::asio::ssl::context::default_workarounds | websocketpp::lib::asio::ssl::context::no_sslv2 | websocketpp::lib::asio::ssl::context::no_sslv3 | websocketpp::lib::asio::ssl::context::single_dh_use);
-  context->set_default_verify_paths();
-  context->set_verify_mode(websocketpp::lib::asio::ssl::verify_peer);
-  return context;
+  return make_tls_context();
 }
 
 void ControlClient::connect() {

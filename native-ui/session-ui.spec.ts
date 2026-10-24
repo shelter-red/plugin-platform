@@ -40,7 +40,7 @@ test('local UI diagnostics and logs follow plugin lifecycle actions', async ({ p
   await expect(page.getByRole('heading', { name: '插件服务器' })).toBeVisible()
 
   const metric = (label: string) => page.locator('.metric', { hasText: label })
-  await expect(metric('已发现插件').locator('strong')).toHaveText('3')
+  await expect(metric('已发现插件').locator('strong')).toHaveText('4')
   await expect(metric('已启用').locator('strong')).toHaveText('0')
   await expect(metric('失败状态').locator('strong')).toHaveText('0')
   await expect(metric('本地端口').locator('strong')).toHaveText(/^\d+$/)

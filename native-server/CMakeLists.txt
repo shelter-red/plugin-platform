@@ -37,6 +37,7 @@ add_library(plugmesh_core STATIC
   src/plugin_manager.cpp
   src/registration_client.cpp
   src/server_config.cpp
+  src/tls_support.cpp
 )
 set_target_properties(plugmesh_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_compile_definitions(plugmesh_core PUBLIC ASIO_STANDALONE)
@@ -137,6 +138,9 @@ target_link_libraries(plugmesh-credential-store-smoke PRIVATE plugmesh_core)
 add_executable(plugmesh-registration-client-smoke tests/registration_client_smoke.cpp)
 target_link_libraries(plugmesh-registration-client-smoke PRIVATE plugmesh_core)
 
+add_executable(plugmesh-tls-support-smoke tests/tls_support_smoke.cpp)
+target_link_libraries(plugmesh-tls-support-smoke PRIVATE plugmesh_core)
+
 add_executable(plugmesh-local-http-server-smoke tests/local_http_server_smoke.cpp)
 target_link_libraries(plugmesh-local-http-server-smoke PRIVATE plugmesh_core)
 
@@ -153,6 +157,7 @@ add_test(NAME plugmesh-control-protocol-smoke COMMAND plugmesh-control-protocol-
 add_test(NAME plugmesh-control-client-smoke COMMAND plugmesh-control-client-smoke $<TARGET_FILE:plugmesh-plugin-host> "${CMAKE_CURRENT_BINARY_DIR}/plugins")
 add_test(NAME plugmesh-credential-store-smoke COMMAND plugmesh-credential-store-smoke)
 add_test(NAME plugmesh-registration-client-smoke COMMAND plugmesh-registration-client-smoke "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/localhost-cert.pem" "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/localhost-key.pem")
+add_test(NAME plugmesh-tls-support-smoke COMMAND plugmesh-tls-support-smoke)
 add_test(NAME plugmesh-plugin-loader-smoke COMMAND plugmesh-plugin-loader-smoke $<TARGET_FILE:plugmesh-sample> $<TARGET_FILE:plugmesh-lifecycle-sample> $<TARGET_FILE:plugmesh-cancellable-sample>)
 add_test(NAME plugmesh-plugin-host-smoke COMMAND plugmesh-plugin-host-smoke $<TARGET_FILE:plugmesh-plugin-host> $<TARGET_FILE:plugmesh-sample> $<TARGET_FILE:plugmesh-crashing-sample> $<TARGET_FILE:plugmesh-cancellable-sample>)
 add_test(NAME plugmesh-plugin-manager-smoke COMMAND plugmesh-plugin-manager-smoke $<TARGET_FILE:plugmesh-plugin-host> "${CMAKE_CURRENT_BINARY_DIR}/plugins")
