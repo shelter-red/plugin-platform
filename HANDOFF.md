@@ -97,9 +97,10 @@
 ```text
 仓库：/home/tc/work/plugin-platform
 分支：main
-HEAD（本次核验）：25c0b20 升级原生修复版本到 0.1.1
-origin/main（本次核验）：25c0b20
-工作区（本次核验）：U29、8.5、发布 workflow 修复、8.6 核对、U16 视觉测量/回归和原生运行时/交互配置修复均已通过对应 Actions；`v0.1.0` 旧 Release 保留，`v0.1.1` 已指向修复后的 `25c0b20` 且公开资产已核验；真实 Cloudflare/Workers Builds 控制台联调仍未直接验证
+HEAD（本次核验前基线）：f38cce5 记录 U18 用量页视觉验收
+登记提交：6c1c516（校正本恢复卡的步骤登记，已推送）
+origin/main（本次核验前基线）：f38cce5
+工作区（本次核验前基线）：干净；U29、8.5、发布 workflow 修复、8.6 仓库侧核对、U16 视觉测量/回归、U18 用量页视觉验收和原生运行时/交互配置修复均已有本地证据；`v0.1.0` 旧 Release 保留，`v0.1.1` 已公开发布并核验资产；真实 Cloudflare/Workers Builds 控制台联调仍未直接验证。恢复后以 `git rev-parse HEAD origin/main` 为准。
 fetch remote：https://github.com/shelter-red/plugin-platform.git
 push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 ```
@@ -107,6 +108,8 @@ push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 最近提交（均已推送）：
 
 ```text
+6c1c516 docs: 登记交接恢复卡校正步骤
+f38cce5 docs: 记录用量页视觉验收
 25c0b20 chore: 升级原生修复版本到 0.1.1
 e8c9124 docs: 登记修复版本发布步骤
 0a5e1f7 docs: 记录原生兼容性 Actions 验收
@@ -153,7 +156,7 @@ a02871a docs: 更新 Token 与用量验收交接基线
 - `a9e3839` 对应 Actions run `39855022484`（#56），`completed/success`；随后 HANDOFF-only 的 `02dbb1a` 对应 #57，也已成功。
 - `e349e7b` 是窄屏布局与视觉基线修复提交，对应 Actions run `39880735501`（#61），`completed/success`。
 - 上一基线 `cc37ba8` 对应 #55（run `39852598521`）；更早成功包括 `42d1870` #54（run `39851368864`）、`c0bfde3` #53（run `39850719037`）、`579eb1f` #52（run `39840532476`）。
-- 本轮 17 个路径已通过完整本地验收并完成 push/远端 Actions 闭环；`02dbb1a`、`b6ad802` 记录前序 Actions 结果，`e349e7b` 的 #61 也已成功。若之后新增 HANDOFF-only commit，仍须按第 7 节追踪最新 HEAD，不能拿 #61 代替新提交证据。
+- 此前本轮 17 个路径已通过完整本地验收并完成 push/远端 Actions 闭环；`02dbb1a`、`b6ad802` 记录前序 Actions 结果，`e349e7b` 的 #61 也已成功。后续新增 HANDOFF-only commit 仍须按第 7 节追踪最新 HEAD，不能拿历史成功 run 代替当前提交证据。
 - 仓库内未发现 `AGENTS.md`，无额外仓库级代理指令。
 - 恢复时始终以实际 `git fetch`、`git log -1`、`git status`、`git rev-parse HEAD origin/main` 为准，不凭本文记忆判断。
 
@@ -230,8 +233,9 @@ git diff --check                               PASS
 `npm run ci:local`                             PASS（89/89 UI smoke）
 npm run deploy:worker:test                     10/10 PASS（含 README 新部署前提断言）
 Worker runtime（Docker node:22-bookworm）       20/20 files，93/93 tests PASS
-latest known remote Actions #121 / 40053822375 completed/success
-本轮功能改动提交 / push / Actions 闭环            PASS
+U18 临时视觉验收                               2 主题 × 3 视口通过，含无溢出/分组/百分比断言
+f38cce5 Actions REST 查询                       HTTP 200，`total_count=0`，未发现对应 run
+6c1c516 Actions                                 登记提交已推送，尚未查询；不得沿用历史成功 run
 ```
 
 已记录的代码验收：
