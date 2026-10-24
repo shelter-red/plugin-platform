@@ -248,13 +248,11 @@ npm run ci:local                               PASS（最近的完整基线）
 尚未完成/不能宣称通过：
 
 ```text
-登录页、设置页、Cloudflare Token 面板、用量页人工视觉验收
-帮助中心的二进制/共享库插件服务器教程
+登录页、设置页、Cloudflare Token 面板人工视觉验收
 真实 Cloudflare API / Token / subscriptions / Analytics 联调
 真实 GitHub OAuth App 与公网 SMTP 联调
 Workers Builds 控制台 Deploy command 核对
 生产 D1 migration 与已部署页面复核
-帮助中心的二进制/共享库插件服务器教程
 ```
 
 ### 0.4 恢复后的第一动作
@@ -407,7 +405,7 @@ doRequests        100,000
 | U15 | `1e4fd10`、`fd80fa4` Actions 失败 | 失败修复、本地 CI、push、Actions、产物闭环 | ✅ 当前最终基线 `e349e7b` #61 成功；每次新提交仍须重新追踪 |
 | U16 | 图标没对齐；“默认工作区”很矮挡字 | 统一高度/gap/行高/居中；双主题多视口检查 | ✅ 真实数据下 1440/1024 测量无偏差；Playwright 对齐回归、双主题/多视口 CI 截图和 89/89 CI 已通过 |
 | U17 | 额度少，D1 写入等都要监控且显示百分比 | 8 项 used/limit/percentage | ✅ 前后端已实现 8 项，含次数、上限、百分比；专项回归已通过 |
-| U18 | 平台和监控分开；平台请求不限 | 平台只统计；Cloudflare 官方额度独立 | 🟡 分组、“不限”和定向回归已实现；最终多视口视觉验收未完成 |
+| U18 | 平台和监控分开；平台请求不限 | 平台只统计；Cloudflare 官方额度独立 | ✅ 分组、“不限”、8 项额度百分比和双主题 1440/1024/390px 视觉验收均通过；平台请求无进度条，官方额度显示上限/百分比/进度条 |
 | U19 | GitHub OAuth 没过期，CF 为什么过期；改 Token | 不再暗示 OAuth 过期；界面/链接/错误全部 Token 化 | ✅ 后端/API/面板/README/docs/help/deploy 提示已 Token 化，随 `6e9d0ec` 推送并通过 #56 |
 | U20 | CF 免费额度为何在系统设置手填，应从 CF 读取 | 删除手填；读 subscriptions；未确认 Free 显示未读取 | ✅ 维护/用量 UI 与文档已改；真实 subscriptions 响应仍未联调 |
 | U21 | 文案诡异、莫名卡片、同页多个按钮跳同页 | 中英文审计；清重复说明/空卡片/重复跳转 | ✅ `114acee` 已完成列表页空卡片、重复入口和中英文 Cloudflare 文案清理；Actions #75（run `39904507031`）成功 |
@@ -800,6 +798,10 @@ fd80fa4  run 39754896119  #11  管理端 UI smoke 失败
 
 本步骤不改变路由、API、权限和数据契约。重复入口、空卡片、窄屏布局、登录页组件化、Cloudflare Token 区块、用量刷新和中英文文案审计均已完成；相关负断言、截图与 `ci:local` 已通过。以上历史“待实现”列表已删除，后续以当前代码和最终验收清单为准。
 
+### 8.3.1 U18 用量页双主题多视口验收（已完成）
+
+使用 Playwright mock 的 Cloudflare Free 响应和平台本地统计，在深色/浅色主题及 1440px、1024px、390px 视口下生成 6 张截图并通过布局断言：两组统计上下分明且无横向溢出；平台请求显示“不限”且不显示百分比进度条；Cloudflare Worker、D1 行读/行写、KV 读/写/删/列举和 Durable Object 共 8 项均显示已用量、上限、百分比和进度条。截图输出位于 `/tmp/plugmesh-usage-<theme>-<viewport>.png`，临时测试文件不进入仓库。
+
 ### 8.4 实现原生手动构建（已完成）
 
 新增 `.github/workflows/build-plugin-server.yml`，仅 `workflow_dispatch`，完善 `native-server/CMakeLists.txt` 的真正 SHARED target、公共头和构建开关，处理三平台依赖。`e4ae1f1`/`accfed0` 修复实现与 MSVC `min` 宏冲突；后续 `5dd388c` 又补充 Linux OpenSSL 随包、`$ORIGIN`、Windows teardown 和交互输入重试。手动构建 run `39984340199` 成功，发布 run `39995358724` 的 Linux/Windows/macOS 构建和 Release 成功；本地 CTest、Linux/Windows 交叉构建、Wine smoke 与 native UI 回归均通过。
@@ -943,3 +945,4 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - 2026-10-24：交接状态清理本地验收完成：旧“待实现/手动 workflow 未触发/帮助教程待闭环”等搜索无命中；`git diff --check`、`npm run ci:local`（UI smoke 89/89）和 `npm run deploy:worker:test`（10/10）通过。待提交、推送和最新 Actions 验证。
 - 2026-10-24：`5736105`（`清理过期验收状态`）已推送；平台验收 #108（run `40044067102`）完成成功，`changes`/`web` 成功，三个 native job 按路径过滤跳过。当前文档清理步骤闭环，U06/真实 Cloudflare 外部联调仍按证据保留为未验证边界。
 - 2026-10-24：`a034701`（`记录验收状态清理结果`）已推送；平台验收 #109（run `40044540676`）完成成功，`web`/`changes` 成功，三个 native job 按路径过滤跳过。当前 HEAD 与交接记录同步。
+- 2026-10-24：U18 用量页视觉验收完成：正确环境下 Playwright mock 请求返回 200，双主题 1440/1024/390px 截图和横向溢出、分组边界、平台“不限”无进度条、Cloudflare 八项百分比断言全部通过；本机 root-owned Vite 缓存仅影响临时服务启动，未改动共享缓存。临时视觉脚本已删除，下一步提交本次 HANDOFF/docs 更新并低频追踪新 HEAD 的 Actions。
