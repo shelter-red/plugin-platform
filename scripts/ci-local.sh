@@ -15,6 +15,9 @@ npm run --silent ui:conventions
 step '样式死代码审计'
 npm run --silent ui:css-audit
 
+step '原生 Release 打包契约'
+npm run --silent release:workflow:test
+
 step 'Worker 类型检查'
 npm run --silent worker:typecheck
 
