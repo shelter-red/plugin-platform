@@ -143,7 +143,7 @@ npx wrangler d1 migrations apply plugmesh --remote  # 补齐后重新发布即�
 
 ### 登录失败排查
 
-密码错误时登录接口返回 `401 invalid_password` 并停留在登录页。尚未初始化时登录接口返回 `503 setup_required`，浏览器管理入口会进入 `/setup`。若初始化保存失败并提示检查 D1 migration，请先执行 `npx wrangler d1 migrations apply plugmesh --remote`，确认 `0009_password_auth.sql` 已应用后重试。
+密码错误时登录接口返回 `401 invalid_password` 并停留在登录页。尚未初始化时登录接口返回 `503 setup_required`，浏览器管理入口会进入 `/setup`。只有页面明确显示“数据库迁移尚未完成”时才需要执行 `npx wrangler d1 migrations apply plugmesh --remote`；其他初始化失败会显示错误编号，用于在 Worker 日志中定位具体阶段。
 
 ### Cloudflare Global API Key
 
@@ -164,14 +164,7 @@ Global API Key 只以 AES-GCM 密文保存在 D1，GET 设置接口永远不回�
 
 随后在后台把插件域名后缀设为 `plugins.example.com`。插件后缀不要使用包含管理端主站的父域名：例如主站是 `platform.example.com` 时，不要填写 `example.com`，应使用 `plugins.example.com`。新增插件域名会立即使用该后缀，不需要修改环境变量或重新部署。`PLUGIN_DOMAIN_SUFFIX` 仅用于本地测试和旧数据兼容回退，不是部署必填项。
 
-如果错误后缀已经让主站返回 `Plugin domain not found`，可先在 Cloudflare Dashboard → D1 → `plugmesh` → Console 执行下面的应急更新，把 `plugins.example.com` 替换为实际插件后缀；恢复访问后再从系统设置保存一次，让平台用 Global API Key 自动同步 DNS 和 Worker Route：
-
-```sql
-UPDATE platform_settings
-SET value_json = json_set(value_json, '$.pluginDomainSuffix', '.plugins.example.com'),
-    updated_at = datetime('now')
-WHERE key = 'platform';
-```
+未配置 `CONSOLE_HOSTNAME` 时，只有 D1 中真实存在的插件域名会进入插件代理，其余 Host 作为管理端处理；配置后则固定保护该管理端 Host。无需通过手写 D1 SQL 恢复主站。
 
 ### 校验与高级选项
 

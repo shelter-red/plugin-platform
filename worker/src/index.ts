@@ -50,7 +50,7 @@ export default {
     if (url.pathname.startsWith('/api/')) return api(request, env, url)
     if (url.pathname === '/control/connect') return connectServer(request, env, url)
     if (url.pathname.startsWith('/blobs/')) return consumeBlob(request, env, ctx, url)
-    return proxyPublicHost(request, env, url, ctx)
+    return serveConsole(request, env)
   },
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil(runScheduledMaintenance(env))
@@ -633,8 +633,8 @@ export async function createServerRegistration(env: Env, code: string | undefine
 
 async function proxyPublicHost(request: Request, env: Env, url: URL, ctx: ExecutionContext): Promise<Response> {
   const suffix = await pluginDomainSuffix(env)
-  if (env.CONSOLE_HOSTNAME && url.hostname === configuredConsoleHostname(env, request)) return env.ASSETS ? env.ASSETS.fetch(request) : new Response('Plugmesh console route', { status: 404 })
-  if (!url.hostname.endsWith(suffix) || url.hostname.length <= suffix.length) return env.ASSETS ? env.ASSETS.fetch(request) : new Response('Plugmesh console route', { status: 404 })
+  if (env.CONSOLE_HOSTNAME && url.hostname === configuredConsoleHostname(env, request)) return serveConsole(request, env)
+  if (!url.hostname.endsWith(suffix) || url.hostname.length <= suffix.length) return serveConsole(request, env)
   const prefix = url.hostname.slice(0, -suffix.length)
   if (!/^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$/.test(prefix)) return new Response('Plugmesh console route', { status: 404 })
   const settings = await getPlatformSettings(env)
@@ -669,6 +669,10 @@ async function proxyPublicHost(request: Request, env: Env, url: URL, ctx: Execut
     ctx.waitUntil(recordAccessLog(env, { workspaceId: domain.workspace_id, userId: domain.user_id, domainId: domain.domain_id, pluginInstanceId: domain.plugin_instance_id, hostname: domain.hostname, method: request.method, path: url.pathname, status: 502, durationMs: Date.now() - startedAt, error: 'bridge request failed' }))
     return new Response('Plugin bridge request failed', { status: 502 })
   }
+}
+
+function serveConsole(request: Request, env: Env): Promise<Response> | Response {
+  return env.ASSETS ? env.ASSETS.fetch(request) : new Response('Plugmesh console route', { status: 404 })
 }
 
 async function platformSettingsApi(request: Request, env: Env, user: AuthenticatedUser, fetchImpl: typeof fetch = fetch): Promise<Response> {

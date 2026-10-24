@@ -38,6 +38,7 @@ const database = {
         return query
       },
       first: async <T>() => {
+        if (sql.includes('SELECT id FROM admin_credentials')) return { id: 'primary' } as T
         if (sql.includes('SELECT domains.id AS domain_id')) return (routes.get(values[0] as string) ?? null) as T
         return null as T
       },
@@ -70,6 +71,9 @@ const env = {
       return bridge
     },
   },
+  ASSETS: {
+    fetch: (request: Request) => new Response(`console:${new URL(request.url).pathname}`, { headers: { 'content-type': 'text/html' } }),
+  },
 } as unknown as Env
 
 const waits: Promise<unknown>[] = []
@@ -82,8 +86,17 @@ async function fetchPublic(hostname: string, init?: RequestInit): Promise<Respon
 }
 
 const testSettings = { ...defaultPlatformSettings, pluginDomainSuffix: '.plugins.example.test' }
+const envWithoutConsoleHostname = { ...env, CONSOLE_HOSTNAME: undefined } as unknown as Env
+setPlatformSettingsCache({ ...testSettings, pluginDomainSuffix: '.example.test' })
+let response = await worker.fetch(new Request('https://platform.example.test/'), envWithoutConsoleHostname, ctx)
+assert.equal(response.status, 200)
+assert.equal(await response.text(), 'console:/')
+response = await worker.fetch(new Request('https://platform.example.test/setup'), envWithoutConsoleHostname, ctx)
+assert.equal(response.status, 200)
+assert.equal(await response.text(), 'console:/setup')
+
 setPlatformSettingsCache(testSettings)
-let response = await fetchPublic('missing.plugins.example.test')
+response = await fetchPublic('missing.plugins.example.test')
 assert.equal(response.status, 404)
 assert.equal(await response.text(), 'Plugin domain not found')
 assert.equal(bridgeRequests.length, 0)
