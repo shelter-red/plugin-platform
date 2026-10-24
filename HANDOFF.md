@@ -240,3 +240,4 @@ git diff --check                         通过
 - 2026-10-24：`4ce207c` 推送；平台验收 run `40082466727` 完成成功。
 - 2026-10-24：通过 Cloudflare 官方 Workers scripts list 读取 Worker tag；官方 Triggers GET 因当前 Wrangler OAuth 返回 403，未执行任何生产写入。
 - 2026-10-24：登记并执行本次交接文档去历史化整理；完成提交后，下一安全动作仍是等待用户完成生产 `/setup` 或提供 Workers Builds 的只读核验条件。
+- 2026-10-24：下一步登记（凭据术语与原生产物文档清理）：把 Cloudflare runtime 测试中仍称“Token”的 Global API Key 标题/响应变量改为准确术语，并修正 `docs/local-e2e.md` 对 executable artifact 不包含 `native-ui/dist` 的过期说明；保留会话 token、插件控制 token、部署 `CLOUDFLARE_API_TOKEN`、历史 OAuth fixture 和负断言。只改测试命名与文档，不改运行时行为；定向 runtime、文档搜索和 `git diff --check` 通过并记录前不进入下一步。
