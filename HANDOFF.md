@@ -221,10 +221,10 @@ tests/console-real-stack.spec.ts
 
 ```text
 git diff --check                               PASS
-npm run ci:local                               PASS（本轮 19 个路径；87/87 UI smoke）
+`npm run ci:local`                             PASS（89/89 UI smoke）
 npm run deploy:worker:test                     10/10 PASS（含 README 新部署前提断言）
-Worker runtime（Docker node:22-bookworm）       20/20 files，91/91 tests PASS
-latest known remote Actions #84 / 39931270148   completed/success
+Worker runtime（Docker node:22-bookworm）       20/20 files，93/93 tests PASS
+latest known remote Actions #121 / 40053822375 completed/success
 本轮功能改动提交 / push / Actions 闭环            PASS
 ```
 
@@ -234,10 +234,10 @@ latest known remote Actions #84 / 39931270148   completed/success
 npm run build                                  PASS
 npm run ui:conventions                         89 个 TSX，0 违规
 npm run ui:css-audit                           486 条规则，0 死代码/重复
-npm run ui:smoke                               87 passed
+npm run ui:smoke                               89 passed
 npx playwright test tests/console-worker.spec.ts 31 passed（本轮 Cloudflare/UI 定向验收）
 npm run deploy:worker:test                     10/10 PASS
-Worker runtime                                 20/20 files，89/89 tests PASS
+Worker runtime                                 20/20 files，93/93 tests PASS
 npm run ci:local                               PASS（最近的完整基线）
 ```
 
@@ -375,7 +375,7 @@ doRequests        100,000
 ### 1.6 原生插件服务器手动构建
 
 - 用户要求 Actions 增加仅手动运行的构建入口：选择“可执行程序”或“库文件”、目标平台、构建类型；可选架构/版本前缀。
-- 当前 `native-server/CMakeLists.txt` 的 `plugmesh_core` 是 `STATIC`。不能只改文件扩展名伪装共享库，必须增加真正的 `SHARED` target、稳定 C ABI 和公共头文件，并设置构建开关。
+- 当前 `native-server/CMakeLists.txt` 的 `plugmesh_core` 保持 `STATIC` 作为内部核心库；共享库产物由真正的 `plugmesh-server-shared` `SHARED` target、稳定 C ABI 和 `server_api.h` 公共头文件提供，并由 `PLUGMESH_BUILD_ARTIFACT=SHARED` 构建开关选择。
 - 产物必须包含：真正构建出的产物、依赖说明、README、`SHA256SUMS`。
 - Windows 必须处理 OpenSSL DLL/applocal；Linux/macOS 必须处理 OpenSSL、RPATH/依赖边界。
 - 帮助中心中英文必须说明可执行文件和共享库两种用法。
@@ -514,7 +514,7 @@ rg -n -i "offline_access|workers-platform\.read|response_type|pkce|grant_type|cl
 - `worker/migrations/0002_cloudflare_oauth.sql`：历史 migration，不删除、不改写。
 - `native-server/third_party/**` 中的 `response_type` 是 WebSocket++ 内部类型，与 Cloudflare OAuth 无关。
 
-帮助中心的 Cloudflare API Token FAQ 与 privacy 已更新；二进制/共享库插件服务器教程仍属第 8.5 节，不能把“Cloudflare FAQ 已改”误当成“帮助中心全部完成”。
+帮助中心的 Cloudflare API Token FAQ、privacy 和二进制/共享库插件服务器教程均已更新；真实 Cloudflare 与生产部署仍按第 6.4 节保留为未联调边界。
 
 ### 3.5 允许保留的 OAuth 内容（不要误删）
 
@@ -529,14 +529,14 @@ rg -n -i "offline_access|workers-platform\.read|response_type|pkce|grant_type|cl
 
 ### 3.6 原生插件服务器现状
 
-当前 `.github/workflows/release.yml`：
+当前 `.github/workflows/release.yml` 支持 `v*` tag push 和必须填写 `v*` `release_tag` 的手动发布；发布 matrix 构建三平台可执行程序。
 
-- 支持 `v*` tag push，也支持必须填写 `v*` `release_tag` 的手动发布；手动选择产物的平台/类型/构建模式由独立的 `build-plugin-server.yml` 提供；
-- 只构建可执行程序；
-- 三平台 matrix；
-- 没有“可执行/共享库”选择。
+- 手动选择产物的平台/类型/构建模式由独立的 `build-plugin-server.yml` 提供；
+- 发布 matrix 只构建可执行程序，手动 workflow 另外支持共享库；
+- 发布 matrix 覆盖 Linux、Windows、macOS；
+- `build-plugin-server.yml` 仅使用 `workflow_dispatch`，提供可执行程序/共享库、目标平台和 Debug/Release 选择。
 
-需要新增仅 `workflow_dispatch` 的 workflow，例如 `.github/workflows/build-plugin-server.yml`，输入至少：
+现有 `.github/workflows/build-plugin-server.yml` 使用 `workflow_dispatch`，输入至少：
 
 - 产物类型：可执行程序 / 共享库；
 - 目标平台：Linux / Windows / macOS；
@@ -546,12 +546,7 @@ rg -n -i "offline_access|workers-platform\.read|response_type|pkce|grant_type|cl
 
 产物必须包含真正构建出的产物、依赖说明、README、`SHA256SUMS`。文件名必须包含 OS/架构/构建类型，避免“latest”漂移。
 
-`native-server/CMakeLists.txt` 中 `plugmesh_core` 当前是 `STATIC`。不能只改扩展名；必须增加真正 `SHARED` target、稳定 C ABI 和公共头文件，并设置构建开关，例如：
-
-```text
-PLUGMESH_BUILD_SERVER
-PLUGMESH_BUILD_CORE_SHARED
-```
+`native-server/CMakeLists.txt` 中的 `plugmesh_core` 保持 `STATIC` 作为内部核心库；共享库产物由真正的 `plugmesh-server-shared` `SHARED` target、稳定 C ABI 和 `server_api.h` 公共头文件提供，并由 `PLUGMESH_BUILD_ARTIFACT=SHARED` 构建开关选择。
 
 Windows 需处理 OpenSSL DLL/applocal；Linux/macOS 需处理 OpenSSL/RPATH/依赖边界。
 
@@ -653,8 +648,8 @@ Windows 需处理 OpenSSL DLL/applocal；Linux/macOS 需处理 OpenSSL/RPATH/依
 git diff --check           PASS
 npm run build              PASS
 npm run ui:conventions     PASS，89 TSX / 0 违规
-npm run ui:css-audit       PASS，476 规则 / 0 死代码
-npm run ui:smoke           86 passed
+npm run ui:css-audit       PASS，486 规则 / 0 死代码
+npm run ui:smoke           89 passed
 npm run deploy:worker:test 10/10 PASS
 npm run ci:local           PASS（最近一次完整记录）
 ```
@@ -701,7 +696,7 @@ cmake --build native-server/build --parallel
 ctest --test-dir native-server/build --output-on-failure
 ```
 
-当前 `plugmesh_core` 是 STATIC，尚未有真正的核心 SHARED target 和稳定 C ABI。
+当前 `plugmesh_core` 是内部 STATIC 库；真正的 `plugmesh-server-shared` SHARED target、稳定 C ABI 和 `server_api.h` 已存在，并由原生手动构建 workflow 验证。
 
 ### 6.4 尚未联调
 
@@ -902,12 +897,12 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - 2026-10-23：修正验收矩阵第 19 行“生产 OAuth/API 端点”残留，并重写组件化验收行：Cloudflare 区明确为 `CloudflarePanel` + Token 三组件 + hook；维护配额明确只剩平台 3 项阈值；刷新入口明确只有 `usage-refresh`。
 - 2026-10-23：修正 `方案.md` 权限矩阵与目录注释，Cloudflare 只用 API Token，平台设置中的 OAuth 明确为 GitHub OAuth。
 - 2026-10-23：README/help 中泛化 OAuth 表述改为 GitHub OAuth / Cloudflare API Token；历史 migration、`legacy_oauth` 和测试负断言保持。
-- 2026-10-23：当前工作区共 17 个路径（16 个文档/文案/注释/部署测试断言 + `HANDOFF.md`）。`git diff --check`、`npm run ci:local`（89 TSX 审计、476 样式规则、构建、Worker smoke、86/86 UI smoke）、`npm run deploy:worker:test`（10/10）和 Docker Worker runtime（20/20 files，89/89 tests）全部通过。
+- 2026-10-23：历史提交 `6e9d0ec` 的 17 个路径验收记录为当时的 89 TSX、476 样式规则和 86/86 UI smoke；后续代码已继续收口，当前数值以恢复卡和最新验收为准。
 - 2026-10-23：部署测试发现并修复 README 最小部署断言残留：由“唯一部署必填项：Cloudflare 账号授权”同步为“唯一部署必填项：连接 Cloudflare Workers Builds 账号”。
 - 2026-10-23：16 个非 HANDOFF 路径提交为 `6e9d0ec`（`docs: 统一 Cloudflare API Token 与平台额度语义`）；HANDOFF 随后以 `a9e3839`（`docs: 固化完整交接与本地验收基线`）单独收口，两者均已推送。
 - 2026-10-23：`a9e3839` 的 Actions run `39855022484`（#56）达到 `completed/success`；`HEAD == origin/main == a9e3839`，工作区 clean。
 - 2026-10-23：再次整理 HANDOFF，更新“待 push/PENDING”旧状态，将已完成的 Token 化、部署断言、17 路径验收与 #56 成功记录下来；若产生新的 HANDOFF-only commit，仍需按第 7 节实时追踪，不能用 #56 代替新 HEAD。
-- 2026-10-23：本次 HANDOFF-only 更新后重新执行 `git diff --check`、`npm run ci:local`（89 TSX 审计、476 样式规则、构建、Worker smoke、86/86 UI smoke）和 `npm run deploy:worker:test`（10/10），全部通过。
+- 2026-10-23：本次 HANDOFF-only 更新后执行 `git diff --check`、`npm run ci:local` 和 `npm run deploy:worker:test`，当时记录的数值保留为历史证据。
 - 2026-10-23：提交 `02dbb1a` 已推送；Actions run `39856158838`（#57）达到 `completed/success`。后续 HANDOFF 更新必须继续先记录、再提交、再推送并追踪新 HEAD。
 - 2026-10-23：提交 `b6ad802` 已推送；Actions run `39877275016`（#58）达到 `completed/success`。
 - 2026-10-23：完成视觉验收登记的窄屏布局子步骤：发现并修复 390px 设置页 462px 溢出，新增布局边界回归；CI 同款容器重建设置页 6 张、移动设置预览和登录页截图；`ci:local` 87/87、`npm run deploy:worker:test` 10/10 通过。下一步为图标/文字对齐、重复入口/空卡片和中英文文案审计。
