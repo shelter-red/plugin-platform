@@ -168,25 +168,25 @@ git diff --check                         通过
 
 - 生产 D1 已应用 `0001` 至 `0009`，复核为 `No migrations to apply`。
 - `/api/health` 返回 200。
-- `/` 返回 302 到 `/setup`。
-- `/setup` 返回 200 并显示管理员密码初始化表单。
-- `/api/me` 返回 `503 setup_required`。
-- `/auth/login` 在未初始化时返回 302 到 `/setup`。
+- 管理员密码已由用户完成初始化，D1 中 `admin_credentials=1`。
+- `/` 返回管理端 HTML 200，不再误入插件代理。
+- 已关闭的 `/setup` 与普通 SPA 非路由一致，返回管理端 HTML 200。
+- `/api/me` 未登录返回 401，认证门禁正常。
 - 原 Cloudflare 1101 已消失。
 - setup 保存修复已由 Workers Builds 自动部署为版本 `5354e2bc-c0c3-42d8-9819-ec5b2137f27c`（2026-10-24 11:12:22Z）。
-- 修复后 `/api/health` 200、`/setup` 200；短密码 POST 原地返回 400。D1 中 `admin_credentials=0`、setup 审计为 0，外键检查无异常。
+- 初始化前曾验证 `/api/health` 200、`/setup` 200，短密码 POST 原地返回 400；当时 D1 中 `admin_credentials=0`、setup 审计为 0，外键检查无异常。
 - 未代用户设置密码，未修改 Cloudflare 业务凭据、DNS 或 Worker Route。
 
 需要真实环境继续验收：
 
-1. 用户在已修复的生产 `/setup` 重新设置密码，并验证登录、修改密码和旧会话撤销。
+1. 用户使用已设置的密码验证登录、修改密码和旧会话撤销。
 2. 确认 Workers Builds Deploy command 为 `npm run deploy`。
 3. 登录后保存真实 Email、Global API Key 和 Account ID，验证 subscriptions、Analytics、Zone、DNS 与 Worker Route。
 4. 配置公网 SMTP，验证 STARTTLS/SMTPS、维护通知和退信处理。
 5. 在真实 Windows 主机和目标 Linux 发行版验证 `v0.1.1` 产物。
 6. 在已部署 Worker 上完成 HTTP、SSE、WebSocket、大文件、断线恢复和持续并发压力测试。
 
-第 1 项必须由用户决定密码；不得生成、猜测或代为设置。第 2 项当前缺少可用的 Dashboard 登录态或 Workers CI Read 凭据。后续各项开始前仍需按第 1 节登记。
+第 1 项涉及真实密码，只能由用户操作；不得读取、生成、猜测或代为设置。第 2 项当前缺少可用的 Dashboard 登录态或 Workers CI Read 凭据。后续各项开始前仍需按第 1 节登记。
 
 ## 6. 关键文件
 
@@ -217,7 +217,9 @@ git diff --check                         通过
 | `bf68565` | 缺少密码 migration 时返回结构化初始化状态 |
 | `4ce207c` | 已推送验收基线，Actions run `40082466727` 成功 |
 | `989188e` | 修复生产管理员密码初始化、版本化 PBKDF2 与原子写入 |
-| `2f1ad78` | 当前已推送验收基线，Actions run `40088916661` 成功 |
+| `2f1ad78` | 管理员密码初始化修复验收基线，Actions run `40088916661` 成功 |
+| `e8409ba` | 修复无主站 Host 绑定时管理端误入插件代理 |
+| `680adb6` | 当前已推送验收基线，Actions run `40090177061` 成功 |
 
 ## 8. 禁止回流的旧方案
 
@@ -254,3 +256,4 @@ git diff --check                         通过
 - 2026-10-24：下一步登记（无控制台 Host 绑定时主站误入插件代理）：用户已成功完成生产 setup，D1 `admin_credentials=1`，`/api/me` 正常进入未登录 401；但生产版本没有 `CONSOLE_HOSTNAME` 绑定，`platform.shelter.red/` 和已关闭的 `/setup` 都返回 `404 Plugin domain not found`。根因是入口的 `isPluginHostname()` 已正确把没有 D1 域名记录的 Host 判为管理端，路由末端却再次无条件调用 `proxyPublicHost()`。下一步让非插件 Host 的最终回退直接返回 `ASSETS`，保留真实 D1 插件域名的代理行为；增加“密码已配置 + 无 `CONSOLE_HOSTNAME`”回归，并清理 README 中把所有 setup 保存失败归因于 migration 的过期说明。定向与完整验证通过后再集中推送，由 Workers Builds 自动发布并复核生产，不修改用户密码或域名数据。
 - 2026-10-24：主站误入插件代理修复已实现：生产只读确认插件后缀为 `.shelter.red`，主站匹配该宽后缀但 `domains` 中没有 `platform.shelter.red`。路由在入口已排除真实插件 Host 后，最终回退现在直接返回管理端 `ASSETS`；插件代理内部也复用同一管理端响应，不再重复分叉。public proxy smoke 新增“密码已配置、无 `CONSOLE_HOSTNAME`、主站匹配宽后缀但无 D1 域名记录”的根因回归，并覆盖已关闭 `/setup` 回到 SPA；真实插件 Host 行为保持不变。README 已删除手写 D1 SQL 恢复主站的过期方案，并只在明确 `migration_required` 时指导执行 migration。定向 public proxy smoke、Worker typecheck 和 `git diff --check` 通过，完整验证与推送待下一步。
 - 2026-10-24：主站路由修复推送前完整验收通过：Worker runtime 17 个文件 80/80、Worker smoke 22/22、UI smoke 89/89、部署脚本 9/9，管理端构建、Worker typecheck、82 个 TSX 约定审计、467 条 CSS 审计和 `git diff --check` 全部通过。runtime 中的网络断连日志来自预期故障注入且测试进程退出码为 0；下一步仅一次性推送当前 `main`，按完整 SHA 低频查看 Actions，通过后等待 Workers Builds 自动部署并只读复核 `/`、`/setup` 与 `/api/me`，不修改生产密码、插件后缀、DNS 或 D1 域名。
+- 2026-10-24：`680adb6d3ac5c3c37513022d1df5cfecf94f17c4` 已一次性推送，平台验收 run `40090177061` 完成成功；`changes`/`web` 成功，三个未涉及的 native job 正常跳过。Workers Builds 自动产生版本 `9ba7c6c5-71e2-4040-b9ff-31c4f4db68b4`（版本 147，2026-10-24 11:31:04Z）。生产只读复核为 `/` 200 管理端 HTML、`/setup` 200 管理端 HTML、`/api/me` 401、`/api/health` 200，均不含 `Plugin domain not found`；D1 `admin_credentials=1` 且查询 `rows_written=0`。未修改用户密码、插件后缀、DNS 或 D1 域名，问题已闭环。
