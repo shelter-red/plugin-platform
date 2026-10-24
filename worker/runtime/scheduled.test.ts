@@ -15,12 +15,8 @@ test('定时维护任务在真实 D1 上按保留期清理数据并删除过期 
     testEnv.DB.prepare('INSERT INTO request_logs (id, user_id, domain_id, plugin_instance_id, hostname, method, path, status, duration_ms, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind('log-new', 'user-runtime', 'domain-runtime', 'plugin-runtime', 'new.example.com', 'GET', '/', 200, 5, null, daysAgo(10)),
     testEnv.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind('audit-old', 'user-runtime', 'old.action', '{}', daysAgo(181)),
     testEnv.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind('audit-new', 'user-runtime', 'new.action', '{}', daysAgo(170)),
-    testEnv.DB.prepare('INSERT INTO invites (id, token_hash, email, github_login, status, expires_at, used_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').bind('invite-expired', 'hash-invite-expired', 'expired@example.com', null, 'pending', hoursAgo(1), null, daysAgo(8)),
-    testEnv.DB.prepare('INSERT INTO invites (id, token_hash, email, github_login, status, expires_at, used_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').bind('invite-pending', 'hash-invite-pending', 'pending@example.com', null, 'pending', inDays(3), null, daysAgo(1)),
     testEnv.DB.prepare('INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)').bind('session-expired', 'user-runtime', 'hash-session-expired', hoursAgo(1), daysAgo(30)),
     testEnv.DB.prepare('INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)').bind('session-valid', 'user-runtime', 'hash-session-valid', inDays(7), daysAgo(1)),
-    testEnv.DB.prepare('INSERT INTO oauth_states (state_hash, invite_token_hash, expires_at, created_at) VALUES (?, ?, ?, ?)').bind('hash-oauth-expired', null, hoursAgo(1), daysAgo(1)),
-    testEnv.DB.prepare('INSERT INTO oauth_states (state_hash, invite_token_hash, expires_at, created_at) VALUES (?, ?, ?, ?)').bind('hash-oauth-valid', null, inDays(1), daysAgo(1)),
     testEnv.DB.prepare('INSERT INTO registration_codes (id, user_id, code_hash, expires_at, used_at, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind('code-expired', 'user-runtime', 'hash-code-expired', hoursAgo(1), null, daysAgo(1)),
     testEnv.DB.prepare('INSERT INTO registration_codes (id, user_id, code_hash, expires_at, used_at, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind('code-valid', 'user-runtime', 'hash-code-valid', inDays(1), null, daysAgo(1)),
   ])
@@ -39,14 +35,8 @@ test('定时维护任务在真实 D1 上按保留期清理数据并删除过期 
   expect(requestLogs.results.map((row) => row.id)).toEqual(['log-new'])
   const audit = await testEnv.DB.prepare('SELECT id FROM audit_log ORDER BY id').all<{ id: string }>()
   expect(audit.results.map((row) => row.id)).toEqual(['audit-new'])
-  const invite = await testEnv.DB.prepare('SELECT status FROM invites WHERE id = ?').bind('invite-expired').first<{ status: string }>()
-  const pendingInvite = await testEnv.DB.prepare('SELECT status FROM invites WHERE id = ?').bind('invite-pending').first<{ status: string }>()
-  expect(invite?.status).toBe('expired')
-  expect(pendingInvite?.status).toBe('pending')
   const sessions = await testEnv.DB.prepare('SELECT id FROM sessions ORDER BY id').all<{ id: string }>()
   expect(sessions.results.map((row) => row.id)).toEqual(['session-valid'])
-  const oauthStates = await testEnv.DB.prepare('SELECT state_hash FROM oauth_states ORDER BY state_hash').all<{ state_hash: string }>()
-  expect(oauthStates.results.map((row) => row.state_hash)).toEqual(['hash-oauth-valid'])
   const codes = await testEnv.DB.prepare('SELECT id FROM registration_codes ORDER BY id').all<{ id: string }>()
   expect(codes.results.map((row) => row.id)).toEqual(['code-valid'])
 

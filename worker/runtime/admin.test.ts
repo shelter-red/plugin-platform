@@ -2,7 +2,7 @@ import { SELF } from 'cloudflare:test'
 import { beforeEach, expect, test } from 'vitest'
 import { defaultPlatformSettings, setPlatformSettingsCache } from '../src/usage'
 import { addWorkspaceMember, hashToken, openControl, publicRequest, reply, resetDatabase, seedServer, sendFrame, testEnv } from './helpers'
-import { CLOUDFLARE_STUB_API_TOKEN } from './outbound-stub'
+import { CLOUDFLARE_STUB_EMAIL, CLOUDFLARE_STUB_GLOBAL_API_KEY } from './outbound-stub'
 
 const ADMIN_TOKEN = 'admin-session-token'
 const MEMBER_TOKEN = 'member-session-token'
@@ -44,7 +44,7 @@ beforeEach(async () => {
   setPlatformSettingsCache(defaultPlatformSettings)
 })
 
-test('管理 API 校验邀请参数并拒绝工作区 viewer 越权操作', { timeout: 20_000 }, async () => {
+test('邀请接口已移除且工作区 viewer 不能执行写操作', { timeout: 20_000 }, async () => {
   await seedServer()
   await seedAdmin()
   await seedMemberSession()
@@ -53,40 +53,13 @@ test('管理 API 校验邀请参数并拒绝工作区 viewer 越权操作', { ti
   const anonymous = await SELF.fetch('https://console.example.com/api/invites')
   expect(anonymous.status).toBe(401)
 
-  const forbidden = await api('/api/invites', VIEWER_TOKEN, { method: 'POST', body: JSON.stringify({ githubLogin: 'octocat' }) })
+  const forbidden = await api('/api/registration-codes', VIEWER_TOKEN, { method: 'POST' })
   expect(forbidden.status).toBe(403)
   expect((await forbidden.json() as { error: string }).error).toBe('Workspace is read-only for viewers')
 
-  for (const body of [{}, { email: 'not-an-email' }, { githubLogin: 'bad login!' }]) {
-    const response = await api('/api/invites', ADMIN_TOKEN, { method: 'POST', body: JSON.stringify(body) })
-    expect(response.status).toBe(400)
-    expect((await response.json() as { error: string }).error).toContain('格式必须有效')
-  }
-
-  const created = await api('/api/invites', ADMIN_TOKEN, { method: 'POST', body: JSON.stringify({ githubLogin: 'octocat', expiresInHours: 9999 }) })
-  expect(created.status).toBe(201)
-  const invite = await created.json() as { id: string; inviteUrl: string; expiresAt: string; emailSent: boolean | null }
-  expect(invite.inviteUrl).toContain('/auth/github/start?invite=')
-  expect(invite.emailSent).toBeNull()
-  const lifetimeHours = (Date.parse(invite.expiresAt) - Date.now()) / 3_600_000
-  expect(lifetimeHours).toBeGreaterThan(719)
-  expect(lifetimeHours).toBeLessThanOrEqual(720)
-
-  const listed = await api('/api/invites', ADMIN_TOKEN)
-  expect(listed.status).toBe(200)
-  const rows = (await listed.json() as { results: Array<Record<string, unknown>> }).results
-  expect(rows).toHaveLength(1)
-  expect(rows[0].status).toBe('pending')
-  expect(rows[0].github_login).toBe('octocat')
-  expect(rows[0]).not.toHaveProperty('token_hash')
-
-  expect((await api(`/api/invites/${invite.id}`, VIEWER_TOKEN, { method: 'DELETE' })).status).toBe(403)
-  expect((await api(`/api/invites/${invite.id}`, ADMIN_TOKEN, { method: 'DELETE' })).status).toBe(200)
-  const revoked = await api(`/api/invites/${invite.id}`, ADMIN_TOKEN, { method: 'DELETE' })
-  expect(revoked.status).toBe(409)
-
-  const audit = await testEnv.DB.prepare("SELECT action FROM audit_log WHERE action LIKE 'invite.%' ORDER BY rowid").all<{ action: string }>()
-  expect(audit.results.map((row) => row.action)).toEqual(['invite.created', 'invite.revoked'])
+  expect((await api('/api/invites', ADMIN_TOKEN)).status).toBe(404)
+  expect((await api('/api/invites', ADMIN_TOKEN, { method: 'POST', body: '{}' })).status).toBe(404)
+  expect((await api('/api/invites/obsolete', ADMIN_TOKEN, { method: 'DELETE' })).status).toBe(404)
 })
 
 test('管理 API 生成的注册码只能兑换一次并绑定到当前用户', { timeout: 20_000 }, async () => {
@@ -139,7 +112,7 @@ test('域名分配校验前缀、插件状态、服务器在线与健康检查',
   await seedServer()
   await seedAdmin()
   await seedMemberSession()
-  const token = await api('/api/settings/cloudflare', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify({ apiToken: CLOUDFLARE_STUB_API_TOKEN }) })
+  const token = await api('/api/settings/cloudflare', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify({ email: CLOUDFLARE_STUB_EMAIL, globalApiKey: CLOUDFLARE_STUB_GLOBAL_API_KEY }) })
   expect(token.status).toBe(200)
   const configured = await api('/api/settings/platform', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify({ pluginDomainSuffix: 'plugins.example.net' }) })
   expect(configured.status).toBe(200)
@@ -195,7 +168,7 @@ test('管理 API 保存配额并让维护模式阻止注册码与域名分配', 
   await seedServer()
   await seedAdmin()
   await seedMemberSession()
-  const token = await api('/api/settings/cloudflare', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify({ apiToken: CLOUDFLARE_STUB_API_TOKEN }) })
+  const token = await api('/api/settings/cloudflare', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify({ email: CLOUDFLARE_STUB_EMAIL, globalApiKey: CLOUDFLARE_STUB_GLOBAL_API_KEY }) })
   expect(token.status).toBe(200)
 
   const forbidden = await api('/api/settings/platform', MEMBER_TOKEN, { method: 'PUT', body: JSON.stringify({ maintenance: true }) })

@@ -8,7 +8,6 @@ export const SMTP_SINK = {
   from: 'mailer@example.com',
   expectations: {
     'ops@example.com': 'SMTP 测试',
-    'invitee@example.com': '平台邀请',
     'admin@example.com': '维护模式',
   } as Record<string, string>,
 }

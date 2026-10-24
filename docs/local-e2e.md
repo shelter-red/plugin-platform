@@ -39,13 +39,16 @@ docker start plugmesh-e2e
 
 ## 准备管理端会话（仅本地验收）
 
-不启动 GitHub OAuth，直接向本地 D1 写入超级管理员和会话。`token_hash` 为会话令牌的 SHA-256：
+不走浏览器登录，直接向本地 D1 写入管理员凭据标记、超级管理员和会话。`token_hash` 为会话令牌的 SHA-256；测试会话不会校验下面的占位密码派生值：
 
 ```bash
 printf 'e2e-session-token' | sha256sum
 ```
 
 ```sql
+INSERT OR REPLACE INTO admin_credentials (id, password_hash, password_salt, created_at, updated_at)
+VALUES ('primary', 'AA==', 'AA==', '2026-10-21T00:00:00Z', '2026-10-21T00:00:00Z');
+
 INSERT OR REPLACE INTO users (id, github_id, email, display_name, role, created_at)
 VALUES ('u-e2e', 'gh-e2e', 'e2e@example.com', 'E2E Admin', 'super_admin', '2026-10-21T00:00:00Z');
 
@@ -74,7 +77,7 @@ INSERT OR REPLACE INTO domains (id, user_id, plugin_instance_id, hostname, statu
 VALUES ('dom-real', 'u-e2e', 'plg-real', 'real.plugins.example.com', 'offline', '2026-10-01T00:00:00Z');
 ```
 
-`dist` 必须使用默认配置构建（不要设置 `VITE_AUTH_ENABLED=false`），否则管理端不会请求 `/api/me`，超级管理员入口和邀请面板不会出现。
+`dist` 必须使用默认配置构建（不要设置 `VITE_AUTH_ENABLED=false`），否则管理端不会请求 `/api/me`，超级管理员入口不会出现。
 
 ```bash
 npm run build
@@ -84,19 +87,16 @@ PLUGMESH_REAL_STACK_URL=http://127.0.0.1:18888 npm run ui:real-stack
 该 Playwright 项目会携带 `plugmesh_session` Cookie 直接打开 Worker 提供的控制台，断言：
 
 - 插件服务器、插件实例和公开域名页面显示上面写入的真实记录；
-- 在系统设置中创建 GitHub 邀请后返回邀请链接，并在列表中读到该记录；点「复制链接」后从系统剪贴板读回同一链接（断言 Toast「邀请链接已复制」）；
-- 撤销该邀请（自动确认弹窗）后断言 Toast「邀请已撤销」、行状态变为「已撤销」且撤销按钮消失，`/api/invites` 回源 `status=revoked`，再次 `DELETE` 返回 409；整页重载后列表仍为「已撤销」，审计日志出现「撤销平台邀请」且详情带该邀请 ID；
-- 非法 GitHub 用户名提交后显示服务端校验错误；
 - 打开“绑定插件服务器”弹窗后从 `/api/registration-codes` 取得一次性注册码；
-- 第三条用例用一次性注册码启动真实 `plugmesh-server`，在管理端加载并启用 `sample.plugin`、分配以 `console-` 开头的唯一域名，再从该域名请求插件得到 `200` 和 `ok`；接着在插件详情弹窗停用，断言公开入口立即变为 503「插件暂时不可用」且 API 状态为 `disabled`，重新启用后域名状态被置回 offline（入口仍 503），点健康检查通过后恢复 `200`；最后卸载，入口回到 503。
-- 第四条用例先在「公开域名」页点击目标域名行的复制按钮（`aria-label` 为 `复制 <hostname>`），断言 Toast「公开域名已复制」并从系统剪贴板读回该 hostname；随后在真实栈上复核仪表盘“最近错误和连接异常”：对只声明 `http`/`websocket` 能力的 `lifecycle.plugin` 域名发起文件流请求，得到 `501` 并确认 `/api/access-logs` 中写入 `plugin capability unavailable`，总览错误面板展示该入口与 `501` 徽标；停掉后服务器状态转为 `offline`，总览出现该服务器与“离线”徽标；服务器详情弹窗在真实数据下显示“离线”状态、“服务器离线”插件状态以及该 501 错误，访问日志页展示同一行并可用「导出日志」下载含该记录的 CSV。
-- 第五条用例在管理端「维护与配额」面板点击开关进入维护，断言公开入口返回 503 维护页、总览徽标为「平台维护中」，再点击恢复后未知域名回到 404；随后断言面板不存在 Cloudflare 免费额度输入框和「保存配额」按钮，确认官方额度只能从 subscriptions 读取、系统设置只保留平台自身三项阈值；最后确认审计日志页出现「更新平台设置」，并用「导出日志」下载审计 CSV，断言带 UTF-8 BOM 且含 `platform.settings.updated` 与操作者 `E2E Admin`/`e2e@example.com`。用例结束时会把维护开关复位。
-- 第七条用例在系统设置「邮件 SMTP」面板保存 Host `127.0.0.1`、端口 `1`、用户名、密码与发件人，断言 Toast「SMTP 配置已保存」、`/api/settings/smtp` 返回脱敏配置且不含 `password`，整页重载后表单从 D1 回填而密码框为空；随后对不可达端口点「发送测试邮件」，页面提示「测试邮件发送失败」，审计出现 `smtp.test.failed` 且详情不含明文密码；用例结束删除配置。
-- 第六条用例打开「用量与配额」：先通过真实 `POST /api/blobs` 上传 5 字节对象，确认 `/api/usage/local` 的请求计数 +1、`r2Objects=1`，页面「平台请求计数」显示该真实计数与「24 小时窗口」、R2 卡片显示「1 个对象」，而「Worker 请求」在官方未连接时显示 `—` 与「官方数据尚未连接」，数据源行分别为「未配置」和「更新于 …」；随后读取一次性 blob，`r2Objects`/`r2Bytes` 归零，刷新后 R2 卡片回到「0 个对象」。该用例另外拉起一台真实 C++ 服务器和一个公开域名，发 3 次请求后断言 `/api/usage/local` 的 `breakdown.users` 中该管理员请求数精确 +3，`breakdown.plugins`/`breakdown.domains` 按请求数降序且域名来自真实公开域名，并在「本地请求分布」面板核对用户、插件、域名三列首行与 API 返回一致。
+- 插件生命周期用例用一次性注册码启动真实 `plugmesh-server`，在管理端加载并启用 `sample.plugin`、分配唯一域名，并验证停用、重新启用、健康检查和卸载会同步改变公开入口状态。
+- 总览与日志用例复制真实域名、制造 501 能力错误、导出访问日志，并在服务器离线后核对总览和详情状态。
+- 维护用例切换全局维护状态，确认 Cloudflare 免费额度不可手填，并导出带操作者信息的审计 CSV。
+- 用量用例验证本地请求计数、R2 对象回收、用户/插件/域名分布，以及 Cloudflare 未配置时官方数据为空但本地接口仍正常返回。
+- SMTP 用例使用未保存的表单值测试连接，验证二次保存可沿用密钥、GET 不回显密码且失败审计不包含明文。
 
 第三、四条用例要求已构建 `native-server/build/plugmesh-server`、`native-server/build/plugins` 与 `native-ui/dist`。它自行完成注册、启动和退出清理：每次运行生成新的服务器名与域名前缀，结束后向子进程发送 `SIGTERM` 并删除临时凭据目录，因此可以在同一份 D1 上重复执行（历史服务器与域名记录会累积，不影响断言）。
 
-期望结果：`8 passed`。它验证的是管理端到真实 Worker/D1 与真实 C++ 服务器的链路，不依赖已部署 Cloudflare。
+期望结果：`7 passed`。它验证的是管理端到真实 Worker/D1 与真实 C++ 服务器的链路，不依赖已部署 Cloudflare。
 
 ## 注册并启动本地服务器
 
@@ -354,6 +354,6 @@ pkill -f 'build/plugmesh[-]server'
 ## 边界
 
 - 当前为本地 miniflare/workerd 与本地 D1/R2 模拟，不是已部署 Cloudflare；未验证真实 DNS、证书、Worker routes 和公网长连接。
-- 未连接真实 GitHub OAuth、Cloudflare API Token / Analytics / subscriptions 和 SMTP。
+- 未连接真实 Cloudflare Global API Key / Analytics / subscriptions 和公网 SMTP。
 - 本地服务器的轮换、撤销和同进程重新绑定已在本地真实栈上用本地控制台联调通过；`worker:runtime-test` 与 Native UI smoke 仍覆盖对应逻辑边界。
 - Windows 的构建、DLL 和 Credential Manager 只在 Wine 下验证过，真实 Windows 主机仍未验证。

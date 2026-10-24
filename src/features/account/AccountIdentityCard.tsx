@@ -1,5 +1,5 @@
 import { Avatar } from 'antd'
-import { Globe2, KeyRound, Mail, UserRound } from 'lucide-react'
+import { KeyRound, Mail, UserRound } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Panel } from '../../components/Panel'
 import type { AccountUser } from './account'
@@ -17,7 +17,7 @@ export function AccountIdentityCard({ user }: { user: AccountUser | null }) {
       <div><dt><UserRound size={14} />{t('account.name')}</dt><dd>{user?.display_name ?? t('common.notRead')}</dd></div>
       <div><dt><Mail size={14} />{t('account.email')}</dt><dd>{user?.email ?? t('common.notRead')}</dd></div>
       <div><dt><KeyRound size={14} />{t('account.role')}</dt><dd>{role}</dd></div>
-      <div><dt><Globe2 size={14} />{t('account.provider')}</dt><dd>{t('account.githubProvider')}</dd></div>
+      <div><dt><KeyRound size={14} />{t('account.provider')}</dt><dd>{t('account.passwordProvider')}</dd></div>
     </dl>
   </Panel>
 }

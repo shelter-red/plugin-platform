@@ -53,12 +53,7 @@ expectAge(find('DELETE FROM usage_snapshots').values[0], 30)
 expectAge(find('DELETE FROM request_logs').values[0], 30)
 expectAge(find('DELETE FROM audit_log').values[0], 180)
 
-const invite = find('UPDATE invites SET status')
-assert.deepEqual(invite.values.slice(0, 2), ['expired', 'pending'])
-const expirationTime = Date.parse(String(invite.values[2]))
-assert.ok(expirationTime >= before && expirationTime <= after)
-
-for (const table of ['sessions', 'oauth_states', 'registration_codes']) {
+for (const table of ['sessions', 'registration_codes']) {
   const cleanup = find(`DELETE FROM ${table}`)
   const timestamp = Date.parse(String(cleanup.values[0]))
   assert.ok(timestamp >= before && timestamp <= after)

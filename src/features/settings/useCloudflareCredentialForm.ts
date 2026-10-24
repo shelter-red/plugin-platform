@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { App } from 'antd'
 import { useTranslation } from 'react-i18next'
 import { ApiError, revokeCloudflareSettings, updateCloudflareSettings, type CloudflareSettings } from '../../api'
@@ -8,45 +8,53 @@ export interface CloudflareRequestFailure {
   status?: number
   code?: string
   message: string
+  accounts?: Array<{ id: string; name: string }>
 }
 
 function requestFailure(error: unknown, fallback: string): CloudflareRequestFailure {
-  if (error instanceof ApiError) return { status: error.status, code: error.code, message: error.message }
+  if (error instanceof ApiError) return { status: error.status, code: error.code, message: error.message, accounts: error.accounts }
   if (error instanceof Error && error.message) return { message: error.message }
   return { message: fallback }
 }
 
-export function useCloudflareTokenForm(settings: CloudflareSettings | null, onChange: (settings: CloudflareSettings) => void, onAction: Notify) {
+export function useCloudflareCredentialForm(settings: CloudflareSettings | null, onChange: (settings: CloudflareSettings) => void, onAction: Notify) {
   const { t } = useTranslation()
   const modalApi = App.useApp().modal
-  const [apiToken, setApiToken] = useState('')
+  const [email, setEmail] = useState('')
+  const [globalApiKey, setGlobalApiKey] = useState('')
   const [accountId, setAccountId] = useState('')
   const [saving, setSaving] = useState(false)
   const [revoking, setRevoking] = useState(false)
   const [failure, setFailure] = useState<CloudflareRequestFailure | null>(null)
 
-  const saveToken = async () => {
-    const token = apiToken.trim()
-    if (!token) {
-      setFailure({ code: 'token_required', message: t('settings.cloudflare.tokenRequired') })
+  useEffect(() => {
+    if (settings?.email) setEmail((current) => current || settings.email || '')
+  }, [settings?.email])
+
+  const saveCredential = async () => {
+    const nextEmail = email.trim()
+    const key = globalApiKey.trim()
+    if (!nextEmail || !key) {
+      setFailure({ code: 'credential_required', message: t('settings.cloudflare.credentialRequired') })
       return
     }
     setSaving(true)
     setFailure(null)
     try {
-      const next = await updateCloudflareSettings({ apiToken: token, ...(accountId.trim() ? { accountId: accountId.trim() } : {}) })
+      const next = await updateCloudflareSettings({ email: nextEmail, globalApiKey: key, ...(accountId.trim() ? { accountId: accountId.trim() } : {}) })
       onChange(next)
-      setApiToken('')
+      setGlobalApiKey('')
       setAccountId('')
-      onAction('success', t('settings.cloudflare.tokenSaved'))
+      onAction('success', t('settings.cloudflare.credentialSaved'))
     } catch (error) {
-      setFailure(requestFailure(error, t('settings.cloudflare.tokenSaveFailed')))
+      const nextFailure = requestFailure(error, t('settings.cloudflare.credentialSaveFailed'))
+      setFailure(nextFailure)
     } finally {
       setSaving(false)
     }
   }
 
-  const revokeToken = () => {
+  const revokeCredential = () => {
     if (!settings?.configured) return
     modalApi.confirm({
       title: t('settings.cloudflare.revokeConfirm'),
@@ -57,7 +65,8 @@ export function useCloudflareTokenForm(settings: CloudflareSettings | null, onCh
         setFailure(null)
         try {
           onChange(await revokeCloudflareSettings())
-          setApiToken('')
+          setGlobalApiKey('')
+          setEmail('')
           setAccountId('')
           onAction('success', t('settings.cloudflare.revoked'))
         } catch (error) {
@@ -69,5 +78,5 @@ export function useCloudflareTokenForm(settings: CloudflareSettings | null, onCh
     })
   }
 
-  return { apiToken, accountId, saving, revoking, failure, setApiToken, setAccountId, saveToken, revokeToken }
+  return { email, globalApiKey, accountId, saving, revoking, failure, setEmail, setGlobalApiKey, setAccountId, saveCredential, revokeCredential }
 }

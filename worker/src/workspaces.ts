@@ -90,7 +90,7 @@ async function uniqueSlug(env: Env, name: string): Promise<string> {
 
 export async function listWorkspaceMembers(env: Env, workspaceId: string): Promise<WorkspaceMember[]> {
   return (await env.DB.prepare(`
-    SELECT users.id AS user_id, users.display_name, users.email, users.github_id, workspace_members.role, workspace_members.created_at
+    SELECT users.id AS user_id, users.display_name, users.email, workspace_members.role, workspace_members.created_at
     FROM workspace_members
     JOIN users ON users.id = workspace_members.user_id
     WHERE workspace_members.workspace_id = ?

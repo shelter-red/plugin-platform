@@ -36,7 +36,7 @@ export function LoginPage({ mode }: { mode: AppThemeMode }) {
     {error && <Paragraph type="danger" role="alert">{error}</Paragraph>}
     <form onSubmit={(event) => void submit(event)}>
       <Input.Password aria-label={t('auth.password')} value={password} onChange={(event) => setPassword(event.target.value)} autoFocus />
-      <Button className="auth-submit" htmlType="submit" type="primary" size="large" block loading={loading} icon={<LockKeyhole size={17} />}>{t('auth.login')}</Button>
+      <Button className="auth-submit" htmlType="submit" type="primary" size="large" block loading={loading} disabled={loading || !password} icon={<LockKeyhole size={17} />}>{t('auth.login')}</Button>
     </form>
     <Flex className="auth-notes" vertical gap={6}>
       <Text type="secondary" className="auth-note"><LockKeyhole size={13} aria-hidden="true" />{t('auth.note')}</Text>

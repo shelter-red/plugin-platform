@@ -83,7 +83,21 @@ export async function setAdminPassword(env: Env, password: string): Promise<void
     env.DB.prepare('DELETE FROM registration_codes'),
   ])
   await env.DB.prepare('INSERT INTO audit_log (id, workspace_id, user_id, action, detail_json, created_at) VALUES (?, NULL, ?, ?, ?, ?)')
-    .bind(crypto.randomUUID(), null, userId, 'setup.password.configured', JSON.stringify({ passwordPolicy: `minimum-${MIN_PASSWORD_LENGTH}` }), now).run()
+    .bind(crypto.randomUUID(), userId, 'setup.password.configured', JSON.stringify({ passwordPolicy: `minimum-${MIN_PASSWORD_LENGTH}` }), now).run()
+}
+
+export async function changeAdminPassword(env: Env, currentPassword: string, nextPassword: string): Promise<boolean> {
+  const row = await env.DB.prepare('SELECT password_hash, password_salt FROM admin_credentials WHERE id = ?').bind(ADMIN_CREDENTIAL_ID).first<{ password_hash: string; password_salt: string }>()
+  if (!row || !await verifyPassword(currentPassword, row.password_hash, row.password_salt)) return false
+  const { passwordHash, passwordSalt } = await hashPassword(nextPassword)
+  const now = new Date().toISOString()
+  const userId = await ensureAdminUser(env)
+  await env.DB.batch([
+    env.DB.prepare('UPDATE admin_credentials SET password_hash = ?, password_salt = ?, updated_at = ? WHERE id = ?').bind(passwordHash, passwordSalt, now, ADMIN_CREDENTIAL_ID),
+    env.DB.prepare('DELETE FROM sessions'),
+    env.DB.prepare('INSERT INTO audit_log (id, workspace_id, user_id, action, detail_json, created_at) VALUES (?, NULL, ?, ?, ?, ?)').bind(crypto.randomUUID(), userId, 'auth.password.changed', JSON.stringify({ passwordPolicy: `minimum-${MIN_PASSWORD_LENGTH}` }), now),
+  ])
+  return true
 }
 
 export async function authenticatePassword(env: Env, password: string): Promise<string | null> {
@@ -97,7 +111,7 @@ export async function getCurrentUser(request: Request, env: Env): Promise<Authen
   if (!token) return null
   const session = await env.DB.prepare('SELECT user_id FROM sessions WHERE token_hash = ? AND expires_at > ?').bind(await digest(token), new Date().toISOString()).first<{ user_id: string }>()
   if (!session) return null
-  return env.DB.prepare('SELECT id, github_id, email, display_name, role FROM users WHERE id = ?').bind(session.user_id).first<AuthenticatedUser>()
+  return env.DB.prepare('SELECT id, email, display_name, role FROM users WHERE id = ?').bind(session.user_id).first<AuthenticatedUser>()
 }
 
 export async function createSession(env: Env, userId: string): Promise<string> {

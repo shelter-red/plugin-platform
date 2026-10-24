@@ -23,7 +23,7 @@ const database = {
   },
 }
 const env = { DB: database } as unknown as Env
-const admin: AuthenticatedUser = { id: 'admin-1', github_id: 'github-1', email: 'admin@example.test', display_name: 'Admin', role: 'super_admin' }
+const admin: AuthenticatedUser = { id: 'admin-1', email: 'admin@example.test', display_name: 'Admin', role: 'super_admin' }
 const member: AuthenticatedUser = { ...admin, id: 'member-1', role: 'member' }
 
 const response = await localUsageApi(env, admin, new URL('https://worker.invalid/api/usage/local?range=24h'))

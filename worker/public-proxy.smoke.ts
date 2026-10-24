@@ -62,6 +62,7 @@ const bridge = {
 const env = {
   DB: database,
   PLUGIN_DOMAIN_SUFFIX: '.plugins.example.test',
+  CONSOLE_HOSTNAME: 'console.example.test',
   PLUGIN_BRIDGE: {
     idFromName: (name: string) => name,
     get: (id: string) => {

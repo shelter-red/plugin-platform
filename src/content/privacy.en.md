@@ -1,9 +1,9 @@
 ### Data we store
 
-- GitHub identity: `github_id`, display name and verified email, used for sign-in and authorization.
+- Administrator credential: the password is stored only as a salted PBKDF2-derived value and is used for sign-in and authorization.
 - Sessions: an HttpOnly cookie holds the session identifier; only its hash is stored server-side.
 - Runtime data: server heartbeats, plugin manifests, public request logs and audit events.
-- Configuration: GitHub OAuth client credentials, SMTP passwords and the Cloudflare API Token are encrypted with AES-GCM before being written to D1; secret values are never returned by GET APIs.
+- Configuration: SMTP passwords and the Cloudflare Global API Key are encrypted with AES-GCM before being written to D1; secret values are never returned by GET APIs.
 
 ### Local plugin servers
 
@@ -17,13 +17,12 @@ Only for authentication, request routing, usage accounting, auditing and mainten
 
 - Access logs: 30 days.
 - Audit logs: 180 days.
-- Expired sessions, GitHub OAuth state, registration codes and temporary objects are removed by scheduled maintenance.
+- Expired sessions, registration codes and temporary objects are removed by scheduled maintenance.
 
 ### Third parties
 
-- GitHub: OAuth sign-in.
-- Cloudflare: Workers, D1, R2 and account usage queries through an API Token; the Token is not used for sign-in.
-- Your SMTP provider: invite and maintenance emails.
+- Cloudflare: Workers, D1, R2 and account usage queries plus plugin-domain configuration through the account email and Global API Key.
+- Your SMTP provider: test messages and maintenance notifications.
 
 ### Your choices
 

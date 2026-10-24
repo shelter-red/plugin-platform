@@ -16,7 +16,7 @@ export function WorkspaceMemberTable({ members, canManage, busy, onChangeRole, o
     {
       title: t('workspace.member'),
       dataIndex: 'email',
-      render: (_, member) => <div className="cell-title"><div className="table-icon"><Users size={15} /></div><div><strong>{member.display_name || member.email}</strong><small>{member.email || member.github_id}</small></div></div>,
+      render: (_, member) => <div className="cell-title"><div className="table-icon"><Users size={15} /></div><div><strong>{member.display_name || member.email}</strong><small>{member.email}</small></div></div>,
     },
     {
       title: t('workspace.role'),

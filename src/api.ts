@@ -13,13 +13,12 @@ export interface WorkspaceMember {
   user_id: string
   display_name: string
   email: string
-  github_id: string
   role: WorkspaceRole
   created_at: string
 }
 
 export interface ApiMe {
-  user: { id?: string; github_id?: string; display_name: string; email: string; role?: string }
+  user: { id?: string; display_name: string; email: string; role?: string }
   workspaces: Workspace[]
   activeWorkspaceId: string | null
 }
@@ -65,13 +64,14 @@ export class ApiError extends Error {
     message: string,
     readonly field?: string,
     readonly code?: string,
+    readonly accounts?: CloudflareAccountOption[],
   ) {
     super(message)
     this.name = 'ApiError'
   }
 }
 
-type ApiErrorBody = { error?: string; message?: string; code?: string; field?: string }
+type ApiErrorBody = { error?: string; message?: string; code?: string; field?: string; accounts?: CloudflareAccountOption[] }
 
 async function readApiError(response: Response): Promise<ApiErrorBody | null> {
   return response.json().catch(() => null) as Promise<ApiErrorBody | null>
@@ -84,7 +84,8 @@ function errorFromBody(response: Response, body: ApiErrorBody | null, fallback: 
 /** 保留服务端错误码与字段名，便于表单把错误定位到具体输入框。 */
 async function assertOk(response: Response, fallback: string): Promise<void> {
   if (response.ok) return
-  throw errorFromBody(response, await readApiError(response), fallback)
+  const body = await readApiError(response)
+  throw new ApiError(response.status, body?.message ?? body?.error ?? fallback, body?.field, body?.code, body?.accounts)
 }
 
 export interface ApiOverview {
@@ -194,25 +195,6 @@ interface ApiAccessLogs {
   since: string
 }
 
-export interface ApiInvite {
-  id: string
-  workspace_id?: string
-  role?: WorkspaceRole
-  email: string | null
-  github_login: string | null
-  status: 'pending' | 'used' | 'expired' | 'revoked' | string
-  expires_at: string
-  used_at: string | null
-  created_at: string
-}
-
-interface InviteCreation {
-  id: string
-  inviteUrl: string
-  expiresAt: string
-  emailSent: boolean | null
-}
-
 /** Cloudflare 免费计划的只读每日额度，来源必须是 subscriptions。 */
 export interface CloudflareUsageLimits {
   workerRequests: number
@@ -235,7 +217,6 @@ export interface CloudflarePlanSummary {
 export interface CloudflareUsage {
   configured?: boolean
   accountIdConfigured?: boolean
-  legacyCredential?: boolean
   error?: string
   period?: { start: string; end: string }
   requests?: number
@@ -273,7 +254,7 @@ export interface UsageBreakdownEntry {
 }
 
 export interface LocalUsage {
-  /** 平台自身 D1 请求日志统计，与 Cloudflare 凭据/API Token 无关。 */
+  /** 平台自身 D1 请求日志统计，与 Cloudflare 凭据无关。 */
   source?: 'platform_local'
   requestCount: number
   requestWindowStartedAt: string | null
@@ -339,44 +320,24 @@ export interface SmtpSettingsInput {
 
 export interface CloudflareSettings {
   configured: boolean
-  credentialKind: 'api_token' | 'legacy_oauth' | null
+  credentialKind: 'global_api_key' | null
   accountIdConfigured: boolean
   accountId: string | null
-  permissions: string[]
-  permissionStatus: Record<string, 'allowed' | 'denied' | 'unknown'>
+  email: string | null
   updatedAt: string | null
   lastVerifiedAt: string | null
-  legacyCredential: boolean
 }
 
 export interface CloudflareSettingsInput {
-  apiToken: string
+  email: string
+  globalApiKey: string
   accountId?: string
 }
 
-export type OauthSource = 'database' | 'environment' | null
-
-export interface GithubOauthSettings {
-  configured: boolean
-  clientId: string | null
-  redirectUri: string | null
-  allowlist: string
-  secretConfigured: boolean
-  source: OauthSource
+export interface CloudflareAccountOption {
+  id: string
+  name: string
 }
-
-export interface OauthSettings {
-  github: GithubOauthSettings
-  sessionSecretConfigured: boolean
-  updatedAt: string | null
-  unreadable: boolean
-}
-
-export interface OauthSettingsInput {
-  github?: { clientId: string; clientSecret: string; redirectUri: string; allowlist: string }
-}
-
-export type OauthProvider = 'github'
 
 export async function fetchOverview(): Promise<ApiOverview> {
   const response = await apiRequest(`/api/overview`, { credentials: 'include' })
@@ -436,13 +397,6 @@ export async function fetchAccessLogs(): Promise<ApiAccessLogs> {
   return response.json() as Promise<ApiAccessLogs>
 }
 
-export async function fetchInvites(): Promise<ApiInvite[]> {
-  const response = await apiRequest(`/api/invites`, { credentials: 'include' })
-  if (!response.ok) throw await apiError(response, 'invites request failed')
-  const data = await response.json() as { results?: ApiInvite[] }
-  return data.results ?? []
-}
-
 async function apiError(response: Response, fallback: string): Promise<ApiError> {
   return errorFromBody(response, await readApiError(response), fallback)
 }
@@ -451,17 +405,6 @@ export async function createRegistrationCode(): Promise<RegistrationCode> {
   const response = await apiRequest(`/api/registration-codes`, { method: 'POST', credentials: 'include' })
   if (!response.ok) throw await apiError(response, 'registration code request failed')
   return response.json() as Promise<RegistrationCode>
-}
-
-export async function createInvite(input: { email?: string; githubLogin?: string; expiresInHours: number; workspaceId?: string; role?: WorkspaceRole }): Promise<InviteCreation> {
-  const response = await apiRequest(`/api/invites`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input) })
-  if (!response.ok) throw await apiError(response, `invite creation failed: ${response.status}`)
-  return response.json() as Promise<InviteCreation>
-}
-
-export async function revokeInvite(inviteId: string): Promise<void> {
-  const response = await apiRequest(`/api/invites/${encodeURIComponent(inviteId)}`, { method: 'DELETE', credentials: 'include' })
-  if (!response.ok) throw await apiError(response, `invite revoke failed: ${response.status}`)
 }
 
 export async function commandPlugin(pluginInstanceId: string, action: PluginAction): Promise<PluginCommandResult> {
@@ -512,7 +455,7 @@ export async function fetchCloudflareSettings(): Promise<CloudflareSettings> {
   return response.json() as Promise<CloudflareSettings>
 }
 
-/** 保存前由 Worker 验证 Token、账号可见性与订阅权限；不会回显 Token。 */
+/** 保存前由 Worker 验证 Global API Key、账号可见性与订阅；不会回显密钥。 */
 export async function updateCloudflareSettings(input: CloudflareSettingsInput): Promise<CloudflareSettings> {
   const response = await apiRequest(`/api/settings/cloudflare`, { method: 'PUT', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input) })
   await assertOk(response, 'cloudflare settings update request failed')
@@ -523,24 +466,6 @@ export async function revokeCloudflareSettings(): Promise<CloudflareSettings> {
   const response = await apiRequest(`/api/settings/cloudflare`, { method: 'DELETE', credentials: 'include' })
   await assertOk(response, 'cloudflare settings revoke request failed')
   return response.json() as Promise<CloudflareSettings>
-}
-
-export async function fetchOauthSettings(): Promise<OauthSettings> {
-  const response = await apiRequest(`/api/settings/oauth`, { credentials: 'include' })
-  if (!response.ok) throw new ApiError(response.status, 'oauth settings request failed')
-  return response.json() as Promise<OauthSettings>
-}
-
-export async function updateOauthSettings(settings: OauthSettingsInput): Promise<OauthSettings> {
-  const response = await apiRequest(`/api/settings/oauth`, { method: 'PUT', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(settings) })
-  if (!response.ok) throw new ApiError(response.status, 'oauth settings update request failed')
-  return response.json() as Promise<OauthSettings>
-}
-
-export async function revokeOauthSettings(provider: OauthProvider): Promise<OauthSettings> {
-  const response = await apiRequest(`/api/settings/oauth?provider=${provider}`, { method: 'DELETE', credentials: 'include' })
-  if (!response.ok) throw new ApiError(response.status, 'oauth settings revoke request failed')
-  return response.json() as Promise<OauthSettings>
 }
 
 export async function fetchSmtpSettings(): Promise<SmtpSettings> {
@@ -563,7 +488,7 @@ export async function sendSmtpTest(to: string, settings?: SmtpSettingsInput): Pr
 
 export async function fetchMe(): Promise<ApiMe> {
   const response = await apiRequest('/api/me')
-  if (!response.ok) throw new ApiError(response.status, 'me request failed')
+  await assertOk(response, 'me request failed')
   return response.json() as Promise<ApiMe>
 }
 
@@ -575,6 +500,11 @@ export async function loginWithPassword(password: string): Promise<void> {
     body: JSON.stringify({ password }),
   })
   await assertOk(response, 'password login failed')
+}
+
+export async function changeAdminPassword(currentPassword: string, newPassword: string, confirmPassword: string): Promise<void> {
+  const response = await apiRequest('/api/settings/password', { method: 'PUT', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ currentPassword, newPassword, confirmPassword }) })
+  await assertOk(response, 'password change failed')
 }
 
 export async function fetchWorkspaces(): Promise<Workspace[]> {

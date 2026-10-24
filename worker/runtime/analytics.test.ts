@@ -4,7 +4,7 @@ import { cloudflareUsageApi } from '../src/index'
 import { encryptSecret } from '../src/secrets'
 import type { AuthenticatedUser } from '../src/types'
 import { hashToken, resetDatabase, seedServer, testEnv } from './helpers'
-import { CLOUDFLARE_STUB_API_TOKEN, CLOUDFLARE_STUB_ACCOUNT_ID } from './outbound-stub'
+import { CLOUDFLARE_STUB_EMAIL, CLOUDFLARE_STUB_GLOBAL_API_KEY, CLOUDFLARE_STUB_ACCOUNT_ID } from './outbound-stub'
 
 const ADMIN_TOKEN = 'analytics-admin-session'
 const MEMBER_TOKEN = 'analytics-member-session'
@@ -20,7 +20,7 @@ const FREE_LIMITS = {
   doRequests: 100_000,
 }
 
-const admin: AuthenticatedUser = { id: 'user-analytics-admin', github_id: 'gh-analytics-admin', email: 'admin@example.com', display_name: 'Analytics Admin', role: 'super_admin' }
+const admin: AuthenticatedUser = { id: 'user-analytics-admin', email: 'admin@example.com', display_name: 'Analytics Admin', role: 'super_admin' }
 
 const api = (path: string, token: string, init: RequestInit = {}): Promise<Response> =>
   SELF.fetch(`https://console.example.com${path}`, {
@@ -35,13 +35,13 @@ const api = (path: string, token: string, init: RequestInit = {}): Promise<Respo
 async function seedAccounts(): Promise<void> {
   const now = new Date().toISOString()
   await testEnv.DB.batch([
-    testEnv.DB.prepare('INSERT INTO users (id, github_id, email, display_name, role, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(admin.id, admin.github_id, admin.email, admin.display_name, admin.role, now),
+    testEnv.DB.prepare('INSERT INTO users (id, github_id, email, display_name, role, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(admin.id, 'legacy-admin', admin.email, admin.display_name, admin.role, now),
     testEnv.DB.prepare('INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)').bind('session-analytics-admin', admin.id, await hashToken(ADMIN_TOKEN), new Date(Date.now() + 3_600_000).toISOString(), now),
     testEnv.DB.prepare('INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)').bind('session-analytics-member', 'user-runtime', await hashToken(MEMBER_TOKEN), new Date(Date.now() + 3_600_000).toISOString(), now),
   ])
 }
 
-type UsageCall = { method: string; path: string; authorization: string | null; query?: string }
+type UsageCall = { method: string; path: string; email: string | null; key: string | null; query?: string }
 type UsageFetcherOptions = {
   subscriptions?: () => Response
   graphql?: (query: string) => Response | Promise<Response>
@@ -69,14 +69,15 @@ function usageFetcher(calls: UsageCall[], options: UsageFetcherOptions = {}): ty
   return (async (input: RequestInfo | URL, init?: RequestInit) => {
     const request = new Request(input as RequestInfo, init)
     const url = new URL(request.url)
-    const authorization = request.headers.get('authorization')
+    const email = request.headers.get('X-Auth-Email')
+    const key = request.headers.get('X-Auth-Key')
     if (request.method === 'GET' && url.pathname.endsWith('/subscriptions')) {
-      calls.push({ method: request.method, path: url.pathname, authorization })
+      calls.push({ method: request.method, path: url.pathname, email, key })
       return options.subscriptions ? options.subscriptions() : freeSubscriptions()
     }
     if (request.method === 'POST' && url.pathname === '/client/v4/graphql') {
       const body = JSON.parse(await request.text()) as { query: string }
-      calls.push({ method: request.method, path: url.pathname, authorization, query: body.query })
+      calls.push({ method: request.method, path: url.pathname, email, key, query: body.query })
       return options.graphql ? options.graphql(body.query) : new Response('unexpected analytics request', { status: 500 })
     }
     return new Response(`unexpected request: ${request.method} ${request.url}`, { status: 500 })
@@ -117,7 +118,7 @@ function graphqlHandler(query: string): Response {
 }
 
 async function saveCredential(accountId: string | null = ACCOUNT_ID): Promise<void> {
-  const response = await api('/api/settings/cloudflare', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify({ apiToken: CLOUDFLARE_STUB_API_TOKEN, accountId: accountId ?? undefined }) })
+  const response = await api('/api/settings/cloudflare', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify({ email: CLOUDFLARE_STUB_EMAIL, globalApiKey: CLOUDFLARE_STUB_GLOBAL_API_KEY, accountId: accountId ?? undefined }) })
   expect(response.status).toBe(200)
 }
 
@@ -152,7 +153,7 @@ test('Free subscriptions 提供 8 项官方基线，Analytics 合并 D1/KV/DO �
   })
   expect(calls.map((call) => call.method)).toEqual(['GET', 'POST', 'POST'])
   expect(calls[0].path).toBe(`/client/v4/accounts/${ACCOUNT_ID}/subscriptions`)
-  expect(calls.every((call) => call.authorization === `Bearer ${CLOUDFLARE_STUB_API_TOKEN}`)).toBe(true)
+  expect(calls.every((call) => call.email === CLOUDFLARE_STUB_EMAIL && call.key === CLOUDFLARE_STUB_GLOBAL_API_KEY)).toBe(true)
 
   const cached = await testEnv.DB.prepare('SELECT value_json, expires_at, updated_at FROM usage_cache WHERE key = ?').bind('cloudflare:workers').first<{ value_json: string; expires_at: string; updated_at: string }>()
   expect(cached).toBeTruthy()
@@ -165,7 +166,7 @@ test('Free subscriptions 提供 8 项官方基线，Analytics 合并 D1/KV/DO �
   expect(second.status).toBe(200)
   const secondBody = await second.json() as Record<string, unknown>
   expect(secondBody).toMatchObject({ cached: true, requests: 4321, plan: { id: 'free' }, limits: FREE_LIMITS, updatedAt: cached!.updated_at })
-  expect(secondBody).not.toHaveProperty('apiToken')
+  expect(secondBody).not.toHaveProperty('globalApiKey')
 })
 
 test('资源明细权限不足时仍返回可读取的 Worker 用量', { timeout: 20_000 }, async () => {
@@ -265,7 +266,7 @@ test('旧缓存缺 plan/limits 时视为 miss 并重新回源', { timeout: 20_00
   expect(calls).toHaveLength(3)
 })
 
-test('Billing 缺失时仍可刷新用量，Token 无效或 Analytics 缺失仍返回真实 HTTP', { timeout: 20_000 }, async () => {
+test('Billing 缺失时仍可刷新用量，凭据无效或 Analytics 缺失仍返回真实 HTTP', { timeout: 20_000 }, async () => {
   await saveCredential()
 
   const subscriptionDenied = await cloudflareUsageApi(testEnv, admin, usageFetcher([], {
@@ -286,20 +287,20 @@ test('Billing 缺失时仍可刷新用量，Token 无效或 Analytics 缺失仍�
     subscriptions: () => new Response('unauthorized', { status: 401 }),
   }))
   expect(subscriptionInvalid.status).toBe(401)
-  expect(await subscriptionInvalid.json()).toMatchObject({ code: 'token_invalid' })
+  expect(await subscriptionInvalid.json()).toMatchObject({ code: 'credential_invalid' })
   await clearUsageCache()
 
   const analyticsDenied = await cloudflareUsageApi(testEnv, admin, usageFetcher([], {
     graphql: () => new Response('forbidden', { status: 403 }),
   }))
   expect(analyticsDenied.status).toBe(403)
-  expect(await analyticsDenied.json()).toMatchObject({ code: 'token_permission_denied', upstreamStatus: 403 })
+  expect(await analyticsDenied.json()).toMatchObject({ code: 'credential_denied', upstreamStatus: 403 })
 
   const analyticsInvalid = await cloudflareUsageApi(testEnv, admin, usageFetcher([], {
     graphql: () => new Response('unauthorized', { status: 401 }),
   }))
   expect(analyticsInvalid.status).toBe(401)
-  expect(await analyticsInvalid.json()).toMatchObject({ code: 'token_invalid', upstreamStatus: 401 })
+  expect(await analyticsInvalid.json()).toMatchObject({ code: 'credential_invalid', upstreamStatus: 401 })
 
   const cached = await testEnv.DB.prepare('SELECT key FROM usage_cache WHERE key = ?').bind('cloudflare:workers').first()
   expect(cached).toBeNull()
@@ -313,7 +314,7 @@ test('Cloudflare 网络失败返回 502 而不是未捕获异常', { timeout: 20
   expect(await response.json()).toMatchObject({ code: 'cloudflare_upstream_error' })
 })
 
-test('未配置 Token 时先判空，旧缓存不能伪装已配置且不请求任何 Cloudflare API', { timeout: 20_000 }, async () => {
+test('未配置 Cloudflare 凭据时先判空，旧缓存不能伪装已配置且不请求任何 Cloudflare API', { timeout: 20_000 }, async () => {
   await testEnv.DB.prepare('INSERT INTO usage_cache (key, value_json, expires_at, updated_at) VALUES (?, ?, ?, ?)').bind(
     'cloudflare:workers',
     JSON.stringify({ configured: true, requests: 999 }),
@@ -327,7 +328,7 @@ test('未配置 Token 时先判空，旧缓存不能伪装已配置且不请求�
   expect(calls).toHaveLength(0)
 })
 
-test('旧 OAuth 凭据不读取旧缓存也不发起请求', { timeout: 20_000 }, async () => {
+test('旧格式 Cloudflare 凭据不读取旧缓存也不发起请求', { timeout: 20_000 }, async () => {
   const legacy = await encryptSecret(testEnv.SESSION_SECRET!, JSON.stringify({ accessToken: 'legacy-access', refreshToken: 'legacy-refresh', accountId: ACCOUNT_ID }))
   await testEnv.DB.batch([
     testEnv.DB.prepare('INSERT INTO cloudflare_credentials (id, ciphertext, iv, updated_at) VALUES (?, ?, ?, ?)').bind('primary', legacy.ciphertext, legacy.iv, new Date().toISOString()),
@@ -335,8 +336,8 @@ test('旧 OAuth 凭据不读取旧缓存也不发起请求', { timeout: 20_000 }
   ])
   const calls: UsageCall[] = []
   const response = await cloudflareUsageApi(testEnv, admin, usageFetcher(calls, { graphql: graphqlHandler }))
-  expect(response.status).toBe(200)
-  expect(await response.json()).toMatchObject({ configured: false, cached: false, legacyCredential: true })
+  expect(response.status).toBe(409)
+  expect(await response.json()).toMatchObject({ code: 'credential_unreadable' })
   expect(calls).toHaveLength(0)
 })
 

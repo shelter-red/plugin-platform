@@ -2,7 +2,6 @@ import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 
 // 登录页运行在启用鉴权的开发服务器上：/api/me 无后端时返回失败，控制台进入匿名态。
-// 登录回调失败现在由 Worker 直接返回 HTTP 错误页，前端不再解析 ?auth_error 参数。
 const themes = [
   { value: 'dark', label: '深色' },
   { value: 'light', label: '浅色' },
@@ -15,23 +14,27 @@ for (const theme of themes) {
     await page.goto('/')
     await expect(page.getByRole('heading', { name: '登录 Plugmesh', level: 1 })).toBeVisible()
     await expect(page.locator('.auth-screen')).toHaveClass(new RegExp(`theme-${theme.value}`))
-    await expect(page.getByRole('link', { name: /使用 GitHub 登录/ })).toHaveAttribute('href', '/auth/github/start')
+    await expect(page.getByLabel('管理员密码')).toBeVisible()
+    await expect(page.getByRole('button', { name: '登录' })).toBeVisible()
     const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze()
     expect(results.violations.map((violation) => `${violation.id}: ${violation.nodes.map((node) => node.target.join(' ')).join(' | ')}`)).toEqual([])
     await expect(page).toHaveScreenshot(`console-login-${theme.value}-1440.png`, { fullPage: true, animations: 'disabled' })
   })
 }
 
-test('登录页展示邀请文案并保留 invite 参数', async ({ page }) => {
-  await page.goto('/?invite=tok_123')
-  await expect(page.getByRole('heading', { name: '接受平台邀请', level: 1 })).toBeVisible()
-  await expect(page.getByRole('link', { name: /使用 GitHub 登录/ })).toHaveAttribute('href', '/auth/github/start?invite=tok_123')
-  await expect(page.getByText('平台会在登录后完成身份匹配')).toBeVisible()
-})
-
 test('登录页窄窗口不横向溢出', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/')
   await expect(page.getByRole('heading', { name: '登录 Plugmesh', level: 1 })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
+})
+
+test('未初始化时管理端进入 setup 页面', async ({ page }) => {
+  await page.route('**/api/me', (route) => route.fulfill({
+    status: 503,
+    contentType: 'application/json',
+    body: JSON.stringify({ code: 'setup_required', message: '请先设置管理员密码' }),
+  }))
+  await page.goto('/')
+  await expect(page).toHaveURL(/\/setup$/)
 })

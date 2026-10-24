@@ -13,7 +13,7 @@ test.skip(!baseURL, '需要先启动本地真实栈并设置 PLUGMESH_REAL_STACK
 
 test.beforeEach(async ({ context }) => {
   await context.addCookies([{ name: 'plugmesh_session', value: sessionToken, url: baseURL! }])
-  // 邀请链接与公开域名都有「复制」按钮，Playwright 需显式授权才能读回剪贴板校验。
+  // 公开域名有「复制」按钮，Playwright 需显式授权才能读回剪贴板校验。
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: baseURL! })
 })
 
@@ -35,58 +35,8 @@ test('管理端读取真实 Worker 数据并展示服务器、插件和域名', 
   await expect(page.getByText('real.plugins.example.com')).toBeVisible()
 })
 
-test('管理端邀请与注册码操作落到真实 D1', async ({ page }) => {
-  const { call } = createStackApi(page.request, sessionToken)
-
+test('管理端注册码操作落到真实 D1', async ({ page }) => {
   await page.goto('/')
-  await page.getByRole('menuitem', { name: '系统设置', exact: true }).click()
-  await expect(page.getByRole('heading', { name: '用户与邀请' })).toBeVisible()
-
-  const githubInput = page.getByPlaceholder('github-login')
-  await expect(githubInput).toBeEnabled()
-  const invitee = `real-invitee-${Date.now()}`
-  await githubInput.fill(invitee)
-  await page.getByRole('button', { name: '创建邀请' }).click()
-  const inviteLink = page.getByLabel('新创建的邀请链接')
-  await expect(inviteLink).toHaveValue(/\/auth\/github\/start\?invite=/)
-  const inviteUrl = await inviteLink.inputValue()
-
-  await page.getByRole('button', { name: '复制链接' }).click()
-  await expect(page.getByText('邀请链接已复制')).toBeVisible()
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(inviteUrl)
-
-  const inviteRow = page.getByRole('row', { name: new RegExp(invitee) })
-  await expect(inviteRow).toBeVisible()
-  const pendingInvites = (await (await call('/api/invites')).json()) as {
-    results: Array<{ id: string; github_login: string | null; status: string }>
-  }
-  const invite = pendingInvites.results.find((item) => item.github_login === invitee)
-  expect(invite?.status).toBe('pending')
-
-  await githubInput.fill('bad login!')
-  await page.getByRole('button', { name: '创建邀请' }).click()
-  await expect(page.getByText('邮箱或 GitHub 用户名至少填写一个，且格式必须有效')).toBeVisible()
-
-  await inviteRow.getByRole('button', { name: '撤销邀请' }).click()
-  // 撤销邀请走 AntD Modal.confirm，而不是原生 window.confirm。
-  await page.getByRole('dialog').filter({ hasText: '撤销这个仍未使用的邀请' }).getByRole('button', { name: '撤销邀请', exact: true }).click()
-  await expect(page.getByText('邀请已撤销')).toBeVisible()
-  await expect(inviteRow).toContainText('已撤销')
-  await expect(inviteRow.getByRole('button', { name: '撤销邀请' })).toHaveCount(0)
-
-  const revokedInvites = (await (await call('/api/invites')).json()) as { results: Array<{ id: string; status: string }> }
-  expect(revokedInvites.results.find((item) => item.id === invite!.id)?.status).toBe('revoked')
-  // 非 pending 的邀请不能再次撤销，Worker 返回 409 而不是静默成功。
-  expect((await call(`/api/invites/${invite!.id}`, { method: 'DELETE' })).status()).toBe(409)
-
-  // 撤销状态来自 D1：整页重载后列表仍显示已撤销。
-  await page.reload()
-  await page.getByRole('menuitem', { name: '系统设置', exact: true }).click()
-  await expect(page.getByRole('row', { name: new RegExp(invitee) })).toContainText('已撤销')
-
-  await page.getByRole('menuitem', { name: '审计日志', exact: true }).click()
-  await expect(page.getByRole('row').filter({ hasText: invite!.id }).first()).toContainText('撤销平台邀请')
-
   await page.getByRole('menuitem', { name: '插件服务器', exact: true }).click()
   await page.getByRole('button', { name: '绑定服务器' }).click()
   await page.getByRole('dialog').getByRole('button', { name: '生成注册码' }).click()
@@ -416,59 +366,6 @@ test('管理端用量与配额页展示真实本地计数、分布与官方未�
     // 断言失败时也要消费临时对象并停掉临时服务器，避免把用量和进程留在共享真实栈里。
     await page.request.get(blobUrl).catch(() => undefined)
     await prepared.server.stop()
-  }
-})
-
-test('管理端在后台保存 OAuth 配置到真实 D1 且不回显密钥', async ({ page }) => {
-  const { call } = createStackApi(page.request, sessionToken)
-  await call('/api/settings/oauth?provider=all', { method: 'DELETE' })
-  const suffix = `${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 8)}`
-  const clientId = `real-github-${suffix}`
-  const clientSecret = `real-secret-${suffix}`
-  const redirectUri = `${baseURL}/auth/github/callback`
-  const allowlist = `admin-${suffix}@example.com`
-  try {
-    await page.goto('/')
-    await page.getByRole('menuitem', { name: '系统设置', exact: true }).click()
-    await page.getByRole('navigation', { name: '系统设置' }).getByRole('menuitem', { name: 'GitHub 登录' }).click()
-    const panel = page.locator('#settings-oauth')
-    const github = panel.locator('.oauth-block').filter({ hasText: 'GitHub 登录' })
-    await expect(github).toContainText('未配置')
-
-    await github.getByLabel('Client ID').fill(clientId)
-    await github.getByLabel('Client Secret').fill(clientSecret)
-    await expect(github.getByRole('textbox', { name: '回调地址' })).toHaveValue(redirectUri)
-    await github.getByLabel('管理员白名单').fill(allowlist)
-    await github.getByRole('button', { name: '保存配置' }).click()
-    await expect(page.getByText('OAuth 配置已保存')).toBeVisible()
-    await expect(github).toContainText('后台配置')
-    await expect(github.getByLabel('Client Secret')).toHaveValue('')
-
-    const storedResponse = await call('/api/settings/oauth')
-    expect(storedResponse.ok()).toBeTruthy()
-    const storedText = await storedResponse.text()
-    expect(storedText).not.toContain(clientSecret)
-    const stored = JSON.parse(storedText) as {
-      github: { configured: boolean; clientId: string; redirectUri: string; allowlist: string; secretConfigured: boolean; source: string }
-    }
-    expect(stored.github).toMatchObject({
-      configured: true,
-      clientId,
-      redirectUri,
-      allowlist,
-      secretConfigured: true,
-      source: 'database',
-    })
-
-    await page.reload()
-    await page.getByRole('menuitem', { name: '系统设置', exact: true }).click()
-    await page.getByRole('navigation', { name: '系统设置' }).getByRole('menuitem', { name: 'GitHub 登录' }).click()
-    const reloadedGithub = page.locator('#settings-oauth .oauth-block').filter({ hasText: 'GitHub 登录' })
-    await expect(reloadedGithub).toContainText('后台配置')
-    await expect(reloadedGithub.getByLabel('Client ID')).toHaveValue(clientId)
-    await expect(reloadedGithub.getByLabel('Client Secret')).toHaveValue('')
-  } finally {
-    await call('/api/settings/oauth?provider=all', { method: 'DELETE' })
   }
 })
 

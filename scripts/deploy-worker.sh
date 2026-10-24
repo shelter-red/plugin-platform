@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 一键部署 Cloudflare Worker：构建管理端、补齐 D1/R2 资源、执行迁移、初始化基础设施密钥并发布。
-# GitHub OAuth、Cloudflare API Token、SMTP 等业务配置不通过环境变量注入，部署完成后在管理后台填写。
+# Cloudflare Global API Key、SMTP 等业务配置不通过环境变量注入，部署完成后在管理后台填写。
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -8,7 +8,6 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 CONFIG=wrangler.toml
 DB_NAME=plugmesh
 BUCKET_NAME=plugmesh-blobs
-SETUP_TOKEN_FILE=.wrangler/plugmesh-setup-token
 DRY_RUN=0
 SKIP_BUILD=0
 CLOUDFLARE_BUILD=0
@@ -34,12 +33,10 @@ usage() {
   - 创建或复用 R2 存储桶 plugmesh-blobs
   - 应用全部 D1 migrations
   - 首次缺失时生成 SESSION_SECRET（已有值绝不轮换）
-  - 首次缺失时生成 SETUP_TOKEN，并保存到 .wrangler/plugmesh-setup-token（0600）
   - 发布 Worker
 
 高级覆盖（通常不需要）：
   SESSION_SECRET   远端缺失时使用指定值；远端已有时不会覆盖
-  SETUP_TOKEN      显式重置一次性初始化令牌；会写入并更新本地令牌文件
 USAGE
 }
 
@@ -94,15 +91,6 @@ put_secret() {
   if ! printf '%s' "$value" | wrangler secret put "$name" --config "$CONFIG" >/dev/null; then
     fail "写入 Worker Secret $name 失败"
   fi
-}
-
-save_setup_token() {
-  umask 077
-  mkdir -p "$(dirname "$SETUP_TOKEN_FILE")"
-  chmod 700 "$(dirname "$SETUP_TOKEN_FILE")"
-  printf '%s\n' "$1" > "$SETUP_TOKEN_FILE.tmp"
-  chmod 600 "$SETUP_TOKEN_FILE.tmp"
-  mv "$SETUP_TOKEN_FILE.tmp" "$SETUP_TOKEN_FILE"
 }
 
 require_secret_length() {
@@ -205,28 +193,6 @@ else
   echo "    已生成并写入 SESSION_SECRET"
 fi
 
-if [[ -n "${SETUP_TOKEN:-}" ]]; then
-  require_secret_length SETUP_TOKEN "$SETUP_TOKEN"
-  put_secret SETUP_TOKEN "$SETUP_TOKEN"
-  save_setup_token "$SETUP_TOKEN"
-  echo "    已按显式 SETUP_TOKEN 重置初始化令牌"
-elif has_secret SETUP_TOKEN; then
-  if [[ -f "$SETUP_TOKEN_FILE" ]]; then
-    echo "    SETUP_TOKEN 已存在；本地令牌文件：$SETUP_TOKEN_FILE"
-  else
-    echo "    警告：远端已有 SETUP_TOKEN，但本地令牌文件不存在，为避免破坏初始化流程不会覆盖。" >&2
-    echo "    如已确认需要重置：SETUP_TOKEN='新令牌（至少 24 字符）' npm run deploy:worker" >&2
-  fi
-else
-  setup_token=$(random_secret)
-  put_secret SETUP_TOKEN "$setup_token"
-  save_setup_token "$setup_token"
-  echo "    已生成 SETUP_TOKEN，并保存到 $SETUP_TOKEN_FILE（权限 0600）"
-  if [[ $CLOUDFLARE_BUILD -eq 1 ]]; then
-    echo "    Cloudflare Workers Builds 初始化令牌：$setup_token"
-  fi
-fi
-
 cat <<'NEXT_STEPS'
 
 部署完成。基础 Cloudflare 资源和 Worker Secret 已就绪。
@@ -234,12 +200,8 @@ cat <<'NEXT_STEPS'
 下一步：
   1. 打开 Cloudflare 提供的默认地址 https://<worker-name>.<workers-subdomain>.workers.dev/setup
      自定义控制台域名和插件通配域名可以稍后再配置。
-  2. 初始化令牌来源：
-     - 本地 / GitHub Actions：.wrangler/plugmesh-setup-token（Actions 还会写入 Job Summary）
-     - Cloudflare Workers Builds：本轮构建日志中的“初始化令牌”一行
-  3. 在初始化页填写 GitHub OAuth App 的 Client ID、Client Secret 和管理员白名单。
-     回调地址由当前访问域名自动生成，无需手填。
-  4. 完成 GitHub 登录后，在管理后台配置 Cloudflare API Token、SMTP、平台阈值和插件域名后缀。
+  2. 在初始化页设置至少 12 个字符的管理员密码。
+  3. 使用管理员密码登录后，在管理后台配置 Cloudflare Email、Global API Key、SMTP、平台阈值和插件域名后缀。
 
-部署阶段不会写入 GitHub OAuth、Cloudflare API Token、SMTP 或插件域名后缀；这些均在后台配置并加密保存。
+部署阶段不会写入 Cloudflare Global API Key、SMTP 或插件域名后缀；这些均在后台配置并加密保存。
 NEXT_STEPS

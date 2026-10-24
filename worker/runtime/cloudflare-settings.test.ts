@@ -7,10 +7,11 @@ import type { AuthenticatedUser, Env } from '../src/types'
 import { hashToken, resetDatabase, seedServer, testEnv } from './helpers'
 import {
   CLOUDFLARE_STUB_ACCOUNT_ID,
-  CLOUDFLARE_STUB_API_TOKEN,
-  CLOUDFLARE_STUB_INVALID_TOKEN,
-  CLOUDFLARE_STUB_MULTI_ACCOUNT_TOKEN,
-  CLOUDFLARE_STUB_PERMISSION_DENIED_TOKEN,
+  CLOUDFLARE_STUB_EMAIL,
+  CLOUDFLARE_STUB_GLOBAL_API_KEY,
+  CLOUDFLARE_STUB_INVALID_GLOBAL_API_KEY,
+  CLOUDFLARE_STUB_MULTI_ACCOUNT_GLOBAL_API_KEY,
+  CLOUDFLARE_STUB_PERMISSION_DENIED_GLOBAL_API_KEY,
   CLOUDFLARE_STUB_SECOND_ACCOUNT_ID,
 } from './outbound-stub'
 
@@ -18,7 +19,6 @@ const ADMIN_TOKEN = 'cf-admin-session'
 const MEMBER_TOKEN = 'cf-member-session'
 const ADMIN: AuthenticatedUser = {
   id: 'user-cf-admin',
-  github_id: 'gh-cf-admin',
   email: 'admin@example.com',
   display_name: 'CF Admin',
   role: 'super_admin',
@@ -37,7 +37,7 @@ const api = (path: string, token: string, init: RequestInit = {}): Promise<Respo
 async function seedAccounts(): Promise<void> {
   const now = new Date().toISOString()
   await testEnv.DB.batch([
-    testEnv.DB.prepare('INSERT INTO users (id, github_id, email, display_name, role, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(ADMIN.id, ADMIN.github_id, ADMIN.email, ADMIN.display_name, ADMIN.role, now),
+    testEnv.DB.prepare('INSERT INTO users (id, github_id, email, display_name, role, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(ADMIN.id, 'legacy-admin', ADMIN.email, ADMIN.display_name, ADMIN.role, now),
     testEnv.DB.prepare('INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)').bind('session-cf-admin', ADMIN.id, await hashToken(ADMIN_TOKEN), new Date(Date.now() + 3_600_000).toISOString(), now),
     testEnv.DB.prepare('INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)').bind('session-cf-member', 'user-runtime', await hashToken(MEMBER_TOKEN), new Date(Date.now() + 3_600_000).toISOString(), now),
   ])
@@ -56,20 +56,11 @@ test('Cloudflare 设置 GET 不泄露凭据并返回固定权限', async () => {
   expect(await empty.json()).toEqual({
     configured: false,
     credentialKind: null,
-    permissions: ['Account Settings Read', 'Account Analytics Read', 'Billing Read', 'Zone Read', 'DNS Write', 'Workers Routes Edit'],
-    permissionStatus: {
-      'Account Settings Read': 'unknown',
-      'Account Analytics Read': 'unknown',
-      'Billing Read': 'unknown',
-      'Zone Read': 'unknown',
-      'DNS Write': 'unknown',
-      'Workers Routes Edit': 'unknown',
-    },
     accountIdConfigured: false,
     accountId: null,
+    email: null,
     updatedAt: null,
     lastVerifiedAt: null,
-    legacyCredential: false,
   })
   expect((await api('/api/settings/cloudflare', MEMBER_TOKEN)).status).toBe(403)
 })
@@ -84,24 +75,23 @@ test('保存 Token 前完成校验、加密落库、清缓存且不回显 Token'
 
   const saved = await api('/api/settings/cloudflare', ADMIN_TOKEN, {
     method: 'PUT',
-    body: JSON.stringify({ apiToken: CLOUDFLARE_STUB_API_TOKEN }),
+    body: JSON.stringify({ email: CLOUDFLARE_STUB_EMAIL, globalApiKey: CLOUDFLARE_STUB_GLOBAL_API_KEY }),
   })
   expect(saved.status).toBe(200)
   const savedBody = await saved.json() as Record<string, unknown>
   expect(savedBody).toMatchObject({
     configured: true,
-    credentialKind: 'api_token',
-    permissions: ['Account Settings Read', 'Account Analytics Read', 'Billing Read', 'Zone Read', 'DNS Write', 'Workers Routes Edit'],
+    credentialKind: 'global_api_key',
     accountIdConfigured: true,
     accountId: '0123...cdef',
-    legacyCredential: false,
+    email: CLOUDFLARE_STUB_EMAIL,
   })
   expect(savedBody.lastVerifiedAt).toEqual(expect.any(String))
-  expect(JSON.stringify(savedBody)).not.toContain(CLOUDFLARE_STUB_API_TOKEN)
+  expect(JSON.stringify(savedBody)).not.toContain(CLOUDFLARE_STUB_GLOBAL_API_KEY)
 
   const stored = await testEnv.DB.prepare('SELECT ciphertext, iv FROM cloudflare_credentials WHERE id = ?').bind('primary').first<{ ciphertext: string; iv: string }>()
   expect(stored?.ciphertext).toBeTruthy()
-  expect(stored?.ciphertext).not.toContain(CLOUDFLARE_STUB_API_TOKEN)
+  expect(stored?.ciphertext).not.toContain(CLOUDFLARE_STUB_GLOBAL_API_KEY)
   expect(stored?.ciphertext).not.toContain(CLOUDFLARE_STUB_ACCOUNT_ID)
   const cache = await testEnv.DB.prepare('SELECT COUNT(*) AS count FROM usage_cache WHERE key = ?').bind('cloudflare:workers').first<{ count: number }>()
   expect(cache?.count).toBe(0)
@@ -110,12 +100,12 @@ test('保存 Token 前完成校验、加密落库、清缓存且不回显 Token'
   const readBody = await read.json() as Record<string, unknown>
   expect(readBody.configured).toBe(true)
   expect(readBody.accountId).toBe('0123...cdef')
-  expect(JSON.stringify(readBody)).not.toContain(CLOUDFLARE_STUB_API_TOKEN)
+  expect(JSON.stringify(readBody)).not.toContain(CLOUDFLARE_STUB_GLOBAL_API_KEY)
   expect((await api('/api/settings/cloudflare', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify({}) })).status).toBe(400)
 
   const audit = await testEnv.DB.prepare("SELECT action, detail_json FROM audit_log WHERE action LIKE 'cloudflare.credentials.%' ORDER BY rowid").all<{ action: string; detail_json: string }>()
   expect(audit.results.map((row) => row.action)).toEqual(['cloudflare.credentials.updated'])
-  expect(audit.results[0].detail_json).not.toContain(CLOUDFLARE_STUB_API_TOKEN)
+  expect(audit.results[0].detail_json).not.toContain(CLOUDFLARE_STUB_GLOBAL_API_KEY)
   expect(audit.results[0].detail_json).not.toContain(CLOUDFLARE_STUB_ACCOUNT_ID)
 
   const domain = await api('/api/settings/platform', ADMIN_TOKEN, {
@@ -132,35 +122,35 @@ test('保存 Token 前完成校验、加密落库、清缓存且不回显 Token'
 test('Token、权限和账号错误返回真实 HTTP 与稳定错误码且不落库', async () => {
   const invalid = await api('/api/settings/cloudflare', ADMIN_TOKEN, {
     method: 'PUT',
-    body: JSON.stringify({ apiToken: CLOUDFLARE_STUB_INVALID_TOKEN }),
+    body: JSON.stringify({ email: CLOUDFLARE_STUB_EMAIL, globalApiKey: CLOUDFLARE_STUB_INVALID_GLOBAL_API_KEY }),
   })
   expect(invalid.status).toBe(401)
-  expect(await invalid.json()).toMatchObject({ code: 'token_invalid' })
+  expect(await invalid.json()).toMatchObject({ code: 'credential_invalid' })
 
   const denied = await api('/api/settings/cloudflare', ADMIN_TOKEN, {
     method: 'PUT',
-    body: JSON.stringify({ apiToken: CLOUDFLARE_STUB_PERMISSION_DENIED_TOKEN }),
+    body: JSON.stringify({ email: CLOUDFLARE_STUB_EMAIL, globalApiKey: CLOUDFLARE_STUB_PERMISSION_DENIED_GLOBAL_API_KEY }),
   })
   expect(denied.status).toBe(403)
-  expect(await denied.json()).toMatchObject({ code: 'token_permission_denied' })
+  expect(await denied.json()).toMatchObject({ code: 'credential_denied' })
 
   const ambiguous = await api('/api/settings/cloudflare', ADMIN_TOKEN, {
     method: 'PUT',
-    body: JSON.stringify({ apiToken: CLOUDFLARE_STUB_MULTI_ACCOUNT_TOKEN }),
+    body: JSON.stringify({ email: CLOUDFLARE_STUB_EMAIL, globalApiKey: CLOUDFLARE_STUB_MULTI_ACCOUNT_GLOBAL_API_KEY }),
   })
   expect(ambiguous.status).toBe(409)
   expect(await ambiguous.json()).toMatchObject({ code: 'account_ambiguous' })
 
   const missing = await api('/api/settings/cloudflare', ADMIN_TOKEN, {
     method: 'PUT',
-    body: JSON.stringify({ apiToken: CLOUDFLARE_STUB_MULTI_ACCOUNT_TOKEN, accountId: 'not-a-visible-account' }),
+    body: JSON.stringify({ email: CLOUDFLARE_STUB_EMAIL, globalApiKey: CLOUDFLARE_STUB_MULTI_ACCOUNT_GLOBAL_API_KEY, accountId: 'not-a-visible-account' }),
   })
   expect(missing.status).toBe(409)
   expect(await missing.json()).toMatchObject({ code: 'account_missing' })
 
   const selected = await api('/api/settings/cloudflare', ADMIN_TOKEN, {
     method: 'PUT',
-    body: JSON.stringify({ apiToken: CLOUDFLARE_STUB_MULTI_ACCOUNT_TOKEN, accountId: CLOUDFLARE_STUB_SECOND_ACCOUNT_ID }),
+    body: JSON.stringify({ email: CLOUDFLARE_STUB_EMAIL, globalApiKey: CLOUDFLARE_STUB_MULTI_ACCOUNT_GLOBAL_API_KEY, accountId: CLOUDFLARE_STUB_SECOND_ACCOUNT_ID }),
   })
   expect(selected.status).toBe(200)
   expect(await selected.json()).toMatchObject({ accountId: 'fedc...3210' })
@@ -175,10 +165,10 @@ test('未配置 Token 时不能静默保存域名后缀', async () => {
     body: JSON.stringify({ pluginDomainSuffix: 'no-token.example.net' }),
   })
   expect(response.status).toBe(400)
-  expect(await response.json()).toMatchObject({ code: 'domain_token_required' })
+  expect(await response.json()).toMatchObject({ code: 'credential_required' })
 })
 
-test('旧 OAuth 密文只提示重新录入，不返回旧令牌', async () => {
+test('旧格式凭据要求重新配置，不返回旧密钥', async () => {
   const legacy = await encryptSecret(testEnv.SESSION_SECRET!, JSON.stringify({
     accessToken: 'legacy-access-token',
     refreshToken: 'legacy-refresh-token',
@@ -187,23 +177,15 @@ test('旧 OAuth 密文只提示重新录入，不返回旧令牌', async () => {
   await testEnv.DB.prepare('INSERT INTO cloudflare_credentials (id, ciphertext, iv, updated_at) VALUES (?, ?, ?, ?)').bind('primary', legacy.ciphertext, legacy.iv, new Date().toISOString()).run()
 
   const response = await api('/api/settings/cloudflare', ADMIN_TOKEN)
-  expect(response.status).toBe(200)
+  expect(response.status).toBe(409)
   const body = await response.json() as Record<string, unknown>
-  expect(body).toMatchObject({
-    configured: false,
-    credentialKind: 'legacy_oauth',
-    accountIdConfigured: true,
-    accountId: '0123...cdef',
-    legacyCredential: true,
-  })
-  expect(JSON.stringify(body)).not.toContain('legacy-access-token')
-  expect(JSON.stringify(body)).not.toContain('legacy-refresh-token')
+  expect(body).toMatchObject({ code: 'credential_unreadable' })
 })
 
 test('DELETE 只删除本地凭据和缓存，不调用 Cloudflare', async () => {
   await api('/api/settings/cloudflare', ADMIN_TOKEN, {
     method: 'PUT',
-    body: JSON.stringify({ apiToken: CLOUDFLARE_STUB_API_TOKEN }),
+    body: JSON.stringify({ email: CLOUDFLARE_STUB_EMAIL, globalApiKey: CLOUDFLARE_STUB_GLOBAL_API_KEY }),
   })
   const forbiddenFetch = (() => { throw new Error('DELETE must not call Cloudflare') }) as typeof fetch
   const response = await cloudflareSettingsApi(new Request('https://console.example.com/api/settings/cloudflare', { method: 'DELETE' }), testEnv, ADMIN, forbiddenFetch)

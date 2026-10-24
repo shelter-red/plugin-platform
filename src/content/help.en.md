@@ -1,7 +1,7 @@
 ## Getting started
 
-1. After the first deployment open `/setup` and provide the setup token to store your GitHub OAuth App credentials.
-2. Sign in with GitHub. Only invited identities are allowed in.
+1. After the first deployment, open `/setup` and create an administrator password of at least 12 characters.
+2. Sign in with that password. Changing it under **Settings → Administrator password** invalidates every existing session.
 3. Generate a one-time registration code under "Plugin servers" and run `plugmesh-server --register <code>` on the server.
 4. Once the server is online, load and enable plugins under "Plugin instances".
 5. After the health check passes, assign a prefix under "Public domains" and the public entry point is live.
@@ -23,24 +23,13 @@ The server must reach the Worker over an outbound connection. Check that the reg
 
 Domains can only be assigned to enabled plugins that pass the health check. Prefixes must be unique and avoid reserved names.
 
-### What if the Cloudflare API Token cannot read usage?
+### What if Cloudflare usage cannot be read?
 
-Open **Settings → Cloudflare** and use the **Create API Token** link. Fill the three Cloudflare dropdowns for each fixed permission: scope, permission group and level.
+Enter the Cloudflare account email and Global API Key under **Settings → Cloudflare**. The Global API Key is available under **My Profile → API Tokens → Global API Key** in Cloudflare Dashboard; it is not an API Token that requires a permission template. The platform verifies the credential, lists accounts and reads subscriptions before saving. If it sees multiple accounts, select the target Account ID from the verification result and save again.
 
-| Scope | Permission group | Level |
-| --- | --- | --- |
-| Account | Account Settings | Read |
-| Account | Account Analytics | Read |
-| Account | Billing | Read |
-| Zone | Zone | Read |
-| Zone | DNS | Write |
-| Zone | Workers Routes | Edit |
+When you save the plugin domain suffix under **Maintenance, domains & quotas**, the platform uses the stored Global API Key to find the matching Zone, write the wildcard DNS record and create the Worker Route. No manual DNS step is required. Do not use a parent suffix that contains the console host; use `plugins.example.com` when the console is `platform.example.com`. Existing third-party DNS records or Worker Routes are preserved and reported as conflicts instead of being overwritten.
 
-Choose the target account under **Account**, the plugin domain's Zone under **Zone**, and nothing under **User**. The platform verifies the Token, lists visible accounts and reads subscriptions before saving. The Account ID field only selects a target when the Token can see multiple accounts. The settings page reports each permission as verified, missing or not tested.
-
-When you save the plugin domain suffix under **Maintenance, domains & quotas**, the platform uses the stored Token to find the matching Zone, write the wildcard DNS record and create the Worker Route. Do not use a parent suffix that contains the console host; use `plugins.example.com` when the console is `platform.example.com`. Existing third-party DNS records or Worker Routes are preserved and reported as conflicts instead of being overwritten.
-
-If a bad suffix makes the console return `Plugin domain not found`, open Cloudflare Dashboard → D1 → `plugmesh` → Console and run the emergency update below, replacing `plugins.example.com` with the intended plugin suffix. Then save the suffix again in the settings page so the stored Token can sync DNS and the Worker Route:
+If a bad suffix makes the console return `Plugin domain not found`, open Cloudflare Dashboard → D1 → `plugmesh` → Console and run the emergency update below, replacing `plugins.example.com` with the intended plugin suffix. Then save the suffix again in the settings page so the platform can sync DNS and the Worker Route:
 
 ```sql
 UPDATE platform_settings
@@ -49,9 +38,9 @@ SET value_json = json_set(value_json, '$.pluginDomainSuffix', '.plugins.example.
 WHERE key = 'platform';
 ```
 
-- `401 token_invalid`: the Token is invalid, revoked, or has passed its configured expiry date; create a new Token.
-- `403 token_permission_denied`: one of the fixed permissions is missing; update the permissions or recreate the Token.
-- `409 account_missing` / `409 account_ambiguous`: the Token sees no account, or sees multiple accounts; enter the target Account ID.
+- `401 credential_invalid`: the email or Global API Key is incorrect; check the Cloudflare profile.
+- `403 credential_denied`: Cloudflare denied access to the resource; confirm that the account can manage the target Account, Zone and Worker.
+- `409 account_missing` / `409 account_ambiguous`: the credential sees no account or multiple accounts; select the target Account ID.
 - `502 cloudflare_upstream_error`: Cloudflare or the network is temporarily unavailable; retry later with the single **Refresh usage** button on the usage page.
 
 Errors stay on the current settings or usage page with the HTTP status, error code and upstream message. Free limits come only from subscriptions; until a Free plan is confirmed the UI shows “Not available” and does not accept manual limits.

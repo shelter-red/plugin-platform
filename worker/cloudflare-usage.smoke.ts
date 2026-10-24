@@ -1,15 +1,15 @@
 import { strict as assert } from 'node:assert'
-import { CLOUDFLARE_FREE_LIMITS } from './src/cloudflare-token.ts'
+import { CLOUDFLARE_FREE_LIMITS } from './src/cloudflare-credentials.ts'
 import { cloudflareUsageApi } from './src/index.ts'
 import { encryptSecret } from './src/secrets.ts'
 import { cloudflareQuotaReason } from './src/usage.ts'
 import type { AuthenticatedUser, Env } from './src/types.ts'
 
 const accountId = '0123456789abcdef0123456789abcdef'
-const apiToken = 'cf-api-token-smoke'
 const credential = await encryptSecret('session-secret', JSON.stringify({
-  kind: 'api_token',
-  apiToken,
+  kind: 'global_api_key',
+  email: 'admin@example.test',
+  globalApiKey: 'cf-global-key-smoke',
   accountId,
   verifiedAt: '2026-10-23T00:00:00.000Z',
 }))
@@ -39,7 +39,7 @@ const database = {
   batch: async () => [],
 }
 const env = { DB: database, SESSION_SECRET: 'session-secret' } as unknown as Env
-const admin: AuthenticatedUser = { id: 'admin-1', github_id: 'github-1', email: 'admin@example.test', display_name: 'Admin', role: 'super_admin' }
+const admin: AuthenticatedUser = { id: 'admin-1', email: 'admin@example.test', display_name: 'Admin', role: 'super_admin' }
 const calls: Array<{ method: string; path: string }> = []
 const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
   const request = new Request(input as RequestInfo, init)

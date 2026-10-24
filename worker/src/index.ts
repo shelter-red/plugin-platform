@@ -1,15 +1,14 @@
 import { PluginBridge } from './durable-object'
 import { hashControlToken } from './security'
-import { authenticatePassword, clearSessionCookie, createSession, digest, getCurrentUser, hasAdminPassword, sessionCookie } from './auth'
+import { authenticatePassword, changeAdminPassword, clearSessionCookie, createSession, digest, getCurrentUser, hasAdminPassword, MIN_PASSWORD_LENGTH, sessionCookie } from './auth'
 import type { AuthenticatedUser, CloudflarePlanSummary, CloudflareUsageLimits, Env } from './types'
 import { decryptSecret, encryptSecret } from './secrets'
-import { isEmail, parseSmtpSettings, publicSmtpSettings, sendInviteEmail, sendSmtpTest, validateSmtpSettings, type SmtpSettings } from './email'
-import { checkCloudflarePermissionStatus, CLOUDFLARE_API_TOKEN_PERMISSIONS, CloudflareTokenError, cloudflarePlanLimits, configureCloudflareDomain, deleteStoredCloudflareCredential, maskCloudflareAccountId, readCloudflareSubscriptions, readStoredCloudflareCredential, storeCloudflareCredential as storeCloudflareApiTokenCredential, validateCloudflareApiToken } from './cloudflare-token'
+import { isEmail, parseSmtpSettings, publicSmtpSettings, sendSmtpTest, validateSmtpSettings, type SmtpSettings } from './email'
+import { CloudflareCredentialError, cloudflarePlanLimits, configureCloudflareDomain, deleteStoredCloudflareCredential, maskCloudflareAccountId, readCloudflareSubscriptions, readStoredCloudflareCredential, storeCloudflareCredential, validateCloudflareCredential } from './cloudflare-credentials'
 import { activateMaintenance, cloudflareQuotaReason, defaultPlatformSettings, getPlatformSettings, isMaintenanceMode, normalizePluginDomainSuffix, recordRequest, releaseR2Usage, reserveR2Usage, setPlatformSettingsCache } from './usage'
 import { findPluginRoute, invalidatePluginRoute } from './route-cache'
 import { selectPublicRequestMode } from './request-mode'
 import { resolvePublicRoute } from './public-route'
-import { resolveOauthSettings } from './oauth-settings'
 import { setupApi } from './setup'
 import { recordAudit } from './audit'
 import { DEFAULT_WORKSPACE_ID, activeWorkspaceId, createWorkspace, listWorkspaceMembers, listWorkspaces, ownerCount, parseWorkspaceRole, requireOwner, requireWrite, resolveWorkspace, workspaceForUser } from './workspaces'
@@ -18,20 +17,8 @@ import type { Workspace, WorkspaceRole } from './types'
 export { PluginBridge }
 
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json; charset=utf-8' } })
-const consoleHostnameCacheTtlMs = 30_000
-let consoleHostnameCache: { value: string | null; expiresAt: number } | null = null
-
-async function configuredConsoleHostname(env: Env): Promise<string | null> {
-  if (consoleHostnameCache && consoleHostnameCache.expiresAt > Date.now()) return consoleHostnameCache.value
-  let hostname: string | null = null
-  try {
-    const redirectUri = (await resolveOauthSettings(env)).github?.redirectUri
-    if (redirectUri) hostname = new URL(redirectUri).hostname.toLowerCase()
-  } catch {
-    hostname = null
-  }
-  consoleHostnameCache = { value: hostname, expiresAt: Date.now() + consoleHostnameCacheTtlMs }
-  return hostname
+function configuredConsoleHostname(env: Env, request: Request): string {
+  return env.CONSOLE_HOSTNAME?.trim().toLowerCase() || new URL(request.url).hostname.toLowerCase()
 }
 
 export default {
@@ -103,6 +90,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   }
   if (request.method === 'GET' && url.pathname === '/api/access-logs') return accessLogsApi(env, workspace)
   if (url.pathname === '/api/settings/platform') return platformSettingsApi(request, env, user)
+  if (url.pathname === '/api/settings/password') return passwordSettingsApi(request, env, user)
   if (url.pathname === '/api/settings/cloudflare') return cloudflareSettingsApi(request, env, user)
   if (url.pathname === '/api/settings/smtp') return smtpSettingsApi(request, env, user)
   if (url.pathname === '/api/settings/smtp/test') return smtpTestApi(request, env, user)
@@ -117,10 +105,6 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   const pluginAction = url.pathname.match(/^\/api\/plugins\/([^/]+)\/(load|unload|enable|disable|reload|health)$/)
   if (request.method === 'POST' && pluginAction) return commandPlugin(request, env, user, workspace, decodeURIComponent(pluginAction[1]), pluginAction[2] as 'load' | 'unload' | 'enable' | 'disable' | 'reload' | 'health')
   if (request.method === 'POST' && url.pathname === '/api/domains') return assignDomain(request, env, user, workspace)
-  if (request.method === 'GET' && url.pathname === '/api/invites') return listInvites(env, user, workspace)
-  const inviteAction = url.pathname.match(/^\/api\/invites\/([^/]+)$/)
-  if (request.method === 'DELETE' && inviteAction) return revokeInvite(env, user, decodeURIComponent(inviteAction[1]))
-  if (request.method === 'POST' && url.pathname === '/api/invites') return createInvite(request, env, user, workspace)
   if (request.method === 'POST' && url.pathname === '/api/registration-codes') return createRegistrationCode(env, user, workspace)
   return json({ error: 'Not found' }, 404)
 }
@@ -189,7 +173,7 @@ async function workspaceApi(request: Request, env: Env, user: AuthenticatedUser,
       : body?.email
         ? await env.DB.prepare('SELECT id FROM users WHERE lower(email) = lower(?)').bind(body.email.trim()).first<{ id: string }>()
         : null
-    if (!target) return json({ error: 'User not found; send an invite instead' }, 404)
+    if (!target) return json({ error: 'User not found' }, 404)
     const now = new Date().toISOString()
     await env.DB.prepare('INSERT INTO workspace_members (workspace_id, user_id, role, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(workspace_id, user_id) DO UPDATE SET role = excluded.role').bind(access.workspace.id, target.id, role, now).run()
     await recordAudit(env, access.workspace.id, user.id, 'workspace.member.added', { userId: target.id, role })
@@ -215,7 +199,6 @@ async function workspaceApi(request: Request, env: Env, user: AuthenticatedUser,
   const servers = await env.DB.prepare('SELECT COUNT(*) AS count FROM servers WHERE workspace_id = ?').bind(access.workspace.id).first<{ count: number }>()
   if ((servers?.count ?? 0) > 0) return json({ error: 'Workspace still contains servers' }, 409)
   await env.DB.batch([
-    env.DB.prepare('DELETE FROM invites WHERE workspace_id = ?').bind(access.workspace.id),
     env.DB.prepare('DELETE FROM registration_codes WHERE workspace_id = ?').bind(access.workspace.id),
     env.DB.prepare('DELETE FROM workspace_members WHERE workspace_id = ?').bind(access.workspace.id),
     env.DB.prepare('DELETE FROM workspaces WHERE id = ?').bind(access.workspace.id),
@@ -432,15 +415,13 @@ export async function runScheduledMaintenance(env: Env): Promise<void> {
     cleanupStaleConsumedBlobs(env),
     env.DB.prepare('DELETE FROM request_logs WHERE created_at < ?').bind(accessSince).run(),
     env.DB.prepare('DELETE FROM audit_log WHERE created_at < ?').bind(auditSince).run(),
-    env.DB.prepare('UPDATE invites SET status = ? WHERE status = ? AND expires_at <= ?').bind('expired', 'pending', nowIso).run(),
     env.DB.prepare('DELETE FROM sessions WHERE expires_at <= ?').bind(nowIso).run(),
-    env.DB.prepare('DELETE FROM oauth_states WHERE expires_at <= ?').bind(nowIso).run(),
     env.DB.prepare('DELETE FROM registration_codes WHERE expires_at <= ?').bind(nowIso).run(),
   ])
 }
 
 async function refreshCloudflareUsageOnSchedule(env: Env): Promise<void> {
-  const administrator = await env.DB.prepare('SELECT id, github_id, email, display_name, role FROM users WHERE role = ? ORDER BY created_at ASC LIMIT 1').bind('super_admin').first<AuthenticatedUser>()
+  const administrator = await env.DB.prepare('SELECT id, email, display_name, role FROM users WHERE role = ? ORDER BY created_at ASC LIMIT 1').bind('super_admin').first<AuthenticatedUser>()
   if (!administrator) return
   await cloudflareUsageApi(env, administrator)
 }
@@ -454,6 +435,20 @@ async function passwordLogin(request: Request, env: Env, url: URL): Promise<Resp
   if (!userId) return json({ code: 'invalid_password', message: '密码错误' }, 401)
   const token = await createSession(env, userId)
   return new Response(null, { status: 204, headers: { 'set-cookie': sessionCookie(token, url.protocol === 'https:') } })
+}
+
+async function passwordSettingsApi(request: Request, env: Env, user: AuthenticatedUser): Promise<Response> {
+  if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
+  if (request.method !== 'PUT') return json({ error: 'Method not allowed' }, 405)
+  const body = await request.json().catch(() => null) as { currentPassword?: unknown; newPassword?: unknown; confirmPassword?: unknown } | null
+  const currentPassword = typeof body?.currentPassword === 'string' ? body.currentPassword : ''
+  const newPassword = typeof body?.newPassword === 'string' ? body.newPassword : ''
+  const confirmPassword = typeof body?.confirmPassword === 'string' ? body.confirmPassword : ''
+  if (!currentPassword) return json({ code: 'current_password_required', message: '请输入当前管理员密码', field: 'currentPassword' }, 400)
+  if (newPassword.length < MIN_PASSWORD_LENGTH) return json({ code: 'password_too_short', message: `密码至少需要 ${MIN_PASSWORD_LENGTH} 个字符`, field: 'newPassword' }, 400)
+  if (newPassword !== confirmPassword) return json({ code: 'password_mismatch', message: '两次输入的新密码不一致', field: 'confirmPassword' }, 400)
+  if (!await changeAdminPassword(env, currentPassword, newPassword)) return json({ code: 'current_password_invalid', message: '当前管理员密码错误', field: 'currentPassword' }, 401)
+  return new Response(null, { status: 204 })
 }
 
 type AccessLogRecord = {
@@ -481,67 +476,6 @@ async function accessLogsApi(env: Env, workspace: Workspace): Promise<Response> 
     env.DB.prepare('SELECT COUNT(*) AS count FROM request_logs WHERE workspace_id = ? AND created_at >= ? AND status >= 500').bind(workspace.id, since).first<{ count: number }>(),
   ])
   return json({ results: logs.results, errorCount: errors?.count ?? 0, since })
-}
-
-async function listInvites(env: Env, user: AuthenticatedUser, workspace: Workspace): Promise<Response> {
-  await expireInvites(env)
-  if (user.role !== 'super_admin' && workspace.role !== 'owner') return json({ error: 'Workspace owner permission required' }, 403)
-  const query = user.role === 'super_admin'
-    ? 'SELECT id, workspace_id, role, email, github_login, status, expires_at, used_at, created_at FROM invites ORDER BY created_at DESC'
-    : 'SELECT id, workspace_id, role, email, github_login, status, expires_at, used_at, created_at FROM invites WHERE workspace_id = ? ORDER BY created_at DESC'
-  return json(user.role === 'super_admin' ? await env.DB.prepare(query).all() : await env.DB.prepare(query).bind(workspace.id).all())
-}
-
-async function createInvite(request: Request, env: Env, user: AuthenticatedUser, workspace: Workspace): Promise<Response> {
-  const body = await request.json().catch(() => null) as { email?: string; githubLogin?: string; expiresInHours?: number; workspaceId?: string; role?: unknown } | null
-  const target = body?.workspaceId && body.workspaceId !== workspace.id ? await workspaceForUser(env, user, body.workspaceId) : workspace
-  if (!target) return json({ error: 'Workspace access denied' }, 403)
-  if (target.role !== 'owner') return json({ error: 'Workspace owner permission required' }, 403)
-  const role = parseWorkspaceRole(body?.role ?? 'viewer')
-  if (!role) return json({ error: 'Workspace role is invalid' }, 400)
-  const email = body?.email?.trim() || null
-  const githubLogin = body?.githubLogin?.trim() || null
-  const expiresInHours = Number(body?.expiresInHours ?? 72)
-  if ((!email && !githubLogin) || (email && !isEmail(email)) || (githubLogin && !/^[a-zA-Z0-9-]{1,39}$/.test(githubLogin)) || !Number.isFinite(expiresInHours)) return json({ error: '邮箱或 GitHub 用户名至少填写一个，且格式必须有效' }, 400)
-  const boundedExpiresInHours = Math.min(Math.max(expiresInHours, 1), 720)
-  const rawToken = crypto.randomUUID() + crypto.randomUUID()
-  const invite = { id: crypto.randomUUID(), email, githubLogin, expiresAt: new Date(Date.now() + boundedExpiresInHours * 60 * 60 * 1000).toISOString() }
-  await env.DB.prepare('INSERT INTO invites (id, token_hash, email, github_login, status, expires_at, created_at, workspace_id, role) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(invite.id, await digest(rawToken), invite.email, invite.githubLogin, 'pending', invite.expiresAt, new Date().toISOString(), target.id, role).run()
-  const inviteUrl = `${new URL('/', request.url).origin}/auth/github/start?invite=${encodeURIComponent(rawToken)}`
-  let emailSent: boolean | null = null
-  let emailAttempts = 0
-  if (invite.email) {
-    emailSent = false
-    const smtp = await loadSmtpSettings(env)
-    if (smtp) {
-      try {
-        emailAttempts = await sendWithRetry(() => sendInviteEmail(smtp, invite.email!, inviteUrl, invite.expiresAt))
-        emailSent = true
-      } catch {
-        emailAttempts = 3
-        await recordAudit(env, target.id, user.id, 'invite.email.failed', { inviteId: invite.id, to: invite.email, attempts: emailAttempts })
-      }
-    }
-  }
-  await recordAudit(env, target.id, user.id, 'invite.created', { inviteId: invite.id, emailSent, emailAttempts, role })
-  return json({ id: invite.id, inviteUrl, expiresAt: invite.expiresAt, emailSent, workspaceId: target.id, role }, 201)
-}
-
-async function expireInvites(env: Env): Promise<void> {
-  await env.DB.prepare('UPDATE invites SET status = ? WHERE status = ? AND expires_at <= ?').bind('expired', 'pending', new Date().toISOString()).run()
-}
-
-async function revokeInvite(env: Env, user: AuthenticatedUser, inviteId: string): Promise<Response> {
-  await expireInvites(env)
-  const invite = await env.DB.prepare('SELECT workspace_id FROM invites WHERE id = ?').bind(inviteId).first<{ workspace_id: string }>()
-  if (!invite) return json({ error: 'Invite is not pending or does not exist' }, 409)
-  const target = await workspaceForUser(env, user, invite.workspace_id)
-  if (!target) return json({ error: 'Workspace access denied' }, 403)
-  if (target.role !== 'owner') return json({ error: 'Workspace owner permission required' }, 403)
-  const updated = await env.DB.prepare('UPDATE invites SET status = ? WHERE id = ? AND status = ?').bind('revoked', inviteId, 'pending').run()
-  if ((updated.meta.changes ?? 0) !== 1) return json({ error: 'Invite is not pending or does not exist' }, 409)
-  await recordAudit(env, invite.workspace_id, user.id, 'invite.revoked', { inviteId })
-  return json({ id: inviteId, status: 'revoked' })
 }
 
 async function createRegistrationCode(env: Env, user: AuthenticatedUser, workspace: Workspace): Promise<Response> {
@@ -692,7 +626,7 @@ export async function createServerRegistration(env: Env, code: string | undefine
 
 async function proxyPublicHost(request: Request, env: Env, url: URL, ctx: ExecutionContext): Promise<Response> {
   const suffix = await pluginDomainSuffix(env)
-  if (url.hostname === await configuredConsoleHostname(env)) return env.ASSETS ? env.ASSETS.fetch(request) : new Response('Plugmesh console route', { status: 404 })
+  if (env.CONSOLE_HOSTNAME && url.hostname === configuredConsoleHostname(env, request)) return env.ASSETS ? env.ASSETS.fetch(request) : new Response('Plugmesh console route', { status: 404 })
   if (!url.hostname.endsWith(suffix) || url.hostname.length <= suffix.length) return env.ASSETS ? env.ASSETS.fetch(request) : new Response('Plugmesh console route', { status: 404 })
   const prefix = url.hostname.slice(0, -suffix.length)
   if (!/^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$/.test(prefix)) return new Response('Plugmesh console route', { status: 404 })
@@ -750,10 +684,10 @@ async function platformSettingsApi(request: Request, env: Env, user: Authenticat
   if (pluginDomainSuffix !== settings.pluginDomainSuffix) {
     try {
       const stored = await readStoredCloudflareCredential(env)
-      if (!stored || stored.kind !== 'api_token') throw new CloudflareTokenError(400, 'domain_token_required', '请先在 Cloudflare 设置中保存 API Token，再配置插件域名')
-      cloudflareDomain = await configureCloudflareDomain(stored.credential.apiToken, stored.credential.accountId, pluginDomainSuffix, fetchImpl)
+      if (!stored || stored.kind !== 'global_api_key') throw new CloudflareCredentialError(400, 'credential_required', '请先在 Cloudflare 设置中保存 Email 和 Global API Key，再配置插件域名')
+      cloudflareDomain = await configureCloudflareDomain(stored.credential, stored.credential.accountId, pluginDomainSuffix, fetchImpl)
     } catch (error) {
-      if (error instanceof CloudflareTokenError) return json({ code: error.code, message: error.message }, error.status)
+      if (error instanceof CloudflareCredentialError) return json({ code: error.code, message: error.message }, error.status)
       return json({ code: 'domain_configuration_failed', message: 'Cloudflare 域名配置失败' }, 502)
     }
   }
@@ -779,93 +713,65 @@ function parsePositiveQuota(value: unknown, fallback: number): number {
 
 type StoredCloudflareCredential = Awaited<ReturnType<typeof readStoredCloudflareCredential>>
 
-function unknownCloudflarePermissionStatus() {
-  return Object.fromEntries(CLOUDFLARE_API_TOKEN_PERMISSIONS.map((permission) => [permission, 'unknown']))
-}
-
-function publicCloudflareSettings(stored: StoredCloudflareCredential, permissionStatus = unknownCloudflarePermissionStatus()) {
+function publicCloudflareSettings(stored: StoredCloudflareCredential | null) {
   const base = {
-    permissions: [...CLOUDFLARE_API_TOKEN_PERMISSIONS],
-    permissionStatus,
     accountIdConfigured: false,
     accountId: null as string | null,
+    email: null as string | null,
     updatedAt: stored?.updatedAt ?? null,
     lastVerifiedAt: null as string | null,
-    legacyCredential: false,
   }
   if (!stored) return { configured: false, credentialKind: null, ...base }
-  if (stored.kind === 'legacy_oauth') {
-    return {
-      configured: false,
-      credentialKind: 'legacy_oauth' as const,
-      ...base,
-      accountIdConfigured: Boolean(stored.accountId),
-      accountId: maskCloudflareAccountId(stored.accountId),
-      legacyCredential: true,
-    }
-  }
   return {
     configured: true,
-    credentialKind: 'api_token' as const,
+    credentialKind: 'global_api_key' as const,
     ...base,
     accountIdConfigured: true,
     accountId: maskCloudflareAccountId(stored.credential.accountId),
+    email: stored.credential.email,
     lastVerifiedAt: stored.credential.verifiedAt,
   }
 }
 
-function cloudflareTokenErrorResponse(error: unknown): Response {
-  if (error instanceof CloudflareTokenError) {
-    return json({ code: error.code, message: error.message }, error.status)
+function cloudflareCredentialErrorResponse(error: unknown): Response {
+  if (error instanceof CloudflareCredentialError) {
+    return json({ code: error.code, message: error.message, ...(error.accounts ? { accounts: error.accounts } : {}) }, error.status)
   }
   return json({ code: 'cloudflare_settings_failed', message: 'Cloudflare 设置请求失败' }, 500)
 }
 
-/** Cloudflare 设置只接受长期 API Token；保存前完成 Token、账号与订阅权限校验。 */
+/** Cloudflare 设置只接受 Email + Global API Key；保存前完成身份、账号与订阅校验。 */
 export async function cloudflareSettingsApi(request: Request, env: Env, user: AuthenticatedUser, fetchImpl: typeof fetch = fetch): Promise<Response> {
   if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
   try {
     if (request.method === 'GET') {
       const stored = await readStoredCloudflareCredential(env)
-      const permissionStatus = stored?.kind === 'api_token'
-        ? await checkCloudflarePermissionStatus(stored.credential.apiToken, stored.credential.accountId, fetchImpl)
-        : undefined
-      return json(publicCloudflareSettings(stored, permissionStatus))
+      return json(publicCloudflareSettings(stored))
     }
     if (request.method === 'DELETE') {
       await deleteStoredCloudflareCredential(env)
-      await recordAudit(env, null, user.id, 'cloudflare.credentials.revoked', { credentialKind: 'api_token' })
+      await recordAudit(env, null, user.id, 'cloudflare.credentials.revoked', { credentialKind: 'global_api_key' })
       return json(publicCloudflareSettings(null))
     }
     if (request.method !== 'PUT') return json({ error: 'Method not allowed' }, 405)
-    if (!env.SESSION_SECRET) throw new CloudflareTokenError(503, 'secret_missing', 'SESSION_SECRET 未配置，无法安全保存 Token')
-    const body = await request.json().catch(() => null) as { apiToken?: unknown; accountId?: unknown } | null
-    const apiToken = typeof body?.apiToken === 'string' ? body.apiToken.trim() : ''
-    if (!apiToken) throw new CloudflareTokenError(400, 'token_required', '请输入 Cloudflare API Token')
+    if (!env.SESSION_SECRET) throw new CloudflareCredentialError(503, 'secret_missing', 'SESSION_SECRET 未配置，无法安全保存 Cloudflare 凭据')
+    const body = await request.json().catch(() => null) as { email?: unknown; globalApiKey?: unknown; accountId?: unknown } | null
+    const email = typeof body?.email === 'string' ? body.email.trim() : ''
+    const globalApiKey = typeof body?.globalApiKey === 'string' ? body.globalApiKey.trim() : ''
+    if (!email || !globalApiKey) throw new CloudflareCredentialError(400, 'credential_required', '请输入 Cloudflare Email 和 Global API Key')
     const requestedAccountId = typeof body?.accountId === 'string' ? body.accountId.trim() || undefined : undefined
-    const validated = await validateCloudflareApiToken(apiToken, requestedAccountId, fetchImpl)
-    const updatedAt = await storeCloudflareApiTokenCredential(env, validated.credential)
+    const validated = await validateCloudflareCredential(email, globalApiKey, requestedAccountId, fetchImpl)
+    const updatedAt = await storeCloudflareCredential(env, validated.credential)
     await recordAudit(env, null, user.id, 'cloudflare.credentials.updated', {
-      credentialKind: 'api_token',
+      credentialKind: 'global_api_key',
+      email: validated.credential.email,
       accountIdConfigured: true,
       planId: validated.subscriptions.plan.id,
       planConfirmed: validated.subscriptions.plan.confirmed,
     })
-    const permissionStatus = await checkCloudflarePermissionStatus(validated.credential.apiToken, validated.credential.accountId, fetchImpl)
-    return json(publicCloudflareSettings({ kind: 'api_token', credential: validated.credential, updatedAt }, permissionStatus))
+    return json(publicCloudflareSettings({ kind: 'global_api_key', credential: validated.credential, updatedAt }))
   } catch (error) {
-    return cloudflareTokenErrorResponse(error)
-  }
-}
-
-async function loadSmtpSettings(env: Env): Promise<SmtpSettings | null> {
-  if (!env.SESSION_SECRET) return null
-  const stored = await env.DB.prepare('SELECT ciphertext, iv FROM smtp_settings WHERE id = ?').bind('primary').first<{ ciphertext: string; iv: string }>()
-  if (!stored) return null
-  try {
-    return parseSmtpSettings(JSON.parse(await decryptSecret(env.SESSION_SECRET, stored.ciphertext, stored.iv)))
-  } catch {
-    return null
+    return cloudflareCredentialErrorResponse(error)
   }
 }
 
@@ -873,20 +779,6 @@ async function loadSmtpSettings(env: Env): Promise<SmtpSettings | null> {
 async function readStoredSmtpSettings(env: Env, stored: { ciphertext: string; iv: string } | null): Promise<SmtpSettings | null> {
   if (!stored || !env.SESSION_SECRET) return null
   return parseSmtpSettings(JSON.parse(await decryptSecret(env.SESSION_SECRET, stored.ciphertext, stored.iv)))
-}
-
-async function sendWithRetry(send: () => Promise<void>, maxAttempts = 3): Promise<number> {
-  let lastError: unknown
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    try {
-      await send()
-      return attempt
-    } catch (error) {
-      lastError = error
-      if (attempt < maxAttempts) await wait(250 * 2 ** (attempt - 1))
-    }
-  }
-  throw lastError instanceof Error ? lastError : new Error('SMTP send failed')
 }
 
 export async function smtpSettingsApi(request: Request, env: Env, user: AuthenticatedUser): Promise<Response> {
@@ -980,19 +872,10 @@ export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser, fetc
   try {
     stored = await readStoredCloudflareCredential(env)
   } catch (error) {
-    return cloudflareTokenErrorResponse(error)
+    return cloudflareCredentialErrorResponse(error)
   }
   if (!stored) return json({ configured: false, cached: false })
-  if (stored.kind === 'legacy_oauth') {
-    return json({
-      configured: false,
-      cached: false,
-      legacyCredential: true,
-      error: 'Cloudflare 旧版 OAuth 凭据已停用，请重新录入 API Token',
-    })
-  }
-
-  // 凭据必须优先于缓存：删除 Token 或切换 Token 后，旧缓存不能继续伪装成已配置。
+  // 凭据必须优先于缓存：删除或切换凭据后，旧缓存不能继续伪装成已配置。
   const cached = await env.DB.prepare('SELECT value_json, expires_at, updated_at FROM usage_cache WHERE key = ? AND expires_at > ?').bind('cloudflare:workers', new Date().toISOString()).first<{ value_json: string; expires_at: string; updated_at: string }>()
   const cachedResult = cached ? parseCloudflareUsageCache(cached.value_json) : null
   if (cached && cachedResult) {
@@ -1000,27 +883,28 @@ export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser, fetc
     return json({ ...cachedResult, cached: true, updatedAt: cached.updated_at })
   }
 
-  const { apiToken, accountId } = stored.credential
+  const { accountId } = stored.credential
+  const auth = { email: stored.credential.email, globalApiKey: stored.credential.globalApiKey }
   const end = new Date()
   const start = new Date(end.getTime() - 24 * 60 * 60 * 1000)
 
   // 免费基线只能来自 subscriptions；不能从平台设置手填，也不能用旧缓存猜测。
   let subscriptions: Awaited<ReturnType<typeof readCloudflareSubscriptions>>
   try {
-    subscriptions = await readCloudflareSubscriptions(apiToken, accountId, fetchImpl)
+    subscriptions = await readCloudflareSubscriptions(auth, accountId, fetchImpl)
   } catch (error) {
     // Billing Read only supplies plan metadata and free limits; it must not block usage reads.
-    if (error instanceof CloudflareTokenError && error.status === 403) {
+    if (error instanceof CloudflareCredentialError && error.status === 403) {
       subscriptions = { subscriptions: [], plan: { id: null, name: null, free: false, confirmed: false } }
     } else {
-      return cloudflareTokenErrorResponse(error)
+      return cloudflareCredentialErrorResponse(error)
     }
   }
   const { limitSource, limits } = cloudflarePlanLimits(subscriptions.plan)
 
   const analyticsRequest = () => fetchImpl('https://api.cloudflare.com/client/v4/graphql', {
     method: 'POST',
-    headers: { authorization: `Bearer ${apiToken}`, 'content-type': 'application/json' },
+    headers: { 'X-Auth-Email': auth.email, 'X-Auth-Key': auth.globalApiKey, 'content-type': 'application/json' },
     body: JSON.stringify({ query: `query Usage($accountTag: String!, $start: Time!, $end: Time!) { viewer { accounts(filter: { accountTag: $accountTag }) { workersInvocationsAdaptive(limit: 1, filter: { datetime_geq: $start, datetime_leq: $end }) { sum { requests } } } } }`, variables: { accountTag: accountId, start: start.toISOString(), end: end.toISOString() } }),
   })
   let response: Response
@@ -1036,7 +920,7 @@ export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser, fetc
   const requests = payload.data?.viewer?.accounts?.[0]?.workersInvocationsAdaptive?.[0]?.sum?.requests ?? 0
   const resourceAnalyticsRequest = () => fetchImpl('https://api.cloudflare.com/client/v4/graphql', {
     method: 'POST',
-    headers: { authorization: `Bearer ${apiToken}`, 'content-type': 'application/json' },
+    headers: { 'X-Auth-Email': auth.email, 'X-Auth-Key': auth.globalApiKey, 'content-type': 'application/json' },
     body: JSON.stringify({ query: `query ResourceUsage($accountTag: String!, $start: Date, $end: Date) { viewer { accounts(filter: { accountTag: $accountTag }) { d1AnalyticsAdaptiveGroups(limit: 10000, filter: { date_geq: $start, date_leq: $end }) { sum { readQueries writeQueries rowsRead rowsWritten } } kvOperationsAdaptiveGroups(limit: 10000, filter: { date_geq: $start, date_leq: $end }) { sum { requests } dimensions { actionType } } durableObjectsInvocationsAdaptiveGroups(limit: 1000, filter: { date_geq: $start, date_leq: $end }) { sum { requests } } durableObjectsPeriodicGroups(limit: 1000, filter: { date_geq: $start, date_leq: $end }) { sum { cpuTime } } durableObjectsStorageGroups(limit: 1000, filter: { date_geq: $start, date_leq: $end }) { max { storedBytes } } } } }`, variables: { accountTag: accountId, start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) } }),
   })
   let resourceResponse: Response
@@ -1114,8 +998,8 @@ export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser, fetc
 }
 
 function cloudflareAnalyticsError(message: string, upstreamStatus?: number): Response {
-  if (upstreamStatus === 401) return json({ code: 'token_invalid', message: 'Cloudflare API Token 无效或已被撤销', upstreamStatus }, 401)
-  if (upstreamStatus === 403) return json({ code: 'token_permission_denied', message: 'Cloudflare API Token 缺少 Account Analytics Read 权限', upstreamStatus }, 403)
+  if (upstreamStatus === 401) return json({ code: 'credential_invalid', message: 'Cloudflare Email 或 Global API Key 无效', upstreamStatus }, 401)
+  if (upstreamStatus === 403) return json({ code: 'credential_denied', message: 'Cloudflare Global API Key 无权读取 Analytics', upstreamStatus }, 403)
   return json({ code: 'cloudflare_analytics_failed', message, ...(upstreamStatus === undefined ? {} : { upstreamStatus }) }, 502)
 }
 
@@ -1208,7 +1092,7 @@ export async function localUsageApi(env: Env, user: AuthenticatedUser, url = new
     env.DB.prepare('SELECT hostname AS id, hostname AS label, COUNT(*) AS requests FROM request_logs WHERE created_at >= ? AND (? IS NULL OR workspace_id = ?) GROUP BY hostname ORDER BY requests DESC, label ASC LIMIT 5').bind(since, workspaceId, workspaceId).all<UsageBreakdownEntry>(),
   ])
   return json({
-    // 本地用量来自本平台 D1 中的请求日志，与 Cloudflare 凭据/API Token 无关，未配置 Cloudflare 时也应返回。
+    // 本地用量来自本平台 D1 中的请求日志，与 Cloudflare 凭据无关，未配置 Cloudflare 时也应返回。
     source: 'platform_local',
     requestCount: usage?.request_count ?? 0,
     requestWindowStartedAt: usage?.request_window_started_at ?? null,
@@ -1255,6 +1139,7 @@ async function pluginDomainSuffix(env: Env): Promise<string> {
 async function isPluginHostname(hostname: string, env: Env): Promise<boolean> {
   const suffix = await pluginDomainSuffix(env)
   if (!hostname.endsWith(suffix) || hostname.length <= suffix.length) return false
-  return hostname !== await configuredConsoleHostname(env)
+  if (env.CONSOLE_HOSTNAME) return hostname !== env.CONSOLE_HOSTNAME.trim().toLowerCase()
+  return Boolean(await findPluginRoute(env, hostname))
 }
 

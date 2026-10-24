@@ -95,28 +95,21 @@ printf '[]\n' > "$TMP/state/secrets.json"
 
 first_output=$(run_deploy env)
 [[ -s "$TMP/state/secret_SESSION_SECRET" ]]
-[[ -s "$TMP/state/secret_SETUP_TOKEN" ]]
 session_secret=$(cat "$TMP/state/secret_SESSION_SECRET")
-setup_token=$(cat "$TMP/state/secret_SETUP_TOKEN")
 [[ ${#session_secret} -ge 24 ]]
-[[ ${#setup_token} -ge 24 ]]
-[[ $(tr -d '\n' < "$TMP/.wrangler/plugmesh-setup-token") == "$setup_token" ]]
-[[ $(stat -c %a "$TMP/.wrangler/plugmesh-setup-token") == 600 ]]
 [[ "$first_output" != *"$session_secret"* ]]
-[[ "$first_output" != *"$setup_token"* ]]
-[[ "$first_output" == *'在初始化页填写 GitHub OAuth App 的 Client ID、Client Secret 和管理员白名单'* ]]
-[[ "$first_output" == *'回调地址由当前访问域名自动生成，无需手填'* ]]
+[[ "$first_output" == *'在初始化页设置至少 12 个字符的管理员密码'* ]]
 [[ "$first_output" != *'再在 Cloudflare 配置一次 DNS / Worker Route'* ]]
-[[ "$first_output" != *'Client ID、Client Secret、回调地址'* ]]
+[[ "$first_output" != *'SETUP_TOKEN'* ]]
 grep -q 'test-database-id' "$TMP/wrangler.toml"
 [[ $(grep -c '^database_id = ' "$TMP/wrangler.toml") -eq 1 ]]
-! grep -Eq 'GITHUB|CLOUDFLARE_OAUTH|SMTP' "$TMP/state/puts.log"
+! grep -Eq 'GITHUB|CLOUDFLARE_OAUTH|SETUP_TOKEN|SMTP' "$TMP/state/puts.log"
 printf 'ok：首次部署生成基础设施密钥，且不输出明文\n'
 
 for deploy_file in scripts/deploy-worker.sh wrangler.toml .github/workflows/platform-ci.yml .github/workflows/release.yml; do
   ! grep -Eq '^(GITHUB_CLIENT|CLOUDFLARE_OAUTH_CLIENT|SMTP_|PLUGIN_DOMAIN_SUFFIX)[A-Z_]*[[:space:]]*[:=]' "$ROOT/$deploy_file"
 done
-printf 'ok：部署脚本、Wrangler 配置和 CI 均不包含 GitHub OAuth、Cloudflare Token、SMTP 或插件域名后缀业务配置\n'
+printf 'ok：部署脚本、Wrangler 配置和 CI 均不包含登录、Cloudflare 业务凭据、SMTP 或插件域名后缀配置\n'
 
 node - "$ROOT" <<'NODE'
 const assert = require('node:assert/strict')
@@ -135,8 +128,7 @@ for (const marker of [
   '`npm run build`',
   '`npm run deploy`',
   '不要填写任何业务变量',
-  '/setup` 页面会直接给出需要填进 GitHub OAuth App 的两个地址',
-  'Authorization callback URL',
+  '首次访问 `/setup` 设置管理员密码',
 ]) assert.ok(readme.includes(marker), `README 缺少最小部署约束：${marker}`)
 assert.ok(!readme.includes('OWNER/REPO'), 'README 仍包含未替换的仓库占位符')
 NODE
@@ -158,26 +150,14 @@ deploy_line=$(grep -nFx 'deploy --config wrangler.toml' "$TMP/state-local-fresh/
 [[ "$fresh_output" == *'准备 R2 存储桶 plugmesh-blobs'* ]]
 printf 'ok：本地首次部署自动创建 D1/R2、回填 ID、迁移后发布\n'
 
-printf '[{"name":"SESSION_SECRET"},{"name":"SETUP_TOKEN"}]\n' > "$TMP/state/secrets.json"
+printf '[{"name":"SESSION_SECRET"}]\n' > "$TMP/state/secrets.json"
 cp "$TMP/state/secret_SESSION_SECRET" "$TMP/session-before"
-cp "$TMP/state/secret_SETUP_TOKEN" "$TMP/setup-before"
 : > "$TMP/state/puts.log"
-rm "$TMP/.wrangler/plugmesh-setup-token"
 second_output=$(run_deploy env SESSION_SECRET='this-override-must-not-rotate-session-secret' 2>&1)
 cmp -s "$TMP/state/secret_SESSION_SECRET" "$TMP/session-before"
-cmp -s "$TMP/state/secret_SETUP_TOKEN" "$TMP/setup-before"
 [[ ! -s "$TMP/state/puts.log" ]]
 [[ "$second_output" == *'SESSION_SECRET 已存在，保持原值'* ]]
-[[ "$second_output" == *'远端已有 SETUP_TOKEN'* ]]
 printf 'ok：已有密钥不被环境变量或重跑覆盖\n'
-
-reset_token='0123456789abcdef01234567'
-reset_output=$(run_deploy env SETUP_TOKEN="$reset_token")
-[[ $(cat "$TMP/state/secret_SETUP_TOKEN") == "$reset_token" ]]
-[[ $(tr -d '\n' < "$TMP/.wrangler/plugmesh-setup-token") == "$reset_token" ]]
-[[ $(grep -c '^SETUP_TOKEN$' "$TMP/state/puts.log") -eq 1 ]]
-[[ "$reset_output" == *'已按显式 SETUP_TOKEN 重置初始化令牌'* ]]
-printf 'ok：显式 SETUP_TOKEN 可安全重置并更新本地文件\n'
 
 mkdir -p "$TMP/state-cloud"
 cp "$ROOT/wrangler.toml" "$TMP/wrangler.toml"
@@ -201,9 +181,8 @@ migration_line=$(grep -nFx 'd1 migrations apply DB --remote --config wrangler.to
 [[ $(grep -cFx 'deploy --config wrangler.toml --x-provision' "$TMP/state-cloud/commands.log") -eq 1 ]]
 ! grep -Eq '^(whoami|d1 create|r2 bucket)' "$TMP/state-cloud/commands.log"
 grep -Fxq 'SESSION_SECRET' "$TMP/state-cloud/puts.log"
-grep -Fxq 'SETUP_TOKEN' "$TMP/state-cloud/puts.log"
+! grep -Fxq 'SETUP_TOKEN' "$TMP/state-cloud/puts.log"
 [[ "$cloud_output" == *'首次发布 Worker plugmesh-worker（触发 D1 / R2 自动创建并绑定）'* ]]
-[[ "$cloud_output" == *'Cloudflare Workers Builds 初始化令牌：'* ]]
 printf 'ok：Workers Builds 缺少 dist 时先构建，并自动创建资源、迁移、生成密钥\n'
 
 mkdir -p "$TMP/state-cloud-prebuilt"

@@ -14,12 +14,8 @@ export default defineConfig(async () => ({
         outboundService: outboundStub,
         bindings: {
           PLUGIN_DOMAIN_SUFFIX: 'plugins.example.com',
+          CONSOLE_HOSTNAME: 'console.example.com',
           SESSION_SECRET: 'runtime-test-session-secret',
-          SETUP_TOKEN: 'runtime-setup-token',
-          GITHUB_CLIENT_ID: 'runtime-github-client',
-          GITHUB_CLIENT_SECRET: 'runtime-github-secret',
-          GITHUB_REDIRECT_URI: 'https://console.example.com/auth/github/callback',
-          GITHUB_ALLOWLIST: 'runtime-admin',
           TEST_MIGRATIONS: await readD1Migrations(path.join(root, 'worker/migrations')),
         },
       },

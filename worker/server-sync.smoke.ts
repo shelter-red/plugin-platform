@@ -61,7 +61,6 @@ const workspace: Workspace = { id: 'ws_default', name: '默认工作区', slug: 
 
 const user: AuthenticatedUser = {
   id: 'user-1',
-  github_id: 'github-1',
   email: 'user@example.test',
   display_name: 'User',
   role: 'member',

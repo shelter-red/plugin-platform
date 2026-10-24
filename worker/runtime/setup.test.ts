@@ -14,7 +14,7 @@ function submitSetup(password = 'correct-horse-battery', confirmPassword = passw
 }
 
 test('未配置密码时所有管理入口都进入 setup', async () => {
-  const page = await SELF.fetch('https://console.example.com/')
+  const page = await SELF.fetch('https://console.example.com/', { redirect: 'manual' })
   expect(page.status).toBe(302)
   expect(page.headers.get('location')).toBe('https://console.example.com/setup')
   const api = await SELF.fetch('https://console.example.com/api/me')
@@ -60,4 +60,28 @@ test('管理员密码只保存为派生结果，不保存明文', async () => {
   expect(stored?.password_hash).toBeTruthy()
   expect(stored?.password_salt).toBeTruthy()
   expect(stored?.password_hash).not.toContain('correct-horse-battery')
+})
+
+test('修改管理员密码会校验当前密码并撤销全部旧会话', async () => {
+  await setAdminPassword(testEnv, 'correct-horse-battery')
+  const login = await SELF.fetch('https://console.example.com/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'correct-horse-battery' }) })
+  const cookie = login.headers.get('set-cookie')?.split(';')[0] ?? ''
+
+  const rejected = await SELF.fetch('https://console.example.com/api/settings/password', {
+    method: 'PUT',
+    headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ currentPassword: 'wrong-password', newPassword: 'new-correct-horse-battery', confirmPassword: 'new-correct-horse-battery' }),
+  })
+  expect(rejected.status).toBe(401)
+  expect(await rejected.json()).toMatchObject({ code: 'current_password_invalid', field: 'currentPassword' })
+
+  const changed = await SELF.fetch('https://console.example.com/api/settings/password', {
+    method: 'PUT',
+    headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ currentPassword: 'correct-horse-battery', newPassword: 'new-correct-horse-battery', confirmPassword: 'new-correct-horse-battery' }),
+  })
+  expect(changed.status).toBe(204)
+  expect((await SELF.fetch('https://console.example.com/api/me', { headers: { cookie } })).status).toBe(401)
+  expect((await SELF.fetch('https://console.example.com/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'correct-horse-battery' }) })).status).toBe(401)
+  expect((await SELF.fetch('https://console.example.com/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'new-correct-horse-battery' }) })).status).toBe(204)
 })

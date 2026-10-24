@@ -129,25 +129,6 @@ test('维护模式激活时向管理员发送通知并记录失败重试', { tim
   setPlatformSettingsCache(defaultPlatformSettings)
 })
 
-test('SMTP 不可达时邀请仍然创建并记录邮件失败审计', { timeout: 30_000 }, async () => {
-  await api('/api/settings/smtp', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify(settings) })
-  const created = await api('/api/invites', ADMIN_TOKEN, { method: 'POST', body: JSON.stringify({ email: 'invitee@example.com' }) })
-  expect(created.status).toBe(201)
-  const body = await created.json() as { id: string; inviteUrl: string; emailSent: boolean | null }
-  expect(body.emailSent).toBe(false)
-  expect(body.inviteUrl).toContain('/auth/github/start?invite=')
-
-  const invite = await testEnv.DB.prepare('SELECT status, email FROM invites WHERE id = ?').bind(body.id).first<{ status: string; email: string }>()
-  expect(invite?.status).toBe('pending')
-  expect(invite?.email).toBe('invitee@example.com')
-  const audit = await testEnv.DB.prepare("SELECT action, detail_json FROM audit_log WHERE action IN ('invite.email.failed', 'invite.created') ORDER BY rowid").all<{ action: string; detail_json: string }>()
-  expect(audit.results.map((row) => row.action)).toEqual(['invite.email.failed', 'invite.created'])
-  const failed = JSON.parse(audit.results[0]!.detail_json) as { attempts: number; to: string }
-  expect(failed.attempts).toBe(3)
-  expect(failed.to).toBe('invitee@example.com')
-  expect(audit.results.some((row) => row.detail_json.includes(PASSWORD))).toBe(false)
-})
-
 test('SMTP 测试发送经真实 SMTP 会话投递', { timeout: 20_000 }, async () => {
   expect((await api('/api/settings/smtp', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify(smtpSinkSettings) })).status).toBe(200)
   const sent = await api('/api/settings/smtp/test', ADMIN_TOKEN, { method: 'POST', body: JSON.stringify({ to: 'ops@example.com' }) })
@@ -188,14 +169,6 @@ test('SMTP 凭据被服务器拒绝时返回 502 且不泄漏密码', { timeout:
   const audit = await testEnv.DB.prepare("SELECT detail_json FROM audit_log WHERE action LIKE 'smtp.test.%'").all<{ detail_json: string }>()
   expect(audit.results).toHaveLength(1)
   expect(audit.results[0]!.detail_json).not.toContain('wrong-sink-password')
-})
-
-test('邀请邮件经真实 SMTP 会话投递', { timeout: 20_000 }, async () => {
-  await api('/api/settings/smtp', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify(smtpSinkSettings) })
-  const created = await api('/api/invites', ADMIN_TOKEN, { method: 'POST', body: JSON.stringify({ email: 'invitee@example.com' }) })
-  expect(created.status).toBe(201)
-  const body = await created.json() as { emailSent: boolean | null }
-  expect(body.emailSent).toBe(true)
 })
 
 test('维护模式通知经真实 SMTP 会话投递', { timeout: 30_000 }, async () => {

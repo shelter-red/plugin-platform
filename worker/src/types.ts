@@ -17,12 +17,8 @@ export interface Env {
   PLUGIN_BRIDGE: DurableObjectNamespace
   ASSETS?: Fetcher
   PLUGIN_DOMAIN_SUFFIX?: string
-  GITHUB_CLIENT_ID?: string
-  GITHUB_CLIENT_SECRET?: string
-  GITHUB_REDIRECT_URI?: string
-  GITHUB_ALLOWLIST?: string
+  CONSOLE_HOSTNAME?: string
   SESSION_SECRET?: string
-  SETUP_TOKEN?: string
 }
 
 export type WorkspaceRole = 'owner' | 'operator' | 'viewer'
@@ -40,14 +36,12 @@ export interface WorkspaceMember {
   user_id: string
   display_name: string
   email: string
-  github_id: string
   role: WorkspaceRole
   created_at: string
 }
 
 export interface AuthenticatedUser {
   id: string
-  github_id: string
   email: string
   display_name: string
   role: 'super_admin' | 'member'

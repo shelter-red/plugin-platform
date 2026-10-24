@@ -1,55 +1,30 @@
 import { decryptSecret, encryptSecret } from './secrets'
 import type { CloudflarePlanSummary, CloudflareUsageLimits, Env } from './types'
 
-/** 平台固定使用的 Token 权限清单；保存接口不接受自定义 scope。 */
-export const CLOUDFLARE_MONITOR_PERMISSIONS = [
-  'Account Settings Read',
-  'Account Analytics Read',
-  'Billing Read',
-] as const
-
-export const CLOUDFLARE_DOMAIN_PERMISSIONS = [
-  'Zone Read',
-  'DNS Write',
-  'Workers Routes Edit',
-] as const
-
-export const CLOUDFLARE_API_TOKEN_PERMISSIONS = [...CLOUDFLARE_MONITOR_PERMISSIONS, ...CLOUDFLARE_DOMAIN_PERMISSIONS] as const
-
-export type CloudflarePermissionState = 'allowed' | 'denied' | 'unknown'
-export type CloudflarePermissionStatus = Record<(typeof CLOUDFLARE_API_TOKEN_PERMISSIONS)[number], CloudflarePermissionState>
-
-export type CloudflareTokenErrorCode =
-  | 'token_required'
-  | 'token_invalid'
-  | 'token_permission_denied'
+export type CloudflareCredentialErrorCode =
+  | 'credential_required'
+  | 'credential_invalid'
+  | 'credential_denied'
   | 'account_missing'
   | 'account_ambiguous'
   | 'cloudflare_upstream_error'
-  | 'domain_token_required'
   | 'domain_zone_not_found'
   | 'domain_record_conflict'
   | 'domain_route_conflict'
   | 'secret_missing'
   | 'credential_unreadable'
 
-export class CloudflareTokenError extends Error {
+export class CloudflareCredentialError extends Error {
   constructor(
     readonly status: number,
-    readonly code: CloudflareTokenErrorCode,
+    readonly code: CloudflareCredentialErrorCode,
     message: string,
     readonly upstreamStatus?: number,
+    readonly accounts?: CloudflareAccount[],
   ) {
     super(message)
-    this.name = 'CloudflareTokenError'
+    this.name = 'CloudflareCredentialError'
   }
-}
-
-export interface CloudflareTokenVerification {
-  id: string | null
-  status: 'active'
-  notBefore: string | null
-  expiresOn: string | null
 }
 
 export interface CloudflareAccount {
@@ -97,19 +72,19 @@ export interface CloudflareSubscriptionResult {
   plan: CloudflarePlanSummary
 }
 
-export interface CloudflareApiTokenCredential {
-  kind: 'api_token'
-  apiToken: string
+export interface CloudflareGlobalApiKeyCredential {
+  kind: 'global_api_key'
+  email: string
+  globalApiKey: string
   accountId: string
   verifiedAt: string
 }
 
 export type StoredCloudflareCredential =
-  | { kind: 'api_token'; credential: CloudflareApiTokenCredential; updatedAt: string }
-  | { kind: 'legacy_oauth'; accountId: string | null; updatedAt: string }
+  | { kind: 'global_api_key'; credential: CloudflareGlobalApiKeyCredential; updatedAt: string }
 
-export interface ValidatedCloudflareToken {
-  credential: CloudflareApiTokenCredential
+export interface ValidatedCloudflareCredential {
+  credential: CloudflareGlobalApiKeyCredential
   account: CloudflareAccount
   subscriptions: CloudflareSubscriptionResult
 }
@@ -166,16 +141,21 @@ const API_ORIGIN = 'https://api.cloudflare.com/client/v4'
 const ACCOUNTS_PER_PAGE = 50
 const MAX_ACCOUNT_PAGES = 100
 
-function upstreamError(message: string, upstreamStatus?: number): CloudflareTokenError {
-  return new CloudflareTokenError(502, 'cloudflare_upstream_error', message, upstreamStatus)
+function upstreamError(message: string, upstreamStatus?: number): CloudflareCredentialError {
+  return new CloudflareCredentialError(502, 'cloudflare_upstream_error', message, upstreamStatus)
 }
 
-function invalidTokenError(message = 'Cloudflare API Token 无效或已被撤销'): CloudflareTokenError {
-  return new CloudflareTokenError(401, 'token_invalid', message)
+function invalidCredentialError(message = 'Cloudflare Email 或 Global API Key 无效'): CloudflareCredentialError {
+  return new CloudflareCredentialError(401, 'credential_invalid', message)
 }
 
-function permissionDeniedError(message = 'Cloudflare API Token 缺少所需权限'): CloudflareTokenError {
-  return new CloudflareTokenError(403, 'token_permission_denied', message)
+function credentialDeniedError(message = 'Cloudflare Global API Key 无权访问该 Cloudflare 资源'): CloudflareCredentialError {
+  return new CloudflareCredentialError(403, 'credential_denied', message)
+}
+
+export interface CloudflareAuth {
+  email: string
+  globalApiKey: string
 }
 
 async function parseJson(response: Response): Promise<unknown> {
@@ -194,29 +174,19 @@ function envelopeErrors(payload: unknown): string | null {
 
 type CloudflareRequestStage = 'verify' | 'accounts' | 'subscriptions' | 'zones' | 'dns' | 'routes'
 
-function requestError(stage: CloudflareRequestStage, response: Response, payload: unknown): CloudflareTokenError {
+function requestError(stage: CloudflareRequestStage, response: Response, payload: unknown): CloudflareCredentialError {
   const detail = envelopeErrors(payload) ?? `Cloudflare ${stage} 请求失败（HTTP ${response.status}）`
-  if (response.status === 401) return invalidTokenError(detail)
-  if (response.status === 403) {
-    const permissionHint = {
-      accounts: '缺少 Account Settings Read：无法读取 Cloudflare 账号列表',
-      subscriptions: '缺少 Billing Read：无法读取 Cloudflare 订阅和套餐',
-      zones: '缺少 Zone Read：无法读取插件域名对应的 Cloudflare Zone',
-      dns: '缺少 DNS Write：无法读取或写入插件域名的 DNS 记录',
-      routes: '缺少 Workers Routes Edit：无法读取或修改 Worker Route',
-      verify: 'Token 验证接口拒绝了请求，请确认 Token 有效',
-    }[stage]
-    return permissionDeniedError(`${permissionHint}：${detail}`)
-  }
+  if (response.status === 401) return invalidCredentialError(detail)
+  if (response.status === 403) return credentialDeniedError(detail)
   if (stage === 'subscriptions' && response.status === 404) {
-    return new CloudflareTokenError(409, 'account_missing', '指定账号不可见或不存在')
+    return new CloudflareCredentialError(409, 'account_missing', '指定账号不可见或不存在')
   }
   return upstreamError(detail, response.status)
 }
 
 async function requestCloudflare<T>(
   stage: CloudflareRequestStage,
-  apiToken: string,
+  auth: CloudflareAuth,
   path: string,
   fetchImpl: Fetcher,
   init: RequestInit = {},
@@ -225,7 +195,7 @@ async function requestCloudflare<T>(
   try {
     response = await fetchImpl(`${API_ORIGIN}${path}`, {
       ...init,
-      headers: { authorization: `Bearer ${apiToken}`, accept: 'application/json', ...(init.headers ?? {}) },
+      headers: { 'X-Auth-Email': auth.email, 'X-Auth-Key': auth.globalApiKey, accept: 'application/json', ...(init.headers ?? {}) },
     })
   } catch {
     throw upstreamError(`无法连接 Cloudflare ${stage} 接口`)
@@ -236,28 +206,19 @@ async function requestCloudflare<T>(
   return payload as CloudflareEnvelope<T>
 }
 
-export async function verifyCloudflareApiToken(apiToken: string, fetchImpl: Fetcher = fetch): Promise<CloudflareTokenVerification> {
-  const token = apiToken.trim()
-  if (!token) throw new CloudflareTokenError(400, 'token_required', '请输入 Cloudflare API Token')
-  const payload = await requestCloudflare<{ id?: string; status?: string; not_before?: string; expires_on?: string }>('verify', token, '/user/tokens/verify', fetchImpl)
-  if (payload.success === false || payload.result?.status !== 'active') {
-    throw invalidTokenError(envelopeErrors(payload) ?? 'Cloudflare API Token 未处于 active 状态')
-  }
-  return {
-    id: typeof payload.result.id === 'string' ? payload.result.id : null,
-    status: 'active',
-    notBefore: typeof payload.result.not_before === 'string' ? payload.result.not_before : null,
-    expiresOn: typeof payload.result.expires_on === 'string' ? payload.result.expires_on : null,
-  }
+export async function verifyCloudflareGlobalApiKey(auth: CloudflareAuth, fetchImpl: Fetcher = fetch): Promise<void> {
+  if (!auth.email.trim() || !auth.globalApiKey.trim()) throw new CloudflareCredentialError(400, 'credential_required', '请输入 Cloudflare Email 和 Global API Key')
+  const payload = await requestCloudflare<{ id?: string }>('verify', auth, '/user', fetchImpl)
+  if (payload.success === false || !payload.result) throw invalidCredentialError(envelopeErrors(payload) ?? 'Cloudflare Global API Key 验证失败')
 }
 
 /** 读取全部账号页；不能只取第一条，否则多账号会被误判为唯一账号。 */
-export async function listCloudflareAccounts(apiToken: string, fetchImpl: Fetcher = fetch): Promise<CloudflareAccount[]> {
+export async function listCloudflareAccounts(auth: CloudflareAuth, fetchImpl: Fetcher = fetch): Promise<CloudflareAccount[]> {
   const accounts: CloudflareAccount[] = []
   for (let page = 1; page <= MAX_ACCOUNT_PAGES; page += 1) {
     const payload = await requestCloudflare<CloudflareAccountPayload[]>(
       'accounts',
-      apiToken,
+      auth,
       `/accounts?page=${page}&per_page=${ACCOUNTS_PER_PAGE}`,
       fetchImpl,
     )
@@ -285,24 +246,24 @@ export function selectCloudflareAccountId(accounts: CloudflareAccount[], request
   const requested = requestedAccountId?.trim()
   if (requested) {
     const matched = accounts.find((account) => account.id.toLowerCase() === requested.toLowerCase())
-    if (!matched) throw new CloudflareTokenError(409, 'account_missing', '指定 Account ID 不可见或不存在')
+    if (!matched) throw new CloudflareCredentialError(409, 'account_missing', '指定 Account ID 不可见或不存在')
     return matched.id
   }
-  if (accounts.length === 0) throw new CloudflareTokenError(409, 'account_missing', 'Token 没有可见的 Cloudflare 账号')
+  if (accounts.length === 0) throw new CloudflareCredentialError(409, 'account_missing', 'Global API Key 没有可见的 Cloudflare 账号')
   if (accounts.length > 1) {
-    throw new CloudflareTokenError(409, 'account_ambiguous', 'Token 可见多个账号，请填写 Account ID')
+    throw new CloudflareCredentialError(409, 'account_ambiguous', 'Global API Key 可见多个账号，请选择目标账号', undefined, accounts)
   }
   return accounts[0].id
 }
 
 export async function readCloudflareSubscriptions(
-  apiToken: string,
+  auth: CloudflareAuth,
   accountId: string,
   fetchImpl: Fetcher = fetch,
 ): Promise<CloudflareSubscriptionResult> {
   const payload = await requestCloudflare<CloudflareSubscriptionPayload[]>(
     'subscriptions',
-    apiToken,
+    auth,
     `/accounts/${encodeURIComponent(accountId)}/subscriptions`,
     fetchImpl,
   )
@@ -329,91 +290,30 @@ export async function readCloudflareSubscriptions(
   }
 }
 
-/** 保存前完整验证 Token、账号可见性和 Billing Read 权限。 */
-export async function validateCloudflareApiToken(
-  apiToken: string,
+/** 保存前完整验证 Global API Key、Email、账号可见性和订阅读取。 */
+export async function validateCloudflareCredential(
+  email: string,
+  globalApiKey: string,
   requestedAccountId?: string,
   fetchImpl: Fetcher = fetch,
-): Promise<ValidatedCloudflareToken> {
-  const token = apiToken.trim()
-  await verifyCloudflareApiToken(token, fetchImpl)
-  const accounts = await listCloudflareAccounts(token, fetchImpl)
+): Promise<ValidatedCloudflareCredential> {
+  const auth = { email: email.trim(), globalApiKey: globalApiKey.trim() }
+  await verifyCloudflareGlobalApiKey(auth, fetchImpl)
+  const accounts = await listCloudflareAccounts(auth, fetchImpl)
   const accountId = selectCloudflareAccountId(accounts, requestedAccountId)
   const account = accounts.find((candidate) => candidate.id === accountId)!
-  const subscriptions = await readCloudflareSubscriptions(token, accountId, fetchImpl)
+  const subscriptions = await readCloudflareSubscriptions(auth, accountId, fetchImpl)
   return {
-    credential: { kind: 'api_token', apiToken: token, accountId, verifiedAt: new Date().toISOString() },
+    credential: { kind: 'global_api_key', email: auth.email, globalApiKey: auth.globalApiKey, accountId, verifiedAt: new Date().toISOString() },
     account,
     subscriptions,
   }
 }
 
-async function probePermission(run: () => Promise<unknown>): Promise<CloudflarePermissionState> {
-  try {
-    await run()
-    return 'allowed'
-  } catch (error) {
-    if (error instanceof CloudflareTokenError && (error.status === 401 || error.status === 403)) return 'denied'
-    return 'unknown'
-  }
-}
-
-async function probeAnalyticsPermission(apiToken: string, accountId: string, fetchImpl: Fetcher): Promise<CloudflarePermissionState> {
-  try {
-    const response = await fetchImpl(`${API_ORIGIN}/graphql`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${apiToken}`, accept: 'application/json', 'content-type': 'application/json' },
-      body: JSON.stringify({ query: 'query PermissionProbe($accountTag: String!) { viewer { accounts(filter: { accountTag: $accountTag }) { accountTag } } }', variables: { accountTag: accountId } }),
-    })
-    const payload = await parseJson(response) as { errors?: unknown[] } | null
-    if (response.status === 401 || response.status === 403 || (response.ok && Array.isArray(payload?.errors) && payload.errors.length > 0)) return 'denied'
-    return response.ok ? 'allowed' : 'unknown'
-  } catch {
-    return 'unknown'
-  }
-}
-
-async function probeMutationPermission(apiToken: string, path: string, fetchImpl: Fetcher): Promise<CloudflarePermissionState> {
-  try {
-    // An empty request is rejected before mutation, but still passes Cloudflare's permission check.
-    const response = await fetchImpl(`${API_ORIGIN}${path}`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${apiToken}`, accept: 'application/json', 'content-type': 'application/json' },
-      body: '{}',
-    })
-    if (response.status === 401 || response.status === 403) return 'denied'
-    if (response.status === 400 || response.status === 422 || response.ok) return 'allowed'
-    return 'unknown'
-  } catch {
-    return 'unknown'
-  }
-}
-
-/** 逐项验证当前 Token 的实际 API 能力；Cloudflare 不提供直接读取 policy 的接口。 */
-export async function checkCloudflarePermissionStatus(
-  apiToken: string,
-  accountId: string,
-  fetchImpl: Fetcher = fetch,
-): Promise<CloudflarePermissionStatus> {
-  const status = Object.fromEntries(CLOUDFLARE_API_TOKEN_PERMISSIONS.map((permission) => [permission, 'unknown'])) as CloudflarePermissionStatus
-  status['Account Settings Read'] = await probePermission(() => listCloudflareAccounts(apiToken, fetchImpl))
-  status['Billing Read'] = await probePermission(() => readCloudflareSubscriptions(apiToken, accountId, fetchImpl))
-  status['Account Analytics Read'] = await probeAnalyticsPermission(apiToken, accountId, fetchImpl)
-
-  let zones: CloudflareZone[] = []
-  status['Zone Read'] = await probePermission(async () => { zones = await listCloudflareZones(apiToken, accountId, fetchImpl) })
-  const zoneId = zones[0]?.id
-  if (zoneId) {
-    status['DNS Write'] = await probeMutationPermission(apiToken, `/zones/${encodeURIComponent(zoneId)}/dns_records`, fetchImpl)
-    status['Workers Routes Edit'] = await probeMutationPermission(apiToken, `/zones/${encodeURIComponent(zoneId)}/workers/routes`, fetchImpl)
-  }
-  return status
-}
-
-async function listCloudflareZones(apiToken: string, accountId: string, fetchImpl: Fetcher): Promise<CloudflareZone[]> {
+async function listCloudflareZones(auth: CloudflareAuth, accountId: string, fetchImpl: Fetcher): Promise<CloudflareZone[]> {
   const zones: CloudflareZone[] = []
   for (let page = 1; page <= MAX_ACCOUNT_PAGES; page += 1) {
-    const payload = await requestCloudflare<CloudflareZone[]>('zones', apiToken, `/zones?account.id=${encodeURIComponent(accountId)}&status=active&page=${page}&per_page=${ACCOUNTS_PER_PAGE}`, fetchImpl)
+    const payload = await requestCloudflare<CloudflareZone[]>('zones', auth, `/zones?account.id=${encodeURIComponent(accountId)}&status=active&page=${page}&per_page=${ACCOUNTS_PER_PAGE}`, fetchImpl)
     if (payload.success === false || !Array.isArray(payload.result)) throw upstreamError(envelopeErrors(payload) ?? 'Cloudflare zones 响应结构无效')
     zones.push(...payload.result.filter((zone): zone is CloudflareZone => typeof zone?.id === 'string' && typeof zone.name === 'string' && zone.status === 'active'))
     const totalPages = payload.result_info?.total_pages
@@ -426,23 +326,23 @@ function selectCloudflareZone(zones: CloudflareZone[], hostname: string): Cloudf
   const matched = zones
     .filter((zone) => hostname === zone.name || hostname.endsWith(`.${zone.name}`))
     .sort((left, right) => right.name.length - left.name.length)[0]
-  if (!matched) throw new CloudflareTokenError(409, 'domain_zone_not_found', `Cloudflare 账号中没有覆盖 ${hostname} 的 active Zone`)
+  if (!matched) throw new CloudflareCredentialError(409, 'domain_zone_not_found', `Cloudflare 账号中没有覆盖 ${hostname} 的 active Zone`)
   return matched
 }
 
-async function configureCloudflareDnsRecord(apiToken: string, zoneId: string, hostname: string, fetchImpl: Fetcher): Promise<string> {
+async function configureCloudflareDnsRecord(auth: CloudflareAuth, zoneId: string, hostname: string, fetchImpl: Fetcher): Promise<string> {
   const query = `/zones/${encodeURIComponent(zoneId)}/dns_records?name=${encodeURIComponent(hostname)}`
-  const listed = await requestCloudflare<CloudflareDnsRecord[]>('dns', apiToken, query, fetchImpl)
+  const listed = await requestCloudflare<CloudflareDnsRecord[]>('dns', auth, query, fetchImpl)
   if (listed.success === false || !Array.isArray(listed.result)) throw upstreamError(envelopeErrors(listed) ?? 'Cloudflare DNS 响应结构无效')
   const existing = listed.result[0]
   const desired = { type: 'A', name: hostname, content: '192.0.2.1', ttl: 1, proxied: true, comment: 'Managed by Plugmesh' }
   if (existing && (existing.type !== 'A' || (existing.comment && existing.comment !== 'Managed by Plugmesh'))) {
-    throw new CloudflareTokenError(409, 'domain_record_conflict', `${hostname} 已存在非 Plugmesh DNS 记录，未覆盖现有记录`)
+    throw new CloudflareCredentialError(409, 'domain_record_conflict', `${hostname} 已存在非 Plugmesh DNS 记录，未覆盖现有记录`)
   }
   const path = existing
     ? `/zones/${encodeURIComponent(zoneId)}/dns_records/${encodeURIComponent(existing.id)}`
     : `/zones/${encodeURIComponent(zoneId)}/dns_records`
-  const saved = await requestCloudflare<CloudflareDnsRecord>('dns', apiToken, path, fetchImpl, {
+  const saved = await requestCloudflare<CloudflareDnsRecord>('dns', auth, path, fetchImpl, {
     method: existing ? 'PUT' : 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(desired),
@@ -451,17 +351,17 @@ async function configureCloudflareDnsRecord(apiToken: string, zoneId: string, ho
   return saved.result.id
 }
 
-async function configureCloudflareWorkerRoute(apiToken: string, zoneId: string, routePattern: string, fetchImpl: Fetcher): Promise<string> {
-  const listed = await requestCloudflare<CloudflareWorkerRoute[]>('routes', apiToken, `/zones/${encodeURIComponent(zoneId)}/workers/routes`, fetchImpl)
+async function configureCloudflareWorkerRoute(auth: CloudflareAuth, zoneId: string, routePattern: string, fetchImpl: Fetcher): Promise<string> {
+  const listed = await requestCloudflare<CloudflareWorkerRoute[]>('routes', auth, `/zones/${encodeURIComponent(zoneId)}/workers/routes`, fetchImpl)
   if (listed.success === false || !Array.isArray(listed.result)) throw upstreamError(envelopeErrors(listed) ?? 'Cloudflare Worker Route 响应结构无效')
   const existing = listed.result.find((route) => route.pattern === routePattern)
   if (existing?.script && existing.script !== 'plugmesh-worker') {
-    throw new CloudflareTokenError(409, 'domain_route_conflict', `${routePattern} 已绑定其他 Worker，未覆盖现有路由`)
+    throw new CloudflareCredentialError(409, 'domain_route_conflict', `${routePattern} 已绑定其他 Worker，未覆盖现有路由`)
   }
   const path = existing?.id
     ? `/zones/${encodeURIComponent(zoneId)}/workers/routes/${encodeURIComponent(existing.id)}`
     : `/zones/${encodeURIComponent(zoneId)}/workers/routes`
-  const saved = await requestCloudflare<CloudflareWorkerRoute>('routes', apiToken, path, fetchImpl, {
+  const saved = await requestCloudflare<CloudflareWorkerRoute>('routes', auth, path, fetchImpl, {
     method: existing?.id ? 'PUT' : 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ pattern: routePattern, script: 'plugmesh-worker' }),
@@ -470,9 +370,9 @@ async function configureCloudflareWorkerRoute(apiToken: string, zoneId: string, 
   return saved.result.id
 }
 
-/** 用已保存的 API Token 把插件通配域名接到当前 Worker。 */
+/** 用已保存的 Global API Key 把插件通配域名接到当前 Worker。 */
 export async function configureCloudflareDomain(
-  apiToken: string,
+  auth: CloudflareAuth,
   accountId: string,
   domainSuffix: string,
   fetchImpl: Fetcher = fetch,
@@ -480,9 +380,9 @@ export async function configureCloudflareDomain(
   const domain = domainSuffix.trim().toLowerCase().replace(/^\.+/, '')
   const hostname = `*.${domain}`
   const routePattern = `${hostname}/*`
-  const zone = selectCloudflareZone(await listCloudflareZones(apiToken.trim(), accountId, fetchImpl), domain)
-  await configureCloudflareDnsRecord(apiToken.trim(), zone.id, hostname, fetchImpl)
-  await configureCloudflareWorkerRoute(apiToken.trim(), zone.id, routePattern, fetchImpl)
+  const zone = selectCloudflareZone(await listCloudflareZones(auth, accountId, fetchImpl), domain)
+  await configureCloudflareDnsRecord(auth, zone.id, hostname, fetchImpl)
+  await configureCloudflareWorkerRoute(auth, zone.id, routePattern, fetchImpl)
   return { zoneId: zone.id, zoneName: zone.name, hostname, routePattern }
 }
 
@@ -491,8 +391,8 @@ export function maskCloudflareAccountId(accountId: string | null | undefined): s
   return accountId.length <= 8 ? accountId : `${accountId.slice(0, 4)}...${accountId.slice(-4)}`
 }
 
-export async function storeCloudflareCredential(env: Env, credential: CloudflareApiTokenCredential): Promise<string> {
-  if (!env.SESSION_SECRET) throw new CloudflareTokenError(503, 'secret_missing', 'SESSION_SECRET 未配置，无法安全保存 Token')
+export async function storeCloudflareCredential(env: Env, credential: CloudflareGlobalApiKeyCredential): Promise<string> {
+  if (!env.SESSION_SECRET) throw new CloudflareCredentialError(503, 'secret_missing', 'SESSION_SECRET 未配置，无法安全保存 Cloudflare 凭据')
   const sealed = await encryptSecret(env.SESSION_SECRET, JSON.stringify(credential))
   const updatedAt = new Date().toISOString()
   await env.DB.batch([
@@ -502,37 +402,31 @@ export async function storeCloudflareCredential(env: Env, credential: Cloudflare
   return updatedAt
 }
 
-/** 新密文返回 api_token；旧 OAuth 密文只识别类型，不返回 access/refresh token。 */
+/** 读取已保存的 Global API Key 密文；任何旧格式都要求重新配置。 */
 export async function readStoredCloudflareCredential(env: Env): Promise<StoredCloudflareCredential | null> {
-  if (!env.SESSION_SECRET) throw new CloudflareTokenError(503, 'secret_missing', 'SESSION_SECRET 未配置，无法读取凭据')
+  if (!env.SESSION_SECRET) throw new CloudflareCredentialError(503, 'secret_missing', 'SESSION_SECRET 未配置，无法读取 Cloudflare 凭据')
   const row = await env.DB.prepare('SELECT ciphertext, iv, updated_at FROM cloudflare_credentials WHERE id = ?').bind('primary').first<{ ciphertext: string; iv: string; updated_at: string }>()
   if (!row) return null
   let value: Record<string, unknown>
   try {
     value = JSON.parse(await decryptSecret(env.SESSION_SECRET, row.ciphertext, row.iv)) as Record<string, unknown>
   } catch {
-    throw new CloudflareTokenError(500, 'credential_unreadable', 'Cloudflare 凭据无法解密')
+    throw new CloudflareCredentialError(500, 'credential_unreadable', 'Cloudflare 凭据无法解密')
   }
-  if (value.kind === 'api_token' && typeof value.apiToken === 'string' && value.apiToken && typeof value.accountId === 'string' && value.accountId) {
+  if (value.kind === 'global_api_key' && typeof value.email === 'string' && value.email && typeof value.globalApiKey === 'string' && value.globalApiKey && typeof value.accountId === 'string' && value.accountId) {
     return {
-      kind: 'api_token',
+      kind: 'global_api_key',
       credential: {
-        kind: 'api_token',
-        apiToken: value.apiToken,
+        kind: 'global_api_key',
+        email: value.email,
+        globalApiKey: value.globalApiKey,
         accountId: value.accountId,
         verifiedAt: typeof value.verifiedAt === 'string' ? value.verifiedAt : row.updated_at,
       },
       updatedAt: row.updated_at,
     }
   }
-  if (typeof value.accessToken === 'string' || typeof value.refreshToken === 'string') {
-    return {
-      kind: 'legacy_oauth',
-      accountId: typeof value.accountId === 'string' && value.accountId ? value.accountId : null,
-      updatedAt: row.updated_at,
-    }
-  }
-  throw new CloudflareTokenError(500, 'credential_unreadable', 'Cloudflare 凭据格式无法识别')
+  throw new CloudflareCredentialError(409, 'credential_unreadable', 'Cloudflare 凭据格式已停用，请重新配置 Email 和 Global API Key')
 }
 
 export async function deleteStoredCloudflareCredential(env: Env): Promise<void> {

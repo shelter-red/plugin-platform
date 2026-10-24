@@ -10,24 +10,14 @@ const platformSettings = {
   quotas: { activeConnections: 200, r2Bytes: 1_073_741_824, r2Objects: 1_000 },
 }
 
-const oauthSettings = {
-  github: { configured: true, clientId: 'mock-github-client', redirectUri: 'https://console.example.test/auth/github/callback', allowlist: 'admin', secretConfigured: true, source: 'environment' },
-  sessionSecretConfigured: true,
-  updatedAt: null,
-  unreadable: false,
-}
-
-const cloudflarePermissions = ['Account Settings Read', 'Account Analytics Read', 'Billing Read', 'Zone Read', 'DNS Write', 'Workers Routes Edit']
 const cloudflareSettings = {
   configured: false,
   credentialKind: null,
   accountIdConfigured: false,
   accountId: null,
-  permissions: cloudflarePermissions,
-  permissionStatus: Object.fromEntries(cloudflarePermissions.map((permission) => [permission, 'unknown'])),
+  email: null,
   updatedAt: null,
   lastVerifiedAt: null,
-  legacyCredential: false,
 }
 
 const localUsage = {
@@ -44,7 +34,6 @@ const localUsage = {
 const cloudflareFreeUsage = {
   configured: true,
   accountIdConfigured: true,
-  legacyCredential: false,
   cached: false,
   updatedAt: '2026-10-21T00:00:00.000Z',
   period: { start: '2026-10-21T00:00:00.000Z', end: '2026-10-22T00:00:00.000Z' },
@@ -82,9 +71,9 @@ type WorkerMock = {
   commandRequests: string[]
   syncRequests: string[]
   workspaces: { id: string; name: string; slug: string; role: string; created_at: string; updated_at: string }[]
-  workspaceMembers: { user_id: string; display_name: string | null; email: string | null; github_id: string | null; role: string; created_at: string }[]
+  workspaceMembers: { user_id: string; display_name: string | null; email: string | null; role: string; created_at: string }[]
   workspaceRequests: string[]
-  oauthUpdates: unknown[]
+  passwordUpdates: unknown[]
   platformUpdates: unknown[]
   smtpUpdates: unknown[]
   smtpTests: unknown[]
@@ -121,9 +110,9 @@ async function mockWorker(page: Page): Promise<WorkerMock> {
     commandRequests: [],
     syncRequests: [],
     workspaces: [{ ...defaultWorkspace }],
-    workspaceMembers: [{ user_id: 'user-1', display_name: 'E2E Admin', email: 'e2e@example.com', github_id: '1', role: 'owner', created_at: '2026-09-01T00:00:00.000Z' }],
+    workspaceMembers: [{ user_id: 'user-1', display_name: 'E2E Admin', email: 'e2e@example.com', role: 'owner', created_at: '2026-09-01T00:00:00.000Z' }],
     workspaceRequests: [],
-    oauthUpdates: [],
+    passwordUpdates: [],
     platformUpdates: [],
     smtpUpdates: [],
     smtpTests: [],
@@ -181,20 +170,13 @@ async function handleApi(route: Route, state: WorkerMock, logsGate: Promise<void
     if (!plugin) return route.fulfill({ status: 404, json: { error: 'plugin not found' } })
     return route.fulfill({ json: { plugin: { ...plugin, created_at: '2026-10-21T00:00:00.000Z', server_status: 'online', domain_id: 'domain-1', domain_status: 'online' }, recentErrors: [] } })
   }
-  if (pathname === '/api/settings/oauth') {
-    if (method === 'PUT') {
-      const body = route.request().postDataJSON() as { github?: { clientId: string } }
-      state.oauthUpdates.push(body)
-      return route.fulfill({ json: {
-        ...oauthSettings,
-        github: body.github ? { ...oauthSettings.github, clientId: body.github.clientId, source: 'database' } : oauthSettings.github,
-      } })
-    }
-    return route.fulfill({ json: oauthSettings })
+  if (pathname === '/api/settings/password' && method === 'PUT') {
+    state.passwordUpdates.push(route.request().postDataJSON())
+    return route.fulfill({ status: 204, body: '' })
   }
   if (pathname === '/api/settings/cloudflare') {
     if (method === 'PUT') {
-      const body = route.request().postDataJSON() as { apiToken: string; accountId?: string }
+      const body = route.request().postDataJSON() as { email: string; globalApiKey: string; accountId?: string }
       state.cloudflareUpdates.push(body)
       if (state.cloudflareUpdateError) {
         const { status, ...error } = state.cloudflareUpdateError
@@ -203,9 +185,10 @@ async function handleApi(route: Route, state: WorkerMock, logsGate: Promise<void
       state.cloudflareSettings = {
         ...cloudflareSettings,
         configured: true,
-        credentialKind: 'api_token',
+        credentialKind: 'global_api_key',
         accountIdConfigured: true,
         accountId: '0123...cdef',
+        email: body.email,
         updatedAt: '2026-10-21T00:00:00.000Z',
         lastVerifiedAt: '2026-10-21T00:00:00.000Z',
       }
@@ -257,7 +240,7 @@ async function handleApi(route: Route, state: WorkerMock, logsGate: Promise<void
     if (method === 'POST') {
       const body = route.request().postDataJSON() as { email?: string; userId?: string; role: string }
       const email = body.email ?? null
-      state.workspaceMembers.push({ user_id: `user-${state.workspaceMembers.length + 1}`, display_name: email, email, github_id: null, role: body.role, created_at: '2026-10-22T00:00:00.000Z' })
+      state.workspaceMembers.push({ user_id: `user-${state.workspaceMembers.length + 1}`, display_name: email, email, role: body.role, created_at: '2026-10-22T00:00:00.000Z' })
       return route.fulfill({ status: 201, json: { added: true } })
     }
     return route.fulfill({ json: { results: state.workspaceMembers } })
@@ -285,15 +268,12 @@ async function handleApi(route: Route, state: WorkerMock, logsGate: Promise<void
     }
     return route.fulfill({ json: { results: state.workspaces } })
   }
-  if (pathname === '/api/invites' && method === 'GET') {
-    return route.fulfill({ json: { results: [] } })
-  }
   if (state.failData && ['/api/servers', '/api/plugins', '/api/domains'].includes(pathname)) {
     return route.fulfill({ status: 500, json: { error: 'smoke failure' } })
   }
   switch (pathname) {
     case '/api/me':
-      return route.fulfill({ json: { user: { id: 'user-1', github_id: '1', display_name: 'E2E Admin', email: 'e2e@example.com', role: 'super_admin' }, workspaces: state.workspaces, activeWorkspaceId: state.workspaces[0]?.id ?? null } })
+      return route.fulfill({ json: { user: { id: 'user-1', display_name: 'E2E Admin', email: 'e2e@example.com', role: 'super_admin' }, workspaces: state.workspaces, activeWorkspaceId: state.workspaces[0]?.id ?? null } })
     case '/api/overview':
       return route.fulfill({ json: overview })
     case '/api/servers':
@@ -394,27 +374,22 @@ test('默认工作区与带图标控件保持对齐且不遮挡文字', async ({
   expect(layout.maxNavDelta).toBeLessThan(1)
 })
 
-test('管理端在后台保存 OAuth 配置且不回显密钥', async ({ page }) => {
+test('管理员可以修改密码且页面只保留密码登录设置', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 })
   const worker = await mockWorker(page)
   await page.goto('/')
   await page.getByRole('menuitem', { name: '系统设置', exact: true }).click()
-  await page.getByRole('navigation', { name: '系统设置' }).getByRole('menuitem', { name: 'GitHub 登录' }).click()
-  const panel = page.locator('#settings-oauth')
-  await expect(panel).toContainText('环境变量回退')
-  const callback = panel.getByLabel('回调地址').first()
-  await expect(callback).toHaveValue('http://127.0.0.1:4184/auth/github/callback')
-  await expect(callback).toHaveAttribute('readonly', '')
-  await panel.getByLabel('Client ID').first().fill('mock-github-client-new')
-  await panel.getByLabel('Client Secret').first().fill('mock-secret')
-  await panel.getByRole('button', { name: '保存配置' }).first().click()
-  await expect(page.getByText('OAuth 配置已保存')).toBeVisible()
-  expect(worker.oauthUpdates).toEqual([{ github: { clientId: 'mock-github-client-new', clientSecret: 'mock-secret', redirectUri: 'http://127.0.0.1:4184/auth/github/callback', allowlist: 'admin' } }])
-  await expect(panel.getByLabel('Client Secret').first()).toHaveValue('')
-  await expect(panel).toContainText('后台配置')
+  await expect(page.getByRole('menuitem', { name: 'GitHub 登录' })).toHaveCount(0)
+  await page.getByRole('navigation', { name: '系统设置' }).getByRole('menuitem', { name: '管理员密码' }).click()
+  const panel = page.locator('#settings-password')
+  await panel.getByLabel('当前密码').fill('correct-horse-battery')
+  await panel.getByLabel('新密码', { exact: true }).fill('new-correct-horse-battery')
+  await panel.getByLabel('确认新密码', { exact: true }).fill('new-correct-horse-battery')
+  await panel.getByRole('button', { name: '修改密码' }).click()
+  await expect.poll(() => worker.passwordUpdates).toEqual([{ currentPassword: 'correct-horse-battery', newPassword: 'new-correct-horse-battery', confirmPassword: 'new-correct-horse-battery' }])
 })
 
-test('Cloudflare 使用固定权限和 API Token 直达链接', async ({ page }) => {
+test('Cloudflare 使用 Email 和 Global API Key', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 })
   const worker = await mockWorker(page)
   await page.goto('/')
@@ -424,7 +399,7 @@ test('Cloudflare 使用固定权限和 API Token 直达链接', async ({ page })
   await expect(panel).toBeVisible()
   expect(new URL(page.url()).pathname).toBe('/settings')
 
-  // Cloudflare 已改为长期 API Token：OAuth 客户端、响应类型、PKCE 和可编辑 scope 都必须消失。
+  // Cloudflare 凭据区只保留 Email、Global API Key 和 Account ID。
   await expect(panel.getByText('响应类型（response_type）')).toHaveCount(0)
   await expect(panel.getByText('PKCE')).toHaveCount(0)
   await expect(panel.getByText('Client ID')).toHaveCount(0)
@@ -432,64 +407,32 @@ test('Cloudflare 使用固定权限和 API Token 直达链接', async ({ page })
   await expect(panel.getByRole('textbox', { name: '回调地址' })).toHaveCount(0)
   await expect(panel.getByRole('textbox', { name: '授权范围' })).toHaveCount(0)
 
-  const permissions = panel.getByTestId('cloudflare-permissions')
-  await expect(permissions).toContainText('范围 / Scope')
-  await expect(permissions).toContainText('权限组 / Permission')
-  await expect(permissions).toContainText('级别 / Level')
-  await expect(permissions).toContainText('账户设置 / Account Settings')
-  await expect(permissions).toContainText('账户分析 / Account Analytics')
-  await expect(permissions).toContainText('账单 / Billing')
-  await expect(permissions).toContainText('区域 / Zone')
-  await expect(permissions).toContainText('Workers 路由 / Workers Routes')
-  await expect(permissions).not.toContainText('账号与用量监控')
-  await expect(permissions).not.toContainText('插件域名自动配置')
-  await expect(permissions).toContainText('读取 / Read')
-  await expect(permissions).toContainText('写入 / Write')
-  await expect(permissions).toContainText('编辑 / Edit')
-  await expect(permissions.locator('.scope-list li')).toHaveCount(6)
-  await expect(permissions.locator('input')).toHaveCount(0)
-  await expect(permissions.getByRole('button')).toHaveCount(0)
-
-  await expect(permissions).toContainText('账户 / Account')
-  await expect(permissions).toContainText('区域 / Zone')
-  await expect(permissions).toContainText('用户 / User')
-  await expect(permissions.locator('.scope-list li').nth(0).locator('.permission-scope')).toHaveText('账户 / Account')
-  await expect(permissions.locator('.scope-list li').nth(2).locator('.permission-scope')).toHaveText('账户 / Account')
-  await expect(permissions.locator('.scope-list li').nth(3).locator('.permission-scope')).toHaveText('区域 / Zone')
-  await expect(permissions.locator('.scope-list li').nth(5).locator('.permission-scope')).toHaveText('区域 / Zone')
-  await expect(permissions.locator('.scope-list li').nth(0).locator('.permission-name strong')).toHaveText('账户设置 / Account Settings')
-  await expect(permissions.locator('.scope-list li').nth(0).locator('.permission-level .permission-tag')).toHaveText('读取 / Read')
-  await expect(permissions.locator('.scope-list li').nth(4).locator('.permission-name strong')).toHaveText('DNS')
-  await expect(permissions.locator('.scope-list li').nth(4).locator('.permission-level .permission-tag')).toHaveText('写入 / Write')
-  await expect(permissions.locator('.scope-list li').nth(5).locator('.permission-level .permission-tag')).toHaveText('编辑 / Edit')
-  await expect(permissions).toContainText('未检测')
-
-  const createToken = panel.getByRole('link', { name: /创建 API Token/ })
-  await expect(createToken).toHaveAttribute('href', 'https://dash.cloudflare.com/profile/api-tokens')
-
-  await panel.getByLabel('API Token').fill('mock-cloudflare-token')
+  await expect(panel.getByTestId('cloudflare-permissions')).toHaveCount(0)
+  await expect(panel.getByRole('link', { name: /打开 Cloudflare API Keys/ })).toHaveAttribute('href', 'https://dash.cloudflare.com/profile/api-tokens')
+  await panel.getByLabel('Cloudflare Email').fill('admin@example.com')
+  await panel.getByLabel('Global API Key').fill('mock-global-api-key')
   await panel.getByLabel('Account ID（可选）').fill('0123456789abcdef0123456789abcdef')
   await panel.getByRole('button', { name: '验证并保存' }).click()
-  await expect(page.locator('.ant-notification-notice').filter({ hasText: 'Cloudflare API Token 已验证并保存' })).toBeVisible()
-  expect(worker.cloudflareUpdates).toEqual([{ apiToken: 'mock-cloudflare-token', accountId: '0123456789abcdef0123456789abcdef' }])
-  await expect(panel.getByLabel('API Token')).toHaveValue('')
+  await expect(page.locator('.ant-notification-notice').filter({ hasText: 'Cloudflare 凭据已验证并保存' })).toBeVisible()
+  expect(worker.cloudflareUpdates).toEqual([{ email: 'admin@example.com', globalApiKey: 'mock-global-api-key', accountId: '0123456789abcdef0123456789abcdef' }])
+  await expect(panel.getByLabel('Global API Key')).toHaveValue('')
   await expect(panel).toContainText('0123...cdef')
   await expect(panel).toContainText('最后验证')
 })
 
-test('Cloudflare Token 权限不足时保留真实 HTTP 状态并停留在设置页', async ({ page }) => {
+test('Cloudflare 凭据被拒绝时保留错误码并停留在设置页', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 })
   const worker = await mockWorker(page)
-  worker.cloudflareUpdateError = { status: 403, code: 'token_permission_denied', message: 'Cloudflare Token is missing a required permission' }
+  worker.cloudflareUpdateError = { status: 403, code: 'credential_denied', message: 'Cloudflare credential cannot access this resource' }
   await page.goto('/settings')
   const panel = page.locator('#settings-cloudflare')
   await expect(panel).toBeVisible()
-  await panel.getByLabel('API Token').fill('mock-cloudflare-token')
+  await panel.getByLabel('Cloudflare Email').fill('admin@example.com')
+  await panel.getByLabel('Global API Key').fill('mock-global-api-key')
   await panel.getByRole('button', { name: '验证并保存' }).click()
-  const failure = panel.getByRole('alert').filter({ hasText: 'Cloudflare 请求失败（HTTP 403）' })
+  const failure = panel.getByRole('alert').filter({ hasText: 'Cloudflare credential cannot access this resource' })
   await expect(failure).toBeVisible()
-  await expect(failure).toContainText('token_permission_denied')
-  await expect(failure).toContainText('Cloudflare Token is missing a required permission')
+  await expect(failure).toContainText('credential_denied')
   expect(new URL(page.url()).pathname).toBe('/settings')
 })
 
@@ -570,29 +513,12 @@ test('未配置 Cloudflare 时官方用量为空但平台本地计数仍显示',
   await expect(platform.locator('.resource-card').filter({ hasText: '平台请求计数' })).toContainText('1,200')
 })
 
-test('旧 Cloudflare 凭据提示保留在用量页且不跳转首页', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 1000 })
-  const worker = await mockWorker(page)
-  worker.usage = {
-    configured: false,
-    cached: false,
-    legacyCredential: true,
-    error: 'Cloudflare 旧版 OAuth 凭据已停用，请重新录入 API Token',
-  }
-  await page.goto('/usage')
-
-  const alert = page.getByRole('alert').filter({ hasText: '需要重新录入 Cloudflare API Token' })
-  await expect(alert).toBeVisible()
-  await expect(alert).toContainText('旧凭据不会刷新或查询')
-  expect(new URL(page.url()).pathname).toBe('/usage')
-})
-
 test('用量接口 401/403 在用量页显示 HTTP 状态、错误码和消息', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 })
   const worker = await mockWorker(page)
   for (const failure of [
-    { status: 401, code: 'token_invalid', message: 'Invalid Cloudflare API Token' },
-    { status: 403, code: 'token_permission_denied', message: 'Cloudflare Token is missing a required permission' },
+    { status: 401, code: 'credential_invalid', message: 'Invalid Cloudflare credentials' },
+    { status: 403, code: 'credential_denied', message: 'Cloudflare credentials cannot access Analytics' },
   ]) {
     worker.usageFault = failure
     await page.goto('/usage')

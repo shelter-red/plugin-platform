@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { detailedErrorMessage } from '../errors'
 import type { Notify } from '../components/ToastProvider'
-import { currentWorkspaceId, fetchAccessLogs, fetchAudit, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchInvites, fetchLocalUsage, fetchMe, fetchOauthSettings, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchServers, fetchSmtpSettings, fetchWorkspaces, setActiveWorkspace as applyActiveWorkspace, type ApiAccessLog, type ApiAudit, type ApiDomain, type ApiInvite, type ApiMe, type ApiOverview, type ApiPlugin, type ApiServer, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type OauthSettings, type PlatformSettings, type SmtpSettings, type Workspace } from '../api'
+import { ApiError, currentWorkspaceId, fetchAccessLogs, fetchAudit, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchLocalUsage, fetchMe, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchServers, fetchSmtpSettings, fetchWorkspaces, setActiveWorkspace as applyActiveWorkspace, type ApiAccessLog, type ApiAudit, type ApiDomain, type ApiMe, type ApiOverview, type ApiPlugin, type ApiServer, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type PlatformSettings, type SmtpSettings, type Workspace } from '../api'
 
 export type AuthState = 'loading' | 'authenticated' | 'anonymous'
 
@@ -32,7 +32,6 @@ export function useConsoleData({ notify }: { notify: Notify }) {
   const [domains, setDomains] = useState<ApiDomain[] | null>(null)
   const [audits, setAudits] = useState<ApiAudit[] | null>(null)
   const [accessLogs, setAccessLogs] = useState<ApiAccessLog[] | null>(null)
-  const [invites, setInvites] = useState<ApiInvite[] | null>(null)
   const [usage, setUsage] = useState<CloudflareUsage | null>(null)
   const [localUsage, setLocalUsage] = useState<LocalUsage | null>(null)
   const [dataLoading, setDataLoading] = useState(false)
@@ -48,7 +47,6 @@ export function useConsoleData({ notify }: { notify: Notify }) {
   const [platformSettings, setPlatformSettings] = useState<PlatformSettings | null>(null)
   const [cloudflareSettings, setCloudflareSettings] = useState<CloudflareSettings | null>(null)
   const [smtpSettings, setSmtpSettings] = useState<SmtpSettings | null>(null)
-  const [oauthSettings, setOauthSettings] = useState<OauthSettings | null>(null)
   const [apiLive, setApiLive] = useState(false)
   const [range, setRange] = useState<'24h' | '7d' | '30d'>('7d')
 
@@ -64,7 +62,11 @@ export function useConsoleData({ notify }: { notify: Notify }) {
         setWorkspaceReady(true)
         if (authEnabled) setAuthState('authenticated')
       })
-      .catch(() => {
+      .catch((error) => {
+        if (error instanceof ApiError && error.code === 'setup_required' && window.location.pathname !== '/setup') {
+          window.location.assign('/setup')
+          return
+        }
         setWorkspaceReady(true)
         if (authEnabled) setAuthState('anonymous')
       })
@@ -82,22 +84,8 @@ export function useConsoleData({ notify }: { notify: Notify }) {
 
   useEffect(() => {
     if (!authEnabled && !import.meta.env.VITE_API_BASE) return
-    fetchOauthSettings().then(setOauthSettings).catch(() => setOauthSettings(null))
-  }, [authEnabled])
-
-  useEffect(() => {
-    if (!authEnabled && !import.meta.env.VITE_API_BASE) return
     fetchPlatformSettings().then(setPlatformSettings).catch(() => setPlatformSettings(null))
   }, [authEnabled])
-
-  useEffect(() => {
-    if (!apiConnected || !workspaceReady) return
-    if (authUser?.role !== 'super_admin' && activeWorkspace?.role !== 'owner') {
-      setInvites(null)
-      return
-    }
-    fetchInvites().then(setInvites).catch(() => setInvites(null))
-  }, [authUser?.role, activeWorkspace?.role, workspaceReady, workspaceKey])
 
   useEffect(() => {
     if (!apiConnected || !workspaceReady) return
@@ -209,9 +197,9 @@ export function useConsoleData({ notify }: { notify: Notify }) {
 
   return {
     authEnabled, apiConnected, authState, authUser, workspaces, activeWorkspaceId, activeWorkspace, canWrite, isSuperAdmin,
-    overview, servers, plugins, domains, audits, accessLogs, invites, setInvites, usage, localUsage,
+    overview, servers, plugins, domains, audits, accessLogs, usage, localUsage,
     dataLoading, dataError, auditLoading, auditError, accessLogsLoading, accessLogsError, usageLoading, usageRefreshing, usageError,
-    platformSettings, setPlatformSettings, cloudflareSettings, setCloudflareSettings, smtpSettings, setSmtpSettings, oauthSettings, setOauthSettings,
+    platformSettings, setPlatformSettings, cloudflareSettings, setCloudflareSettings, smtpSettings, setSmtpSettings,
     apiLive, range, setRange, switchWorkspace, reloadWorkspaces, refreshData, refreshUsage,
   }
 }

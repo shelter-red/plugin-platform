@@ -3,7 +3,7 @@ import { smtpSettingsApi, smtpTestApi } from './src/index.ts'
 import { decryptSecret } from './src/secrets.ts'
 import type { AuthenticatedUser, Env } from './src/types.ts'
 
-const user: AuthenticatedUser = { id: 'admin-1', github_id: '1', email: 'admin@example.test', display_name: 'Admin', role: 'super_admin' }
+const user: AuthenticatedUser = { id: 'admin-1', email: 'admin@example.test', display_name: 'Admin', role: 'super_admin' }
 const secret = 'smtp-settings-smoke-secret'
 const payload = { host: 'smtp.example.test', port: 587, secure: false, username: 'mailer', password: 'first-secret', authType: 'plain', from: 'noreply@example.test', fromName: 'Plugmesh', replyTo: '' }
 

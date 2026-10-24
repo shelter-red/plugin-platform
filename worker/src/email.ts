@@ -59,14 +59,6 @@ export async function sendSmtpTest(settings: SmtpSettings, to: string): Promise<
   })
 }
 
-export async function sendInviteEmail(settings: SmtpSettings, to: string, inviteUrl: string, expiresAt: string): Promise<void> {
-  await sendEmail(settings, {
-    subject: 'Plugmesh 平台邀请',
-    text: `你已被邀请加入 Plugmesh 插件平台。\n\n请在邀请有效期内打开以下链接完成 GitHub 身份验证：\n${inviteUrl}\n\n邀请有效至：${expiresAt}`,
-    to,
-  })
-}
-
 export async function sendMaintenanceEmail(settings: SmtpSettings, to: string, reason: string): Promise<void> {
   await sendEmail(settings, {
     subject: 'Plugmesh 平台已进入维护模式',

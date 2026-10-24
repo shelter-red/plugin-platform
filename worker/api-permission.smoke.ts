@@ -3,8 +3,8 @@ import worker from './src/index.ts'
 import { digest } from './src/auth.ts'
 import type { AuthenticatedUser, Env } from './src/types.ts'
 
-const member: AuthenticatedUser = { id: 'member-1', github_id: 'github-member', email: 'member@example.test', display_name: 'Member', role: 'member' }
-const admin: AuthenticatedUser = { id: 'admin-1', github_id: 'github-admin', email: 'admin@example.test', display_name: 'Admin', role: 'super_admin' }
+const member: AuthenticatedUser = { id: 'member-1', email: 'member@example.test', display_name: 'Member', role: 'member' }
+const admin: AuthenticatedUser = { id: 'admin-1', email: 'admin@example.test', display_name: 'Admin', role: 'super_admin' }
 const sessionTokens = new Map<string, string>()
 const users = new Map([[member.id, member], [admin.id, admin]])
 const serverQueries: unknown[][] = []
@@ -55,11 +55,6 @@ assert.equal(response.status, 401)
 response = await worker.fetch(request('/api/settings/platform', memberToken), env, ctx)
 assert.equal(response.status, 403)
 assert.equal((await response.json() as { error: string }).error, 'Forbidden')
-
-// 工作区所有者可以读取本工作区邀请，但平台级设置仍然只允许超级管理员。
-response = await worker.fetch(request('/api/invites', memberToken), env, ctx)
-assert.equal(response.status, 200)
-assert.deepEqual(await response.json(), { results: [] })
 
 response = await worker.fetch(request('/api/servers', memberToken), env, ctx)
 assert.equal(response.status, 200)

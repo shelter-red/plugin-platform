@@ -63,7 +63,7 @@ const emptyPages: { nav: string; title: string; empty: string; extra?: string }[
   { nav: '访问日志', title: '访问日志', empty: '暂无访问日志' },
   { nav: '审计日志', title: '审计日志', empty: '暂无审计记录' },
   { nav: '用量与配额', title: '用量与配额', empty: '官方数据尚未连接' },
-  { nav: '系统设置', title: '系统设置', empty: '维护状态未读取', extra: '邀请数据未接入' },
+  { nav: '系统设置', title: '系统设置', empty: '维护状态未读取' },
 ]
 
 test('管理端各页面展示真实空态', async ({ page }) => {

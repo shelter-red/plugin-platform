@@ -80,9 +80,6 @@ test('工作区角色限制写入与成员管理权限', { timeout: 20_000 }, as
   expect(forbiddenWrite.status).toBe(403)
   expect(await forbiddenWrite.json()).toEqual({ error: 'Workspace is read-only for viewers' })
 
-  const forbiddenInvite = await api('/api/invites', VIEWER_TOKEN, { method: 'POST', body: JSON.stringify({ email: 'invite@example.com' }) })
-  expect(forbiddenInvite.status).toBe(403)
-
   const members = await api(`/api/workspaces/${DEFAULT_WORKSPACE_ID}/members`, OWNER_TOKEN)
   expect(members.status).toBe(200)
   const memberRows = (await members.json() as { results: Array<{ user_id: string; role: string }> }).results

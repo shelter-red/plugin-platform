@@ -15,14 +15,10 @@ export function UsageStatusAlert({ usage, loading, error, onOpenCloudflareSettin
   const period = usage?.period
   const connected = usage?.configured === true
   const accountMissing = connected && usage.accountIdConfigured === false
-  const legacyCredential = usage?.legacyCredential === true
   const officialError = usage?.error ?? null
   const resourceAnalyticsUnavailable = connected && usage?.resourceAnalyticsAvailable === false
   const configureAction = <Button type="link" size="small" onClick={onOpenCloudflareSettings}>{t('usage.configure')} <ArrowUpRight size={14} /></Button>
 
-  if (legacyCredential) {
-    return <Alert type="warning" showIcon icon={<ShieldAlert size={16} />} message={t('usage.legacyCredential')} description={<div className="alert-body"><span>{t('usage.legacyCredentialHint')}</span></div>} action={configureAction} />
-  }
   if (error || officialError) {
     return <Alert type="error" showIcon message={t('usage.loadFailed')} description={<div className="alert-body"><span>{translateError(error ?? officialError ?? '')}</span><span>{t('usage.permissionHint')}</span></div>} action={configureAction} />
   }

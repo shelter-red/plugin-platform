@@ -720,119 +720,6 @@ h1 {
   color: var(--text);
   font-size: 11px;
 }
-.scope-permissions {
-  margin-top: 16px;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-}
-.scope-permissions-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-.permission-tag {
-  display: inline-flex;
-  align-items: center;
-  min-height: 18px;
-  padding: 1px 6px;
-  border: 1px solid var(--line-strong);
-  border-radius: 4px;
-  color: var(--text);
-  background: var(--surface-solid);
-  font-size: 10px;
-  line-height: 1.4;
-}
-.permission-scope {
-  display: inline-flex !important;
-  align-items: center;
-  justify-content: flex-start;
-  max-width: 100%;
-  white-space: normal;
-  min-height: 18px;
-  padding: 1px 6px;
-  border: 1px solid var(--line-strong);
-  border-radius: 4px;
-  color: var(--text-2) !important;
-  background: var(--surface-strong);
-  font: 10px/1.4 'IBM Plex Mono', monospace !important;
-}
-.scope-list {
-  list-style: none;
-  margin: 10px 0;
-  padding: 0;
-  display: grid;
-  gap: 10px;
-}
-.scope-list-head,
-.scope-list li {
-  display: grid;
-  grid-template-columns: minmax(0, .9fr) minmax(0, 1.5fr) minmax(0, 1fr);
-  align-items: start;
-  gap: 10px;
-}
-.scope-list-head {
-  padding: 0 10px 6px;
-  color: var(--text-3);
-  font: 500 10px/1.4 'IBM Plex Mono', monospace;
-  text-transform: uppercase;
-}
-.permission-name {
-  min-width: 0;
-}
-.scope-list li {
-  padding: 9px 10px;
-  border-top: 1px solid var(--line);
-}
-.scope-list strong {
-  display: block;
-  color: var(--text);
-  font-size: 12px;
-}
-.scope-list small {
-  display: block;
-  margin-top: 3px;
-  color: var(--text-3);
-  font-size: 10px;
-  line-height: 1.5;
-}
-.scope-list code {
-  display: inline-block;
-  margin: 1px 0 2px;
-  padding: 0 4px;
-  border-radius: 3px;
-  background: var(--surface-strong);
-  color: var(--text-2);
-  font: 10px/1.6 'IBM Plex Mono', monospace;
-}
-.scope-list .permission-tag,
-.scope-list .permission-scope,
-.scope-list .permission-state,
-.permission-level {
-  display: inline-flex;
-  align-items: center;
-  flex: 0 0 auto;
-  width: auto;
-  color: var(--text);
-  font-size: 10px;
-  line-height: 1.4;
-}
-.permission-level {
-  min-width: 0;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.permission-state.allowed {
-  color: var(--primary-strong);
-}
-.permission-state.denied {
-  color: var(--danger-text);
-}
-.permission-state.unknown {
-  color: var(--text-3);
-}
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -1675,39 +1562,39 @@ input:disabled {
   color: var(--text-3);
   font-size: 10px;
 }
-.oauth-block {
+.credential-block {
   padding-top: 18px;
   margin-top: 18px;
   border-top: 1px solid var(--line);
 }
-.oauth-block-heading {
+.credential-block-heading {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
 }
-.oauth-block-heading > div {
+.credential-block-heading > div {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
-.oauth-block-heading h3 {
+.credential-block-heading h3 {
   font-size: 12px;
 }
-.oauth-block-heading p {
+.credential-block-heading p {
   color: var(--text-3);
   font-size: 10px;
 }
-.oauth-block .form-grid {
+.credential-block .form-grid {
   margin-top: 14px;
 }
-.oauth-block .form-hint {
+.credential-block .form-hint {
   margin-top: 10px;
 }
-.oauth-block .settings-actions {
+.credential-block .settings-actions {
   margin-top: 14px;
 }
-.oauth-notice {
+.credential-notice {
   margin-top: 16px;
 }
 .maintenance-row {
@@ -2106,11 +1993,6 @@ input:disabled {
   }
 }
 @media (max-width: 480px) {
-  .scope-list-head,
-  .scope-list li {
-    grid-template-columns: minmax(0, .8fr) minmax(0, 1.35fr) minmax(0, .95fr);
-    gap: 6px;
-  }
   .metric-grid, .usage-grid {
     gap: 8px;
   }
@@ -2256,10 +2138,6 @@ input:disabled {
 }
 .smtp-test .ant-input {
   width: 190px;
-}
-.invite-url {
-  min-width: 0;
-  flex: 1;
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -2591,7 +2469,7 @@ input:disabled {
   padding-inline: 0;
   height: auto;
 }
-.oauth-notice.ant-alert {
+.credential-notice.ant-alert {
   margin-top: 16px;
 }
 /* AntD 把图标包进 .ant-btn-icon（display:block），里面的 <svg> 仍是 inline-flex 按基线落位，

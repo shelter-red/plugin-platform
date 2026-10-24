@@ -2,8 +2,8 @@ This platform is provided "as is" for self-hosted plugin hosting. Operators are 
 
 ### Accounts and access
 
-- Self-signup is disabled; administrators control access through invites.
-- Keep GitHub accounts, setup tokens and server registration codes safe.
+- Self-signup is disabled; the operator-defined administrator password protects management access.
+- Keep the administrator password, Cloudflare Global API Key and server registration codes safe.
 
 ### Acceptable use
 
@@ -13,7 +13,7 @@ This platform is provided "as is" for self-hosted plugin hosting. Operators are 
 ### Service and liability
 
 - The software makes no warranty of availability, data integrity or fitness for a particular purpose.
-- Operators bear losses caused by misconfiguration, leaked keys or third-party outages (GitHub, Cloudflare, SMTP).
+- Operators bear losses caused by misconfiguration, leaked keys or third-party outages (Cloudflare and SMTP).
 
 ### Changes
 
