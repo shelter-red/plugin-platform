@@ -42,6 +42,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: 准备 Node.js 和本地 UI
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 构建本地 UI
+        run: |
+          npm ci
+          npm run native-ui:build
+
       - name: 准备 OpenSSL（Windows）
         if: inputs.target_platform == 'windows'
         shell: pwsh
@@ -53,10 +63,6 @@ jobs:
       - name: 准备 OpenSSL（macOS）
         if: inputs.target_platform == 'macos'
         run: brew install openssl@3
-
-      - name: 配置（Linux）
-        if: inputs.target_platform == 'linux'
-        run: cmake -S native-server -B native-server/build-manual -DCMAKE_BUILD_TYPE="$BUILD_TYPE" -DPLUGMESH_BUILD_ARTIFACT="$BUILD_ARTIFACT"
 
       - name: 配置（macOS）
         if: inputs.target_platform == 'macos'
@@ -78,11 +84,26 @@ jobs:
             -DVCPKG_APPLOCAL_DEPS=OFF `
             -DPLUGMESH_BUILD_ARTIFACT="$env:BUILD_ARTIFACT"
 
-      - name: 构建（Linux / macOS）
-        if: inputs.target_platform != 'windows'
+      - name: 构建和打包 Linux 兼容基线
+        if: inputs.target_platform == 'linux'
         shell: bash
         run: |
           set -euo pipefail
+          ui_arg=()
+          if [[ "${{ inputs.artifact_type }}" == executable ]]; then ui_arg+=(--include-ui); fi
+          docker run --rm -v "$GITHUB_WORKSPACE:/src" -w /src debian:11 \
+            bash scripts/build-linux-native.sh \
+              --artifact-type "$BUILD_ARTIFACT" \
+              --build-type "$BUILD_TYPE" \
+              --package-name "plugmesh-plugin-server-linux-${{ inputs.artifact_type }}-${{ inputs.build_type }}" \
+              --archive-name "plugmesh-plugin-server-linux-${{ inputs.artifact_type }}-${{ inputs.build_type }}.tar.gz" \
+              --archive-format tar \
+              "${ui_arg[@]}"
+
+      - name: 构建（macOS）
+        if: inputs.target_platform == 'macos'
+        shell: bash
+        run: |
           target=plugmesh-server
           if [ "$BUILD_ARTIFACT" = SHARED ]; then target=plugmesh-server-shared; fi
           cmake --build native-server/build-manual --target "$target" plugmesh-plugin-host --parallel
@@ -93,35 +114,6 @@ jobs:
         run: |
           $target = if ($env:BUILD_ARTIFACT -eq 'SHARED') { 'plugmesh-server-shared' } else { 'plugmesh-server' }
           cmake --build native-server/build-manual --target $target plugmesh-plugin-host --config $env:BUILD_TYPE --parallel
-
-      - name: 打包（Linux）
-        if: inputs.target_platform == 'linux'
-        shell: bash
-        run: |
-          set -euo pipefail
-          package="plugmesh-plugin-server-linux-${{ inputs.artifact_type }}-${{ inputs.build_type }}"
-          mkdir -p "dist/$package"
-          if [ "$BUILD_ARTIFACT" = SHARED ]; then
-            cp native-server/build-manual/libplugmesh-server.so "dist/$package/"
-            cp native-server/include/plugmesh/server_api.h "dist/$package/"
-          else
-            cp native-server/build-manual/plugmesh-server "dist/$package/"
-          fi
-          cp native-server/build-manual/plugmesh-plugin-host "dist/$package/"
-          for library in libssl.so.3 libcrypto.so.3; do
-            library_path="$(ldconfig -p | awk -v library="$library" '$1 == library { print $NF; exit }')"
-            if [ -z "$library_path" ] || [ ! -f "$library_path" ]; then
-              echo "未找到 Linux OpenSSL 运行库：$library" >&2
-              exit 1
-            fi
-            cp -L "$library_path" "dist/$package/"
-          done
-          cp native-server/include/plugmesh/plugin_api.h "dist/$package/"
-          cp native-server/README.md "dist/$package/"
-          printf '类型：%s\n平台：Linux x86_64\n构建类型：%s\n' "${{ inputs.artifact_type }}" "${{ inputs.build_type }}" > "dist/$package/BUILD-INFO.txt"
-          archive="$package.tar.gz"
-          tar -C dist -czf "dist/$archive" "$package"
-          (cd dist && sha256sum "$archive" > SHA256SUMS)
 
       - name: 打包（macOS）
         if: inputs.target_platform == 'macos'
@@ -135,6 +127,8 @@ jobs:
             cp native-server/include/plugmesh/server_api.h "dist/$package/"
           else
             cp native-server/build-manual/plugmesh-server "dist/$package/"
+            mkdir -p "dist/$package/native-ui/dist"
+            cp -R native-ui/dist/. "dist/$package/native-ui/dist/"
           fi
           cp native-server/build-manual/plugmesh-plugin-host "dist/$package/"
           cp native-server/include/plugmesh/plugin_api.h "dist/$package/"
@@ -160,6 +154,8 @@ jobs:
             Copy-Item native-server/include/plugmesh/server_api.h "$root/"
           } else {
             Copy-Item "native-server/build-manual/$config/plugmesh-server.exe" "$root/"
+            New-Item -ItemType Directory -Force -Path "$root/native-ui/dist" | Out-Null
+            Copy-Item native-ui/dist/* "$root/native-ui/dist/" -Recurse -Force
           }
           Copy-Item "native-server/build-manual/$config/plugmesh-plugin-host.exe" "$root/"
           Get-ChildItem "$vcpkg/installed/x64-windows/bin/*.dll" -ErrorAction SilentlyContinue |

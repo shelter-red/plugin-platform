@@ -58,7 +58,7 @@ WHERE key = 'platform';
 
 ### 使用二进制插件服务器
 
-从 GitHub Actions 的「手动构建插件服务器」下载与你的系统和产物类型匹配的 artifact。`executable` 是可直接启动的 `plugmesh-server`；`shared` 是供其他程序嵌入的共享库，不是独立可执行文件。Linux artifact 已包含 `libssl.so.3` 和 `libcrypto.so.3`，Windows artifact 已包含 OpenSSL DLL；macOS 从源码构建时需要 `brew install openssl@3`。下载后先校验 `SHA256SUMS`：Linux 使用 `sha256sum -c SHA256SUMS`，macOS 使用 `shasum -a 256 -c SHA256SUMS`，Windows PowerShell 用 `Get-FileHash` 对照文件中的 SHA-256。不要混用不同操作系统构建出的插件库或服务器。
+从 GitHub Actions 的「手动构建插件服务器」下载与你的系统和产物类型匹配的 artifact。`executable` 是可直接启动的 `plugmesh-server`，并包含 `native-ui/dist`；未注册时双击会自动打开首次绑定页。`shared` 是供其他程序嵌入的共享库，不是独立可执行文件，也不提供 setup UI。Linux artifact 已包含以 glibc 2.31 兼容基线构建的 `libssl.so.3` 和 `libcrypto.so.3`，Windows artifact 已包含 OpenSSL DLL；macOS 从源码构建时需要 `brew install openssl@3`。下载后先校验 `SHA256SUMS`：Linux 使用 `sha256sum -c SHA256SUMS`，macOS 使用 `shasum -a 256 -c SHA256SUMS`，Windows PowerShell 用 `Get-FileHash` 对照文件中的 SHA-256。不要混用不同操作系统构建出的插件库或服务器。
 
 插件目录必须按“一个插件一个子目录”组织，每个子目录至少包含 `manifest.json` 和与当前平台匹配的动态库，例如 Linux：
 
@@ -87,7 +87,7 @@ $env:PLUGMESH_REGISTRATION_CODE = '一次性注册码'
 .\plugmesh-server.exe --register https://platform.example.com '边缘服务器' "$env:USERPROFILE\.plugmesh\credentials.json"
 ```
 
-绑定后启动服务器。`plugmesh-plugin-host` 放在 `plugmesh-server` 同一目录时可以省略 `PLUGMESH_PLUGIN_HOST`；否则必须指定它。`PLUGMESH_LOCAL_UI_DIRECTORY` 只影响本机管理界面，二进制 artifact 不包含该前端目录时，可单独构建 `native-ui` 后传入路径。
+绑定后启动服务器。`plugmesh-plugin-host` 放在 `plugmesh-server` 同一目录时可以省略 `PLUGMESH_PLUGIN_HOST`；否则必须指定它。可执行 artifact 会从可执行文件同目录的 `native-ui/dist` 提供本机管理界面；`PLUGMESH_LOCAL_UI_DIRECTORY` 只用于源码运行或自定义界面目录。
 
 ```bash
 PLUGMESH_CREDENTIAL_FILE="$HOME/.config/plugmesh/credentials.json" \

@@ -57,6 +57,10 @@
 > `a034701` 已推送；平台验收 #109（run `40044540676`）完成成功，`web`/`changes` 成功，三个 native job 按路径过滤跳过。文档清理步骤最终闭环，当前只剩真实 Workers Builds 控制台命令和真实 Cloudflare 外部联调未直接验证。
 
 > 新问题登记（2026-10-24）：用户实际验证发现 Windows 配置完成后仍然段错误，现有 HTTP teardown smoke 不能代替真实注册成功路径；未注册时双击可执行文件必须自动启动并打开首次注册 UI，而不是只输出错误。Linux 发布包在旧系统上因 `GLIBC_*`、`GLIBCXX_*`、`CXXABI_*` 和随包 OpenSSL 的 glibc 版本要求过高而无法启动。本轮范围：复现并修复 Windows 注册完成后的生命周期/线程 teardown，按可执行文件目录打包并定位 native UI、未注册双击自动打开本地注册页，同时以旧 glibc 基线重建 Linux executable/shared 并增加 ELF ABI 检查；Actions 只在推送后低频检查，不频繁轮询。
+
+> 本轮实现已完成待提交：`LocalHttpServer::stop()` 改为向 Asio 事件循环投递停止监听，避免 Windows 注册响应发送前被跨线程 `io_service.stop()` 打断；新增运行状态等待和可执行文件目录 UI 定位，未注册启动自动打开本地 setup 页。发布/手动 workflow 为 executable 打包 `native-ui/dist`，shared 明确不提供 setup UI；Linux 改用 Debian 11/glibc 2.31 基线、OpenSSL 3 源码和静态 C++ 运行时，并检查 ELF 最高 glibc 及 C++ ABI。Wine 真实 `plugmesh-server.exe` 注册回归返回 HTTP 201 且注册后进程保持运行；Linux executable/shared 兼容包、包内 OpenSSL 加载和 ABI 检查均已通过。待完整本地 CI、提交、推送和最新 Actions 验证。
+
+> 推送前本地验收已通过：`npm run ci:local`（89/89 UI smoke、UI 约定和 CSS 审计、Worker smoke、构建）以及 `npm run deploy:worker:test`（10/10）。Docker Debian 11 实测 executable/shared 构建和包内动态库加载通过；Wine 实际 Windows 注册路径 HTTP 201，注册完成后进程未崩溃。当前只剩提交、推送和低频核对最新 Actions。
 >
 > `8ad8704` 已推送；平台验收 #98（run `39957698043`）对应 HEAD 且 `completed/success`，`changes`/`web` 成功，三个 native job skipped。U16 真实数据审计已完成：1440/1024 视口下默认工作区切换器为 `46.34px`，两行文案上下各留 `8px`，图标与文案中心一致；带图标按钮和导航项的垂直中心差均为 `0px`，没有发现需要凭猜测修改的样式问题。下一步只增加对应 Playwright 回归断言，不改变现有视觉规则。
 >

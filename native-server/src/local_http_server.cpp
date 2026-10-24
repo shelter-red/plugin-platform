@@ -107,12 +107,25 @@ bool LocalHttpServer::run(std::string& error) {
     const auto address = websocketpp::lib::asio::ip::address::from_string("127.0.0.1");
     server->listen(websocketpp::lib::asio::ip::tcp::endpoint(address, port_));
     server->start_accept();
+    running_ = true;
     server->run();
   } catch (const websocketpp::exception& exception) {
     error = exception.what();
+    running_ = false;
+    server_.store(nullptr, std::memory_order_release);
+    return false;
+  } catch (const std::exception& exception) {
+    error = exception.what();
+    running_ = false;
+    server_.store(nullptr, std::memory_order_release);
+    return false;
+  } catch (...) {
+    error = "local HTTP server failed with an unknown exception";
+    running_ = false;
     server_.store(nullptr, std::memory_order_release);
     return false;
   }
+  running_ = false;
   server_.store(nullptr, std::memory_order_release);
   return !stopping_;
 }
@@ -120,7 +133,18 @@ bool LocalHttpServer::run(std::string& error) {
 void LocalHttpServer::stop() {
   stopping_ = true;
   auto* server = static_cast<Server*>(server_.load(std::memory_order_acquire));
-  if (server) server->stop();
+  if (server) {
+    // Stop accepting through the event loop. Calling io_service.stop() from a
+    // different thread can discard the HTTP response that just completed.
+    server->get_io_service().post([server] {
+      websocketpp::lib::error_code error;
+      server->stop_listening(error);
+    });
+  }
+}
+
+bool LocalHttpServer::is_running() const {
+  return running_.load(std::memory_order_acquire);
 }
 
 bool LocalHttpServer::has_active_requests() const {

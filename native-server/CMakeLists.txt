@@ -103,6 +103,9 @@ if (UNIX AND NOT APPLE)
   foreach(target_name plugmesh-server plugmesh-plugin-host plugmesh-server-shared)
     if (TARGET ${target_name})
       set_target_properties(${target_name} PROPERTIES BUILD_RPATH "$ORIGIN" INSTALL_RPATH "$ORIGIN")
+      # Keep the C++ runtime ABI out of the Linux package. The native build
+      # still uses the selected glibc baseline for libc itself.
+      target_link_options(${target_name} PRIVATE -static-libstdc++ -static-libgcc)
     endif()
   endforeach()
 endif()
@@ -165,6 +168,9 @@ if (WIN32)
   # websocketpp 在 MinGW 下默认回退 boost::thread，这里强制使用 C++11 <thread>。
   target_compile_definitions(plugmesh_core PUBLIC _WEBSOCKETPP_CPP11_THREAD_)
   target_link_libraries(plugmesh_core PRIVATE advapi32 ws2_32 mswsock crypt32)
+  if (TARGET plugmesh-server)
+    target_link_libraries(plugmesh-server PRIVATE shell32)
+  endif()
 else()
   # Linux 与 macOS 同为 POSIX：凭据文件权限走同一分支。
   target_compile_definitions(plugmesh_core PRIVATE PLUGMESH_PLATFORM_POSIX=1)

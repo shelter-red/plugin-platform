@@ -10,15 +10,18 @@
 #include <cstdint>
 #include <atomic>
 #include <chrono>
+#include <filesystem>
 #include <iostream>
 #include <string>
 #include <thread>
 
 #ifdef _WIN32
+#include <shellapi.h>
 #include <windows.h>
 #else
-#include <termios.h>
+#include <limits.h>
 #include <unistd.h>
+#include <termios.h>
 #endif
 
 namespace {
@@ -110,9 +113,45 @@ uint16_t local_port() {
   return end != value && *end == '\0' && parsed > 0 && parsed <= 65535 ? static_cast<uint16_t>(parsed) : 8787;
 }
 
+std::filesystem::path executable_directory() {
+#ifdef _WIN32
+  std::wstring buffer(32768, L'\0');
+  const auto length = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+  if (length != 0 && length < buffer.size()) {
+    buffer.resize(length);
+    return std::filesystem::path(buffer).parent_path();
+  }
+#else
+  char buffer[PATH_MAX]{};
+  const auto length = readlink("/proc/self/exe", buffer, sizeof(buffer) - 1);
+  if (length > 0) {
+    buffer[length] = '\0';
+    return std::filesystem::path(buffer).parent_path();
+  }
+#endif
+  std::error_code error;
+  const auto current = std::filesystem::current_path(error);
+  return error ? std::filesystem::path{} : current;
+}
+
 std::filesystem::path local_ui_directory() {
   if (const char* value = std::getenv("PLUGMESH_LOCAL_UI_DIRECTORY"); value && *value) return value;
-  return std::filesystem::path("native-ui") / "dist";
+  const auto packaged = executable_directory() / "native-ui" / "dist";
+  std::error_code error;
+  if (std::filesystem::is_directory(packaged, error)) return packaged;
+  return std::filesystem::current_path(error) / "native-ui" / "dist";
+}
+
+void open_local_setup_browser(uint16_t port) {
+  const auto url = std::string("http://127.0.0.1:") + std::to_string(port) + "/";
+#ifdef _WIN32
+  const auto wide_url = std::filesystem::path(url).wstring();
+  ShellExecuteW(nullptr, L"open", wide_url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+#elif defined(__APPLE__)
+  std::system(("open " + url + " >/dev/null 2>&1 &").c_str());
+#else
+  std::system(("xdg-open " + url + " >/dev/null 2>&1 &").c_str());
+#endif
 }
 
 bool run_registration_setup(plugmesh::ServerConfig& config, uint16_t port, const std::filesystem::path& ui_directory, std::string& error) {
@@ -178,6 +217,10 @@ bool run_registration_setup(plugmesh::ServerConfig& config, uint16_t port, const
       if (!server_error.empty()) std::cerr << "plugmesh-server local setup: " << server_error << '\n';
     }
   });
+  for (int attempt = 0; attempt < 100 && !local_http.is_running() && !server_failed; ++attempt) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  if (local_http.is_running()) open_local_setup_browser(port);
   while ((!registration_complete || callback_active || local_http.has_active_requests()) && !server_failed) std::this_thread::sleep_for(std::chrono::milliseconds(10));
   // 注册回调可能已经完成，但 HTTP 响应仍在 websocketpp 的处理栈中；
   // 等请求退出后再销毁监听器，避免 Windows 下 teardown 期间访问已释放连接。
