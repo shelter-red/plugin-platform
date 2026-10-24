@@ -149,7 +149,7 @@ npm run build                            通过
 npm run ui:conventions                   82 个 TSX，0 违规
 npm run ui:css-audit                     467 条规则，0 死代码/重复定义
 npm run worker:smoke                     22 个 smoke 脚本通过
-npm run worker:runtime-test              17 个文件，77 个测试通过
+npm run worker:runtime-test              17 个文件，80 个测试通过
 npm run ui:smoke                         89 个测试通过
 npm run deploy:worker:test               9 条部署路径通过
 git diff --check                         通过
@@ -245,3 +245,4 @@ git diff --check                         通过
 - 2026-10-24：生产只读复核仍为 `/api/health` 200、`/` 302 到 `/setup`、`/setup` 200、`/api/me` 503 `setup_required`、`/auth/login` 302 到 `/setup`；用户尚未设置管理员密码。环境仍无 Cloudflare 业务凭据或 Workers CI Read 凭据，Wrangler OAuth 权限未变化。代码/文案 TODO 与废止方案残留扫描无新增结果；没有执行生产写入。
 - 2026-10-24：下一步登记（生产 setup 保存失败）：用户在生产 `/setup` 提交密码后收到“请检查 D1 migration”的 503。只读核验确认 `0001` 至 `0009` 无待执行项，相关九张表及索引存在，`PRAGMA foreign_key_check` 无异常，默认工作区、现有 super admin 与 owner 成员关系完整，`admin_credentials` 仍为 0 行；因此现有页面把所有异常归因于 migration 是错误的。下一步核对线上部署版本与运行时限制，重构初始化写入为可分类、可重试且避免部分成功的流程，增加生产数据形态回归；验证完成后再集中推送，不代用户写入密码。
 - 2026-10-24：生产 setup 保存修复已实现：Cloudflare `workerd` 官方源码确认 PBKDF2 存在生产环境迭代上限，新凭据改为带算法和迭代数的 `pbkdf2-sha256$100000$...` 格式，并兼容旧版 310000 次无前缀哈希；管理员补建、默认工作区成员、凭据、旧认证清理和审计现在处于同一个 D1 batch，任一步失败都会回滚。setup 按密码派生/数据库写入阶段记录不含秘密的错误编号，不再伪报 migration。Debian 12 容器定向 runtime 9/9、Worker typecheck 和 `git diff --check` 通过；完整验证与生产部署仍待下一步。
+- 2026-10-24：生产 setup 修复推送前完整验收通过：Worker runtime 17 个文件 80/80、Worker smoke 22/22、UI smoke 89/89、部署脚本 9/9，管理端构建、Worker typecheck、82 个 TSX 约定审计、467 条 CSS 审计和 `git diff --check` 全部通过。runtime 中的强制 D1 约束、网络中断与 SMTP 重试日志均来自预期故障注入；下一步一次性推送当前 `main`，按完整 SHA 低频查看 Actions，通过后用唯一部署入口 `npm run deploy` 发布生产并只读复核，仍不代用户提交密码。
