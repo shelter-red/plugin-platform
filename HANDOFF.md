@@ -106,7 +106,8 @@ git log --oneline --decorate -12
 - Linux 产物以 Debian 11/glibc 2.31 为兼容基线，携带 OpenSSL 3，并检查 GLIBC/GLIBCXX/CXXABI 上限。
 - Windows 产物携带 OpenSSL DLL；未注册双击可执行文件会打开本地 setup，注册成功后服务继续运行。
 - 交互式配置校验失败后必须原地重新输入，不能要求用户重启程序。
-- `v0.1.1` Release 已公开发布；三平台构建和 Release run `40050681670` 成功。
+- `v0.1.3` Release 已公开发布；三平台构建和 Release run `40100341851` 成功，平台验收 run `40100341893` 全部成功。
+- Windows `v0.1.3` 正式发布包已在真实 Windows 10 主机校验摘要、包内容和生产 WSS/TLS 业务拒绝路径；有效注册码绑定、Credential Manager 往返和插件宿主子进程仍需真实业务流程验收。
 
 ## 3. 部署与 migration
 
@@ -141,7 +142,7 @@ npx wrangler d1 migrations apply plugmesh --remote --config wrangler.toml
 
 ## 4. 验证基线
 
-推送基线 `2f1ad78` 已有以下证据：
+当前推送基线 `58ae66a` 已有以下证据：
 
 ```text
 npm run worker:typecheck                 通过
@@ -152,12 +153,15 @@ npm run worker:smoke                     22 个 smoke 脚本通过
 npm run worker:runtime-test              17 个文件，80 个测试通过
 npm run ui:smoke                         89 个测试通过
 npm run deploy:worker:test               9 条部署路径通过
+native CTest                            12/12 通过
+native UI smoke                         5/5 通过
 git diff --check                         通过
 ```
 
 - Playwright 容器使用当前 UID/GID 和 `HOME=/tmp`，避免生成 root 所有权的 Vite 缓存。
-- 推送 SHA：`2f1ad78ecd70642061927868deee79576e431d71`。
-- 平台验收 run：`40088916661`，`changes`/`web` 成功，三个 native job 按路径过滤跳过。
+- 推送 SHA：`58ae66ac1d324bcaf119d57c8e3c5957f7725aa7`，tag `v0.1.3`。
+- 平台验收 run `40100341893` 的 web 与 Linux/Windows/macOS native 全部成功；Release run `40100341851` 的三平台构建和发布全部成功。
+- Worker runtime 80/80 与部署路径 9/9 来自最后一次 Worker 代码变更基线；此后到 `58ae66a` 只修改原生端、发布流程、测试和文档，Worker 运行时代码未变。
 - Worker runtime 日志中的强制约束和连接中断是故障注入用例预期输出，以测试退出码和汇总为准。
 
 代码再次变更后必须重新运行与风险范围匹配的验证，不能沿用上述结果。
@@ -183,8 +187,8 @@ git diff --check                         通过
 2. 确认 Workers Builds Deploy command 为 `npm run deploy`。
 3. 登录后保存真实 Email、Global API Key 和 Account ID，验证 subscriptions、Analytics、Zone、DNS 与 Worker Route。
 4. 配置公网 SMTP，验证 STARTTLS/SMTPS、维护通知和退信处理。
-5. 在真实 Windows 主机和目标 Linux 发行版验证 `v0.1.1` 产物。
-6. 在已部署 Worker 上完成 HTTP、SSE、WebSocket、大文件、断线恢复和持续并发压力测试。
+5. Windows `v0.1.3` 发布包的摘要、内容、TLS 和无效注册码业务拒绝已在真实 Windows 10 验证；仍需使用有效注册码完成真实绑定、Credential Manager 往返和插件宿主子进程验收，并在目标 Linux 发行版验证发布包。
+6. 在已部署 Worker 上完成 HTTP、SSE、WebSocket、大文件、断线恢复和持续并发压力测试；当前生产 `servers`、`plugin_instances` 和 `domains` 均为 0，需先由用户完成真实绑定和插件加载。
 
 第 1 项涉及真实密码，只能由用户操作；不得读取、生成、猜测或代为设置。第 2 项当前缺少可用的 Dashboard 登录态或 Workers CI Read 凭据。后续各项开始前仍需按第 1 节登记。
 
@@ -213,13 +217,15 @@ git diff --check                         通过
 | `b1e93e1` | 移除 GitHub OAuth/邀请，改用 Cloudflare Email + Global API Key |
 | `0695e77` | 修复主站被插件域名后缀误判 |
 | `5dd388c`、`3182307` | 原生交互、Windows 生命周期和 Linux ABI 兼容修复 |
-| `25c0b20` / `v0.1.1` | 当前原生发布版本 |
+| `25c0b20` / `v0.1.1` | 首个 Linux ABI 兼容修复发布版本 |
 | `bf68565` | 缺少密码 migration 时返回结构化初始化状态 |
 | `4ce207c` | 已推送验收基线，Actions run `40082466727` 成功 |
 | `989188e` | 修复生产管理员密码初始化、版本化 PBKDF2 与原子写入 |
 | `2f1ad78` | 管理员密码初始化修复验收基线，Actions run `40088916661` 成功 |
 | `e8409ba` | 修复无主站 Host 绑定时管理端误入插件代理 |
-| `680adb6` | 当前已推送验收基线，Actions run `40090177061` 成功 |
+| `680adb6` | 主站 Host 回退修复，Actions run `40090177061` 成功 |
+| `7639710` | 修复跨平台 TLS 信任链与服务器绑定失败 |
+| `58ae66a` / `v0.1.3` | 当前原生发布版本；Release run `40100341851`、平台验收 `40100341893` 成功 |
 
 ## 8. 禁止回流的旧方案
 
@@ -281,3 +287,4 @@ git diff --check                         通过
 - 2026-10-24：下一步登记（真实 Windows 验收 `v0.1.3` 发布包）：生产只读统计仍为服务器、在线服务器、插件实例和域名均 0，查询元数据 `rows_written=0`；GitHub Release API 显示 `v0.1.3` 三平台资产均已上传但下载数仍为 0，因此尚无用户侧重试证据。下一步通过 WSL/Win32 桥接让真实 Windows 10 主机下载官方 Windows zip 和 `SHA256SUMS`，校验摘要并核对服务器、插件宿主、ABI 头、UI 与 OpenSSL DLL；在隔离目录用固定无效注册码访问生产 WSS，必须得到业务拒绝而非 TLS 失败/访问冲突，且不得创建凭据或生产服务器。核对同期 Application Error 后停止进程并清理临时文件；同时修正本节两条 TLS 记录的时间顺序。完成结果只提交 HANDOFF，不因验收记录再次推送。
 - 2026-10-24：真实 Windows `v0.1.3` 发布包验收完成：Windows 10 IoT Enterprise LTSC `10.0.19044` 直连 GitHub Release 失败后，按桥接规范仅对下载使用 `gh-proxy.com` 镜像，并以 GitHub Release 官方 `SHA256SUMS` 校验；Windows zip 的 SHA-256 为 `ea1f83dc1424e88ab3337bc730888d39a976f9afd907675d643c7b971f509b04` 且匹配。包内 `plugmesh-server.exe`、`plugmesh-plugin-host.exe`、`plugin_api.h`、README、`native-ui/dist/index.html`、`libssl-3-x64.dll` 与 `libcrypto-3-x64.dll` 均存在。发布二进制使用固定无效注册码访问生产 WSS，明确返回 `Registration code is invalid or expired`、退出码 1、未生成凭据文件，同期 Windows Application Error 为 0；隔离目录已清理。随后生产 D1 只读复核 `servers=0`、`rows_written=0`，未创建或消费有效注册码，未修改凭据、插件或域名。当前绑定修复已在真实发布物闭环，下一步需用户下载 `v0.1.3`、生成新注册码并执行真实绑定，才能继续生产插件协议验收。
 - 2026-10-24：下一步登记（校准原生发布验收文档）：当前 HANDOFF 产品契约和关键提交表仍把 `v0.1.1` 标为当前版本，`docs/acceptance-matrix.md` 仍称 Windows 发布物等待真机验收，`docs/local-e2e.md` 仍称 Windows 只经过 Wine，均与 `v0.1.3` 的真实 Windows 验收冲突。下一步仅更新现行状态和边界：记录 `v0.1.3`、Release/平台 Actions、原生 CTest 12/12、已验证的发布包内容/TLS/失败重试路径，并保留“真实有效注册码绑定、插件宿主进程、Credential Manager 往返、目标 Linux 真机”仍待验收；历史动作记录不改写。完成残留搜索和 `git diff --check` 后提交，普通文档不推送。
+- 2026-10-24：原生发布验收文档校准完成：HANDOFF 产品契约、验证基线、生产待验收和关键版本表均更新到推送 SHA `58ae66a` / `v0.1.3`、Release run `40100341851`、平台验收 `40100341893` 和原生 CTest 12/12；验收矩阵新增“部分发布物已验证”状态，注册码绑定与 Release 条目记录真实 Windows 证据；`docs/local-e2e.md` 删除“Windows 只在 Wine 验证”的过期边界。现行文档一致保留有效注册码绑定、Credential Manager 往返、插件宿主子进程和目标 Linux 发布包仍待验证；搜索剩余 `v0.1.1`、11/11 和 Wine 描述均仅位于不可改写的历史动作记录。`git diff --check` 通过，纯文档结果只提交不推送。

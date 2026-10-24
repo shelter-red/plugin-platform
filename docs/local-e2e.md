@@ -356,4 +356,4 @@ pkill -f 'build/plugmesh[-]server'
 - 当前为本地 miniflare/workerd 与本地 D1/R2 模拟，不是已部署 Cloudflare；未验证真实 DNS、证书、Worker routes 和公网长连接。
 - 未连接真实 Cloudflare Global API Key / Analytics / subscriptions 和公网 SMTP。
 - 本地服务器的轮换、撤销和同进程重新绑定已在本地真实栈上用本地控制台联调通过；`worker:runtime-test` 与 Native UI smoke 仍覆盖对应逻辑边界。
-- Windows 的构建、DLL 和 Credential Manager 只在 Wine 下验证过，真实 Windows 主机仍未验证。
+- Windows `v0.1.3` 正式发布包已在真实 Windows 10 主机校验 SHA-256、必需文件、OpenSSL DLL，并通过生产 WSS/TLS 到达无效注册码业务拒绝；有效注册码绑定、Credential Manager 往返和插件宿主子进程仍未在真实业务流程验证。
