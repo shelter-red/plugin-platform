@@ -2,6 +2,7 @@ node_modules/
 dist/
 native-server/build/
 native-server/build-win/
+native-server/build-*/
 native-server/third_party/nlohmann/
 native-server/third_party/websocketpp/
 native-server/third_party/asio/

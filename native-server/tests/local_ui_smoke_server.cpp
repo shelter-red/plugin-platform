@@ -66,7 +66,7 @@ int run_setup_server(uint16_t port, const std::filesystem::path& ui_directory) {
         {"credentialFile", "smoke-credentials.json"},
         {"systemCredentialsAvailable", false},
     };
-  }, ui_directory, [&registration_complete, &verifier, &worker_url, &credential_file](const nlohmann::json& payload, std::string& error) {
+  }, ui_directory, [&registration_complete, &verifier, &worker_url, &credential_file](const nlohmann::json& payload, std::string& error, std::string& error_code) {
     const auto text = [&](const char* key) {
       return payload.contains(key) && payload.at(key).is_string() ? payload.at(key).get<std::string>() : std::string();
     };
@@ -79,6 +79,27 @@ int run_setup_server(uint16_t port, const std::filesystem::path& ui_directory) {
     const auto credential_password = text("credentialPassword");
     if (worker_url.empty() || server_name.empty() || registration_code.empty() || credential_file.empty() || credential_password.empty() || password.size() < 8 || password != password_confirmation) {
       error = "invalid smoke registration payload";
+      error_code = "registration_invalid_input";
+      return nlohmann::json::object();
+    }
+    if (registration_code == "invalid-code") {
+      error = "Registration code is invalid or expired";
+      error_code = "registration_code_invalid_or_expired";
+      return nlohmann::json::object();
+    }
+    if (registration_code == "connection-error") {
+      error = "registration connection failed";
+      error_code = "registration_connection_failed";
+      return nlohmann::json::object();
+    }
+    if (registration_code == "tls-error") {
+      error = "certificate verify failed";
+      error_code = "registration_tls_failed";
+      return nlohmann::json::object();
+    }
+    if (registration_code == "save-error") {
+      error = "unable to write credential file";
+      error_code = "credential_save_failed";
       return nlohmann::json::object();
     }
     if (!plugmesh::make_local_ui_password_verifier(password, verifier, error)) return nlohmann::json::object();

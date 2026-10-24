@@ -18,7 +18,7 @@ class PluginManager;
 class LocalHttpServer {
  public:
   using StatusProvider = std::function<nlohmann::json()>;
-  using RegistrationHandler = std::function<nlohmann::json(const nlohmann::json&, std::string&)>;
+  using RegistrationHandler = std::function<nlohmann::json(const nlohmann::json&, std::string&, std::string&)>;
   using CredentialActionHandler = std::function<nlohmann::json(const std::string&, const nlohmann::json&, std::string&)>;
   using PasswordSetupHandler = std::function<bool(const std::string&, const nlohmann::json&, std::string&)>;
   using LogProvider = std::function<nlohmann::json()>;

@@ -87,6 +87,7 @@ class ControlClient {
   ServerConfig config_;
   PluginManager& plugins_;
   bool secure_;
+  std::string tls_hostname_;
   TlsClient tls_client_;
   PlainClient plain_client_;
   websocketpp::connection_hdl connection_;

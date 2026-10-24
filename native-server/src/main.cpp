@@ -163,7 +163,7 @@ bool run_registration_setup(plugmesh::ServerConfig& config, uint16_t port, const
   std::string server_error;
   plugmesh::LocalHttpServer local_http(port, nullptr, [initial_credential_file] {
     return nlohmann::json{{"configured", false}, {"connected", false}, {"credentialFile", initial_credential_file}, {"systemCredentialsAvailable", plugmesh::system_credentials_available()}};
-  }, ui_directory, [&config, &registration_complete, &callback_active, &registered](const nlohmann::json& payload, std::string& callback_error) {
+  }, ui_directory, [&config, &registration_complete, &callback_active, &registered](const nlohmann::json& payload, std::string& callback_error, std::string& callback_error_code) {
     callback_active = true;
     const auto text = [&](const char* key) {
       return payload.contains(key) && payload.at(key).is_string() ? payload.at(key).get<std::string>() : std::string();
@@ -180,23 +180,28 @@ bool run_registration_setup(plugmesh::ServerConfig& config, uint16_t port, const
       if (local_ui_password.size() < 8) callback_error = "本地 UI 口令至少需要 8 个字符";
       else if (local_ui_password != local_ui_password_confirmation) callback_error = "本地 UI 口令与确认口令不一致";
       else callback_error = use_system_store ? "当前平台没有可用的系统凭据存储，请填写凭据文件路径和口令" : "Worker 地址、服务器名称、注册码、凭据口令和凭据文件路径均为必填";
+      callback_error_code = "registration_invalid_input";
       callback_active = false;
       return nlohmann::json::object();
     }
 
     std::string local_ui_password_verifier;
     if (!plugmesh::make_local_ui_password_verifier(local_ui_password, local_ui_password_verifier, callback_error)) {
+      callback_error_code = "credential_save_failed";
       callback_active = false;
       return nlohmann::json::object();
     }
 
     plugmesh::RegistrationResult registration;
-    if (!plugmesh::register_server(worker_url, code, server_name, registration, callback_error)) {
+    plugmesh::RegistrationFailure registration_failure = plugmesh::RegistrationFailure::none;
+    if (!plugmesh::register_server(worker_url, code, server_name, registration, callback_error, &registration_failure)) {
+      callback_error_code = plugmesh::registration_failure_code(registration_failure);
       callback_active = false;
       return nlohmann::json::object();
     }
     const plugmesh::StoredCredentials credentials{worker_url, registration.server_id, registration.access_token, local_ui_password_verifier};
     if (!plugmesh::save_credentials(credential_file, credentials, password, callback_error)) {
+      callback_error_code = "credential_save_failed";
       callback_active = false;
       return nlohmann::json::object();
     }

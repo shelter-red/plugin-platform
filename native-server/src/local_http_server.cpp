@@ -411,8 +411,9 @@ void LocalHttpServer::handle_http(void* handle) {
         return;
       }
       std::string error;
-      auto result = registration_handler_(payload, error);
-      if (!error.empty()) set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", error}, {"code", "registration_failed"}});
+      std::string error_code;
+      auto result = registration_handler_(payload, error, error_code);
+      if (!error.empty()) set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", error}, {"code", error_code.empty() ? "registration_failed" : error_code}});
       else {
         result["ok"] = true;
         set_json_response(connection, websocketpp::http::status_code::created, result);

@@ -25,7 +25,7 @@ const [first, second] = await Promise.all([
 ])
 const results = [first, second]
 assert.equal(results.filter((result) => 'value' in result).length, 1)
-assert.deepEqual(results.filter((result) => 'error' in result), [{ error: 'Registration code is invalid or expired', status: 401 }])
+assert.deepEqual(results.filter((result) => 'error' in result), [{ error: 'Registration code is invalid or expired', code: 'registration_code_invalid_or_expired', status: 401 }])
 assert.equal(serverInserts, 1)
 assert.equal(used, true)
 console.log('registration code race smoke test passed')

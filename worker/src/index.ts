@@ -584,7 +584,7 @@ async function registerServer(request: Request, env: Env): Promise<Response> {
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
   const body = await request.json().catch(() => null) as { code?: string; name?: string } | null
   const result = await createServerRegistration(env, body?.code, body?.name)
-  if ('error' in result) return json({ error: result.error }, result.status)
+  if ('error' in result) return json({ error: result.error, code: result.code }, result.status)
   return json(result.value, 201)
 }
 
@@ -602,12 +602,12 @@ function registerServerSocket(env: Env): Response {
       try {
         body = JSON.parse(event.data) as { code?: string; name?: string }
       } catch {
-        server.send(JSON.stringify({ ok: false, error: 'Invalid JSON' }))
+        server.send(JSON.stringify({ ok: false, error: 'Invalid JSON', code: 'invalid_registration_request' }))
         server.close(1003, 'Invalid JSON')
         return
       }
       const result = await createServerRegistration(env, body.code, body.name)
-      if ('error' in result) server.send(JSON.stringify({ ok: false, error: result.error }))
+      if ('error' in result) server.send(JSON.stringify({ ok: false, error: result.error, code: result.code }))
       else server.send(JSON.stringify({ ok: true, ...result.value }))
       server.close(1000, 'Registration complete')
     })()
@@ -615,8 +615,8 @@ function registerServerSocket(env: Env): Response {
   return new Response(null, { status: 101, webSocket: client })
 }
 
-export async function createServerRegistration(env: Env, code: string | undefined, name: string | undefined): Promise<{ value: { serverId: string; accessToken: string; protocolVersion: number } } | { error: string; status: number }> {
-  if (!code || !name?.trim()) return { error: 'code and name are required', status: 400 }
+export async function createServerRegistration(env: Env, code: string | undefined, name: string | undefined): Promise<{ value: { serverId: string; accessToken: string; protocolVersion: number } } | { error: string; code: string; status: number }> {
+  if (!code || !name?.trim()) return { error: 'code and name are required', code: 'invalid_registration_request', status: 400 }
   const codeHash = await hashControlToken(code)
   const serverId = crypto.randomUUID()
   const accessToken = crypto.randomUUID() + crypto.randomUUID()
@@ -627,7 +627,7 @@ export async function createServerRegistration(env: Env, code: string | undefine
     env.DB.prepare('UPDATE registration_codes SET used_at = ? WHERE code_hash = ? AND used_at IS NULL AND expires_at > ?').bind(claimedAt, codeHash, claimedAt),
     env.DB.prepare("INSERT INTO audit_log (id, workspace_id, user_id, action, detail_json, created_at) SELECT ?, workspace_id, user_id, 'server.registered', ?, ? FROM servers WHERE id = ?").bind(crypto.randomUUID(), JSON.stringify({ serverId }), claimedAt, serverId),
   ])
-  if ((inserted.meta.changes ?? 0) !== 1 || (claimed.meta.changes ?? 0) !== 1) return { error: 'Registration code is invalid or expired', status: 401 }
+  if ((inserted.meta.changes ?? 0) !== 1 || (claimed.meta.changes ?? 0) !== 1) return { error: 'Registration code is invalid or expired', code: 'registration_code_invalid_or_expired', status: 401 }
   return { value: { serverId, accessToken, protocolVersion: 1 } }
 }
 

@@ -58,12 +58,11 @@ ControlClient::ControlClient(ServerConfig config, PluginManager& plugins) : conf
   if (secure_) configure(tls_client_);
   else configure(plain_client_);
   if (!secure_) return;
+  tls_hostname_ = websocketpp::uri(endpoint()).get_host();
   tls_client_.set_tls_init_handler(&ControlClient::tls_init);
-  tls_client_.set_socket_init_handler([this](websocketpp::connection_hdl handle, asio::ssl::stream<asio::ip::tcp::socket>& socket) {
-    const auto connection = tls_client_.get_con_from_hdl(handle);
-    const auto host = connection->get_uri()->get_host();
-    socket.set_verify_callback(asio::ssl::rfc2818_verification(host));
-    if (!host.empty()) SSL_set_tlsext_host_name(socket.native_handle(), host.c_str());
+  tls_client_.set_socket_init_handler([this](websocketpp::connection_hdl, asio::ssl::stream<asio::ip::tcp::socket>& socket) {
+    socket.set_verify_callback(asio::ssl::rfc2818_verification(tls_hostname_));
+    if (!tls_hostname_.empty()) SSL_set_tlsext_host_name(socket.native_handle(), tls_hostname_.c_str());
   });
 }
 
