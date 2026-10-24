@@ -92,7 +92,7 @@ test('留空密钥时保留已有 GitHub 密钥，撤销后回退到环境变量
   expect(revokedBody.github).toMatchObject({ source: 'environment', clientId: 'runtime-github-client' })
 })
 
-test('无效 GitHub 回调地址拒绝保存，提交 Cloudflare OAuth 配置明确返回 400', async () => {
+test('无效 GitHub 回调地址拒绝保存，提交已废弃 Cloudflare OAuth 配置明确返回 400', async () => {
   const invalid = await api('/api/settings/oauth', ADMIN_TOKEN, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
