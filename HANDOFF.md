@@ -8,6 +8,8 @@
 >
 > **生产待验收**：先应用 `0001` 至 `0009` migration，避免 `no such table: workspaces`；访问 `/setup` 设置密码并验证再次访问进入控制台登录流程；保存真实 Email + Global API Key + Account ID，分别验证 subscriptions、Analytics、Zone、通配 DNS 和 Worker Route。Cloudflare 未配置时 `/api/usage/cloudflare` 返回 `{configured:false,cached:false}` 属于官方用量状态，`/api/usage/local` 仍独立返回 200 的平台本地统计。
 >
+> **下一步登记（生产只读核验）**：以当前生产地址 `https://platform.shelter.red` 为对象，只使用 GET/HEAD 核对 `/api/health`、`/`、`/setup`、`/auth/login`、已废弃 GitHub OAuth/邀请接口及未登录管理 API 的状态码、重定向和响应结构，判断最新密码登录版本是否已由 Workers Builds 部署、D1 schema 是否仍暴露缺表错误。同步检查当前环境是否存在 Wrangler 登录态，但不运行 deploy、migration，不提交 setup 表单，不保存或删除 Cloudflare 凭据，不进行 DNS/Route 写入。核验结论必须写回本文件并提交；在该记录完成前不进入生产写入或下一项代码修改。
+>
 > 本次恢复记录：U29 的主站 Host 路由修复、回归测试和应急说明已完成并通过平台 Actions；8.5 原生教程、发布 workflow、原生运行时修复和 `v0.1.1` Release 已完成。未验证边界仅保留真实 Cloudflare/Workers Builds 控制台联调。
 
 > 新目标登记（2026-10-24）：将应用登录改为仅密码模式，首次未配置密码时所有业务页面和 API 均进入 `/setup`，setup 页面负责设置管理员密码；彻底移除 GitHub OAuth、GitHub 回调、白名单和依赖 GitHub 身份的邀请登录。Cloudflare 取消 OAuth 和 API Token，统一改为加密保存 Cloudflare Email + Global API Key，验证后选择目标 Account ID。保留工作区、插件、服务器、域名和审计业务数据，清理旧 OAuth、Token、邀请令牌、注册码和会话认证状态；旧 API Token 不自动转换，必须重新配置。密码使用 Web Crypto PBKDF2-SHA-256 + 随机 salt，不明文存储；密码修改撤销旧会话，忘记密码不提供未认证网页重置。先完成本登记提交和对应 Actions 验收，再按认证、Cloudflare、UI/文档、迁移测试分步实现；Actions 查询至少间隔约 1 分钟，不重复触发 workflow。
