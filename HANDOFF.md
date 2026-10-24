@@ -25,6 +25,8 @@
 > **下一步登记（Workers Builds 控制台只读核验）**：使用独立浏览器会话检查当前环境是否已有可复用的 Cloudflare Dashboard 登录态，并查阅 Cloudflare 官方文档/公开 API 能否只读获取 `plugmesh-worker` 的 Workers Builds Deploy command。不得输入或导出用户凭据，不得提交生产 `/setup`，不得修改 Builds、DNS、Route、D1 或业务配置；若没有登录态且官方 CLI/API 不提供读取能力，就记录可复现证据并将该项明确留给用户在控制台确认，不通过未公开接口猜测或写入。完成结论记录和提交前不进入其他修改。
 
 > **Workers Builds 只读核验结论**：Cloudflare 官方 API 定义 `GET /accounts/{account_id}/builds/workers/{external_script_id}/triggers`，响应包含 `deploy_command`，要求 Workers CI Read 或 Write；`external_script_id` 是 Worker 的 immutable tag，不是名称。使用当前 Wrangler OAuth 经官方 Workers scripts list 成功读取 `plugmesh-worker` 的 tag，但以该 tag 请求 Triggers 仍返回 403 `Authentication error`；环境中没有 Cloudflare API Token、Global API Key 变量或项目密钥文件。独立 Dashboard 会话停在人工 Turnstile 验证且无登录态，已关闭，没有绕过验证。全程仅执行 GET，没有修改 Builds、D1、DNS、Route、setup 或业务配置。该项需要用户在 Dashboard 查看，或提供具备 Workers CI Read 的 API 凭据后再核验。
+
+> **下一步登记（交接文档去历史化整理）**：当前文件主体仍保留已废止的 Cloudflare API Token、GitHub OAuth、权限清单和旧验收数量，和顶部恢复卡、`方案.md`、当前代码相冲突。下一步将本文件收敛为当前认证/Cloudflare/部署契约、已验证证据、生产状态、剩余外部验收、操作约束和关键提交索引；删除重复时间线与旧方案正文，历史过程由 Git 提交保留。只改交接文档，不改运行时、API、路由、workflow 或生产状态；完成差异审计和提交前不进入其他步骤。
 >
 > 本次恢复记录：U29 的主站 Host 路由修复、回归测试和应急说明已完成并通过平台 Actions；8.5 原生教程、发布 workflow、原生运行时修复和 `v0.1.1` Release 已完成。未验证边界仅保留真实 Cloudflare/Workers Builds 控制台联调。
 
