@@ -6,6 +6,8 @@ const ADMIN_CREDENTIAL_ID = 'primary'
 export const MIN_PASSWORD_LENGTH = 12
 const PASSWORD_ITERATIONS = 310000
 
+export type AdminPasswordState = 'configured' | 'unconfigured' | 'migration_required'
+
 export function sessionCookie(token: string, secure: boolean): string {
   return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800${secure ? '; Secure' : ''}`
 }
@@ -52,9 +54,15 @@ export async function verifyPassword(password: string, passwordHash: string, pas
   return difference === 0
 }
 
-export async function hasAdminPassword(env: Env): Promise<boolean> {
-  const row = await env.DB.prepare('SELECT id FROM admin_credentials WHERE id = ?').bind(ADMIN_CREDENTIAL_ID).first<{ id: string }>()
-  return Boolean(row)
+export async function getAdminPasswordState(env: Env): Promise<AdminPasswordState> {
+  try {
+    const row = await env.DB.prepare('SELECT id FROM admin_credentials WHERE id = ?').bind(ADMIN_CREDENTIAL_ID).first<{ id: string }>()
+    return row ? 'configured' : 'unconfigured'
+  } catch (error) {
+    const table = await env.DB.prepare("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = ?").bind('admin_credentials').first<{ present: number }>()
+    if (!table) return 'migration_required'
+    throw error
+  }
 }
 
 async function ensureAdminUser(env: Env): Promise<string> {

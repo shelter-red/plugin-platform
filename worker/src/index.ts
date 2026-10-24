@@ -1,6 +1,6 @@
 import { PluginBridge } from './durable-object'
 import { hashControlToken } from './security'
-import { authenticatePassword, changeAdminPassword, clearSessionCookie, createSession, digest, getCurrentUser, hasAdminPassword, MIN_PASSWORD_LENGTH, sessionCookie } from './auth'
+import { authenticatePassword, changeAdminPassword, clearSessionCookie, createSession, digest, getAdminPasswordState, getCurrentUser, MIN_PASSWORD_LENGTH, sessionCookie } from './auth'
 import type { AuthenticatedUser, CloudflarePlanSummary, CloudflareUsageLimits, Env } from './types'
 import { decryptSecret, encryptSecret } from './secrets'
 import { isEmail, parseSmtpSettings, publicSmtpSettings, sendSmtpTest, validateSmtpSettings, type SmtpSettings } from './email'
@@ -26,15 +26,22 @@ export default {
     const url = new URL(request.url)
     const managementPath = url.pathname === '/setup' || url.pathname.startsWith('/auth/') || url.pathname.startsWith('/control/') || url.pathname.startsWith('/blobs/')
     if (!managementPath && await isPluginHostname(url.hostname, env)) return proxyPublicHost(request, env, url, ctx)
-    if (url.pathname === '/api/health') return json({ ok: true, service: 'plugmesh-worker', protocolVersion: 1 })
+    const passwordState = await getAdminPasswordState(env)
+    if (url.pathname === '/api/health') {
+      if (passwordState === 'migration_required') return json({ ok: false, service: 'plugmesh-worker', protocolVersion: 1, code: 'migration_required', message: 'D1 migration 尚未完成' }, 503)
+      return json({ ok: true, service: 'plugmesh-worker', protocolVersion: 1 })
+    }
     if (url.pathname === '/setup') {
-      const setupResponse = await setupApi(request, env)
+      const setupResponse = await setupApi(request, env, passwordState)
       if (setupResponse) {
         return setupResponse
       }
     }
-    if (!await hasAdminPassword(env) && !url.pathname.startsWith('/control/') && !url.pathname.startsWith('/blobs/')) {
-      if (url.pathname.startsWith('/api/')) return json({ code: 'setup_required', message: '请先在 setup 页面设置管理员密码' }, 503)
+    if (passwordState !== 'configured' && !url.pathname.startsWith('/control/') && !url.pathname.startsWith('/blobs/')) {
+      if (url.pathname.startsWith('/api/')) {
+        if (passwordState === 'migration_required') return json({ code: 'migration_required', message: 'D1 migration 尚未完成，请先应用数据库迁移' }, 503)
+        return json({ code: 'setup_required', message: '请先在 setup 页面设置管理员密码' }, 503)
+      }
       return Response.redirect(new URL('/setup', request.url).toString(), 302)
     }
     if (url.pathname === '/auth/login') return passwordLogin(request, env, url)

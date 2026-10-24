@@ -19,6 +19,7 @@ const database = {
         return query
       },
       first: async <T>() => {
+        if (sql.includes('FROM sqlite_master')) return { present: 1 } as T
         if (sql.includes('FROM admin_credentials')) return { id: 'primary' } as T
         if (sql.includes('FROM sessions')) return (sessionTokens.get(values[0] as string) ? { user_id: sessionTokens.get(values[0] as string) } : null) as T
         if (sql.includes('FROM users WHERE id')) return (users.get(values[0] as string) ?? null) as T

@@ -29,12 +29,17 @@ test('登录页窄窗口不横向溢出', async ({ page }) => {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
 })
 
-test('未初始化时管理端进入 setup 页面', async ({ page }) => {
-  await page.route('**/api/me', (route) => route.fulfill({
-    status: 503,
-    contentType: 'application/json',
-    body: JSON.stringify({ code: 'setup_required', message: '请先设置管理员密码' }),
-  }))
-  await page.goto('/')
-  await expect(page).toHaveURL(/\/setup$/)
-})
+for (const state of [
+  { code: 'setup_required', label: '未初始化' },
+  { code: 'migration_required', label: 'migration 未完成' },
+]) {
+  test(`${state.label}时管理端进入 setup 页面`, async ({ page }) => {
+    await page.route('**/api/me', (route) => route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: state.code, message: '请先完成初始化' }),
+    }))
+    await page.goto('/')
+    await expect(page).toHaveURL(/\/setup$/)
+  })
+}

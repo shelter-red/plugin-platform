@@ -63,7 +63,7 @@ export function useConsoleData({ notify }: { notify: Notify }) {
         if (authEnabled) setAuthState('authenticated')
       })
       .catch((error) => {
-        if (error instanceof ApiError && error.code === 'setup_required' && window.location.pathname !== '/setup') {
+        if (error instanceof ApiError && (error.code === 'setup_required' || error.code === 'migration_required') && window.location.pathname !== '/setup') {
           window.location.assign('/setup')
           return
         }

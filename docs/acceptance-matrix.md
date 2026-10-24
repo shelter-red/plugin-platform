@@ -12,7 +12,7 @@
 
 | 验收项 | 状态 | 证据与边界 |
 | --- | --- | --- |
-| 首次管理员密码初始化 | 本地已验证 | `worker/runtime/setup.test.ts` 验证未初始化页面/API 门禁、密码长度与确认校验、PBKDF2 派生结果落库、setup 关闭；`0009_password_auth.sql` 创建凭据表。 |
+| 首次管理员密码初始化 | 本地已验证 | `worker/runtime/setup.test.ts` 验证未初始化页面/API 门禁、密码长度与确认校验、PBKDF2 派生结果落库、setup 关闭；`0009_password_auth.sql` 创建凭据表。缺少该表时健康检查、setup 和管理 API 返回结构化 `503 migration_required`，不泄漏为 Cloudflare 1101。 |
 | 管理员密码登录与修改 | 本地已验证 | runtime 验证错误密码 401、成功签发 HttpOnly 会话、修改密码校验当前密码并撤销全部旧会话；Playwright 覆盖组件化登录页和设置页修改密码。 |
 | 旧认证入口移除 | 本地已验证 | Worker 不再注册第三方登录、OAuth 设置和邀请接口；管理端无对应入口；历史表只用于升级兼容和初始化清理。 |
 | Cloudflare Email + Global API Key | 模块已验证 | `cloudflare-credentials.test.ts` 与 `cloudflare-settings.test.ts` 覆盖 `/user` 验证、账号分页、唯一/指定账号、subscriptions、密文保存、GET 不回显、删除本地密文和 401/403/409/502。 |
@@ -27,6 +27,7 @@
 | HTTP/SSE/WebSocket/文件流 | 本地已验证 | workerd runtime 与本地真实栈覆盖请求映射、并发隔离、取消、超时、响应大小、R2 中转及清理。 |
 | SMTP 测试与维护通知 | 本地已验证 | runtime 启动真实本地 SMTP 服务，覆盖未保存配置测试、密钥回退、成功投递、三次失败重试和脱敏审计；公网 TLS/退信待验证。 |
 | 管理端组件化与响应式 | 本地已验证 | 页面按外壳、数据 hook、功能面板拆分；Playwright 覆盖桌面/移动、深浅主题、axe、截图、图标和默认工作区对齐。 |
+| 推送前本地 CI | 本地已验证 | `ci:local` 与 Actions web job 同序；Playwright 容器使用当前 UID/GID，避免产生 root-owned Vite 缓存。 |
 | 部署 migration 门禁 | 本地已验证 | `deploy-worker.test.sh` 覆盖 D1/R2 创建、迁移先于发布、待迁移拒绝发布、Workers Builds 托管模式和只生成 `SESSION_SECRET`。 |
 | 手动原生构建与 Release | 本地已验证 | workflow 支持平台/产物类型/构建类型选择；Linux 使用 Debian 11 兼容基线并随包携带 OpenSSL，Windows 随包 DLL；Release 要求 `v*` tag。真机仍需验收。 |
 
@@ -38,8 +39,8 @@ npm run build                            通过
 npm run ui:conventions                   82 个 TSX，0 违规
 npm run ui:css-audit                     467 条规则，0 死代码/重复定义
 npm run worker:smoke                     22 个 smoke 脚本通过
-npm run worker:runtime-test              17 个文件，76 个测试通过
-npm run ui:smoke                         88 个测试通过
+npm run worker:runtime-test              17 个文件，77 个测试通过
+npm run ui:smoke                         89 个测试通过
 npm run deploy:worker:test               9 条部署路径通过
 git diff --check                         通过
 ```
@@ -48,7 +49,7 @@ runtime 在 `node:22-bookworm` 容器中运行，避免宿主机 glibc 与 worke
 
 ## 生产待验收
 
-1. 通过 Cloudflare Workers Builds 或本地 `npm run deploy` 对生产 D1 应用 `0001` 至 `0009` migration，确认无 `no such table`。
+1. 生产 D1 已应用 `0001` 至 `0009` 且复核无待执行 migration；仍需在 Workers Builds 控制台确认 Deploy command 为 `npm run deploy`，防止后续 schema 变更再次绕过 migration。
 2. 首次访问 `/setup` 设置管理员密码，验证后续密码登录和修改密码后的会话撤销。
 3. 在后台保存真实 Cloudflare Email、Global API Key 和 Account ID，验证 subscriptions、Analytics、Zone、DNS 与 Worker Route。
 4. 为自定义管理端域名配置 `CONSOLE_HOSTNAME`；插件域名使用独立子域后缀。

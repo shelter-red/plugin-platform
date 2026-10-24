@@ -28,6 +28,31 @@ test('未配置密码时所有管理入口都进入 setup', async () => {
   expect(html).not.toContain('部署令牌')
 })
 
+test('密码表尚未迁移时返回结构化 503 而不是 Worker 1101', async () => {
+  await testEnv.DB.prepare('DROP TABLE admin_credentials').run()
+  try {
+    const health = await SELF.fetch('https://console.example.com/api/health')
+    expect(health.status).toBe(503)
+    expect(await health.json()).toMatchObject({ ok: false, code: 'migration_required' })
+
+    const page = await SELF.fetch('https://console.example.com/', { redirect: 'manual' })
+    expect(page.status).toBe(302)
+    expect(page.headers.get('location')).toBe('https://console.example.com/setup')
+
+    const setup = await SELF.fetch('https://console.example.com/setup')
+    expect(setup.status).toBe(503)
+    const html = await setup.text()
+    expect(html).toContain('数据库迁移尚未完成')
+    expect(html).not.toContain('name="password"')
+
+    const api = await SELF.fetch('https://console.example.com/api/me')
+    expect(api.status).toBe(503)
+    expect(await api.json()).toMatchObject({ code: 'migration_required' })
+  } finally {
+    await testEnv.DB.prepare('CREATE TABLE admin_credentials (id TEXT PRIMARY KEY, password_hash TEXT NOT NULL, password_salt TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)').run()
+  }
+})
+
 test('setup 校验失败时保留当前页面并允许重新输入', async () => {
   const short = await submitSetup('short', 'short')
   expect(short.status).toBe(400)

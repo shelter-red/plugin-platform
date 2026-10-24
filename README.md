@@ -128,7 +128,7 @@ npx wrangler d1 migrations apply plugmesh --remote  # 补齐后重新发布即�
 
 先使用 Cloudflare 提供的默认地址 `https://<worker-name>.<workers-subdomain>.workers.dev/setup`，自定义域名可以稍后再绑定。
 
-首次访问 `/setup` 设置管理员密码。密码至少 12 个字符，并需要重复输入确认；校验失败时页面保留并允许立即重新输入。保存成功后 `/setup` 关闭，后续使用该密码登录。未完成初始化前，所有管理页面都会进入 `/setup`，管理 API 返回 `503 setup_required`。
+首次访问 `/setup` 设置管理员密码。密码至少 12 个字符，并需要重复输入确认；校验失败时页面保留并允许立即重新输入。保存成功后 `/setup` 关闭，后续使用该密码登录。未完成初始化前，所有管理页面都会进入 `/setup`，管理 API 返回 `503 setup_required`。若新代码已发布但密码 migration 尚未应用，`/api/health`、setup 和管理 API 会返回结构化 `503 migration_required`，不会退化成 Cloudflare 1101。
 
 以下配置全部在登录后的管理后台完成，不需要重新部署：
 
