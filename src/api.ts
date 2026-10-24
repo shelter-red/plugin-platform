@@ -567,6 +567,16 @@ export async function fetchMe(): Promise<ApiMe> {
   return response.json() as Promise<ApiMe>
 }
 
+export async function loginWithPassword(password: string): Promise<void> {
+  const response = await fetch(`${apiBase}/auth/login`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ password }),
+  })
+  await assertOk(response, 'password login failed')
+}
+
 export async function fetchWorkspaces(): Promise<Workspace[]> {
   const response = await apiRequest('/api/workspaces')
   await assertOk(response, 'workspaces request failed')

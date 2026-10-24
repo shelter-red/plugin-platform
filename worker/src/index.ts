@@ -1,8 +1,6 @@
 import { PluginBridge } from './durable-object'
 import { hashControlToken } from './security'
-import { acceptInvite, createSession, digest, exchangeGithubCode, getCurrentUser, isAllowlisted, sessionCookie, clearSessionCookie, upsertGithubUser, type AuthErrorCode } from './auth'
-import { authErrorResponse } from './auth-error-page'
-import type { GithubAuthResult } from './auth'
+import { authenticatePassword, clearSessionCookie, createSession, digest, getCurrentUser, hasAdminPassword, sessionCookie } from './auth'
 import type { AuthenticatedUser, CloudflarePlanSummary, CloudflareUsageLimits, Env } from './types'
 import { decryptSecret, encryptSecret } from './secrets'
 import { isEmail, parseSmtpSettings, publicSmtpSettings, sendInviteEmail, sendSmtpTest, validateSmtpSettings, type SmtpSettings } from './email'
@@ -11,10 +9,10 @@ import { activateMaintenance, cloudflareQuotaReason, defaultPlatformSettings, ge
 import { findPluginRoute, invalidatePluginRoute } from './route-cache'
 import { selectPublicRequestMode } from './request-mode'
 import { resolvePublicRoute } from './public-route'
-import { oauthSettingsApi, resolveOauthSettings } from './oauth-settings'
+import { resolveOauthSettings } from './oauth-settings'
 import { setupApi } from './setup'
 import { recordAudit } from './audit'
-import { DEFAULT_WORKSPACE_ID, activeWorkspaceId, createWorkspace, ensureSuperAdminWorkspace, listWorkspaceMembers, listWorkspaces, ownerCount, parseWorkspaceRole, requireOwner, requireWrite, resolveWorkspace, workspaceForUser } from './workspaces'
+import { DEFAULT_WORKSPACE_ID, activeWorkspaceId, createWorkspace, listWorkspaceMembers, listWorkspaces, ownerCount, parseWorkspaceRole, requireOwner, requireWrite, resolveWorkspace, workspaceForUser } from './workspaces'
 import type { Workspace, WorkspaceRole } from './types'
 
 export { PluginBridge }
@@ -22,10 +20,6 @@ export { PluginBridge }
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json; charset=utf-8' } })
 const consoleHostnameCacheTtlMs = 30_000
 let consoleHostnameCache: { value: string | null; expiresAt: number } | null = null
-
-function invalidateConsoleHostnameCache(): void {
-  consoleHostnameCache = null
-}
 
 async function configuredConsoleHostname(env: Env): Promise<string | null> {
   if (consoleHostnameCache && consoleHostnameCache.expiresAt > Date.now()) return consoleHostnameCache.value
@@ -43,17 +37,20 @@ async function configuredConsoleHostname(env: Env): Promise<string | null> {
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url)
-    if (await isPluginHostname(url.hostname, env)) return proxyPublicHost(request, env, url, ctx)
+    const managementPath = url.pathname === '/setup' || url.pathname.startsWith('/auth/') || url.pathname.startsWith('/control/') || url.pathname.startsWith('/blobs/')
+    if (!managementPath && await isPluginHostname(url.hostname, env)) return proxyPublicHost(request, env, url, ctx)
     if (url.pathname === '/api/health') return json({ ok: true, service: 'plugmesh-worker', protocolVersion: 1 })
     if (url.pathname === '/setup') {
-      const setupResponse = await setupApi(request, env, url)
+      const setupResponse = await setupApi(request, env)
       if (setupResponse) {
-        invalidateConsoleHostnameCache()
         return setupResponse
       }
     }
-    if (url.pathname === '/auth/github/start') return startGithubAuth(env, url)
-    if (url.pathname === '/auth/github/callback') return finishGithubAuth(request, env, url)
+    if (!await hasAdminPassword(env) && !url.pathname.startsWith('/control/') && !url.pathname.startsWith('/blobs/')) {
+      if (url.pathname.startsWith('/api/')) return json({ code: 'setup_required', message: '请先在 setup 页面设置管理员密码' }, 503)
+      return Response.redirect(new URL('/setup', request.url).toString(), 302)
+    }
+    if (url.pathname === '/auth/login') return passwordLogin(request, env, url)
     if (url.pathname === '/auth/logout') return new Response(null, { status: 302, headers: { location: '/', 'set-cookie': clearSessionCookie(url.protocol === 'https:') } })
     if (url.pathname === '/control/register') return request.headers.get('Upgrade')?.toLowerCase() === 'websocket' ? registerServerSocket(env) : registerServer(request, env)
     if (url.pathname.startsWith('/api/')) return api(request, env, url)
@@ -105,11 +102,6 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     return json(await env.DB.prepare('SELECT audit_log.id, audit_log.action, audit_log.detail_json, audit_log.created_at, users.display_name AS actor_name, users.email AS actor_email FROM audit_log LEFT JOIN users ON users.id = audit_log.user_id WHERE audit_log.workspace_id = ? AND audit_log.created_at >= ? ORDER BY audit_log.created_at DESC LIMIT 100').bind(workspace.id, since).all())
   }
   if (request.method === 'GET' && url.pathname === '/api/access-logs') return accessLogsApi(env, workspace)
-  if (url.pathname === '/api/settings/oauth') {
-    const response = await oauthSettingsApi(request, env, user)
-    invalidateConsoleHostnameCache()
-    return response
-  }
   if (url.pathname === '/api/settings/platform') return platformSettingsApi(request, env, user)
   if (url.pathname === '/api/settings/cloudflare') return cloudflareSettingsApi(request, env, user)
   if (url.pathname === '/api/settings/smtp') return smtpSettingsApi(request, env, user)
@@ -453,57 +445,15 @@ async function refreshCloudflareUsageOnSchedule(env: Env): Promise<void> {
   await cloudflareUsageApi(env, administrator)
 }
 
-async function startGithubAuth(env: Env, url: URL): Promise<Response> {
-  const { github } = await resolveOauthSettings(env)
-  if (!github) return new Response('GitHub OAuth is not configured', { status: 503 })
-  const state = crypto.randomUUID()
-  const inviteToken = url.searchParams.get('invite')
-  await env.DB.prepare('INSERT INTO oauth_states (state_hash, invite_token_hash, expires_at, created_at) VALUES (?, ?, ?, ?)').bind(await digest(state), inviteToken ? await digest(inviteToken) : null, new Date(Date.now() + 10 * 60 * 1000).toISOString(), new Date().toISOString()).run()
-  const githubUrl = new URL('https://github.com/login/oauth/authorize')
-  githubUrl.searchParams.set('client_id', github.clientId)
-  githubUrl.searchParams.set('redirect_uri', github.redirectUri)
-  githubUrl.searchParams.set('scope', 'read:user user:email')
-  githubUrl.searchParams.set('state', state)
-  return Response.redirect(githubUrl.toString(), 302)
-}
-
-const githubAuthFailureCodes: Record<Extract<GithubAuthResult, { ok: false }>['reason'], AuthErrorCode> = {
-  not_configured: 'oauth_not_configured',
-  token_exchange_failed: 'token_exchange_failed',
-  user_api_failed: 'user_api_failed',
-  email_api_failed: 'email_api_failed',
-  identity_incomplete: 'identity_incomplete',
-  no_verified_email: 'email_unverified',
-}
-
-async function finishGithubAuth(request: Request, env: Env, url: URL): Promise<Response> {
-  const state = url.searchParams.get('state')
-  const code = url.searchParams.get('code')
-  if (!state || !code) return authErrorResponse(request, 'callback_incomplete')
-  const stateHash = await digest(state)
-  const now = new Date().toISOString()
-  const oauthState = await env.DB.prepare('SELECT state_hash, invite_token_hash FROM oauth_states WHERE state_hash = ? AND expires_at > ?').bind(stateHash, now).first<{ state_hash: string; invite_token_hash: string | null }>()
-  if (!oauthState) return authErrorResponse(request, 'state_expired')
-  const consumedState = await env.DB.prepare('DELETE FROM oauth_states WHERE state_hash = ? AND expires_at > ?').bind(oauthState.state_hash, now).run()
-  if ((consumedState.meta.changes ?? 0) !== 1) return authErrorResponse(request, 'state_used')
-  const authResult = await exchangeGithubCode(env, code)
-  if (!authResult.ok) return authErrorResponse(request, githubAuthFailureCodes[authResult.reason])
-  const identity = authResult.identity
-  const allowlisted = await isAllowlisted(env, { login: identity.login, emails: identity.emails })
-  const existing = await env.DB.prepare('SELECT id FROM users WHERE github_id = ?').bind(identity.githubId).first<{ id: string }>()
-  const role = allowlisted ? 'super_admin' : 'member'
-  let userId: string
-  if (oauthState.invite_token_hash) {
-    const invitedUserId = await acceptInvite(env, oauthState.invite_token_hash, identity, role)
-    if (!invitedUserId) return authErrorResponse(request, 'invite_mismatch')
-    userId = invitedUserId
-  } else {
-    if (!allowlisted && !existing) return authErrorResponse(request, 'invite_required')
-    userId = await upsertGithubUser(env, identity, role)
-  }
-  if (role === 'super_admin') await ensureSuperAdminWorkspace(env, userId)
+async function passwordLogin(request: Request, env: Env, url: URL): Promise<Response> {
+  if (request.method !== 'POST') return json({ code: 'method_not_allowed', message: 'Method not allowed' }, 405)
+  const body = await request.json().catch(() => null) as { password?: unknown } | null
+  const password = typeof body?.password === 'string' ? body.password : ''
+  if (!password) return json({ code: 'password_required', message: '请输入管理员密码' }, 400)
+  const userId = await authenticatePassword(env, password)
+  if (!userId) return json({ code: 'invalid_password', message: '密码错误' }, 401)
   const token = await createSession(env, userId)
-  return new Response(null, { status: 302, headers: { location: '/', 'set-cookie': sessionCookie(token, url.protocol === 'https:') } })
+  return new Response(null, { status: 204, headers: { 'set-cookie': sessionCookie(token, url.protocol === 'https:') } })
 }
 
 type AccessLogRecord = {

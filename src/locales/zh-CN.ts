@@ -119,13 +119,13 @@ export default {
   auth: {
     checkingTitle: '正在检查登录状态',
     checkingBody: '请稍候，Plugmesh 正在验证当前会话。',
-    inviteTitle: '接受平台邀请',
     loginTitle: '登录 Plugmesh',
-    inviteBody: '使用受邀的 GitHub 身份继续，平台会在登录后完成身份匹配。',
-    loginBody: '管理插件服务器、插件实例和公开域名。平台不开放自助注册。',
-    github: '使用 GitHub 登录',
+    loginBody: '使用管理员密码进入控制台。',
+    password: '管理员密码',
+    login: '登录',
+    loginFailed: '密码登录失败，请重试。',
     note: '登录状态由 HttpOnly 会话 cookie 保护',
-    inviteOnly: '仅受邀成员可登录，不开放自助注册',
+    passwordOnly: '当前部署使用单一管理员密码登录',
     asideTitle: '一个控制台，管理全部插件与域名。',
     asideBody: '绑定服务器、分发插件、分配域名，并在同一处查看用量、访问日志与审计记录。',
     points: {

@@ -119,13 +119,13 @@ export default {
   auth: {
     checkingTitle: 'Checking sign-in status',
     checkingBody: 'Please wait while Plugmesh verifies your session.',
-    inviteTitle: 'Accept platform invite',
     loginTitle: 'Sign in to Plugmesh',
-    inviteBody: 'Continue with the invited GitHub identity; the platform will match it after sign-in.',
-    loginBody: 'Manage plugin servers, plugin instances and public domains. Self-signup is disabled.',
-    github: 'Sign in with GitHub',
+    loginBody: 'Use the administrator password to enter the console.',
+    password: 'Administrator password',
+    login: 'Sign in',
+    loginFailed: 'Password sign-in failed. Try again.',
     note: 'Your session is protected by an HttpOnly cookie',
-    inviteOnly: 'Invite-only access; self-signup is disabled',
+    passwordOnly: 'This deployment uses one administrator password',
     asideTitle: 'One console for every plugin and domain.',
     asideBody: 'Bind servers, ship plugins, assign domains and review usage, access logs and audit records in one place.',
     points: {

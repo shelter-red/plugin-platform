@@ -44,6 +44,7 @@ export async function resetDatabase(): Promise<void> {
     testEnv.DB.prepare('DELETE FROM oauth_states'),
     testEnv.DB.prepare('DELETE FROM invites'),
     testEnv.DB.prepare('DELETE FROM smtp_settings'),
+    testEnv.DB.prepare('DELETE FROM admin_credentials'),
     testEnv.DB.prepare('DELETE FROM oauth_settings'),
     testEnv.DB.prepare('DELETE FROM cloudflare_credentials'),
     testEnv.DB.prepare('DELETE FROM users'),
@@ -51,6 +52,7 @@ export async function resetDatabase(): Promise<void> {
   const now = new Date().toISOString()
   await testEnv.DB.batch([
     testEnv.DB.prepare("INSERT INTO workspaces (id, name, slug, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)").bind(DEFAULT_WORKSPACE_ID, '默认工作区', 'default', null, now, now),
+    testEnv.DB.prepare("INSERT INTO admin_credentials (id, password_hash, password_salt, created_at, updated_at) VALUES (?, ?, ?, ?, ?)").bind('primary', 'AA==', 'AA==', now, now),
   ])
 }
 

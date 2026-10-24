@@ -6,6 +6,8 @@
 
 > 新目标登记（2026-10-24）：将应用登录改为仅密码模式，首次未配置密码时所有业务页面和 API 均进入 `/setup`，setup 页面负责设置管理员密码；彻底移除 GitHub OAuth、GitHub 回调、白名单和依赖 GitHub 身份的邀请登录。Cloudflare 取消 OAuth 和 API Token，统一改为加密保存 Cloudflare Email + Global API Key，验证后选择目标 Account ID。保留工作区、插件、服务器、域名和审计业务数据，清理旧 OAuth、Token、邀请令牌、注册码和会话认证状态；旧 API Token 不自动转换，必须重新配置。密码使用 Web Crypto PBKDF2-SHA-256 + 随机 salt，不明文存储；密码修改撤销旧会话，忘记密码不提供未认证网页重置。先完成本登记提交和对应 Actions 验收，再按认证、Cloudflare、UI/文档、迁移测试分步实现；Actions 查询至少间隔约 1 分钟，不重复触发 workflow。
 
+> 第一步完成（认证迁移）：新增 `0009_password_auth.sql` 与 Web Crypto PBKDF2 密码派生，`/setup` 改为首次设置管理员密码，未配置时管理页面重定向 setup、管理 API 返回 `setup_required`；新增 `/auth/login` 密码登录并保留 HttpOnly 会话。GitHub 登录回调已从活跃 Worker 路由移除，登录页改为密码表单，旧 GitHub smoke 脚本从执行链移除；公共插件控制和 blob 传输不受初始化门禁影响。`npm run worker:typecheck`、`npm run build`、`npm run worker:smoke`、`git diff --check` 通过；宿主机直接运行 Worker runtime 仍受既有 glibc 低版本限制，待 CI/Docker runtime 验证。下一步在本记录提交后改造 Cloudflare Email + Global API Key 客户端和设置 API，未记录前不继续。
+
 > 新步骤登记（2026-10-24）：校正本文件压缩恢复卡中残留的旧 HEAD、旧 U18 状态和 Actions 结论，并登记 `f38cce5` 的真实远端状态；只同步可由当前 Git、workflow 和本地命令证明的事实，不改变运行时代码、路由、API、权限或测试契约。登记提交完成前不开始后续文档审计；Actions 查询保持低频，不重复触发 workflow。
 
 > 本步骤完成：`b6e728b` 已推送；平台验收 run `40057833529`（对应完整 SHA `b6e728b6a2d0614b706db99252352af98aac121e`）经低频查询为 `completed/success`。恢复卡现已以 `f38cce5` 为前一基线，并明确当前提交必须使用完整 SHA 查询，不沿用历史 Actions 结论。

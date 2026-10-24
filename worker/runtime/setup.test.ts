@@ -1,105 +1,63 @@
 import { SELF } from 'cloudflare:test'
 import { beforeEach, expect, test } from 'vitest'
+import { MIN_PASSWORD_LENGTH, setAdminPassword } from '../src/auth'
 import { resetDatabase, testEnv } from './helpers'
-import { defaultPlatformSettings, setPlatformSettingsCache } from '../src/usage'
-
-const SETUP_TOKEN = 'runtime-setup-token'
 
 beforeEach(async () => {
   await resetDatabase()
+  await testEnv.DB.prepare('DELETE FROM admin_credentials').run()
 })
 
-function submitSetup(overrides: Record<string, string> = {}): Promise<Response> {
-  const form = new URLSearchParams({
-    setupToken: SETUP_TOKEN,
-    clientId: 'setup-github-client',
-    clientSecret: 'setup-github-secret',
-    allowlist: 'runtime-admin',
-    ...overrides,
-  })
-  return SELF.fetch('https://console.example.com/setup', {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: form.toString(),
-    redirect: 'manual',
-  })
+function submitSetup(password = 'correct-horse-battery', confirmPassword = password): Promise<Response> {
+  const form = new URLSearchParams({ password, confirmPassword })
+  return SELF.fetch('https://console.example.com/setup', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: form.toString(), redirect: 'manual' })
 }
 
-test('初始化页拒绝错误部署令牌且不保存 OAuth 配置', async () => {
-  const page = await SELF.fetch('https://console.example.com/setup')
-  expect(page.status).toBe(200)
-  const html = await page.text()
-  expect(html).toContain('初始化 Plugmesh')
-  expect(html).toContain('部署令牌')
-  expect(html).toContain('<span>Homepage URL</span><code>https://console.example.com/</code>')
-  expect(html).toContain('<span>Authorization callback URL</span><code>https://console.example.com/auth/github/callback</code>')
-  expect(html.match(/\/auth\/github\/callback/g)).toHaveLength(1)
-  expect(html).not.toContain('name="redirectUri"')
-  expect(html).not.toContain(SETUP_TOKEN)
-
-  const response = await submitSetup({ setupToken: 'wrong-token' })
-  expect(response.status).toBe(401)
-  expect(await response.text()).toContain('部署令牌不正确')
-  const stored = await testEnv.DB.prepare('SELECT COUNT(*) AS count FROM oauth_settings').first<{ count: number }>()
-  expect(stored?.count).toBe(0)
+test('未配置密码时所有管理入口都进入 setup', async () => {
+  const page = await SELF.fetch('https://console.example.com/')
+  expect(page.status).toBe(302)
+  expect(page.headers.get('location')).toBe('https://console.example.com/setup')
+  const api = await SELF.fetch('https://console.example.com/api/me')
+  expect(api.status).toBe(503)
+  expect(await api.json()).toEqual({ code: 'setup_required', message: '请先在 setup 页面设置管理员密码' })
+  const setup = await SELF.fetch('https://console.example.com/setup')
+  expect(setup.status).toBe(200)
+  const html = await setup.text()
+  expect(html).toContain('管理员密码')
+  expect(html).not.toContain('GitHub')
+  expect(html).not.toContain('部署令牌')
 })
 
-test('正确初始化后 GitHub 白名单账号成为首个超级管理员，入口永久锁定', async () => {
+test('setup 校验失败时保留当前页面并允许重新输入', async () => {
+  const short = await submitSetup('short', 'short')
+  expect(short.status).toBe(400)
+  expect(await short.text()).toContain(`密码至少需要 ${MIN_PASSWORD_LENGTH} 个字符`)
+  const mismatch = await submitSetup('correct-horse-battery', 'different-password')
+  expect(mismatch.status).toBe(400)
+  expect(await mismatch.text()).toContain('两次输入的密码不一致')
+  expect((await testEnv.DB.prepare('SELECT COUNT(*) AS count FROM admin_credentials').first<{ count: number }>())?.count).toBe(0)
+})
+
+test('设置密码后可以使用密码登录，setup 不再初始化', async () => {
   const response = await submitSetup()
   expect(response.status).toBe(303)
-  expect(response.headers.get('location')).toBe('/auth/github/start')
-
-  const stored = await testEnv.DB.prepare('SELECT ciphertext, iv FROM oauth_settings WHERE id = ?').bind('primary').first<{ ciphertext: string; iv: string }>()
-  expect(stored).toBeTruthy()
-  expect(stored?.ciphertext).not.toContain('setup-github-client')
-  expect(stored?.ciphertext).not.toContain('setup-github-secret')
-
-  const start = await SELF.fetch('https://console.example.com/auth/github/start', { redirect: 'manual' })
-  expect(start.status).toBe(302)
-  const authorize = new URL(start.headers.get('location') ?? '')
-  expect(authorize.searchParams.get('client_id')).toBe('setup-github-client')
-  expect(authorize.searchParams.get('redirect_uri')).toBe('https://console.example.com/auth/github/callback')
-  const state = authorize.searchParams.get('state') ?? ''
-
-  const callback = await SELF.fetch(`https://console.example.com/auth/github/callback?code=runtime-admin&state=${encodeURIComponent(state)}`, { redirect: 'manual' })
-  expect(callback.status).toBe(302)
-  expect(callback.headers.get('location')).toBe('/')
-  const cookie = callback.headers.get('set-cookie') ?? ''
-  expect(cookie).toContain('plugmesh_session=')
-
-  const user = await testEnv.DB.prepare('SELECT email, role FROM users WHERE github_id = ?').bind('1001').first<{ email: string; role: string }>()
-  expect(user).toEqual({ email: 'admin@example.com', role: 'super_admin' })
-
-  const token = decodeURIComponent(cookie.split(';')[0]!.slice('plugmesh_session='.length))
-  const settings = await SELF.fetch('https://console.example.com/api/settings/oauth', { headers: { cookie: `plugmesh_session=${token}` } })
-  expect(settings.status).toBe(200)
-  const payload = await settings.json() as Record<string, unknown>
-  expect(JSON.stringify(payload)).not.toContain('setup-github-secret')
-  expect((payload.github as { configured: boolean }).configured).toBe(true)
-
-  // 主站可以位于插件后缀的子域名下；已保存的 GitHub 回调主机必须优先走管理端 SPA。
-  setPlatformSettingsCache({ ...defaultPlatformSettings, pluginDomainSuffix: '.example.com' })
-  const consolePage = await SELF.fetch('https://console.example.com/')
-  expect(consolePage.status).toBe(200)
-  expect(await consolePage.text()).not.toContain('Plugin domain not found')
-  const consoleHealth = await SELF.fetch('https://console.example.com/api/health')
-  expect(consoleHealth.status).toBe(200)
-  expect(await consoleHealth.json()).toEqual({ ok: true, service: 'plugmesh-worker', protocolVersion: 1 })
-
-  const locked = await submitSetup()
-  const fallback = await SELF.fetch('https://console.example.com/no-such-route', {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: 'setupToken=runtime-setup-token',
-    redirect: 'manual',
-  })
+  expect(response.headers.get('location')).toBe('/')
+  const locked = await SELF.fetch('https://console.example.com/setup')
+  const fallback = await SELF.fetch('https://console.example.com/no-such-route')
   expect(locked.status).toBe(fallback.status)
-  const lockedBody = new TextDecoder().decode(await locked.arrayBuffer())
-  const fallbackBody = new TextDecoder().decode(await fallback.arrayBuffer())
-  expect(lockedBody).toBe(fallbackBody)
+  expect(await locked.text()).toBe(await fallback.text())
+  const wrong = await SELF.fetch('https://console.example.com/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'wrong-password' }) })
+  expect(wrong.status).toBe(401)
+  expect((await wrong.json() as { code: string }).code).toBe('invalid_password')
+  const login = await SELF.fetch('https://console.example.com/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'correct-horse-battery' }) })
+  expect(login.status).toBe(204)
+  expect(login.headers.get('set-cookie')).toContain('plugmesh_session=')
+})
 
-  const lockedPage = await SELF.fetch('https://console.example.com/setup', { redirect: 'manual' })
-  const fallbackPage = await SELF.fetch('https://console.example.com/no-such-route', { redirect: 'manual' })
-  expect(lockedPage.status).toBe(fallbackPage.status)
-  expect(await lockedPage.text()).toBe(await fallbackPage.text())
+test('管理员密码只保存为派生结果，不保存明文', async () => {
+  await setAdminPassword(testEnv, 'correct-horse-battery')
+  const stored = await testEnv.DB.prepare('SELECT password_hash, password_salt FROM admin_credentials WHERE id = ?').bind('primary').first<{ password_hash: string; password_salt: string }>()
+  expect(stored?.password_hash).toBeTruthy()
+  expect(stored?.password_salt).toBeTruthy()
+  expect(stored?.password_hash).not.toContain('correct-horse-battery')
 })
