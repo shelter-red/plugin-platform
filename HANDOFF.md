@@ -3,6 +3,8 @@
 > 最后整理：2026-10-24（Asia/Shanghai）
 >
 > 本次恢复记录：U29 的主站 Host 路由修复、回归测试和应急说明已完成并通过平台 Actions；8.5 原生教程、发布 workflow、原生运行时修复和 `v0.1.1` Release 已完成。未验证边界仅保留真实 Cloudflare/Workers Builds 控制台联调。
+
+> 新步骤登记（2026-10-24）：继续执行当前目标，先固化 Actions 低频追踪约束，再对当前代码和文档做有证据的过期文案、重复注释和死代码审计。登记提交完成并验证对应 Actions 前，不开始后续修改；Actions 查询至少间隔 1 分钟，不重复触发 workflow，不把轮询状态误判为成功。
 >
 > 本步本地验收已通过：`npm run worker:typecheck`、`npm run build`、`npm run worker:smoke`、`worker/runtime/setup.test.ts` 2/2（含重叠后缀下主站根路径和 `/api/health`），以及 Docker Worker runtime 20/20 文件、93/93 测试；下一步提交 U29 代码/文档并重新执行完整 CI。
 >
