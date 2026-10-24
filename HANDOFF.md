@@ -54,6 +54,8 @@
 >
 > 本步清理已完成：删除 8.3 下重复的历史“待实现”清单，更新 U01/U16/U22/U23/U26、8.4/8.5/8.7、最终验收清单、当前 HEAD 和原生/Release 证据；保留 U06 的真实 Workers Builds 控制台命令与真实 Cloudflare 外部联调边界为未验证。文档旧状态搜索无命中，`git diff --check`、`npm run ci:local`（UI smoke 89/89）和 `npm run deploy:worker:test`（10/10）均通过；`5736105` 已推送，平台验收 #108（run `40044067102`）的 `changes`/`web` 成功，native jobs 按路径过滤跳过。
 >
+> `a034701` 已推送；平台验收 #109（run `40044540676`）完成成功，`web`/`changes` 成功，三个 native job 按路径过滤跳过。文档清理步骤最终闭环，当前只剩真实 Workers Builds 控制台命令和真实 Cloudflare 外部联调未直接验证。
+>
 > `8ad8704` 已推送；平台验收 #98（run `39957698043`）对应 HEAD 且 `completed/success`，`changes`/`web` 成功，三个 native job skipped。U16 真实数据审计已完成：1440/1024 视口下默认工作区切换器为 `46.34px`，两行文案上下各留 `8px`，图标与文案中心一致；带图标按钮和导航项的垂直中心差均为 `0px`，没有发现需要凭猜测修改的样式问题。下一步只增加对应 Playwright 回归断言，不改变现有视觉规则。
 >
 > U16 回归断言已加入 `tests/console-worker.spec.ts`：真实默认工作区下检查切换器最小高度、文字上下边界、头像/文字中心线，以及可见 AntD 图标按钮和导航项中心线。单项验证通过；完整 `npm run ci:local` 通过（UI smoke 89/89），`npm run deploy:worker:test` 通过（10/10）。下一步提交、推送并追踪最新 Actions。
@@ -71,9 +73,9 @@
 ```text
 仓库：/home/tc/work/plugin-platform
 分支：main
-HEAD（本次核验）：5736105 清理过期验收状态
-origin/main（本次核验）：5736105
-工作区（本次核验）：U29、8.5、发布 workflow 修复、8.6 核对和 U16 视觉测量/回归已记录；原生运行时/交互配置修复已通过平台验收 #103；`v0.1.0` 已发布且公开资产已核验；交接文档状态清理已通过平台验收 #108（run `40044067102`）
+HEAD（本次核验）：a034701 记录验收状态清理结果
+origin/main（本次核验）：a034701
+工作区（本次核验）：U29、8.5、发布 workflow 修复、8.6 核对和 U16 视觉测量/回归已记录；原生运行时/交互配置修复已通过平台验收 #103；`v0.1.0` 已发布且公开资产已核验；交接文档状态清理已通过平台验收 #109（run `40044540676`）
 fetch remote：https://github.com/shelter-red/plugin-platform.git
 push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 ```
@@ -81,6 +83,7 @@ push remote：git@github-plugin-platform:shelter-red/plugin-platform.git
 最近提交（均已推送）：
 
 ```text
+a034701 docs: 记录验收状态清理结果
 5736105 docs: 清理过期验收状态
 f9a0752 docs: 登记交接文档状态清理
 3c9fce9 docs: 确认最终 Actions 验收成功
@@ -920,3 +923,4 @@ Worker runtime 修改后执行第 6.2 节 Docker 命令；原生修改后执行�
 - 2026-10-24：`a6f8569` 的平台验收 #104（run `39997388485`）已在 Actions 页面核对为 `completed/success`，Release 与最终交接记录闭环。
 - 2026-10-24：交接状态清理本地验收完成：旧“待实现/手动 workflow 未触发/帮助教程待闭环”等搜索无命中；`git diff --check`、`npm run ci:local`（UI smoke 89/89）和 `npm run deploy:worker:test`（10/10）通过。待提交、推送和最新 Actions 验证。
 - 2026-10-24：`5736105`（`清理过期验收状态`）已推送；平台验收 #108（run `40044067102`）完成成功，`changes`/`web` 成功，三个 native job 按路径过滤跳过。当前文档清理步骤闭环，U06/真实 Cloudflare 外部联调仍按证据保留为未验证边界。
+- 2026-10-24：`a034701`（`记录验收状态清理结果`）已推送；平台验收 #109（run `40044540676`）完成成功，`web`/`changes` 成功，三个 native job 按路径过滤跳过。当前 HEAD 与交接记录同步。
