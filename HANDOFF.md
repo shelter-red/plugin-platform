@@ -11,6 +11,8 @@
 > 新步骤登记（2026-10-24）：清理 HANDOFF 与 `docs/acceptance-matrix.md` 中仍与当前代码/最新验收相矛盾的原生共享库、UI 审计数量、UI smoke 数量和完成状态。只修正可由当前文件与命令输出证明的事实，不改变运行时代码、路由、API、权限或测试契约；登记提交和对应 Actions 成功前不修改正文。
 
 > 本步清理完成：提交 `119502f` 同步原生共享库 target、手动构建 workflow、Windows/macOS Actions、管理端组件化、UI/CSS/runtime 数量和多工作区 runtime 证据；保留真实 Windows 用户主机、真实 macOS 用户钥匙串、Cloudflare 生产 API 与 Workers Builds 控制台等实际未验证边界。`git diff --check`、`npm run ui:conventions`（89/89 文件）、`npm run ui:css-audit`（486 条规则）、`npm run deploy:worker:test`（10/10）和 Docker `node:22-bookworm` runtime（20/20 文件，93/93 测试）通过；`119502f` 的 Actions run `40055102459` 已完成成功。下一步需重新登记明确范围后再修改。
+
+> 新步骤登记（2026-10-24）：完成 U18 用量页的平台统计与 Cloudflare 免费额度分组的双主题、多视口视觉验收，并清理 HANDOFF 顶部仍重复列出的已完成教程/审计状态。先用现有 Playwright/截图证据核对实际页面，再只同步可证明的验收状态；不改变 API、权限、额度计算或路由。登记提交及对应 Actions 成功前不修改正文或测试。
 >
 > 本步本地验收已通过：`npm run worker:typecheck`、`npm run build`、`npm run worker:smoke`、`worker/runtime/setup.test.ts` 2/2（含重叠后缀下主站根路径和 `/api/health`），以及 Docker Worker runtime 20/20 文件、93/93 测试；下一步提交 U29 代码/文档并重新执行完整 CI。
 >
