@@ -2,7 +2,7 @@
 
 > 最后整理：2026-10-24（Asia/Shanghai）
 >
-> 本次恢复记录：U29 的主站 Host 路由修复、回归测试和应急说明已完成并通过平台 Actions；8.5 原生教程、发布 workflow、`v0.1.0` Release 和原生运行时修复也已完成。当前按登记范围清理交接文档中的过期状态，未验证边界仅保留真实 Cloudflare/Workers Builds 控制台联调。
+> 本次恢复记录：U29 的主站 Host 路由修复、回归测试和应急说明已完成并通过平台 Actions；8.5 原生教程、发布 workflow、`v0.1.0` Release 和原生运行时修复也已完成。当前正在发布包含原生兼容性修复的 `v0.1.1`，未验证边界仅保留真实 Cloudflare/Workers Builds 控制台联调。
 >
 > 本步本地验收已通过：`npm run worker:typecheck`、`npm run build`、`npm run worker:smoke`、`worker/runtime/setup.test.ts` 2/2（含重叠后缀下主站根路径和 `/api/health`），以及 Docker Worker runtime 20/20 文件、93/93 测试；下一步提交 U29 代码/文档并重新执行完整 CI。
 >
@@ -64,7 +64,7 @@
 
 > `3182307` 已推送；平台验收 run `40047861014` 已 `completed/success`，`web`、`changes`、`linux-native`、`windows-native`、`macos-native` 全部成功。Windows 注册完成后的真实 Wine 回归、Linux glibc/OpenSSL ABI 兼容构建和可执行包首次绑定入口已完成平台验收；当前只需收口本条记录并继续遵守 Actions 低频检查。
 
-> 新步骤登记（2026-10-24）：当前 `v0.1.0` Release 仍指向旧提交 `c56964b`，不包含 `3182307` 的 Windows 注册 teardown、首次双击 setup 和 Linux glibc 兼容修复。下一步将把项目版本提升为 `0.1.1`，以最新 `main` 创建并验证新的 Release，核对公开资产确实包含 native UI、兼容基线 OpenSSL 和修复后的 Windows 产物；同时更新本文件恢复卡和最终状态。必须先完成本登记提交及其 Actions 验收，再修改版本和创建 tag；Actions 继续低频检查。
+> 新步骤登记（2026-10-24）：当前 `v0.1.0` Release 仍指向旧提交 `c56964b`，不包含 `3182307` 的 Windows 注册 teardown、首次双击 setup 和 Linux glibc 兼容修复。下一步将把项目版本提升为 `0.1.1`，以最新 `main` 创建并验证新的 Release，核对公开资产确实包含 native UI、兼容基线 OpenSSL 和修复后的 Windows 产物；同时更新本文件恢复卡和最终状态。登记提交 `e8c9124` 的 Actions run `40049792370` 已成功，现在进入版本文件修改和发布前验证；Actions 继续低频检查。
 >
 > `8ad8704` 已推送；平台验收 #98（run `39957698043`）对应 HEAD 且 `completed/success`，`changes`/`web` 成功，三个 native job skipped。U16 真实数据审计已完成：1440/1024 视口下默认工作区切换器为 `46.34px`，两行文案上下各留 `8px`，图标与文案中心一致；带图标按钮和导航项的垂直中心差均为 `0px`，没有发现需要凭猜测修改的样式问题。下一步只增加对应 Playwright 回归断言，不改变现有视觉规则。
 >
