@@ -33,7 +33,7 @@ git log --oneline --decorate -12
 
 - 登录只使用管理员密码。首次未配置时进入 `/setup`，不再使用 GitHub OAuth、邀请登录或 `SETUP_TOKEN`。
 - Cloudflare 业务凭据只接受账号 Email、Global API Key 和 Account ID，不接受 Cloudflare OAuth 或 API Token。
-- 生产 D1 已应用 `0001` 至 `0009`，Cloudflare 1101 已消失；生产尚未设置管理员密码。
+- 生产 D1 已应用 `0001` 至 `0009`，Cloudflare 1101 已消失；用户提交管理员密码时收到误导性的 migration 错误，凭据未落库。
 - 缺少 `admin_credentials` 表时返回结构化 `503 migration_required`，不会泄漏为 Worker 1101；其他 D1 错误继续抛出。
 - Workers Builds 的 Deploy command 必须是 `npm run deploy`，但生产实际值尚未取得可信证据。
 - 最新推送的完整 SHA `4ce207cc9fe5f1ad292661b4fd85eeb71026f211` 已通过平台 Actions。
@@ -177,7 +177,7 @@ git diff --check                         通过
 
 需要真实环境继续验收：
 
-1. 用户在生产 `/setup` 设置管理员密码，并验证登录、修改密码和旧会话撤销。
+1. 修复生产 `/setup` 保存失败：先区分密码派生、D1 写入和审计错误，再由用户重新设置密码并验证登录、修改密码和旧会话撤销。
 2. 确认 Workers Builds Deploy command 为 `npm run deploy`。
 3. 登录后保存真实 Email、Global API Key 和 Account ID，验证 subscriptions、Analytics、Zone、DNS 与 Worker Route。
 4. 配置公网 SMTP，验证 STARTTLS/SMTPS、维护通知和退信处理。
@@ -243,3 +243,4 @@ git diff --check                         通过
 - 2026-10-24：下一步登记（凭据术语与原生产物文档清理）：把 Cloudflare runtime 测试中仍称“Token”的 Global API Key 标题/响应变量改为准确术语，并修正 `docs/local-e2e.md` 对 executable artifact 不包含 `native-ui/dist` 的过期说明；保留会话 token、插件控制 token、部署 `CLOUDFLARE_API_TOKEN`、历史 OAuth fixture 和负断言。只改测试命名与文档，不改运行时行为；定向 runtime、文档搜索和 `git diff --check` 通过并记录前不进入下一步。
 - 2026-10-24：凭据术语与原生产物文档清理完成：Cloudflare 设置测试统一使用 Global API Key/凭据术语，响应变量不再误称 token；本地 E2E 文档明确 executable 自带 `native-ui/dist`、shared 不带 setup UI、示例插件需单独准备。两份 runtime 定向测试 12/12、最终 Cloudflare 设置测试 7/7、残留搜索和 `git diff --check` 均通过，没有运行时行为变更。
 - 2026-10-24：生产只读复核仍为 `/api/health` 200、`/` 302 到 `/setup`、`/setup` 200、`/api/me` 503 `setup_required`、`/auth/login` 302 到 `/setup`；用户尚未设置管理员密码。环境仍无 Cloudflare 业务凭据或 Workers CI Read 凭据，Wrangler OAuth 权限未变化。代码/文案 TODO 与废止方案残留扫描无新增结果；没有执行生产写入。
+- 2026-10-24：下一步登记（生产 setup 保存失败）：用户在生产 `/setup` 提交密码后收到“请检查 D1 migration”的 503。只读核验确认 `0001` 至 `0009` 无待执行项，相关九张表及索引存在，`PRAGMA foreign_key_check` 无异常，默认工作区、现有 super admin 与 owner 成员关系完整，`admin_credentials` 仍为 0 行；因此现有页面把所有异常归因于 migration 是错误的。下一步核对线上部署版本与运行时限制，重构初始化写入为可分类、可重试且避免部分成功的流程，增加生产数据形态回归；验证完成后再集中推送，不代用户写入密码。
