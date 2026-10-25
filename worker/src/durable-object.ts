@@ -25,6 +25,7 @@ type PendingResponse = {
   responseStatus?: number
   responseHeaders?: Headers
   fileWriteChain: Promise<void>
+  cancelled?: boolean
   r2Upload?: {
     key: string
     writer: WritableStreamDefaultWriter<Uint8Array>
@@ -121,6 +122,7 @@ export class PluginBridge {
     const response = new Promise<Response>((resolve) => {
       const pending: PendingResponse = { resolve, timer: 0, buffered: [], activeConnection, pluginId, sse, bytes: 0, fileWriteChain: Promise.resolve() }
       pending.timer = setTimeout(() => {
+        pending.cancelled = true
         this.pending.delete(requestId)
         pending.buffered = []
         this.releasePendingConnection(pending)
@@ -271,6 +273,7 @@ export class PluginBridge {
     for (const [requestId, pending] of this.pending) {
       clearTimeout(pending.timer)
       this.pending.delete(requestId)
+      pending.cancelled = true
       pending.buffered = []
       this.releasePendingConnection(pending)
       void this.discardR2Upload(pending)
@@ -542,16 +545,20 @@ export class PluginBridge {
   private async finishFileResponse(requestId: string, pending: PendingResponse, payload: Record<string, unknown>) {
     let reserved = false
     let tempObjectCreated = false
+    let tempObjectId: string | null = null
     let objectKey: string | null = null
     try {
       await pending.fileWriteChain
+      if (pending.cancelled || this.pending.get(requestId) !== pending) throw new Error('Plugin file stream was cancelled')
       if (pending.r2Upload) {
         objectKey = pending.r2Upload.key
         await pending.r2Upload.writer.close()
         await pending.r2Upload.upload
+        if (pending.cancelled || this.pending.get(requestId) !== pending) throw new Error('Plugin file stream was cancelled')
       } else if (pending.bytes > FILE_STREAM_R2_THRESHOLD_BYTES) {
         objectKey = `stream/${crypto.randomUUID()}`
         await this.env.BLOB_BUCKET.put(objectKey, combineBytes(pending.buffered))
+        if (pending.cancelled || this.pending.get(requestId) !== pending) throw new Error('Plugin file stream was cancelled')
         pending.buffered = []
       }
       if (!objectKey) {
@@ -573,17 +580,20 @@ export class PluginBridge {
       reserved = true
       const object = await this.env.BLOB_BUCKET.get(objectKey)
       if (!object?.body) throw new Error('R2 file stream is unavailable')
-      const tempObjectId = crypto.randomUUID()
+      if (pending.cancelled || this.pending.get(requestId) !== pending) throw new Error('Plugin file stream was cancelled')
+      tempObjectId = crypto.randomUUID()
       const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString()
       await this.env.DB.prepare('INSERT INTO temp_objects (id, object_key, token_hash, content_type, size_bytes, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(tempObjectId, objectKey, await hashControlToken(crypto.randomUUID()), pending.responseHeaders?.get('content-type') ?? 'application/octet-stream', pending.bytes, expiresAt, new Date().toISOString()).run()
       tempObjectCreated = true
+      if (pending.cancelled || this.pending.get(requestId) !== pending) throw new Error('Plugin file stream was cancelled')
       this.pending.delete(requestId)
       this.releasePendingConnection(pending)
       const headers = new Headers(pending.responseHeaders)
       if (!headers.has('content-length')) headers.set('content-length', String(pending.bytes))
-      pending.resolve(new Response(this.consumeR2Stream(object.body, objectKey, pending.bytes, tempObjectId), { status: pending.responseStatus ?? (typeof payload.status === 'number' ? payload.status : 200), headers }))
+      pending.resolve(new Response(this.consumeR2Stream(object.body, objectKey, pending.bytes, tempObjectId!), { status: pending.responseStatus ?? (typeof payload.status === 'number' ? payload.status : 200), headers }))
     } catch {
       if (pending.r2Upload) await pending.r2Upload.writer.abort('Plugin file stream failed').catch(() => undefined)
+      if (tempObjectCreated && tempObjectId) await this.env.DB.prepare('DELETE FROM temp_objects WHERE id = ?').bind(tempObjectId).run().catch(() => undefined)
       const deleted = objectKey ? await deleteR2ObjectWithRetry(this.env, objectKey) : true
       if (reserved) {
         if (deleted) await releaseR2Usage(this.env, pending.bytes)
@@ -646,6 +656,7 @@ export class PluginBridge {
     if (this.pending.get(requestId) !== pending) return
     clearTimeout(pending.timer)
     this.pending.delete(requestId)
+    pending.cancelled = true
     pending.buffered = []
     this.releasePendingConnection(pending)
     void this.discardR2Upload(pending)
@@ -657,6 +668,7 @@ export class PluginBridge {
     if (this.pending.get(requestId) !== pending) return
     clearTimeout(pending.timer)
     this.pending.delete(requestId)
+    pending.cancelled = true
     pending.buffered = []
     this.releasePendingConnection(pending)
     void this.discardR2Upload(pending)
