@@ -133,10 +133,13 @@ export class PluginBridge {
     try {
       this.serverSocket.send(serializedFrame)
     } catch {
-      this.pending.delete(requestId)
-      if (activeConnection) {
-        activeConnection = false
-        void releaseActiveConnection(this.env)
+      const pending = this.pending.get(requestId)
+      if (pending) {
+        clearTimeout(pending.timer)
+        this.pending.delete(requestId)
+        pending.buffered = []
+        this.releasePendingConnection(pending)
+        void this.discardR2Upload(pending)
       }
       return new Response('Plugin request could not be sent', { status: 502 })
     }
