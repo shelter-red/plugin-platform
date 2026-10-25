@@ -3,16 +3,22 @@
 #include "plugmesh/control_protocol.h"
 #include "plugmesh/plugin_manager.h"
 #include "plugmesh/server_config.h"
+#include "plugmesh/tunnel_trust_store.h"
 
 #include <atomic>
+#include <array>
 #include <condition_variable>
+#include <deque>
 #include <future>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
 #include <unordered_map>
+
+#include <asio/ip/tcp.hpp>
 
 #include <websocketpp/client.hpp>
 #include <websocketpp/config/asio_client.hpp>
@@ -21,7 +27,7 @@ namespace plugmesh {
 
 class ControlClient {
  public:
-  ControlClient(ServerConfig config, PluginManager& plugins);
+  ControlClient(ServerConfig config, PluginManager& plugins, std::function<void(int, const std::string&)> logger = {});
   ControlClient(const ControlClient&) = delete;
   ControlClient& operator=(const ControlClient&) = delete;
   ~ControlClient();
@@ -42,7 +48,7 @@ class ControlClient {
   void schedule_reconnect();
   void schedule_heartbeat();
   void on_open(websocketpp::connection_hdl handle);
-  void on_message(const std::string& payload, bool is_text);
+  void on_message(websocketpp::connection_hdl handle, const std::string& payload, bool is_text);
   void on_close(websocketpp::connection_hdl handle);
   void on_fail(websocketpp::connection_hdl handle);
   void handle_frame(const ControlFrame& frame);
@@ -55,6 +61,13 @@ class ControlClient {
   void handle_websocket_open(const ControlFrame& frame);
   void handle_websocket_chunk(const ControlFrame& frame);
   void handle_websocket_close(const ControlFrame& frame);
+  void handle_tunnel_open(const ControlFrame& frame);
+  void handle_tunnel_message(websocketpp::connection_hdl handle, const std::string& payload, bool is_text);
+  void start_tunnel_read(const std::string& session_id);
+  void start_tunnel_connect(const std::string& session_id);
+  void handle_tunnel_tcp_read(const std::string& session_id, const asio::error_code& error, std::size_t size);
+  void pump_tunnel_write(const std::string& session_id);
+  void close_tunnel(const std::string& session_id, uint16_t code, const std::string& reason);
   int write_stream(const char* stream_id, const uint8_t* data, uint64_t size, int finished);
   int open_stream(const char* stream_id, uint16_t status, const char* headers_json);
   void send_frame(ControlFrame frame);
@@ -86,6 +99,7 @@ class ControlClient {
 
   ServerConfig config_;
   PluginManager& plugins_;
+  std::function<void(int, const std::string&)> logger_;
   bool secure_;
   std::string tls_hostname_;
   TlsClient tls_client_;
@@ -101,6 +115,27 @@ class ControlClient {
   std::map<std::string, BindingActionResult> binding_actions_;
   std::mutex sse_workers_mutex_;
   std::unordered_map<std::string, std::shared_ptr<SseWorker>> sse_workers_;
+  struct TunnelConnection {
+    websocketpp::connection_hdl handle;
+    std::shared_ptr<asio::ip::tcp::socket> socket;
+    std::array<uint8_t, 16 * 1024> read_buffer{};
+    std::deque<std::string> writes;
+    std::size_t write_bytes = 0;
+    bool websocket_open = false;
+    bool tcp_connected = false;
+    bool writing = false;
+    bool local_fin_sent = false;
+    bool peer_fin_received = false;
+    bool authenticated = false;
+    std::string source_server_id;
+    std::string auth_challenge;
+    std::string target_host;
+    uint16_t target_port = 0;
+    std::shared_ptr<asio::ip::tcp::resolver> resolver;
+  };
+  std::mutex tunnels_mutex_;
+  std::unordered_map<std::string, TunnelConnection> tunnels_;
+  TunnelTrustStore tunnel_trust_store_;
 };
 
 }  // namespace plugmesh

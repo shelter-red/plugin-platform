@@ -83,6 +83,8 @@ Linux 产物在兼容 glibc 2.31 的基线中构建，随包提供以同一基�
 
 构建产物中的 `plugin_api.h` 是插件动态库 ABI，`server_api.h` 是共享库嵌入接口，二者用途不同。插件目录仍按一个插件一个子目录放置 `manifest.json` 和 `.so`/`.dylib`/`.dll`，服务器只会发现 manifest 中 `library` 位于该子目录内的插件。
 
+正式 Release 压缩包不提供独立映射程序。TCP 隧道监听、配置和生命周期集成在 `plugmesh-server` 中；登录本地控制台后在“端口映射”管理目标服务器与监听。协议标签用于流量标注，所有映射均以原始 TCP 字节流经 Worker WebSocket 隧道双向转发。首次目标授权只通过 Worker 中继一次性挑战证明，不传输本地 UI 明文口令。操作说明见 `PORT-MAPPING.md`。
+
 ## 共享库嵌入
 
 CMake 的 `plugmesh-server-shared` target 会生成真正的共享库：Linux 为 `libplugmesh-server.so`，macOS 为 `libplugmesh-server.dylib`，Windows 为 `plugmesh-server.dll`。公共头文件 `include/plugmesh/server_api.h` 只暴露 C ABI，避免把 C++ STL 类型跨越动态库边界。

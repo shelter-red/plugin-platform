@@ -35,9 +35,11 @@ add_library(plugmesh_core STATIC
   src/plugin_host_protocol.cpp
   src/plugin_loader.cpp
   src/plugin_manager.cpp
+  src/port_mapper.cpp
   src/registration_client.cpp
   src/server_config.cpp
   src/tls_support.cpp
+  src/tunnel_trust_store.cpp
 )
 set_target_properties(plugmesh_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_compile_definitions(plugmesh_core PUBLIC ASIO_STANDALONE)
@@ -147,6 +149,12 @@ target_link_libraries(plugmesh-local-http-server-smoke PRIVATE plugmesh_core)
 add_executable(plugmesh-local-ui-smoke-server tests/local_ui_smoke_server.cpp)
 target_link_libraries(plugmesh-local-ui-smoke-server PRIVATE plugmesh_core)
 
+add_executable(plugmesh-tunnel-mapping-smoke tests/port_mapper_smoke.cpp)
+target_link_libraries(plugmesh-tunnel-mapping-smoke PRIVATE plugmesh_core)
+
+add_executable(plugmesh-tunnel-integration-smoke tests/tunnel_integration_smoke.cpp)
+target_link_libraries(plugmesh-tunnel-integration-smoke PRIVATE plugmesh_core)
+
 if (TARGET plugmesh-server-shared)
   add_executable(plugmesh-server-api-smoke tests/server_api_smoke.cpp)
   target_link_libraries(plugmesh-server-api-smoke PRIVATE plugmesh-server-shared)
@@ -164,6 +172,8 @@ add_test(NAME plugmesh-plugin-manager-smoke COMMAND plugmesh-plugin-manager-smok
 add_test(NAME plugmesh-plugin-manager-crash-smoke COMMAND plugmesh-plugin-manager-crash-smoke $<TARGET_FILE:plugmesh-plugin-host> "${CMAKE_CURRENT_BINARY_DIR}/plugins")
 add_test(NAME plugmesh-plugin-websocket-lifecycle-smoke COMMAND plugmesh-plugin-websocket-lifecycle-smoke $<TARGET_FILE:plugmesh-plugin-host> "${CMAKE_CURRENT_BINARY_DIR}/plugins")
 add_test(NAME plugmesh-local-http-server-smoke COMMAND plugmesh-local-http-server-smoke)
+add_test(NAME plugmesh-tunnel-mapping-smoke COMMAND plugmesh-tunnel-mapping-smoke)
+add_test(NAME plugmesh-tunnel-integration-smoke COMMAND plugmesh-tunnel-integration-smoke)
 if (TARGET plugmesh-server-api-smoke)
   add_test(NAME plugmesh-server-api-smoke COMMAND plugmesh-server-api-smoke "${CMAKE_CURRENT_BINARY_DIR}/plugins")
 endif()

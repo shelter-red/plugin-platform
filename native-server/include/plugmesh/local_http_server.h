@@ -22,8 +22,9 @@ class LocalHttpServer {
   using CredentialActionHandler = std::function<nlohmann::json(const std::string&, const nlohmann::json&, std::string&)>;
   using PasswordSetupHandler = std::function<bool(const std::string&, const nlohmann::json&, std::string&)>;
   using LogProvider = std::function<nlohmann::json()>;
+  using PortMappingHandler = std::function<nlohmann::json(const std::string&, const std::string&, const nlohmann::json&, std::string&)>;
 
-  explicit LocalHttpServer(uint16_t port = 8787, PluginManager* plugins = nullptr, StatusProvider status_provider = {}, std::filesystem::path ui_directory = {}, RegistrationHandler registration_handler = {}, LogProvider log_provider = {}, CredentialActionHandler credential_action_handler = {}, std::string local_ui_password_verifier = {}, PasswordSetupHandler password_setup_handler = {});
+  explicit LocalHttpServer(uint16_t port = 8787, PluginManager* plugins = nullptr, StatusProvider status_provider = {}, std::filesystem::path ui_directory = {}, RegistrationHandler registration_handler = {}, LogProvider log_provider = {}, CredentialActionHandler credential_action_handler = {}, std::string local_ui_password_verifier = {}, PasswordSetupHandler password_setup_handler = {}, PortMappingHandler port_mapping_handler = {});
   LocalHttpServer(const LocalHttpServer&) = delete;
   LocalHttpServer& operator=(const LocalHttpServer&) = delete;
 
@@ -52,6 +53,7 @@ class LocalHttpServer {
   CredentialActionHandler credential_action_handler_;
   std::string local_ui_password_verifier_;
   PasswordSetupHandler password_setup_handler_;
+  PortMappingHandler port_mapping_handler_;
   mutable std::mutex session_mutex_;
   std::string session_token_;
   std::deque<std::chrono::steady_clock::time_point> failed_logins_;

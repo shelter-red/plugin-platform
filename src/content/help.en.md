@@ -47,7 +47,7 @@ Errors stay on the current settings or usage page with the HTTP status, error co
 
 ### Use a binary plugin server
 
-Download the artifact from GitHub Actions' **Manual plugin server build** workflow that matches your operating system and artifact type. `executable` contains a standalone `plugmesh-server`; `shared` is an embeddable library and is not a standalone executable. Linux artifacts include `libssl.so.3` and `libcrypto.so.3`, and Windows artifacts include the OpenSSL DLLs; source builds on macOS still require `brew install openssl@3`. Verify `SHA256SUMS` before extracting or running it: use `sha256sum -c SHA256SUMS` on Linux, `shasum -a 256 -c SHA256SUMS` on macOS, or compare `Get-FileHash` output with the file on Windows PowerShell. Do not mix a server or plugin library built for another operating system.
+Download the operating-system-specific archive from GitHub Releases. It contains `plugmesh-server`, `plugmesh-plugin-host`, OpenSSL runtime dependencies and the local UI. TCP mapping is integrated in `plugmesh-server`; there is no separate mapper executable. `sdk/include/plugmesh` contains `plugin_api.h` and `server_api.h`; `sdk/lib` contains the embeddable server library and its dependencies; `sdk/plugins/sample.plugin` is a loadable example plugin. The plugin ABI is C ABI and does not require a separate plugin link library. Verify `SHA256SUMS` before running: use `sha256sum -c SHA256SUMS` on Linux, `shasum -a 256 -c SHA256SUMS` on macOS, or compare `Get-FileHash` output with the file on Windows PowerShell. Do not mix libraries or server binaries built for different operating systems.
 
 Arrange the plugin directory as one subdirectory per plugin. Each directory needs a `manifest.json` and a dynamic library for the target platform, for example on Linux:
 
@@ -76,7 +76,7 @@ $env:PLUGMESH_REGISTRATION_CODE = 'one-time-registration-code'
 .\plugmesh-server.exe --register https://platform.example.com 'edge-server' "$env:USERPROFILE\.plugmesh\credentials.json"
 ```
 
-Start the server after registration. `plugmesh-plugin-host` can be omitted from the configuration when it is next to `plugmesh-server`; otherwise set `PLUGMESH_PLUGIN_HOST`. `PLUGMESH_LOCAL_UI_DIRECTORY` only controls the local server console. The binary artifact does not include that frontend directory, so build `native-ui` separately and pass its path when you need the local UI.
+Start the server after registration. `plugmesh-plugin-host` can be omitted from the configuration when it is next to `plugmesh-server`; otherwise set `PLUGMESH_PLUGIN_HOST`. The Release executable archive serves its bundled local UI from the adjacent `native-ui/dist`; `PLUGMESH_LOCAL_UI_DIRECTORY` is only needed for source runs or a custom UI directory.
 
 ```bash
 PLUGMESH_CREDENTIAL_FILE="$HOME/.config/plugmesh/credentials.json" \
@@ -87,6 +87,10 @@ PLUGMESH_PLUGIN_HOST="$PWD/plugmesh-plugin-host" \
 ```
 
 When the server is online in the console, use **Plugin instances** to load and enable the plugin, run its health check, and then assign a prefix under **Public domains**. The local server console starts at `127.0.0.1:8787` and increments the port when it is occupied; use `PLUGMESH_LOCAL_PORT` to change the preferred port. When the plugin directory is left blank, the server uses the `plugins` directory beside the executable. `PLUGMESH_WORKER_URL`, `PLUGMESH_PLUGIN_DIRECTORY`, `PLUGMESH_PLUGIN_HOST`, `PLUGMESH_CREDENTIAL_FILE`, `PLUGMESH_CREDENTIAL_PASSWORD`, and `PLUGMESH_LOCAL_UI_DIRECTORY` can all be supplied as environment variables. Never commit an access token or credential file.
+
+To create a cross-server TCP mapping, sign in to the plug-in server's local console and open Port mapping. Refresh the available target servers, then configure a loopback listen port and the target host and port. The server manages listener lifecycle and forwards raw TCP bytes over its Worker WebSocket tunnel. The target server's local UI password is requested only for first trust or after that password changes; an end-to-end challenge proof crosses the Worker, never the password itself. Mapping configuration is stored locally by the server and restored after restart.
+
+Worker connection states and control-frame types are persisted locally under Linux `~/.local/state/plugmesh` (or `$XDG_STATE_HOME/plugmesh`), macOS `~/Library/Logs/Plugmesh`, and Windows `%LOCALAPPDATA%/Plugmesh/logs`. Logs omit frame bodies and credentials, rotate at 1 MiB with three retained files, and can be redirected with `PLUGMESH_LOG_FILE`.
 
 ### Embed the shared library
 

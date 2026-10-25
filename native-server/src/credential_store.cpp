@@ -7,6 +7,7 @@
 #include <nlohmann/json.hpp>
 #include <openssl/crypto.h>
 #include <openssl/evp.h>
+#include <openssl/hmac.h>
 #include <openssl/rand.h>
 
 #if defined(PLUGMESH_PLATFORM_POSIX)
@@ -65,6 +66,25 @@ std::string encode_base64(const std::vector<unsigned char>& bytes) {
   const auto size = EVP_EncodeBlock(reinterpret_cast<unsigned char*>(encoded.data()), bytes.data(), static_cast<int>(bytes.size()));
   encoded.resize(size > 0 ? static_cast<std::size_t>(size) : 0);
   return encoded;
+}
+
+bool decode_base64(const std::string& encoded, std::vector<unsigned char>& bytes);
+
+bool valid_verifier(const std::string& verifier, std::vector<unsigned char>& salt, std::vector<unsigned char>& hash) {
+  try {
+    const auto value = Json::parse(verifier);
+    return value.is_object() && value.value("version", 0) == 1 && value.value("kdf", "") == "PBKDF2-HMAC-SHA256" &&
+        value.value("iterations", 0) == kIterations && decode_base64(value.value("salt", ""), salt) && salt.size() == kSaltSize &&
+        decode_base64(value.value("hash", ""), hash) && hash.size() == kPasswordHashSize;
+  } catch (...) { return false; }
+}
+
+bool make_hmac(const unsigned char* key, std::size_t key_size, const std::string& message, std::string& output) {
+  std::array<unsigned char, EVP_MAX_MD_SIZE> digest{};
+  unsigned int digest_size = 0;
+  if (!HMAC(EVP_sha256(), key, static_cast<int>(key_size), reinterpret_cast<const unsigned char*>(message.data()), message.size(), digest.data(), &digest_size)) return false;
+  output.assign(reinterpret_cast<const char*>(digest.data()), digest_size);
+  return true;
 }
 
 bool decode_base64(const std::string& encoded, std::vector<unsigned char>& bytes) {
@@ -230,6 +250,56 @@ bool verify_local_ui_password(const std::string& password, const std::string& ve
   } catch (...) {
     return false;
   }
+}
+
+bool make_local_ui_password_challenge(const std::string& verifier, nlohmann::json& challenge, std::string& error) {
+  std::vector<unsigned char> salt;
+  std::vector<unsigned char> hash;
+  if (!valid_verifier(verifier, salt, hash)) {
+    error = "local UI password verifier is invalid";
+    return false;
+  }
+  std::vector<unsigned char> nonce(32);
+  if (RAND_bytes(nonce.data(), static_cast<int>(nonce.size())) != 1) {
+    error = "unable to generate password challenge";
+    return false;
+  }
+  challenge = Json{{"salt", encode_base64(salt)}, {"iterations", kIterations}, {"nonce", encode_base64(nonce)}};
+  return true;
+}
+
+bool make_local_ui_password_proof(const std::string& password, const nlohmann::json& challenge, const std::string& context, std::string& proof, std::string& error) {
+  try {
+    std::vector<unsigned char> salt;
+    std::vector<unsigned char> nonce;
+    if (password.empty() || challenge.value("iterations", 0) != kIterations || !decode_base64(challenge.value("salt", ""), salt) || salt.size() != kSaltSize || !decode_base64(challenge.value("nonce", ""), nonce) || nonce.size() != 32) {
+      error = "password challenge is invalid";
+      return false;
+    }
+    std::array<unsigned char, kPasswordHashSize> key{};
+    if (!derive_key(password, salt, key) || !make_hmac(key.data(), key.size(), context + "\n" + std::string(reinterpret_cast<const char*>(nonce.data()), nonce.size()), proof)) {
+      error = "unable to create password proof";
+      return false;
+    }
+    OPENSSL_cleanse(key.data(), key.size());
+    return true;
+  } catch (...) {
+    error = "password challenge is invalid";
+    return false;
+  }
+}
+
+bool verify_local_ui_password_proof(const std::string& verifier, const nlohmann::json& challenge, const std::string& context, const std::string& proof) {
+  try {
+    std::vector<unsigned char> salt;
+    std::vector<unsigned char> hash;
+    std::vector<unsigned char> challenge_salt;
+    std::vector<unsigned char> nonce;
+    if (!valid_verifier(verifier, salt, hash) || challenge.value("iterations", 0) != kIterations || !decode_base64(challenge.value("salt", ""), challenge_salt) || challenge_salt != salt || !decode_base64(challenge.value("nonce", ""), nonce) || nonce.size() != 32 || proof.size() != kPasswordHashSize) return false;
+    std::string expected;
+    if (!make_hmac(hash.data(), hash.size(), context + "\n" + std::string(reinterpret_cast<const char*>(nonce.data()), nonce.size()), expected)) return false;
+    return expected.size() == proof.size() && CRYPTO_memcmp(expected.data(), proof.data(), proof.size()) == 0;
+  } catch (...) { return false; }
 }
 
 bool system_credentials_available() {

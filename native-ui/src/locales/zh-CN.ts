@@ -91,6 +91,7 @@ export default {
     aria: '本地服务器导航',
     overview: '运行概览',
     plugins: '插件目录',
+    mappings: '端口映射',
     settings: '连接设置',
     logs: '运行日志',
     cli: 'CLI 配置入口',
@@ -139,6 +140,9 @@ export default {
     healthPath: '健康检查',
     permissions: '权限',
     noPermissions: '无',
+  },
+  mappings: {
+    index: '03 / 端口映射', title: '跨服务器 TCP 映射', refreshTargets: '刷新目标服务器', name: '映射名称', protocol: '协议标签', listenPort: '本地监听端口', targetServer: '目标插件服务器', selectTarget: '选择在线服务器', targetHost: '目标主机', targetPort: '目标端口', targetPassword: '目标服务器口令（仅首次信任时需要）', add: '添加映射', update: '保存修改', edit: '编辑映射', enable: '启动监听', disable: '停止监听', listening: '监听中', stopped: '已停止', delete: '删除映射', emptyTitle: '尚未配置映射', emptyBody: '刷新目标服务器列表，然后添加需要转发的 TCP 端口。', saved: '映射已保存并启动', deleted: '映射已删除', targetsFailed: '无法读取目标服务器列表', saveFailed: '映射保存失败', deleteFailed: '映射删除失败',
   },
   binding: {
     index: '03 / 连接设置',

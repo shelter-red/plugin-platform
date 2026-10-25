@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <nlohmann/json_fwd.hpp>
 #include <string>
 
 namespace plugmesh {
@@ -14,6 +15,9 @@ struct StoredCredentials {
 
 bool make_local_ui_password_verifier(const std::string& password, std::string& verifier, std::string& error);
 bool verify_local_ui_password(const std::string& password, const std::string& verifier);
+bool make_local_ui_password_challenge(const std::string& verifier, nlohmann::json& challenge, std::string& error);
+bool make_local_ui_password_proof(const std::string& password, const nlohmann::json& challenge, const std::string& context, std::string& proof, std::string& error);
+bool verify_local_ui_password_proof(const std::string& verifier, const nlohmann::json& challenge, const std::string& context, const std::string& proof);
 bool system_credentials_available();
 bool save_system_credentials(const StoredCredentials& credentials, std::string& error);
 bool load_system_credentials(StoredCredentials& credentials, std::string& error);

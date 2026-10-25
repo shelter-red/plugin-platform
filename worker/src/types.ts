@@ -15,6 +15,7 @@ export interface Env {
   DB: D1Database
   BLOB_BUCKET: R2Bucket
   PLUGIN_BRIDGE: DurableObjectNamespace
+  TUNNEL_SESSION: DurableObjectNamespace
   ASSETS?: Fetcher
   PLUGIN_DOMAIN_SUFFIX?: string
   CONSOLE_HOSTNAME?: string

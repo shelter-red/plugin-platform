@@ -91,8 +91,8 @@ std::string cookie_value(const std::string& cookie_header, const std::string_vie
 
 }  // namespace
 
-LocalHttpServer::LocalHttpServer(uint16_t port, PluginManager* plugins, StatusProvider status_provider, std::filesystem::path ui_directory, RegistrationHandler registration_handler, LogProvider log_provider, CredentialActionHandler credential_action_handler, std::string local_ui_password_verifier, PasswordSetupHandler password_setup_handler)
-    : preferred_port_(port), port_(port), plugins_(plugins), status_provider_(std::move(status_provider)), ui_directory_(std::move(ui_directory)), registration_handler_(std::move(registration_handler)), log_provider_(std::move(log_provider)), credential_action_handler_(std::move(credential_action_handler)), local_ui_password_verifier_(std::move(local_ui_password_verifier)), password_setup_handler_(std::move(password_setup_handler)) {}
+LocalHttpServer::LocalHttpServer(uint16_t port, PluginManager* plugins, StatusProvider status_provider, std::filesystem::path ui_directory, RegistrationHandler registration_handler, LogProvider log_provider, CredentialActionHandler credential_action_handler, std::string local_ui_password_verifier, PasswordSetupHandler password_setup_handler, PortMappingHandler port_mapping_handler)
+    : preferred_port_(port), port_(port), plugins_(plugins), status_provider_(std::move(status_provider)), ui_directory_(std::move(ui_directory)), registration_handler_(std::move(registration_handler)), log_provider_(std::move(log_provider)), credential_action_handler_(std::move(credential_action_handler)), local_ui_password_verifier_(std::move(local_ui_password_verifier)), password_setup_handler_(std::move(password_setup_handler)), port_mapping_handler_(std::move(port_mapping_handler)) {}
 
 bool LocalHttpServer::run(std::string& error) {
   stopping_ = false;
@@ -112,6 +112,7 @@ bool LocalHttpServer::run(std::string& error) {
       websocketpp::lib::asio::error_code probe_error;
       const websocketpp::lib::asio::ip::tcp::endpoint endpoint(address, static_cast<uint16_t>(candidate));
       probe.open(endpoint.protocol(), probe_error);
+      if (!probe_error) probe.set_option(websocketpp::lib::asio::socket_base::reuse_address(true), probe_error);
       if (!probe_error) probe.bind(endpoint, probe_error);
       if (probe.is_open()) probe.close();
       if (probe_error) {
@@ -497,6 +498,41 @@ void LocalHttpServer::handle_http(void* handle) {
       for (const auto& plugin : plugins_->snapshot()) plugins.push_back(plugin_json(plugin));
     }
     set_json_response(connection, websocketpp::http::status_code::ok, {{"plugins", std::move(plugins)}});
+    return;
+  }
+
+  if (resource == "/api/mappings" || resource.rfind("/api/mappings/", 0) == 0) {
+    if (!port_mapping_handler_) {
+      set_json_response(connection, websocketpp::http::status_code::service_unavailable, {{"ok", false}, {"error", "port mapping management is unavailable"}, {"code", "mapping_management_unavailable"}});
+      return;
+    }
+    if (method != "GET" && method != "POST" && method != "PUT" && method != "DELETE") {
+      set_json_response(connection, websocketpp::http::status_code::method_not_allowed, {{"ok", false}, {"error", "method not allowed"}, {"code", "method_not_allowed"}});
+      return;
+    }
+    const auto body = connection->get_request_body();
+    if (body.size() > 16 * 1024) {
+      set_json_response(connection, websocketpp::http::status_code::request_entity_too_large, {{"ok", false}, {"error", "mapping request is too large"}, {"code", "payload_too_large"}});
+      return;
+    }
+    try {
+      const auto payload = nlohmann::json::parse(body.empty() ? "{}" : body);
+      if (!payload.is_object()) {
+        set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", "mapping payload must be an object"}, {"code", "invalid_payload"}});
+        return;
+      }
+      std::string error;
+      auto result = port_mapping_handler_(method, resource, payload, error);
+      if (!error.empty()) {
+        const auto status_code = error == "mapping not found" ? websocketpp::http::status_code::not_found : websocketpp::http::status_code::bad_request;
+        set_json_response(connection, status_code, {{"ok", false}, {"error", error}, {"code", error == "mapping not found" ? "mapping_not_found" : "mapping_request_failed"}});
+      } else {
+        result["ok"] = true;
+        set_json_response(connection, method == "POST" ? websocketpp::http::status_code::created : websocketpp::http::status_code::ok, result);
+      }
+    } catch (const nlohmann::json::exception&) {
+      set_json_response(connection, websocketpp::http::status_code::bad_request, {{"ok", false}, {"error", "mapping payload must be valid JSON"}, {"code", "invalid_payload"}});
+    }
     return;
   }
 

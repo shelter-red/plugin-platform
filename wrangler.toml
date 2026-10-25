@@ -23,9 +23,17 @@ migrations_dir = "worker/migrations"
 name = "PLUGIN_BRIDGE"
 class_name = "PluginBridge"
 
+[[durable_objects.bindings]]
+name = "TUNNEL_SESSION"
+class_name = "TunnelSession"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["PluginBridge"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["TunnelSession"]
 
 [[r2_buckets]]
 binding = "BLOB_BUCKET"

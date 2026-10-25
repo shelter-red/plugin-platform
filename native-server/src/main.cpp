@@ -2,6 +2,7 @@
 #include "plugmesh/credential_store.h"
 #include "plugmesh/local_http_server.h"
 #include "plugmesh/local_log_buffer.h"
+#include "plugmesh/port_mapper.h"
 #include "plugmesh/plugin_manager.h"
 #include "plugmesh/registration_client.h"
 #include "plugmesh/server_config.h"
@@ -146,6 +147,18 @@ std::filesystem::path executable_directory() {
   std::error_code error;
   const auto current = std::filesystem::current_path(error);
   return error ? std::filesystem::path{} : current;
+}
+
+std::filesystem::path default_log_file() {
+#ifdef _WIN32
+  if (const char* directory = std::getenv("LOCALAPPDATA"); directory && *directory) return std::filesystem::path(directory) / "Plugmesh" / "logs" / "worker-communication.jsonl";
+#elif defined(__APPLE__)
+  if (const char* home = std::getenv("HOME"); home && *home) return std::filesystem::path(home) / "Library" / "Logs" / "Plugmesh" / "worker-communication.jsonl";
+#else
+  if (const char* state = std::getenv("XDG_STATE_HOME"); state && *state) return std::filesystem::path(state) / "plugmesh" / "worker-communication.jsonl";
+  if (const char* home = std::getenv("HOME"); home && *home) return std::filesystem::path(home) / ".local" / "state" / "plugmesh" / "worker-communication.jsonl";
+#endif
+  return executable_directory() / "logs" / "worker-communication.jsonl";
 }
 
 std::filesystem::path local_ui_directory() {
@@ -323,7 +336,12 @@ int main(int argc, char** argv) {
       std::cerr << "plugmesh-server: " << error << '\n';
       return 2;
     }
-    plugmesh::LocalLogBuffer logs;
+    const auto log_file = std::getenv("PLUGMESH_LOG_FILE") && *std::getenv("PLUGMESH_LOG_FILE")
+        ? std::filesystem::path(std::getenv("PLUGMESH_LOG_FILE"))
+        : default_log_file();
+    if (resolved_config.tunnel_trust_file.empty()) resolved_config.tunnel_trust_file = log_file.parent_path() / "tunnel-authorizations.json";
+    if (resolved_config.port_mappings_file.empty()) resolved_config.port_mappings_file = log_file.parent_path() / "port-mappings.json";
+    plugmesh::LocalLogBuffer logs(log_file);
     plugmesh::PluginManager plugins;
     plugins.set_log_writer([&logs](int level, const char* message) { logs.append(level, message); });
     if (!plugins.discover(resolved_config.plugin_directory, error)) {
@@ -331,12 +349,17 @@ int main(int argc, char** argv) {
       return 2;
     }
     std::cout << "plugmesh-server discovered " << plugins.snapshot().size() << " plugin(s) for " << resolved_config.server_id << '\n';
-    plugmesh::ControlClient client(resolved_config, plugins);
+    plugmesh::ControlClient client(resolved_config, plugins, [&logs](int level, const std::string& message) { logs.append_communication(level, message.c_str()); });
+    plugmesh::PortMapper port_mapper;
+    if (!port_mapper.start(resolved_config, error)) {
+      std::cerr << "plugmesh-server: unable to start port mappings: " << error << '\n';
+      return 2;
+    }
     std::atomic<bool> rebind_requested{false};
     std::atomic<bool> credential_action_active{false};
     const auto preferred_local_port = local_port();
-    plugmesh::LocalHttpServer local_http(preferred_local_port, &plugins, [&client, &resolved_config] {
-      return nlohmann::json{{"configured", true}, {"serverId", resolved_config.server_id}, {"workerUrl", resolved_config.worker_url}, {"credentialFile", resolved_config.credential_file.string()}, {"systemCredentialsAvailable", plugmesh::system_credentials_available()}, {"connected", client.connected()}};
+    plugmesh::LocalHttpServer local_http(preferred_local_port, &plugins, [&client, &resolved_config, &port_mapper] {
+      return nlohmann::json{{"configured", true}, {"serverId", resolved_config.server_id}, {"workerUrl", resolved_config.worker_url}, {"credentialFile", resolved_config.credential_file.string()}, {"portMappingsFile", resolved_config.port_mappings_file.string()}, {"portMappings", nlohmann::json::parse(port_mapper.snapshot())}, {"systemCredentialsAvailable", plugmesh::system_credentials_available()}, {"connected", client.connected()}};
     }, local_ui_directory(), {}, [&logs] { return logs.snapshot(); }, [&client, &resolved_config, &rebind_requested, &credential_action_active](const std::string& action, const nlohmann::json& payload, std::string& action_error) {
       credential_action_active = true;
       struct ActionGuard {
@@ -379,6 +402,8 @@ int main(int argc, char** argv) {
       if (!plugmesh::save_credentials(resolved_config.credential_file, credentials, credential_password, setup_error)) return false;
       resolved_config.local_ui_password_verifier = verifier;
       return true;
+    }, [&port_mapper](const std::string& method, const std::string& resource, const nlohmann::json& payload, std::string& mapping_error) {
+      return port_mapper.handle_request(method, resource, payload, mapping_error);
     });
     std::string local_error;
     std::atomic<bool> local_failed{false};
@@ -397,6 +422,7 @@ int main(int argc, char** argv) {
       std::cout << "plugmesh-server: local UI available at http://127.0.0.1:" << actual_port << "/\n";
     }
     const auto connected = client.run(error);
+    port_mapper.stop();
     while (credential_action_active || local_http.has_active_requests()) std::this_thread::sleep_for(std::chrono::milliseconds(10));
     local_http.stop();
     if (local_thread.joinable()) local_thread.join();

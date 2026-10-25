@@ -23,6 +23,7 @@ ServerConfig load_config_from_environment() {
   config.local_ui_password_verifier = read_env("PLUGMESH_LOCAL_UI_PASSWORD_VERIFIER");
   config.plugin_directory = read_env("PLUGMESH_PLUGIN_DIRECTORY");
   config.credential_file = read_env("PLUGMESH_CREDENTIAL_FILE");
+  config.tunnel_trust_file = read_env("PLUGMESH_TUNNEL_TRUST_FILE");
   return config;
 }
 
