@@ -218,6 +218,7 @@ jobs:
         run: |
           set -euo pipefail
           docker run --rm \
+            --user "$(id -u):$(id -g)" \
             --entrypoint /bin/bash \
             -v "$GITHUB_WORKSPACE:/src" \
             -w /src \
