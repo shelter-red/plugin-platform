@@ -226,7 +226,7 @@ jobs:
             --entrypoint /bin/bash \
             -v "$GITHUB_WORKSPACE:/src" \
             -w /src \
-            ghcr.io/termux/package-builder:latest \
+            termux/package-builder:latest \
             -lc 'export PREFIX=/data/data/com.termux/files/usr; bash scripts/build-termux-native.sh --artifact-type ALL --build-type Release --include-ui' \
             > /tmp/termux-build.log 2>&1
           status=$?
