@@ -31,6 +31,7 @@ jobs:
       - name: 校验 Termux CLI 契约
         run: bash scripts/termux-build.test.sh
 
+      - name: 校验发布标签
         env:
           RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
