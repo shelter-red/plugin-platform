@@ -37,6 +37,7 @@ class ControlClient {
   bool connected() const { return opened_.load(std::memory_order_acquire); }
   bool rotate_access_token(std::string& access_token, std::string& error);
   bool revoke_binding(std::string& error);
+  void set_server_info_provider(std::function<Json()> provider);
 
  private:
   using TlsClient = websocketpp::client<websocketpp::config::asio_tls_client>;
@@ -100,6 +101,7 @@ class ControlClient {
   ServerConfig config_;
   PluginManager& plugins_;
   std::function<void(int, const std::string&)> logger_;
+  std::function<Json()> server_info_provider_;
   bool secure_;
   std::string tls_hostname_;
   TlsClient tls_client_;

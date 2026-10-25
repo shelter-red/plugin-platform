@@ -74,6 +74,10 @@ ControlClient::~ControlClient() {
   plugins_.set_stream_writer({});
 }
 
+void ControlClient::set_server_info_provider(std::function<Json()> provider) {
+  server_info_provider_ = std::move(provider);
+}
+
 bool ControlClient::run(std::string& error) {
   const auto run_client = [this, &error](auto& client) {
     websocketpp::lib::error_code code;
@@ -351,6 +355,13 @@ void ControlClient::handle_plugin_command(const ControlFrame& frame) {
   bool ok = false;
   if (action == "list") {
     Json payload = {{"action", action}, {"ok", true}, {"manifests", manifest_list(plugins_)}};
+    auto response = make_control_frame("plugin.result", config_.server_id, std::move(payload));
+    response.request_id = frame.request_id;
+    send_frame(std::move(response));
+    return;
+  }
+  if (action == "info") {
+    Json payload = {{"action", action}, {"ok", true}, {"manifests", manifest_list(plugins_)}, {"portMappings", server_info_provider_ ? server_info_provider_().value("portMappings", Json::array()) : Json::array()}};
     auto response = make_control_frame("plugin.result", config_.server_id, std::move(payload));
     response.request_id = frame.request_id;
     send_frame(std::move(response));

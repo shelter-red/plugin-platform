@@ -355,6 +355,8 @@ int main(int argc, char** argv) {
       std::cerr << "plugmesh-server: unable to start port mappings: " << error << '\n';
       return 2;
     }
+        client.set_server_info_provider([&port_mapper] { return nlohmann::json{{"portMappings", nlohmann::json::parse(port_mapper.snapshot())}}; });
+
     std::atomic<bool> rebind_requested{false};
     std::atomic<bool> credential_action_active{false};
     const auto preferred_local_port = local_port();

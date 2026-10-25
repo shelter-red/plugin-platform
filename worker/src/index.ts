@@ -93,12 +93,34 @@ async function authenticatedControlServer(request: Request, env: Env): Promise<{
   return server ?? json({ error: 'Invalid control token' }, 401)
 }
 
+async function remoteServerInfo(env: Env, serverId: string, workspaceId: string, requestUrl: string): Promise<{ plugins: unknown[]; portMappings: unknown[]; pluginDomains: Record<string, string> }> {
+  const bridge = env.PLUGIN_BRIDGE.get(env.PLUGIN_BRIDGE.idFromName(serverId))
+  const response = await bridge.fetch(new Request(new URL('/command', requestUrl), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-plugmesh-server-id': serverId },
+    body: JSON.stringify({ type: 'plugin.info' }),
+  }))
+  if (!response.ok) return { plugins: [], portMappings: [], pluginDomains: {} }
+  const body = await response.json().catch(() => null) as { payload?: { manifests?: unknown; portMappings?: unknown } } | null
+  const domains = await env.DB.prepare('SELECT plugin_instances.plugin_id, domains.hostname FROM plugin_instances JOIN domains ON domains.plugin_instance_id = plugin_instances.id WHERE plugin_instances.server_id = ? AND plugin_instances.workspace_id = ? AND domains.status != ?').bind(serverId, workspaceId, 'offline').all<{ plugin_id: string; hostname: string }>()
+  return { plugins: Array.isArray(body?.payload?.manifests) ? body.payload.manifests : [], portMappings: Array.isArray(body?.payload?.portMappings) ? body.payload.portMappings : [], pluginDomains: Object.fromEntries(domains.results.map((domain) => [domain.plugin_id, domain.hostname])) }
+}
+
 async function tunnelTargets(request: Request, env: Env): Promise<Response> {
   if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405)
   const source = await authenticatedControlServer(request, env)
   if (source instanceof Response) return source
   const result = await env.DB.prepare('SELECT id, name, status FROM servers WHERE workspace_id = ? AND id != ? AND status != ? ORDER BY name COLLATE NOCASE, id').bind(source.workspace_id, source.id, 'revoked').all<{ id: string; name: string; status: string }>()
-  return json({ results: await withLiveServerStatus(env, result.results, request.url) })
+  const targets = await withLiveServerStatus(env, result.results, request.url)
+  const enriched = await Promise.all(targets.map(async (target) => {
+    if (target.status !== 'online') return { ...target, plugins: [], portMappings: [], pluginDomains: {} }
+    try {
+      return { ...target, ...(await remoteServerInfo(env, target.id, source.workspace_id, request.url)) }
+    } catch {
+      return { ...target, plugins: [], portMappings: [], pluginDomains: {} }
+    }
+  }))
+  return json({ results: enriched })
 }
 
 async function connectTunnel(request: Request, env: Env, url: URL): Promise<Response> {
