@@ -86,6 +86,12 @@ const unauthorized = await bridge.fetch(new Request('https://bridge.test/command
   body: JSON.stringify({ type: 'server.sync' }),
 }))
 assert.equal(unauthorized.status, 403)
+const wrongServer = await bridge.fetch(new Request('https://bridge.test/command', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', 'x-plugmesh-server-id': 'other-server' },
+  body: JSON.stringify({ type: 'server.sync' }),
+}))
+assert.equal(wrongServer.status, 403)
 
 const command = bridge.fetch(new Request('https://bridge.test/command', {
   method: 'POST',
