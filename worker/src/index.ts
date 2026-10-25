@@ -378,7 +378,12 @@ async function createBlob(request: Request, env: Env): Promise<Response> {
 
 async function consumeBlob(request: Request, env: Env, ctx: ExecutionContext, url: URL): Promise<Response> {
   if (request.method !== 'GET') return new Response('Method not allowed', { status: 405 })
-  const token = decodeURIComponent(url.pathname.slice('/blobs/'.length))
+  let token: string
+  try {
+    token = decodeURIComponent(url.pathname.slice('/blobs/'.length))
+  } catch {
+    return new Response('Not found', { status: 404 })
+  }
   if (!token) return new Response('Not found', { status: 404 })
   const object = await env.DB.prepare('SELECT id, object_key, content_type, size_bytes, expires_at FROM temp_objects WHERE token_hash = ? AND consumed_at IS NULL AND expires_at > ?').bind(await digest(token), new Date().toISOString()).first<{ id: string; object_key: string; content_type: string; size_bytes: number; expires_at: string }>()
   if (!object) return new Response('Resource expired or already consumed', { status: 410 })

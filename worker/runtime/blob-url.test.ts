@@ -68,6 +68,11 @@ test('R2 配额耗尽时拒绝上传并清理已写入对象', { timeout: 20_000
   expect(Boolean(JSON.parse(stored?.value_json ?? '{}').maintenance)).toBe(true)
 })
 
+test('畸形 Blob token 编码返回 Not found', async () => {
+  const response = await SELF.fetch('https://console.example.com/blobs/%')
+  expect(response.status).toBe(404)
+})
+
 test('缺少 Content-Length 的流式上传被明确拒绝', { timeout: 20_000 }, async () => {
   await seedServer()
   await seedMemberSession()
