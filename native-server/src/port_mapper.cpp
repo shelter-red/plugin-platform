@@ -415,11 +415,19 @@ void run_tunnel(Client& client, Tcp::socket& local, const Settings& settings, co
       state->failure = "target plugin server authorization timed out";
     }
   }
-  if (state->failed) {
+  bool failed = false;
+  std::string failure;
+  {
+    std::lock_guard lock(state->mutex);
+    failed = state->failed;
+    failure = state->failure;
+  }
+  if (failed) {
     websocketpp::lib::error_code ignored;
     client.stop();
     if (network.joinable()) network.join();
-    throw std::runtime_error(state->failure);
+    if (failure.empty()) failure = "Worker tunnel failed";
+    throw std::runtime_error(failure);
   }
 
   std::array<char, 16 * 1024> buffer{};
