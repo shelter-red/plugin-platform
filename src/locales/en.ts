@@ -340,6 +340,7 @@ export default {
       connectionsUnit: 'WebSocket / SSE',
       d1RowsRead: 'D1 rows read',
       readQueries: '{{count}} read queries',
+      d1UtcDay: 'UTC {{date}}',
       d1RowsWritten: 'D1 rows written',
       writeQueries: '{{count}} write queries',
       kvRead: 'KV reads',

@@ -340,6 +340,7 @@ export default {
       connectionsUnit: 'WebSocket / SSE',
       d1RowsRead: 'D1 行读取',
       readQueries: '{{count}} 次读取查询',
+      d1UtcDay: 'UTC {{date}}',
       d1RowsWritten: 'D1 行写入',
       writeQueries: '{{count}} 次写入查询',
       kvRead: 'KV 读取',

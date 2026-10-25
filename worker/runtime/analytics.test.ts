@@ -1,5 +1,5 @@
 import { SELF } from 'cloudflare:test'
-import { beforeEach, expect, test } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cloudflareUsageApi } from '../src/index'
 import { encryptSecret } from '../src/secrets'
 import type { AuthenticatedUser } from '../src/types'
@@ -92,7 +92,7 @@ const resourcesPayload = {
   data: {
     viewer: {
       accounts: [{
-        d1AnalyticsAdaptiveGroups: [
+        d1Today: [
           { sum: { readQueries: 3, writeQueries: 2, rowsRead: 100, rowsWritten: 7 } },
           { sum: { readQueries: 1, writeQueries: 4 } },
         ],
@@ -132,7 +132,9 @@ beforeEach(async () => {
   await seedAccounts()
 })
 
-test('Free subscriptions 提供 8 项官方基线，Analytics 合并 D1/KV/DO 并写入五分钟缓存', { timeout: 20_000 }, async () => {
+afterEach(() => vi.useRealTimers())
+
+test('Free subscriptions 提供官方基线，Analytics 合并资源并只在内存缓存', { timeout: 20_000 }, async () => {
   await saveCredential()
   const calls: UsageCall[] = []
   const first = await cloudflareUsageApi(testEnv, admin, usageFetcher(calls, { graphql: graphqlHandler }))
@@ -155,17 +157,13 @@ test('Free subscriptions 提供 8 项官方基线，Analytics 合并 D1/KV/DO �
   expect(calls[0].path).toBe(`/client/v4/accounts/${ACCOUNT_ID}/subscriptions`)
   expect(calls.every((call) => call.email === CLOUDFLARE_STUB_EMAIL && call.key === CLOUDFLARE_STUB_GLOBAL_API_KEY)).toBe(true)
 
-  const cached = await testEnv.DB.prepare('SELECT value_json, expires_at, updated_at FROM usage_cache WHERE key = ?').bind('cloudflare:workers').first<{ value_json: string; expires_at: string; updated_at: string }>()
-  expect(cached).toBeTruthy()
-  expect(JSON.parse(cached!.value_json)).toMatchObject({ plan: { id: 'free' }, limits: FREE_LIMITS })
-  const ttl = Date.parse(cached!.expires_at) - Date.parse(cached!.updated_at)
-  expect(ttl).toBeGreaterThan(290_000)
-  expect(ttl).toBeLessThanOrEqual(300_000)
+  const cacheRow = await testEnv.DB.prepare('SELECT key FROM usage_cache WHERE key = ?').bind('cloudflare:workers').first()
+  expect(cacheRow).toBeNull()
 
   const second = await cloudflareUsageApi(testEnv, admin, (async () => { throw new Error('valid cache must not call outbound') }) as typeof fetch)
   expect(second.status).toBe(200)
   const secondBody = await second.json() as Record<string, unknown>
-  expect(secondBody).toMatchObject({ cached: true, requests: 4321, plan: { id: 'free' }, limits: FREE_LIMITS, updatedAt: cached!.updated_at })
+  expect(secondBody).toMatchObject({ cached: true, requests: 4321, plan: { id: 'free' }, limits: FREE_LIMITS, updatedAt: body.updatedAt })
   expect(secondBody).not.toHaveProperty('globalApiKey')
 })
 
@@ -192,16 +190,14 @@ test('资源明细权限不足时仍返回可读取的 Worker 用量', { timeout
   expect(calls).toHaveLength(3)
 })
 
-test('缓存过期后重新读取 subscriptions 和 Analytics', { timeout: 20_000 }, async () => {
+test('内存缓存五分钟后过期并重新读取 subscriptions 和 Analytics', { timeout: 20_000 }, async () => {
   await saveCredential()
   const firstCalls: UsageCall[] = []
   const first = await cloudflareUsageApi(testEnv, admin, usageFetcher(firstCalls, { graphql: graphqlHandler }))
   expect(first.status).toBe(200)
   expect(firstCalls).toHaveLength(3)
-  const cached = await testEnv.DB.prepare('SELECT updated_at FROM usage_cache WHERE key = ?').bind('cloudflare:workers').first<{ updated_at: string }>()
-  expect(cached).toBeTruthy()
-
-  await testEnv.DB.prepare('UPDATE usage_cache SET expires_at = ? WHERE key = ?').bind(new Date(Date.now() - 1_000).toISOString(), 'cloudflare:workers').run()
+  vi.useFakeTimers()
+  vi.setSystemTime(Date.now() + 301_000)
 
   const calls: UsageCall[] = []
   const refreshed = await cloudflareUsageApi(testEnv, admin, usageFetcher(calls, { graphql: graphqlHandler }))
@@ -210,9 +206,7 @@ test('缓存过期后重新读取 subscriptions 和 Analytics', { timeout: 20_00
   expect(body).toMatchObject({ configured: true, cached: false, requests: 4321, source: 'cloudflare_graphql' })
   expect(calls).toHaveLength(3)
 
-  const next = await testEnv.DB.prepare('SELECT expires_at, updated_at FROM usage_cache WHERE key = ?').bind('cloudflare:workers').first<{ expires_at: string; updated_at: string }>()
-  expect(Date.parse(next!.updated_at)).toBeGreaterThan(Date.parse(cached!.updated_at))
-  expect(Date.parse(next!.expires_at)).toBeGreaterThan(Date.now())
+  expect(calls).toHaveLength(3)
 })
 
 test('非 Free 与空/未知 subscriptions 都返回 unavailable，不应用免费基线', { timeout: 20_000 }, async () => {
@@ -344,7 +338,7 @@ test('旧格式 Cloudflare 凭据不读取旧缓存也不发起请求', { timeou
 test('确认 Free 且 D1 行读取达到官方基线时进入维护模式', { timeout: 20_000 }, async () => {
   await saveCredential()
   const overLimitPayload = {
-    data: { viewer: { accounts: [{ d1AnalyticsAdaptiveGroups: [{ sum: { rowsRead: 5_000_000, rowsWritten: 1 } }] }] } },
+    data: { viewer: { accounts: [{ d1Today: [{ sum: { rowsRead: 5_000_000, rowsWritten: 1 } }] }] } },
   }
   const response = await cloudflareUsageApi(testEnv, admin, usageFetcher([], {
     graphql: (query) => query.includes('ResourceUsage(') ? Response.json(overLimitPayload) : Response.json(requestsPayload),
@@ -365,7 +359,7 @@ test('确认 Free 且 D1 行读取达到官方基线时进入维护模式', { ti
 test('非 Free 即使 Analytic 用量很高也不应用免费基线', { timeout: 20_000 }, async () => {
   await saveCredential()
   const overLimitPayload = {
-    data: { viewer: { accounts: [{ d1AnalyticsAdaptiveGroups: [{ sum: { rowsRead: 50_000_000, rowsWritten: 1 } }] }] } },
+    data: { viewer: { accounts: [{ d1Today: [{ sum: { rowsRead: 50_000_000, rowsWritten: 1 } }] }] } },
   }
   const response = await cloudflareUsageApi(testEnv, admin, usageFetcher([], {
     subscriptions: () => planSubscriptions('pro', 'Pro'),

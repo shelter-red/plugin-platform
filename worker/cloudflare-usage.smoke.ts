@@ -14,6 +14,7 @@ const credential = await encryptSecret('session-secret', JSON.stringify({
   verifiedAt: '2026-10-23T00:00:00.000Z',
 }))
 let maintenanceUpdates = 0
+let resourceVariables: Record<string, string> | null = null
 const database = {
   prepare(sql: string) {
     const query = {
@@ -53,12 +54,13 @@ const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
       messages: [],
     })
   }
-  const body = JSON.parse(String(init?.body)) as { query?: string }
+  const body = JSON.parse(String(init?.body)) as { query?: string; variables?: Record<string, string> }
   if (body.query?.includes('ResourceUsage')) {
     assert.match(body.query, /\$accountTag: String!/)
     assert.doesNotMatch(body.query, /\$accountTag: string!/)
+    resourceVariables = body.variables ?? null
     return Response.json({ data: { viewer: { accounts: [{
-      d1AnalyticsAdaptiveGroups: [{ sum: { readQueries: 10, writeQueries: 4, rowsRead: 20, rowsWritten: 5 } }],
+        d1Today: [{ sum: { readQueries: 10, writeQueries: 4, rowsRead: 20, rowsWritten: 5 } }],
       kvOperationsAdaptiveGroups: [
         { sum: { requests: 8 }, dimensions: { actionType: 'read' } },
         { sum: { requests: 3 }, dimensions: { actionType: 'write' } },
@@ -77,6 +79,7 @@ const response = await cloudflareUsageApi(env, admin, fetchImpl)
 assert.equal(response.status, 200)
 const result = await response.json() as {
   requests: number
+  d1Period: { date: string; timezone: string }
   d1: Record<string, number>
   kv: Record<string, number>
   durableObjects: Record<string, number>
@@ -85,6 +88,8 @@ const result = await response.json() as {
   limits: Record<string, number>
 }
 assert.equal(result.requests, 99)
+assert.deepEqual(result.d1Period, { date: new Date().toISOString().slice(0, 10), timezone: 'UTC' })
+assert.equal(resourceVariables?.today, result.d1Period.date)
 assert.deepEqual(result.d1, { readQueries: 10, writeQueries: 4, rowsRead: 20, rowsWritten: 5 })
 assert.deepEqual(result.kv, { read: 8, write: 3, delete: 1, list: 2 })
 assert.deepEqual(result.durableObjects, { requests: 7, cpuTime: 12, storedBytes: 4096 })

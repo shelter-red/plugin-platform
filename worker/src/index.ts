@@ -987,6 +987,7 @@ export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser, fetc
   const auth = { email: stored.credential.email, globalApiKey: stored.credential.globalApiKey }
   const end = new Date()
   const start = new Date(end.getTime() - 24 * 60 * 60 * 1000)
+  const d1Today = end.toISOString().slice(0, 10)
 
   // 免费基线只能来自 subscriptions；不能从平台设置手填，也不能用旧缓存猜测。
   let subscriptions: Awaited<ReturnType<typeof readCloudflareSubscriptions>>
@@ -1021,7 +1022,7 @@ export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser, fetc
   const resourceAnalyticsRequest = () => fetchImpl('https://api.cloudflare.com/client/v4/graphql', {
     method: 'POST',
     headers: { 'X-Auth-Email': auth.email, 'X-Auth-Key': auth.globalApiKey, 'content-type': 'application/json' },
-    body: JSON.stringify({ query: `query ResourceUsage($accountTag: String!, $start: Date, $end: Date) { viewer { accounts(filter: { accountTag: $accountTag }) { d1AnalyticsAdaptiveGroups(limit: 10000, filter: { date_geq: $start, date_leq: $end }) { sum { readQueries writeQueries rowsRead rowsWritten } } kvOperationsAdaptiveGroups(limit: 10000, filter: { date_geq: $start, date_leq: $end }) { sum { requests } dimensions { actionType } } durableObjectsInvocationsAdaptiveGroups(limit: 1000, filter: { date_geq: $start, date_leq: $end }) { sum { requests } } durableObjectsPeriodicGroups(limit: 1000, filter: { date_geq: $start, date_leq: $end }) { sum { cpuTime } } durableObjectsStorageGroups(limit: 1000, filter: { date_geq: $start, date_leq: $end }) { max { storedBytes } } } } }`, variables: { accountTag: accountId, start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) } }),
+    body: JSON.stringify({ query: `query ResourceUsage($accountTag: String!, $start: Date, $end: Date, $today: Date) { viewer { accounts(filter: { accountTag: $accountTag }) { d1Today: d1AnalyticsAdaptiveGroups(limit: 10000, filter: { date_geq: $today, date_leq: $today }) { sum { readQueries writeQueries rowsRead rowsWritten } } kvOperationsAdaptiveGroups(limit: 10000, filter: { date_geq: $start, date_leq: $end }) { sum { requests } dimensions { actionType } } durableObjectsInvocationsAdaptiveGroups(limit: 1000, filter: { date_geq: $start, date_leq: $end }) { sum { requests } } durableObjectsPeriodicGroups(limit: 1000, filter: { date_geq: $start, date_leq: $end }) { sum { cpuTime } } durableObjectsStorageGroups(limit: 1000, filter: { date_geq: $start, date_leq: $end }) { max { storedBytes } } } } }`, variables: { accountTag: accountId, start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10), today: d1Today } }),
   })
   let resourceResponse: Response
   try {
@@ -1044,7 +1045,7 @@ export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser, fetc
     data?: {
       viewer?: {
         accounts?: Array<{
-          d1AnalyticsAdaptiveGroups?: Array<{ sum?: { readQueries?: number; writeQueries?: number; rowsRead?: number; rowsWritten?: number } }>
+          d1Today?: Array<{ sum?: { readQueries?: number; writeQueries?: number; rowsRead?: number; rowsWritten?: number } }>
           kvOperationsAdaptiveGroups?: Array<{ sum?: { requests?: number }; dimensions?: { actionType?: string } }>
           durableObjectsInvocationsAdaptiveGroups?: Array<{ sum?: { requests?: number } }>
           durableObjectsPeriodicGroups?: Array<{ sum?: { cpuTime?: number } }>
@@ -1059,7 +1060,7 @@ export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser, fetc
     resourceAnalyticsError = 'Cloudflare Resource Analytics 返回错误，资源明细暂未读取'
   }
   const resourceAccount = resourceAnalyticsAvailable ? resourcePayload?.data?.viewer?.accounts?.[0] : undefined
-  const d1 = resourceAccount?.d1AnalyticsAdaptiveGroups?.reduce((total, row) => ({
+  const d1 = resourceAccount?.d1Today?.reduce((total, row) => ({
     readQueries: total.readQueries + (row.sum?.readQueries ?? 0),
     writeQueries: total.writeQueries + (row.sum?.writeQueries ?? 0),
     rowsRead: total.rowsRead + (row.sum?.rowsRead ?? 0),
@@ -1082,6 +1083,7 @@ export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser, fetc
     configured: true,
     accountIdConfigured: true,
     period: { start: start.toISOString(), end: end.toISOString() },
+    d1Period: { date: d1Today, timezone: 'UTC' },
     requests,
     source: 'cloudflare_graphql',
     plan: subscriptions.plan,
@@ -1107,6 +1109,7 @@ type CloudflareUsageResult = {
   configured: true
   accountIdConfigured: true
   period: { start: string; end: string }
+  d1Period: { date: string; timezone: 'UTC' }
   requests: number
   resourceAnalyticsAvailable?: boolean
   resourceAnalyticsError?: string

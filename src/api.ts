@@ -219,6 +219,7 @@ export interface CloudflareUsage {
   accountIdConfigured?: boolean
   error?: string
   period?: { start: string; end: string }
+  d1Period?: { date: string; timezone: 'UTC' }
   requests?: number
   source?: string
   cached?: boolean
