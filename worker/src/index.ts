@@ -94,14 +94,16 @@ async function authenticatedControlServer(request: Request, env: Env): Promise<{
 }
 
 const REMOTE_SERVER_INFO_TTL_MS = 10_000
+const REMOTE_SERVER_INFO_CACHE_MAX_ENTRIES = 256
 
 type RemoteServerInfo = { plugins: unknown[]; portMappings: unknown[]; pluginDomains: Record<string, string> }
 const remoteServerInfoCache = new Map<string, { expiresAt: number; value: RemoteServerInfo }>()
 
 async function remoteServerInfo(env: Env, serverId: string, workspaceId: string, requestUrl: string): Promise<RemoteServerInfo> {
   const cacheKey = `${workspaceId}:${serverId}`
+  const now = Date.now()
   const cached = remoteServerInfoCache.get(cacheKey)
-  if (cached && cached.expiresAt > Date.now()) return cached.value
+  if (cached && cached.expiresAt > now) return cached.value
   if (cached) remoteServerInfoCache.delete(cacheKey)
   const bridge = env.PLUGIN_BRIDGE.get(env.PLUGIN_BRIDGE.idFromName(serverId))
   const response = await bridge.fetch(new Request(new URL('/command', requestUrl), {
@@ -113,7 +115,13 @@ async function remoteServerInfo(env: Env, serverId: string, workspaceId: string,
   const body = await response.json().catch(() => null) as { payload?: { manifests?: unknown; portMappings?: unknown } } | null
   const domains = await env.DB.prepare('SELECT plugin_instances.plugin_id, domains.hostname FROM plugin_instances JOIN domains ON domains.plugin_instance_id = plugin_instances.id WHERE plugin_instances.server_id = ? AND plugin_instances.workspace_id = ? AND domains.status != ?').bind(serverId, workspaceId, 'offline').all<{ plugin_id: string; hostname: string }>()
   const value = { plugins: Array.isArray(body?.payload?.manifests) ? body.payload.manifests : [], portMappings: Array.isArray(body?.payload?.portMappings) ? body.payload.portMappings : [], pluginDomains: Object.fromEntries(domains.results.map((domain) => [domain.plugin_id, domain.hostname])) }
-  remoteServerInfoCache.set(cacheKey, { expiresAt: Date.now() + REMOTE_SERVER_INFO_TTL_MS, value })
+  for (const [key, entry] of remoteServerInfoCache) if (entry.expiresAt <= now) remoteServerInfoCache.delete(key)
+  while (remoteServerInfoCache.size >= REMOTE_SERVER_INFO_CACHE_MAX_ENTRIES) {
+    const oldest = remoteServerInfoCache.keys().next().value
+    if (oldest === undefined) break
+    remoteServerInfoCache.delete(oldest)
+  }
+  remoteServerInfoCache.set(cacheKey, { expiresAt: now + REMOTE_SERVER_INFO_TTL_MS, value })
   return value
 }
 
