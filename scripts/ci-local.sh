@@ -18,7 +18,9 @@ npm run --silent ui:css-audit
 step '原生 Release 打包契约'
 npm run --silent release:workflow:test
 
-step 'Worker 类型检查'
+step 'Termux CLI 构建契约'
+npm run --silent native:termux:test
+
 npm run --silent worker:typecheck
 
 step '构建管理端'
