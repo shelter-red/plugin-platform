@@ -38,6 +38,9 @@ struct PluginInfo {
   bool websocket = false;
   bool sse = false;
   bool file_stream = false;
+  bool websocket_open = false;
+  bool websocket_close = false;
+  bool sse_cancel = false;
   std::string last_error;
 };
 
@@ -82,7 +85,6 @@ class PluginManager {
  private:
   struct LoadedPlugin {
     std::unique_ptr<PluginHostClient> host;
-    uint32_t abi_version = 0;
     bool started = false;
     std::set<std::string> active_sse_streams;
   };

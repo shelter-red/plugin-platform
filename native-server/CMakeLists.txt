@@ -73,24 +73,24 @@ target_include_directories(plugmesh-crashing-sample PRIVATE include)
 add_library(plugmesh-cancellable-sample SHARED examples/cancellable_plugin.cpp)
 target_include_directories(plugmesh-cancellable-sample PRIVATE include)
 
-file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/plugins/sample.plugin/manifest.json" CONTENT "{\n  \"id\": \"sample.plugin\",\n  \"name\": \"Sample Plugin\",\n  \"version\": \"0.1.0\",\n  \"abiVersion\": \"2\",\n  \"library\": \"$<TARGET_FILE_NAME:plugmesh-sample>\",\n  \"capabilities\": {\"http\": true, \"websocket\": true, \"sse\": true, \"fileStream\": true},\n  \"permissions\": [],\n  \"healthPath\": \"/health\"\n}\n")
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/plugins/sample.plugin/manifest.json" CONTENT "{\n  \"id\": \"sample.plugin\",\n  \"name\": \"Sample Plugin\",\n  \"version\": \"0.1.0\",\n  \"abiVersion\": \"1\",\n  \"library\": \"$<TARGET_FILE_NAME:plugmesh-sample>\",\n  \"capabilities\": {\"http\": true, \"websocket\": true, \"sse\": true, \"fileStream\": true},\n  \"permissions\": [],\n  \"healthPath\": \"/health\"\n}\n")
 add_custom_command(TARGET plugmesh-sample POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/plugins/sample.plugin"
   COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:plugmesh-sample>" "${CMAKE_CURRENT_BINARY_DIR}/plugins/sample.plugin/$<TARGET_FILE_NAME:plugmesh-sample>"
 )
 
-file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/plugins/lifecycle.plugin/manifest.json" CONTENT "{\n  \"id\": \"lifecycle.plugin\",\n  \"name\": \"Lifecycle Plugin\",\n  \"version\": \"0.1.0\",\n  \"abiVersion\": \"3\",\n  \"library\": \"$<TARGET_FILE_NAME:plugmesh-lifecycle-sample>\",\n  \"capabilities\": {\"http\": true, \"websocket\": true, \"sse\": false, \"fileStream\": false},\n  \"permissions\": [],\n  \"healthPath\": \"/health\"\n}\n")
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/plugins/lifecycle.plugin/manifest.json" CONTENT "{\n  \"id\": \"lifecycle.plugin\",\n  \"name\": \"Lifecycle Plugin\",\n  \"version\": \"0.1.0\",\n  \"abiVersion\": \"1\",\n  \"library\": \"$<TARGET_FILE_NAME:plugmesh-lifecycle-sample>\",\n  \"capabilities\": {\"http\": true, \"websocket\": true, \"sse\": false, \"fileStream\": false},\n  \"permissions\": [],\n  \"healthPath\": \"/health\"\n}\n")
 add_custom_command(TARGET plugmesh-lifecycle-sample POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/plugins/lifecycle.plugin"
   COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:plugmesh-lifecycle-sample>" "${CMAKE_CURRENT_BINARY_DIR}/plugins/lifecycle.plugin/$<TARGET_FILE_NAME:plugmesh-lifecycle-sample>"
 )
 
-file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/plugins/crashing.plugin/manifest.json" CONTENT "{\n  \"id\": \"crashing.plugin\",\n  \"name\": \"Crashing Plugin\",\n  \"version\": \"0.1.0\",\n  \"abiVersion\": \"2\",\n  \"library\": \"$<TARGET_FILE_NAME:plugmesh-crashing-sample>\",\n  \"capabilities\": {\"http\": true, \"websocket\": false, \"sse\": false, \"fileStream\": false},\n  \"permissions\": [],\n  \"healthPath\": \"/health\"\n}\n")
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/plugins/crashing.plugin/manifest.json" CONTENT "{\n  \"id\": \"crashing.plugin\",\n  \"name\": \"Crashing Plugin\",\n  \"version\": \"0.1.0\",\n  \"abiVersion\": \"1\",\n  \"library\": \"$<TARGET_FILE_NAME:plugmesh-crashing-sample>\",\n  \"capabilities\": {\"http\": true, \"websocket\": false, \"sse\": false, \"fileStream\": false},\n  \"permissions\": [],\n  \"healthPath\": \"/health\"\n}\n")
 add_custom_command(TARGET plugmesh-crashing-sample POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/plugins/crashing.plugin"
   COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:plugmesh-crashing-sample>" "${CMAKE_CURRENT_BINARY_DIR}/plugins/crashing.plugin/$<TARGET_FILE_NAME:plugmesh-crashing-sample>"
 )
-file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/plugins/cancellable.plugin/manifest.json" CONTENT "{\n  \"id\": \"cancellable.plugin\",\n  \"name\": \"Cancellable Plugin\",\n  \"version\": \"0.1.0\",\n  \"abiVersion\": \"4\",\n  \"library\": \"$<TARGET_FILE_NAME:plugmesh-cancellable-sample>\",\n  \"capabilities\": {\"http\": true, \"websocket\": true, \"sse\": true, \"fileStream\": true},\n  \"permissions\": [],\n  \"healthPath\": \"/health\"\n}\n")
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/plugins/cancellable.plugin/manifest.json" CONTENT "{\n  \"id\": \"cancellable.plugin\",\n  \"name\": \"Cancellable Plugin\",\n  \"version\": \"0.1.0\",\n  \"abiVersion\": \"1\",\n  \"library\": \"$<TARGET_FILE_NAME:plugmesh-cancellable-sample>\",\n  \"capabilities\": {\"http\": true, \"websocket\": true, \"sse\": true, \"fileStream\": true},\n  \"permissions\": [],\n  \"healthPath\": \"/health\"\n}\n")
 add_custom_command(TARGET plugmesh-cancellable-sample POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/plugins/cancellable.plugin"
   COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:plugmesh-cancellable-sample>" "${CMAKE_CURRENT_BINARY_DIR}/plugins/cancellable.plugin/$<TARGET_FILE_NAME:plugmesh-cancellable-sample>"

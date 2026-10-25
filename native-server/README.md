@@ -2,17 +2,17 @@
 
 这是跨 Linux / Windows 的本地服务器基础层。当前阶段固定了两项运行时边界：
 
-- `plugin_api.h` 定义兼容的 C ABI v2/v3/v4：v2 通过 `plugmesh_plugin_get_api_v2` 导出 HTTP、WebSocket、SSE 和文件流能力，v3 额外提供公开 WebSocket 的建立与关闭回调，v4 在 v3 基础上增加 SSE 取消回调 `handle_sse_cancel`。
+- `plugin_api.h` 定义唯一的 C ABI v1：插件导出 `plugmesh_plugin_get_api`，由同一张平铺入口表声明 HTTP、WebSocket、SSE、文件流及其生命周期回调。插件 manifest 的 `abiVersion` 必须为 `1`；旧 ABI 插件需要使用当前头文件重新编译。
 - `PluginLoader` 负责按平台加载 `.so` / `.dylib` / `.dll`，校验 ABI 版本和必需入口。
 - `plugmesh-plugin-host` 是可执行宿主进程，按 `<library>` 参数加载单个插件动态库，并通过 stdin/stdout 的逐行 JSON 协议响应父进程请求。支持的操作为 `describe`、`start`、`stop`、`health`、`http`、`sse`、`sse.cancel`、`file`、`websocket.open`、`websocket.data`、`websocket.close` 和 `shutdown`；二进制数据统一使用 Base64。
-- `PluginManager` 负责扫描包含 `manifest.json` 的插件目录、校验 manifest 与 C ABI v2/v3/v4 描述、编排加载/启停/重载、健康检查、文件流、SSE 取消和 WebSocket 生命周期。每个已加载插件对应一个 `PluginHostClient` 子进程；插件发生访问违规等原生崩溃时只终止宿主进程，管理器把插件标记为 `failed` 并记录 `last_error`，服务器进程本身继续运行。
+- `PluginManager` 负责扫描包含 `manifest.json` 的插件目录、校验 manifest 与唯一 C ABI 描述、编排加载/启停/重载、健康检查、文件流、SSE 取消和 WebSocket 生命周期。每个已加载插件对应一个 `PluginHostClient` 子进程；插件发生访问违规等原生崩溃时只终止宿主进程，管理器把插件标记为 `failed` 并记录 `last_error`，服务器进程本身继续运行。
 - `ControlClient` 使用 WebSocket++、standalone Asio 和 nlohmann/json 建立出站控制连接；生产地址使用 `wss`，localhost 开发地址可使用 `ws`。控制连接处理注册、心跳、插件命令、健康检查和 HTTP 请求帧，注册描述来自已校验的 manifest。收到 `server.sync` 时，客户端通过 `server.register` 的 `syncRequestId` 关联本次同步，不在注册落库前提前返回成功。
-- TLS 使用 OpenSSL 默认信任路径并强制校验 Worker 主机名；Windows 额外从系统 `ROOT` 证书库加载受信任根证书，避免发布包依赖机器上另装一份 CA bundle。
-- `examples/sample_plugin.cpp`、`examples/lifecycle_plugin.cpp`、`examples/cancellable_plugin.cpp` 和对应 smoke 测试验证动态库导出、ABI 检查、基本生命周期、WebSocket 建立/关闭回调以及 ABI v4 SSE 协作式取消。`examples/crashing_plugin.cpp` 故意触发空指针崩溃，由 `plugin-manager-crash-smoke` 验证宿主隔离和失败标记。
+- TLS 使用系统信任路径并强制校验 Worker 主机名；发布包提供 `ca-certificates.crt` 时会同时加载随包根证书，Windows 还从系统 `ROOT` 证书库加载受信任根证书。不会关闭证书或主机名验证。
+- `examples/sample_plugin.cpp`、`examples/lifecycle_plugin.cpp`、`examples/cancellable_plugin.cpp` 和对应 smoke 测试验证单一 ABI 动态库导出、基本生命周期、WebSocket 建立/关闭回调以及 SSE 协作式取消。`examples/crashing_plugin.cpp` 故意触发空指针崩溃，由 `plugin-manager-crash-smoke` 验证宿主隔离和失败标记。
 
 非 MSVC 构建默认启用 `-Wall -Wextra`；`third_party/include` 以 SYSTEM 方式包含，第三方头文件的警告不会混入自家源码。
 
-部署时 `plugmesh-server` 与 `plugmesh-plugin-host` 需要放在同一目录，或通过 `PLUGMESH_PLUGIN_HOST` 指定宿主路径。SSE 请求由 `ControlClient` 放入独立工作线程调度，插件宿主把 SSE 回调放入独立 job，因此控制协议仍可接收 `sse.cancel` 并并发触发 ABI v4 的 `handle_sse_cancel`。取消是协作式的：插件必须自行观察取消并尽快返回，宿主不会强杀插件内部的同步计算。HTTP、文件流等其他同步边界还没有因本次改动全面异步化。
+部署时 `plugmesh-server` 与 `plugmesh-plugin-host` 需要放在同一目录，或通过 `PLUGMESH_PLUGIN_HOST` 指定宿主路径。SSE 请求由 `ControlClient` 放入独立工作线程调度，插件宿主把 SSE 回调放入独立 job；`handle_sse_cancel` 可在该回调运行时并发调用。取消是协作式的：插件必须自行观察取消并尽快返回，宿主不会强杀插件内部的同步计算。HTTP、文件流等其他同步边界还没有因本次改动全面异步化。
 
 启动配置可以由环境变量提供；当连接参数缺失且指定了凭据文件时，服务器会使用口令解密持久化凭据：
 
@@ -25,13 +25,14 @@
 - `PLUGMESH_CREDENTIAL_PASSWORD`
 - `PLUGMESH_LOCAL_PORT`（可选，默认从 `8787` 开始，仅绑定 `127.0.0.1`；占用时自动递增）
 - `PLUGMESH_LOCAL_UI_DIRECTORY`（可选；默认查找可执行文件同目录的 `native-ui/dist`，源码运行时回退到当前目录的 `native-ui/dist`）
+- `PLUGMESH_LOG_FILE`（可选；默认 Linux 写入 `$XDG_STATE_HOME/plugmesh` 或 `~/.local/state/plugmesh`，macOS 写入 `~/Library/Logs/Plugmesh`，Windows 写入 `%LOCALAPPDATA%/Plugmesh/logs`；单文件 1 MiB、保留 3 个轮转文件）
 
 本地管理端点仅监听回环地址：
 
 - `GET /api/health`、`GET /api/status`：服务和控制连接状态。
 - `GET /api/plugins`：已发现插件的 manifest 与生命周期状态。
 - `GET /api/diagnostics`：插件数量、加载状态和失败数量摘要。
-- `GET /api/logs`：读取最近的本地插件日志，最多保留 200 条。
+- `GET /api/logs`：读取最近 200 条本地日志；重启后从 JSONL 日志恢复。Worker 通信只记录连接状态、帧类型和拒绝原因，不记录帧 payload、请求头或凭据。
 - `GET /api/plugins/{pluginId}/health`：执行已启用插件的 ABI 健康检查。
 - `POST /api/plugins/{pluginId}/{load|unload|enable|disable|reload}`：执行插件生命周期操作。
 - `POST /api/register`：仅在连接配置缺失时可用，调用 Worker 注册并把长期凭据加密保存到本地。

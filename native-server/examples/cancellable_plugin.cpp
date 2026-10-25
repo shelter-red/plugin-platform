@@ -72,7 +72,7 @@ int handle_sse(const char* stream_id, const plugmesh_http_request* request) {
     return -1;
   }
 
-  // 模拟长时间运行的计算或数据源。v4 取消回调只负责通知插件，插件必须
+  // 模拟长时间运行的计算或数据源。取消回调只负责通知插件，插件必须
   // 自行让 handle_sse 尽快观察到取消并返回；宿主不会强行中止插件线程。
   for (int attempt = 0; attempt < 1000 && !cancelled->load(std::memory_order_acquire); ++attempt) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -111,17 +111,18 @@ int handle_file(const char* stream_id, const plugmesh_http_request*) {
   return host->stream_write(stream_id, body, sizeof(body) - 1, 1);
 }
 
-const plugmesh_plugin_api_v4 API = {
-    {
-        {PLUGMESH_PLUGIN_ABI_VERSION_V4, "cancellable.plugin", "Cancellable Plugin", "0.1.0", start_plugin, stop_plugin, health_plugin, handle_http, handle_websocket, handle_sse, handle_file},
-        handle_websocket_open,
-        handle_websocket_close,
-    },
+const plugmesh_plugin_api API = {
+    PLUGMESH_PLUGIN_ABI_VERSION, "cancellable.plugin", "Cancellable Plugin", "0.1.0", start_plugin, stop_plugin, health_plugin, handle_http,
+    handle_websocket_open,
+    handle_websocket,
+    handle_websocket_close,
+    handle_sse,
     handle_sse_cancel,
+    handle_file,
 };
 
 }  // namespace
 
-extern "C" PLUGMESH_EXPORT const plugmesh_plugin_api_v4* plugmesh_plugin_get_api_v4() {
+extern "C" PLUGMESH_EXPORT const plugmesh_plugin_api* plugmesh_plugin_get_api() {
   return &API;
 }

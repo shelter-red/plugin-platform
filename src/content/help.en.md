@@ -58,7 +58,7 @@ plugins/
     └── libsample.so
 ```
 
-`manifest.json` must declare at least `id`, `name`, `version`, `abiVersion`, `library`, `healthPath`, `capabilities`, and `permissions`. `abiVersion` may be 2, 3, or 4. `library` must stay inside the plugin directory and use `.so`, `.dylib`, or `.dll` for the target platform. The artifact includes the plugin ABI header; the complete fields and callbacks are documented in `native-server/README.md`.
+`manifest.json` must declare at least `id`, `name`, `version`, `abiVersion`, `library`, `healthPath`, `capabilities`, and `permissions`. The only supported `abiVersion` is `1`; plugins built for earlier ABI revisions must be rebuilt with the current header and export `plugmesh_plugin_get_api`. `library` must stay inside the plugin directory and use `.so`, `.dylib`, or `.dll` for the target platform. The artifact includes the plugin ABI header; the complete fields and callbacks are documented in `native-server/README.md`.
 
 Generate a one-time registration code under **Plugin servers** in the console, then register the extracted server. Linux/macOS example:
 
@@ -114,7 +114,7 @@ plugmesh_server_stop(server);
 plugmesh_server_destroy(server);
 ```
 
-`server_api.h` is the stable C ABI for C and C++ hosts; do not pass STL types across the boundary. Plugins still use the `plugin_api.h` ABI v2/v3/v4 exports. `plugmesh_server_create` copies the configuration strings, and the lifecycle must be released in `stop` then `destroy` order. Platform-specific import libraries, RPATH, OpenSSL setup, and plugin layout are documented in [`native-server/README.md`](https://github.com/shelter-red/plugin-platform/blob/main/native-server/README.md).
+`server_api.h` is the stable C ABI for C and C++ hosts; do not pass STL types across the boundary. Plugins use the single `plugin_api.h` ABI and export `plugmesh_plugin_get_api`. `plugmesh_server_create` copies the configuration strings, and the lifecycle must be released in `stop` then `destroy` order. Platform-specific import libraries, RPATH, OpenSSL setup, and plugin layout are documented in [`native-server/README.md`](https://github.com/shelter-red/plugin-platform/blob/main/native-server/README.md).
 
 If no plugin is discovered, check `PLUGMESH_PLUGIN_DIRECTORY`, each subdirectory's `manifest.json`, the `library` extension, and `PLUGMESH_PLUGIN_HOST`. If health checks fail, inspect `/api/diagnostics` and `/api/logs` on the local console and verify outbound HTTPS connectivity to the Worker.
 

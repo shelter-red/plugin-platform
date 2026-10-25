@@ -154,8 +154,6 @@ int main(int argc, char** argv) {
     emit({{"event", "fatal"}, {"error", error}});
     return 1;
   }
-  const auto* v3 = loader.api_v3();
-  const auto* v4 = loader.api_v4();
   const auto* api = loader.api();
   if (!api) {
     emit({{"event", "fatal"}, {"error", "plugin library has no ABI entry point"}});
@@ -166,13 +164,13 @@ int main(int argc, char** argv) {
   bool started = false;
   SseJobs sse_jobs;
   const auto cancel_all_sse = [&] {
-    if (!v4 || !v4->handle_sse_cancel) return;
-    for (const auto& stream_id : sse_jobs.active_stream_ids()) v4->handle_sse_cancel(stream_id.c_str());
+    if (!api->handle_sse_cancel) return;
+    for (const auto& stream_id : sse_jobs.active_stream_ids()) api->handle_sse_cancel(stream_id.c_str());
   };
   const auto stop_plugin = [&] {
     cancel_all_sse();
     sse_jobs.reap(true);
-    if (started && api->stop) api->stop();
+    if (started) api->stop();
     started = false;
   };
 
@@ -210,8 +208,9 @@ int main(int argc, char** argv) {
           {"websocket", api->handle_websocket != nullptr},
           {"sse", api->handle_sse != nullptr},
           {"fileStream", api->handle_file != nullptr},
-          {"websocketOpen", v3 && v3->handle_websocket_open != nullptr},
-          {"sseCancel", v4 && v4->handle_sse_cancel != nullptr},
+          {"websocketOpen", api->handle_websocket_open != nullptr},
+          {"websocketClose", api->handle_websocket_close != nullptr},
+          {"sseCancel", api->handle_sse_cancel != nullptr},
       };
     } else if (op == "start") {
       if (api->start(&HOST_API) != 0) {
@@ -269,15 +268,15 @@ int main(int argc, char** argv) {
       const auto job = sse_jobs.find(stream_id);
       if (!job) {
         reply = {{"ok", false}, {"error", "SSE stream is not active"}};
-      } else if (!v4 || !v4->handle_sse_cancel) {
-        reply = {{"ok", false}, {"error", "plugin ABI does not support SSE cancellation"}};
-      } else if (v4->handle_sse_cancel(stream_id.c_str()) != 0) {
+      } else if (!api->handle_sse_cancel) {
+        reply = {{"ok", false}, {"error", "plugin does not support SSE cancellation"}};
+      } else if (api->handle_sse_cancel(stream_id.c_str()) != 0) {
         reply = {{"ok", false}, {"error", "plugin SSE cancellation failed"}};
       }
     } else if (op == "websocket.open") {
-      if (!v3 || !v3->handle_websocket_open) {
-        reply = {{"ok", false}, {"error", "plugin ABI does not support websocket open"}};
-      } else if (v3->handle_websocket_open(message.value("connectionId", std::string()).c_str(), message.value("path", std::string("/")).c_str(), message.value("headersJson", std::string("{}")).c_str()) != 0) {
+      if (!api->handle_websocket_open) {
+        reply = {{"ok", false}, {"error", "plugin does not support websocket open"}};
+      } else if (api->handle_websocket_open(message.value("connectionId", std::string()).c_str(), message.value("path", std::string("/")).c_str(), message.value("headersJson", std::string("{}")).c_str()) != 0) {
         reply = {{"ok", false}, {"error", "plugin websocket open failed"}};
       }
     } else if (op == "websocket.data") {
@@ -288,9 +287,9 @@ int main(int argc, char** argv) {
         reply = {{"ok", false}, {"error", "plugin websocket handler failed"}};
       }
     } else if (op == "websocket.close") {
-      if (!v3 || !v3->handle_websocket_close) {
-        reply = {{"ok", false}, {"error", "plugin ABI does not support websocket close"}};
-      } else if (v3->handle_websocket_close(message.value("connectionId", std::string()).c_str(), static_cast<uint16_t>(message.value("code", 1000)), message.value("reason", std::string()).c_str()) != 0) {
+      if (!api->handle_websocket_close) {
+        reply = {{"ok", false}, {"error", "plugin does not support websocket close"}};
+      } else if (api->handle_websocket_close(message.value("connectionId", std::string()).c_str(), static_cast<uint16_t>(message.value("code", 1000)), message.value("reason", std::string()).c_str()) != 0) {
         reply = {{"ok", false}, {"error", "plugin websocket close failed"}};
       }
     } else if (op == "shutdown") {

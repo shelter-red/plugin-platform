@@ -13,7 +13,7 @@ export const manifest: PluginManifest = {
   id: PLUGIN_ID,
   name: 'Runtime sample',
   version: '1.2.0',
-  abiVersion: '3',
+  abiVersion: '1',
   library: 'libsample.so',
   capabilities: { http: true, websocket: true, sse: true, fileStream: true },
   permissions: [],

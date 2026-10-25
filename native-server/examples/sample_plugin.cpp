@@ -78,7 +78,7 @@ int handle_file(const char* stream_id, const plugmesh_http_request* request) {
   return host->stream_write(stream_id, body, sizeof(body) - 1, 1);
 }
 
-const plugmesh_plugin_api_v2 API = {
+const plugmesh_plugin_api API = {
     PLUGMESH_PLUGIN_ABI_VERSION,
     "sample.plugin",
     "Sample Plugin",
@@ -87,13 +87,16 @@ const plugmesh_plugin_api_v2 API = {
     stop_plugin,
     health_plugin,
     handle_http,
+    nullptr,
     handle_websocket,
+    nullptr,
     handle_sse,
+    nullptr,
     handle_file,
 };
 
 }  // namespace
 
-extern "C" PLUGMESH_EXPORT const plugmesh_plugin_api_v2* plugmesh_plugin_get_api_v2() {
+extern "C" PLUGMESH_EXPORT const plugmesh_plugin_api* plugmesh_plugin_get_api() {
   return &API;
 }

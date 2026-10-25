@@ -133,7 +133,7 @@ int main(int argc, char** argv) {
               sample_found = manifest.value("state", "") == "enabled" && manifest.value("healthPath", "") == "/health";
             }
             if (manifest.value("id", "") == "cancellable.plugin") {
-              cancellable_found = manifest.value("abiVersion", "") == "4";
+              cancellable_found = manifest.value("abiVersion", "") == "1";
             }
           }
         }

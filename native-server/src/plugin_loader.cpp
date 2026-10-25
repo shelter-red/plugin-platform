@@ -18,9 +18,7 @@ bool PluginLoader::load(const std::filesystem::path& library_path, std::string& 
     error = "LoadLibraryW failed";
     return false;
   }
-  auto entry_v4 = reinterpret_cast<plugmesh_plugin_get_api_v4_fn>(reinterpret_cast<void*>(GetProcAddress(static_cast<HMODULE>(handle_), "plugmesh_plugin_get_api_v4")));
-  auto entry_v3 = reinterpret_cast<plugmesh_plugin_get_api_v3_fn>(reinterpret_cast<void*>(GetProcAddress(static_cast<HMODULE>(handle_), "plugmesh_plugin_get_api_v3")));
-  auto entry_v2 = reinterpret_cast<plugmesh_plugin_get_api_v2_fn>(reinterpret_cast<void*>(GetProcAddress(static_cast<HMODULE>(handle_), "plugmesh_plugin_get_api_v2")));
+  auto entry = reinterpret_cast<plugmesh_plugin_get_api_fn>(reinterpret_cast<void*>(GetProcAddress(static_cast<HMODULE>(handle_), "plugmesh_plugin_get_api")));
 #else
   handle_ = dlopen(library_path.c_str(), RTLD_NOW | RTLD_LOCAL);
   if (!handle_) {
@@ -28,38 +26,15 @@ bool PluginLoader::load(const std::filesystem::path& library_path, std::string& 
     error = detail ? detail : "dlopen failed";
     return false;
   }
-  auto entry_v4 = reinterpret_cast<plugmesh_plugin_get_api_v4_fn>(dlsym(handle_, "plugmesh_plugin_get_api_v4"));
-  auto entry_v3 = reinterpret_cast<plugmesh_plugin_get_api_v3_fn>(dlsym(handle_, "plugmesh_plugin_get_api_v3"));
-  auto entry_v2 = reinterpret_cast<plugmesh_plugin_get_api_v2_fn>(dlsym(handle_, "plugmesh_plugin_get_api_v2"));
+  auto entry = reinterpret_cast<plugmesh_plugin_get_api_fn>(dlsym(handle_, "plugmesh_plugin_get_api"));
 #endif
-  if (entry_v4) {
-    api_v4_ = entry_v4();
-    api_v3_ = api_v4_ ? &api_v4_->base : nullptr;
-    api_ = api_v3_ ? &api_v3_->base : nullptr;
-    if (!api_v4_ || !api_ || api_->abi_version != PLUGMESH_PLUGIN_ABI_VERSION_V4 || !api_->start || !api_->stop || !api_->health || !api_v3_->handle_websocket_open || !api_v3_->handle_websocket_close || !api_v4_->handle_sse_cancel) {
-      error = "plugin ABI v4 version or required entry points are invalid";
-      unload();
-      return false;
-    }
-    return true;
-  }
-  if (entry_v3) {
-    api_v3_ = entry_v3();
-    api_ = api_v3_ ? &api_v3_->base : nullptr;
-    if (!api_v3_ || api_->abi_version != PLUGMESH_PLUGIN_ABI_VERSION_V3 || !api_->start || !api_->stop || !api_->health || !api_v3_->handle_websocket_open || !api_v3_->handle_websocket_close) {
-      error = "plugin ABI v3 version or required entry points are invalid";
-      unload();
-      return false;
-    }
-    return true;
-  }
-  if (!entry_v2) {
-    error = "plugmesh_plugin_get_api_v2, plugmesh_plugin_get_api_v3 or plugmesh_plugin_get_api_v4 was not exported";
+  if (!entry) {
+    error = "plugmesh_plugin_get_api was not exported";
     unload();
     return false;
   }
-  api_ = entry_v2();
-  if (!api_ || api_->abi_version != PLUGMESH_PLUGIN_ABI_VERSION || !api_->start || !api_->stop || !api_->health) {
+  api_ = entry();
+  if (!api_ || api_->abi_version != PLUGMESH_PLUGIN_ABI_VERSION || !api_->plugin_id || !api_->plugin_name || !api_->plugin_version || !api_->start || !api_->stop || !api_->health) {
     error = "plugin ABI version or required entry points are invalid";
     unload();
     return false;
@@ -69,8 +44,6 @@ bool PluginLoader::load(const std::filesystem::path& library_path, std::string& 
 
 void PluginLoader::unload() {
   api_ = nullptr;
-  api_v3_ = nullptr;
-  api_v4_ = nullptr;
   if (!handle_) return;
 #ifdef _WIN32
   FreeLibrary(static_cast<HMODULE>(handle_));

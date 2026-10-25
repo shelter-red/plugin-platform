@@ -24,7 +24,7 @@ bool load_and_check(const std::string& library_path, uint32_t expected_abi, cons
 
 int main(int argc, char** argv) {
   if (argc != 4) {
-    std::cerr << "usage: plugmesh-plugin-loader-smoke <abi-v2-library> <abi-v3-library> <abi-v4-library>\n";
+    std::cerr << "usage: plugmesh-plugin-loader-smoke <sample-library> <lifecycle-library> <cancellable-library>\n";
     return 2;
   }
   plugmesh::PluginLoader missing;
@@ -35,11 +35,11 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (!load_and_check(argv[1], PLUGMESH_PLUGIN_ABI_VERSION, "sample.plugin", error) ||
-      !load_and_check(argv[2], PLUGMESH_PLUGIN_ABI_VERSION_V3, "lifecycle.plugin", error) ||
-      !load_and_check(argv[3], PLUGMESH_PLUGIN_ABI_VERSION_V4, "cancellable.plugin", error)) {
+      !load_and_check(argv[2], PLUGMESH_PLUGIN_ABI_VERSION, "lifecycle.plugin", error) ||
+      !load_and_check(argv[3], PLUGMESH_PLUGIN_ABI_VERSION, "cancellable.plugin", error)) {
     std::cerr << error << '\n';
     return 1;
   }
-  std::cout << "plugin ABI v2/v3/v4 loader smoke test passed\n";
+  std::cout << "single plugin ABI loader smoke test passed\n";
   return 0;
 }

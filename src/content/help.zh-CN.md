@@ -58,7 +58,7 @@ plugins/
     └── libsample.so
 ```
 
-`manifest.json` 至少声明 `id`、`name`、`version`、`abiVersion`、`library`、`healthPath`、`capabilities` 和 `permissions`；`abiVersion` 支持 2、3、4，`library` 只能指向同一插件目录内的 `.so`、`.dylib` 或 `.dll`。插件 ABI 公共头文件随构建 artifact 提供，具体字段和回调见仓库的 `native-server/README.md`。
+`manifest.json` 至少声明 `id`、`name`、`version`、`abiVersion`、`library`、`healthPath`、`capabilities` 和 `permissions`；当前仅支持 `abiVersion: "1"`，旧 ABI 插件需使用随包提供的 `plugin_api.h` 重新编译，并导出 `plugmesh_plugin_get_api`。`library` 只能指向同一插件目录内的 `.so`、`.dylib` 或 `.dll`。字段、回调和内存生命周期契约见仓库的 `native-server/README.md`。
 
 在管理端「插件服务器」生成一次性注册码，然后在解压后的服务器目录执行绑定。Linux/macOS 示例：
 
@@ -114,7 +114,7 @@ plugmesh_server_stop(server);
 plugmesh_server_destroy(server);
 ```
 
-`server_api.h` 是跨 C/C++ 宿主的稳定 C ABI，不要让 STL 类型跨越边界；插件自身仍按 `plugin_api.h` 的 ABI v2/v3/v4 导出入口。`plugmesh_server_create` 会复制配置字符串，停止时必须按 `stop` → `destroy` 顺序释放。跨平台的导入库、RPATH、OpenSSL 和插件目录布局见 [`native-server/README.md`](https://github.com/shelter-red/plugin-platform/blob/main/native-server/README.md)。
+`server_api.h` 是跨 C/C++ 宿主的稳定 C ABI，不要让 STL 类型跨越边界；插件统一使用 `plugin_api.h` 中的单一 ABI，并导出 `plugmesh_plugin_get_api`。`plugmesh_server_create` 会复制配置字符串，停止时必须按 `stop` → `destroy` 顺序释放。跨平台的导入库、RPATH、OpenSSL 和插件目录布局见 [`native-server/README.md`](https://github.com/shelter-red/plugin-platform/blob/main/native-server/README.md)。
 
 如果服务器没有发现插件，先检查 `PLUGMESH_PLUGIN_DIRECTORY`、子目录中的 `manifest.json`、`library` 扩展名和 `PLUGMESH_PLUGIN_HOST`；如果健康检查失败，先在本机查看 `/api/diagnostics` 与 `/api/logs`，再检查服务器到 Worker 的 HTTPS 出站连接。
 

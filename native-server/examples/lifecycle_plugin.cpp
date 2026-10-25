@@ -44,14 +44,18 @@ int handle_websocket_close(const char* connection_id, uint16_t code, const char*
   return 0;
 }
 
-const plugmesh_plugin_api_v3 API = {
-    {PLUGMESH_PLUGIN_ABI_VERSION_V3, "lifecycle.plugin", "Lifecycle Plugin", "0.1.0", start_plugin, stop_plugin, health_plugin, handle_http, handle_websocket, nullptr, nullptr},
+const plugmesh_plugin_api API = {
+    PLUGMESH_PLUGIN_ABI_VERSION, "lifecycle.plugin", "Lifecycle Plugin", "0.1.0", start_plugin, stop_plugin, health_plugin, handle_http,
     handle_websocket_open,
+    handle_websocket,
     handle_websocket_close,
+    nullptr,
+    nullptr,
+    nullptr,
 };
 
 }  // namespace
 
-extern "C" PLUGMESH_EXPORT const plugmesh_plugin_api_v3* plugmesh_plugin_get_api_v3() {
+extern "C" PLUGMESH_EXPORT const plugmesh_plugin_api* plugmesh_plugin_get_api() {
   return &API;
 }

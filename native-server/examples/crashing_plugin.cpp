@@ -20,7 +20,7 @@ int handle_http(const plugmesh_http_request*, plugmesh_http_response*) {
   return 0;
 }
 
-const plugmesh_plugin_api_v2 API = {
+const plugmesh_plugin_api API = {
     PLUGMESH_PLUGIN_ABI_VERSION,
     "crashing.plugin",
     "Crashing Plugin",
@@ -32,10 +32,13 @@ const plugmesh_plugin_api_v2 API = {
     nullptr,
     nullptr,
     nullptr,
+    nullptr,
+    nullptr,
+    nullptr,
 };
 
 }  // namespace
 
-extern "C" PLUGMESH_EXPORT const plugmesh_plugin_api_v2* plugmesh_plugin_get_api_v2() {
+extern "C" PLUGMESH_EXPORT const plugmesh_plugin_api* plugmesh_plugin_get_api() {
   return &API;
 }

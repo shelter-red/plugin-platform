@@ -105,7 +105,7 @@ int main(int argc, char** argv) {
   }
   const auto sample = manager.info_snapshot("sample.plugin");
   const auto cancellable = manager.info_snapshot("cancellable.plugin");
-  if (!sample || sample->health_path != "/health" || !cancellable || cancellable->abi_version != "4") {
+  if (!sample || sample->health_path != "/health" || !cancellable || cancellable->abi_version != "1") {
     std::cerr << "sample or cancellable plugin was not discovered\n";
     return 1;
   }
@@ -141,8 +141,8 @@ int main(int argc, char** argv) {
     return 1;
   }
   error.clear();
-  if (manager.cancel_sse("sample.plugin", "inactive-stream", "test", error) || error.find("does not support SSE cancellation") == std::string::npos) {
-    std::cerr << "ABI v2 plugin did not reject SSE cancellation\n";
+  if (manager.cancel_sse("sample.plugin", "inactive-stream", "test", error) || error.find("not active") == std::string::npos) {
+    std::cerr << "inactive SSE cancellation was not rejected\n";
     return 1;
   }
 
@@ -192,7 +192,7 @@ int main(int argc, char** argv) {
   std::filesystem::create_directories(traversal_plugin);
   std::filesystem::copy_file(source_library, outside_library);
   std::ofstream manifest(traversal_plugin / "manifest.json");
-  manifest << "{\"id\":\"traversal.plugin\",\"name\":\"Traversal Plugin\",\"version\":\"0.1.0\",\"abiVersion\":\"2\",\"library\":\"../" << outside_library.filename().string() << "\",\"capabilities\":{\"http\":true,\"websocket\":false,\"sse\":false,\"fileStream\":false},\"permissions\":[],\"healthPath\":\"/health\"}";
+  manifest << "{\"id\":\"traversal.plugin\",\"name\":\"Traversal Plugin\",\"version\":\"0.1.0\",\"abiVersion\":\"1\",\"library\":\"../" << outside_library.filename().string() << "\",\"capabilities\":{\"http\":true,\"websocket\":false,\"sse\":false,\"fileStream\":false},\"permissions\":[],\"healthPath\":\"/health\"}";
   manifest.close();
   plugmesh::PluginManager traversal_manager;
   error.clear();
@@ -200,6 +200,20 @@ int main(int argc, char** argv) {
   std::filesystem::remove_all(traversal_root);
   if (traversal_accepted) {
     std::cerr << "plugin library path traversal was accepted\n";
+    return 1;
+  }
+  const auto unsupported_root = std::filesystem::temp_directory_path() / ("plugmesh-plugin-abi-smoke-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+  const auto unsupported_plugin = unsupported_root / "unsupported.plugin";
+  std::filesystem::create_directories(unsupported_plugin);
+  std::ofstream unsupported_manifest(unsupported_plugin / "manifest.json");
+  unsupported_manifest << "{\"id\":\"unsupported.plugin\",\"name\":\"Unsupported Plugin\",\"version\":\"0.1.0\",\"abiVersion\":\"4\",\"library\":\"plugin.so\",\"healthPath\":\"/health\"}";
+  unsupported_manifest.close();
+  plugmesh::PluginManager unsupported_manager;
+  error.clear();
+  const auto unsupported_accepted = unsupported_manager.discover(unsupported_root, error);
+  std::filesystem::remove_all(unsupported_root);
+  if (unsupported_accepted || error.find("unsupported manifest ABI version") == std::string::npos) {
+    std::cerr << "non-current plugin ABI manifest was not rejected\n";
     return 1;
   }
   std::cout << "plugin lifecycle and SSE cancellation smoke test passed\n";

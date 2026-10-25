@@ -120,7 +120,7 @@ const manifest: PluginManifest = {
   id: 'sample.plugin',
   name: 'Sample Plugin',
   version: '1.0.0',
-  abiVersion: '2',
+  abiVersion: '1',
   library: 'sample.so',
   capabilities: { http: true, websocket: false, sse: false, fileStream: false },
   permissions: [],

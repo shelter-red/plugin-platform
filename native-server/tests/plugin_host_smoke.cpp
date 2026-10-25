@@ -1,5 +1,6 @@
 #include "plugmesh/plugin_host_client.h"
 #include "plugmesh/plugin_host_protocol.h"
+#include "plugmesh/plugin_api.h"
 
 #include <chrono>
 #include <iostream>
@@ -84,7 +85,7 @@ int main(int argc, char** argv) {
   auto snapshot = events.snapshot();
   check(!snapshot.empty() && snapshot.front().value("event", "") == "ready", "host announces ready");
   check(!snapshot.empty() && snapshot.front().value("pluginId", "") == "sample.plugin", "host reports plugin id");
-  check(!snapshot.empty() && snapshot.front().value("abiVersion", 0) == 2, "host reports ABI v2 for legacy plugin");
+  check(!snapshot.empty() && snapshot.front().value("abiVersion", 0) == PLUGMESH_PLUGIN_ABI_VERSION, "host reports the current plugin ABI");
 
   events.clear();
   check(client.request({{"op", "health"}}, reply, error), "plugin health: " + error);

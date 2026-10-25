@@ -70,7 +70,7 @@ VALUES ('srv-real', 'u-e2e', '真实栈服务器', 'deadbeef', 'offline', '2026-
 
 INSERT OR REPLACE INTO plugin_instances (id, user_id, server_id, plugin_id, name, version, state, desired_state, manifest_json, created_at, updated_at)
 VALUES ('plg-real', 'u-e2e', 'srv-real', 'real.plugin', '真实栈插件', '1.0.0', 'disabled', 'disabled',
-  '{"id":"real.plugin","name":"真实栈插件","version":"1.0.0","abiVersion":"3","library":"libreal.so","capabilities":{"http":true,"websocket":false,"sse":false,"fileStream":false},"permissions":[],"healthPath":"/health"}',
+  '{"id":"real.plugin","name":"真实栈插件","version":"1.0.0","abiVersion":"1","library":"libreal.so","capabilities":{"http":true,"websocket":false,"sse":false,"fileStream":false},"permissions":[],"healthPath":"/health"}',
   '2026-10-01T00:00:00Z', '2026-10-21T00:00:00Z');
 
 INSERT OR REPLACE INTO domains (id, user_id, plugin_instance_id, hostname, status, created_at)

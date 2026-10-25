@@ -71,7 +71,7 @@ bool read_manifest(const std::filesystem::path& path, Manifest& manifest, std::s
   try {
     const auto value = nlohmann::json::parse(input);
     if (!value.is_object() || !read_string(value, "id", manifest.id, error) || !read_string(value, "name", manifest.name, error) || !read_string(value, "version", manifest.version, error) || !read_string(value, "abiVersion", manifest.abi_version, error) || !read_string(value, "library", manifest.library, error) || !read_string(value, "healthPath", manifest.health_path, error)) return false;
-    if (manifest.abi_version != std::to_string(PLUGMESH_PLUGIN_ABI_VERSION) && manifest.abi_version != std::to_string(PLUGMESH_PLUGIN_ABI_VERSION_V3) && manifest.abi_version != std::to_string(PLUGMESH_PLUGIN_ABI_VERSION_V4)) {
+    if (manifest.abi_version != std::to_string(PLUGMESH_PLUGIN_ABI_VERSION)) {
       error = "unsupported manifest ABI version: " + manifest.abi_version;
       return false;
     }
@@ -117,6 +117,9 @@ PluginInfo make_info(const std::filesystem::path& path, const Manifest& manifest
       manifest.websocket,
       manifest.sse,
       manifest.file_stream,
+      false,
+      false,
+      false,
       std::string{},
   };
 }
@@ -273,7 +276,10 @@ bool PluginManager::load(const std::string& plugin_id, std::string& error) {
     error = "manifest does not match plugin ABI: " + plugin->id;
     return set_failed(*plugin, error);
   }
-  loaded_.emplace(plugin_id, std::make_shared<LoadedPlugin>(LoadedPlugin{std::move(host), abi_version, false, {}}));
+  plugin->websocket_open = capabilities.value("websocketOpen", false);
+  plugin->websocket_close = capabilities.value("websocketClose", false);
+  plugin->sse_cancel = capabilities.value("sseCancel", false);
+  loaded_.emplace(plugin_id, std::make_shared<LoadedPlugin>(LoadedPlugin{std::move(host), false, {}}));
   plugin->state = PluginState::Loaded;
   plugin->last_error.clear();
   write_log(1, ("plugin loaded: " + plugin_id).c_str());
@@ -525,12 +531,12 @@ bool PluginManager::cancel_sse(const std::string& plugin_id, const std::string& 
       error = "plugin SSE handler is unavailable: " + plugin_id;
       return false;
     }
-    if (runtime->abi_version < PLUGMESH_PLUGIN_ABI_VERSION_V4) {
-      error = "plugin ABI does not support SSE cancellation: " + plugin_id;
-      return false;
-    }
     if (runtime->active_sse_streams.find(stream_id) == runtime->active_sse_streams.end()) {
       error = "SSE stream is not active: " + stream_id;
+      return false;
+    }
+    if (!plugin->sse_cancel) {
+      error = "plugin does not support SSE cancellation: " + plugin_id;
       return false;
     }
   }
@@ -556,7 +562,7 @@ bool PluginManager::websocket_open(const std::string& plugin_id, const std::stri
     error = "plugin WebSocket handler is unavailable: " + plugin_id;
     return false;
   }
-  if (runtime->abi_version < 3) return true;
+  if (!plugin->websocket_open) return true;
   nlohmann::json reply;
   return request_plugin(plugin_id, {{"op", "websocket.open"}, {"connectionId", connection_id}, {"path", path}, {"headersJson", headers_json}}, reply, error);
 }
@@ -580,7 +586,7 @@ bool PluginManager::websocket_close(const std::string& plugin_id, const std::str
     error = "plugin WebSocket handler is unavailable: " + plugin_id;
     return false;
   }
-  if (runtime->abi_version < 3) return true;
+  if (!plugin->websocket_close) return true;
   nlohmann::json reply;
   return request_plugin(plugin_id, {{"op", "websocket.close"}, {"connectionId", connection_id}, {"code", code}, {"reason", reason}}, reply, error);
 }
