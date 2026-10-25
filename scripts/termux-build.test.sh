@@ -9,11 +9,12 @@ for required in \
   'CMAKE_CXX_COMPILER="$CXX"' \
   'CMAKE_PREFIX_PATH="$PREFIX"' \
   'OPENSSL_ROOT_DIR="$PREFIX"' \
+  '-DPLUGMESH_TERMUX=ON' \
   'Android Termux' \
   'TERMUX-README.txt' \
   'Native UI is optional' \
   'tar -C "$dist_dir" -czf'; do
-  grep -Fq "$required" <<<"$read_script" || { echo "missing Termux build contract: $required" >&2; exit 1; }
+  grep -Fq -- "$required" <<<"$read_script" || { echo "missing Termux build contract: $required" >&2; exit 1; }
 done
 
 if grep -Fq '/etc/apt' <<<"$read_script" || grep -Fq 'linux-x86_64' <<<"$read_script" || grep -Fq 'GLIBC_' <<<"$read_script"; then
@@ -21,5 +22,7 @@ if grep -Fq '/etc/apt' <<<"$read_script" || grep -Fq 'linux-x86_64' <<<"$read_sc
   exit 1
 fi
 
-bash -n "$script"
+cmake_file="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)/native-server/CMakeLists.txt"
+grep -Fq 'NOT PLUGMESH_TERMUX' "$cmake_file" || { echo 'CMake must exclude Termux from Linux runtime flags' >&2; exit 1; }
+
 printf '%s\n' 'Termux build contract passed'

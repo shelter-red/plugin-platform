@@ -48,7 +48,8 @@ cmake -S "$repo_root/native-server" -B "$build_dir" \
   -DCMAKE_CXX_COMPILER="$CXX" \
   -DCMAKE_PREFIX_PATH="$PREFIX" \
   -DOPENSSL_ROOT_DIR="$PREFIX" \
-  -DOPENSSL_USE_STATIC_LIBS=OFF
+  -DOPENSSL_USE_STATIC_LIBS=OFF \
+  -DPLUGMESH_TERMUX=ON
 
 if [[ "$artifact_type" != SHARED ]]; then
   cmake --build "$build_dir" --target plugmesh-server --parallel

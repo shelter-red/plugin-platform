@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(PLUGMESH_BUILD_ARTIFACT "ALL" CACHE STRING "Build artifact: ALL, EXECUTABLE or SHARED")
-set_property(CACHE PLUGMESH_BUILD_ARTIFACT PROPERTY STRINGS ALL EXECUTABLE SHARED)
+option(PLUGMESH_TERMUX "Build for the Android Termux runtime" OFF)
 if (NOT PLUGMESH_BUILD_ARTIFACT STREQUAL "ALL" AND NOT PLUGMESH_BUILD_ARTIFACT STREQUAL "EXECUTABLE" AND NOT PLUGMESH_BUILD_ARTIFACT STREQUAL "SHARED")
   message(FATAL_ERROR "PLUGMESH_BUILD_ARTIFACT must be ALL, EXECUTABLE or SHARED")
 endif()
@@ -101,7 +101,7 @@ add_custom_command(TARGET plugmesh-cancellable-sample POST_BUILD
 add_executable(plugmesh-plugin-host src/plugin_host_main.cpp)
 target_link_libraries(plugmesh-plugin-host PRIVATE plugmesh_core)
 
-if (UNIX AND NOT APPLE)
+if (UNIX AND NOT APPLE AND NOT PLUGMESH_TERMUX)
   # Linux artifacts carry OpenSSL beside the binaries; keep lookup relative to the package.
   foreach(target_name plugmesh-server plugmesh-plugin-host plugmesh-server-shared)
     if (TARGET ${target_name})
