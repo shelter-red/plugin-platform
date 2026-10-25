@@ -28,7 +28,9 @@ jobs:
       - name: 校验发布包契约
         run: bash scripts/release-workflow.test.sh
 
-      - name: 校验 tag
+      - name: 校验 Termux CLI 契约
+        run: bash scripts/termux-build.test.sh
+
         env:
           RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
