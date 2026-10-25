@@ -81,6 +81,17 @@ struct TunnelState {
   Tcp::socket* local = nullptr;
 };
 
+struct TunnelPasswordGuard {
+  std::shared_ptr<std::string> value;
+
+  ~TunnelPasswordGuard() {
+    if (value && !value->empty()) {
+      OPENSSL_cleanse(value->data(), value->size());
+      value->clear();
+    }
+  }
+};
+
 bool read_port(const Json& value, const char* key, uint16_t& port) {
   if (!value.contains(key) || !value.at(key).is_number_integer()) return false;
   const auto number = value.at(key).get<int64_t>();
@@ -255,6 +266,7 @@ void run_tunnel(Client& client, Tcp::socket& local, const Settings& settings, co
     state->changed.notify_all();
   });
   auto password = mapping.target_password ? mapping.target_password : std::make_shared<std::string>();
+  TunnelPasswordGuard password_guard{password};
   client.set_message_handler([&client, state, password, settings, mapping, authorization_complete](websocketpp::connection_hdl handle, typename Client::message_ptr message) {
     if (message->get_opcode() != websocketpp::frame::opcode::binary) {
       std::lock_guard lock(state->mutex);
