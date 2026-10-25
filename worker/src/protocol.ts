@@ -2,7 +2,7 @@ import type { ControlFrame, PluginManifest } from './types'
 
 const PROTOCOL_VERSION = 1 as const
 export const MAX_CONTROL_FRAME_BYTES = 64 * 1024
-export const SUPPORTED_PLUGIN_ABI_VERSIONS = ['2', '3', '4'] as const
+export const SUPPORTED_PLUGIN_ABI_VERSIONS = ['1'] as const
 
 export function makeFrame(type: string, serverId: string, payload: Record<string, unknown> = {}, pluginId?: string): ControlFrame {
   return {
