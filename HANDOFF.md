@@ -250,7 +250,7 @@ git diff --check                         通过
 
 ## 10. 当前追加步骤登记
 
-- 2026-10-26：登记遗漏项补齐步骤：把 Termux Android CLI 作为正式 Release 资产加入 `release.yml`，使用官方 `ghcr.io/termux/package-builder` 构建环境运行 `scripts/build-termux-native.sh`，补充发布契约、校验和与 Release 说明；不制作 APK，不伪造 Android 构建。完成后运行定向契约/构建验证，提交、推送并重新发版。
+- 2026-10-26：Termux Release job 已连续验证官方 GHCR、官方 Docker Hub `termux/package-builder` 与兼容镜像 `androidzeros/termux-package-builder`；GitHub Actions 均在容器启动前因镜像 layer `Verifying Checksum` 失败退出，具体 run `40212288376`、`40213267114`、`40214333438`、`40216624871`、`40217358211` 均未生成产物，桌面 Linux/macOS 构建通过。已用 `1aafdb2` 清理一次性临时分支触发器和诊断逻辑，保留 Termux job 与正式资产契约；待镜像供应方修复 layer 或提供可用的 Termux builder 后重新打 tag 发布，不能用 glibc/Linux 二进制冒充 Termux 包。
 
 ## 9. 最近动作
 
