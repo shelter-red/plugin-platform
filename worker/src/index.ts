@@ -287,7 +287,9 @@ async function workspaceApi(request: Request, env: Env, user: AuthenticatedUser,
   if (url.pathname === '/api/workspaces') {
     if (request.method === 'GET') return json({ results: await listWorkspaces(env, user) })
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
-    const body = await request.json().catch(() => null) as { name?: string } | null
+    const parsed = await readJsonBody(request, MAX_MANAGEMENT_JSON_REQUEST_BYTES)
+    if (!parsed.ok && parsed.tooLarge) return json({ error: 'Request body too large' }, 413)
+    const body = parsed.ok ? parsed.value as { name?: string } : null
     if (invalidWorkspaceName(body?.name)) return json({ error: 'Workspace name is required' }, 400)
     const workspace = await createWorkspace(env, user, body!.name!)
     await recordAudit(env, workspace.id, user.id, 'workspace.created', { name: workspace.name, slug: workspace.slug })
@@ -312,7 +314,9 @@ async function workspaceApi(request: Request, env: Env, user: AuthenticatedUser,
       return json({ userId, removed: true })
     }
     if (request.method !== 'PUT') return json({ error: 'Method not allowed' }, 405)
-    const body = await request.json().catch(() => null) as { role?: unknown } | null
+    const parsed = await readJsonBody(request, MAX_MANAGEMENT_JSON_REQUEST_BYTES)
+    if (!parsed.ok && parsed.tooLarge) return json({ error: 'Request body too large' }, 413)
+    const body = parsed.ok ? parsed.value as { role?: unknown } : null
     const role = parseWorkspaceRole(body?.role)
     if (!role) return json({ error: 'Workspace role is invalid' }, 400)
     if (membership.role === 'owner' && role !== 'owner' && await ownerCount(env, access.workspace.id) <= 1) return json({ error: 'Cannot demote the last workspace owner' }, 409)
@@ -331,7 +335,9 @@ async function workspaceApi(request: Request, env: Env, user: AuthenticatedUser,
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
     const denied = requireOwner(access.workspace)
     if (denied) return denied
-    const body = await request.json().catch(() => null) as { userId?: string; email?: string; role?: unknown } | null
+    const parsed = await readJsonBody(request, MAX_MANAGEMENT_JSON_REQUEST_BYTES)
+    if (!parsed.ok && parsed.tooLarge) return json({ error: 'Request body too large' }, 413)
+    const body = parsed.ok ? parsed.value as { userId?: string; email?: string; role?: unknown } : null
     const role = parseWorkspaceRole(body?.role ?? 'viewer')
     if (!role) return json({ error: 'Workspace role is invalid' }, 400)
     const target = body?.userId
@@ -355,7 +361,9 @@ async function workspaceApi(request: Request, env: Env, user: AuthenticatedUser,
   const denied = requireOwner(access.workspace)
   if (denied) return denied
   if (request.method === 'PUT') {
-    const body = await request.json().catch(() => null) as { name?: string } | null
+    const parsed = await readJsonBody(request, MAX_MANAGEMENT_JSON_REQUEST_BYTES)
+    if (!parsed.ok && parsed.tooLarge) return json({ error: 'Request body too large' }, 413)
+    const body = parsed.ok ? parsed.value as { name?: string } : null
     if (invalidWorkspaceName(body?.name)) return json({ error: 'Workspace name is required' }, 400)
     const updatedAt = new Date().toISOString()
     await env.DB.prepare('UPDATE workspaces SET name = ?, updated_at = ? WHERE id = ?').bind(body!.name!.trim(), updatedAt, access.workspace.id).run()
@@ -599,6 +607,7 @@ async function refreshCloudflareUsageOnSchedule(env: Env): Promise<void> {
 }
 
 const MAX_AUTH_REQUEST_BYTES = 8 * 1024
+const MAX_MANAGEMENT_JSON_REQUEST_BYTES = 32 * 1024
 
 type JsonBodyResult = { ok: true; value: unknown } | { ok: false; tooLarge: boolean }
 
@@ -753,7 +762,9 @@ async function commandPlugin(request: Request, env: Env, user: AuthenticatedUser
 
 async function assignDomain(request: Request, env: Env, user: AuthenticatedUser, workspace: Workspace): Promise<Response> {
   if (await isMaintenanceMode(env)) return json({ error: 'Platform is in maintenance mode' }, 503)
-  const body = await request.json().catch(() => null) as { pluginInstanceId?: string; prefix?: string } | null
+  const parsed = await readJsonBody(request, MAX_MANAGEMENT_JSON_REQUEST_BYTES)
+  if (!parsed.ok && parsed.tooLarge) return json({ error: 'Request body too large' }, 413)
+  const body = parsed.ok ? parsed.value as { pluginInstanceId?: string; prefix?: string } : null
   const prefix = body?.prefix?.trim().toLowerCase() ?? ''
   const reserved = new Set(['admin', 'api', 'auth', 'console', 'control', 'plugins', 'www'])
   if (!body?.pluginInstanceId || !/^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$/.test(prefix) || reserved.has(prefix)) return json({ error: 'Invalid domain prefix' }, 400)
@@ -794,13 +805,11 @@ async function connectServer(request: Request, env: Env, url: URL): Promise<Resp
 
 async function registerServer(request: Request, env: Env): Promise<Response> {
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
-  const contentLength = request.headers.get('content-length')
-  if (contentLength !== null) {
-    const size = Number(contentLength)
-    if (!Number.isSafeInteger(size) || size < 0) return json({ error: 'Registration request is invalid', code: 'invalid_registration_request' }, 400)
-    if (size > MAX_REGISTRATION_REQUEST_BYTES) return json({ error: 'Registration request is too large', code: 'registration_request_too_large' }, 413)
-  }
-  const body = await request.json().catch(() => null) as { code?: unknown; name?: unknown } | null
+  const parsed = await readJsonBody(request, MAX_REGISTRATION_REQUEST_BYTES)
+  if (!parsed.ok) return parsed.tooLarge
+    ? json({ error: 'Registration request is too large', code: 'registration_request_too_large' }, 413)
+    : json({ error: 'Registration request is invalid', code: 'invalid_registration_request' }, 400)
+  const body = parsed.value as { code?: unknown; name?: unknown }
   const result = await createServerRegistration(env, body?.code, body?.name)
   if ('error' in result) return json({ error: result.error, code: result.code }, result.status)
   return json(result.value, 201)
@@ -898,7 +907,9 @@ async function platformSettingsApi(request: Request, env: Env, user: Authenticat
   const settings = await getPlatformSettings(env)
   if (request.method === 'GET') return json(settings)
   if (request.method !== 'PUT') return json({ error: 'Method not allowed' }, 405)
-  const body = await request.json().catch(() => null) as { maintenance?: boolean; pluginDomainSuffix?: string; quotas?: Partial<typeof defaultPlatformSettings.quotas>; [key: string]: unknown } | null
+  const parsed = await readJsonBody(request, MAX_MANAGEMENT_JSON_REQUEST_BYTES)
+  if (!parsed.ok && parsed.tooLarge) return json({ error: 'Request body too large' }, 413)
+  const body = parsed.ok ? parsed.value as { maintenance?: boolean; pluginDomainSuffix?: string; quotas?: Partial<typeof defaultPlatformSettings.quotas>; [key: string]: unknown } : null
   if (body && Object.prototype.hasOwnProperty.call(body, 'cloudflareQuotas')) {
     return json({
       code: 'cloudflare_quotas_read_only',
@@ -984,7 +995,9 @@ export async function cloudflareSettingsApi(request: Request, env: Env, user: Au
     }
     if (request.method !== 'PUT') return json({ error: 'Method not allowed' }, 405)
     if (!env.SESSION_SECRET) throw new CloudflareCredentialError(503, 'secret_missing', 'SESSION_SECRET 未配置，无法安全保存 Cloudflare 凭据')
-    const body = await request.json().catch(() => null) as { email?: unknown; globalApiKey?: unknown; accountId?: unknown } | null
+    const parsed = await readJsonBody(request, MAX_MANAGEMENT_JSON_REQUEST_BYTES)
+    if (!parsed.ok && parsed.tooLarge) return json({ error: 'Request body too large' }, 413)
+    const body = parsed.ok ? parsed.value as { email?: unknown; globalApiKey?: unknown; accountId?: unknown } : null
     const email = typeof body?.email === 'string' ? body.email.trim() : ''
     const globalApiKey = typeof body?.globalApiKey === 'string' ? body.globalApiKey.trim() : ''
     if (!email || !globalApiKey) throw new CloudflareCredentialError(400, 'credential_required', '请输入 Cloudflare Email 和 Global API Key')
@@ -1029,7 +1042,10 @@ export async function smtpSettingsApi(request: Request, env: Env, user: Authenti
   }
   if (request.method !== 'PUT') return json({ error: 'Method not allowed' }, 405)
   if (!env.SESSION_SECRET) return json({ error: 'SESSION_SECRET is not configured' }, 503)
-  const parsed = validateSmtpSettings(await request.json().catch(() => null))
+  const bodyResult = await readJsonBody(request, MAX_MANAGEMENT_JSON_REQUEST_BYTES)
+  if (!bodyResult.ok && bodyResult.tooLarge) return json({ error: 'Request body too large' }, 413)
+  const body = bodyResult.ok ? bodyResult.value : null
+  const parsed = bodyResult.ok ? validateSmtpSettings(body) : { ok: false as const, field: 'host' as const, error: 'Invalid SMTP settings' }
   if (!parsed.ok) return json({ error: parsed.error, field: parsed.field }, 400)
   let password = parsed.settings.password
   if (!password) {
@@ -1052,7 +1068,9 @@ export async function smtpTestApi(request: Request, env: Env, user: Authenticate
   if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
   if (!env.SESSION_SECRET) return json({ error: 'SESSION_SECRET is not configured' }, 503)
-  const body = await request.json().catch(() => null) as { to?: string; settings?: unknown } | null
+  const bodyResult = await readJsonBody(request, MAX_MANAGEMENT_JSON_REQUEST_BYTES)
+  if (!bodyResult.ok && bodyResult.tooLarge) return json({ error: 'Request body too large' }, 413)
+  const body = bodyResult.ok ? bodyResult.value as { to?: string; settings?: unknown } : null
   if (!body?.to || !isEmail(body.to)) return json({ error: 'A valid test recipient is required', field: 'to' }, 400)
   const stored = await env.DB.prepare('SELECT ciphertext, iv FROM smtp_settings WHERE id = ?').bind('primary').first<{ ciphertext: string; iv: string }>()
   let settings: SmtpSettings | null
