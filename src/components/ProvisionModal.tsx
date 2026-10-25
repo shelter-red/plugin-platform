@@ -77,7 +77,7 @@ export function ProvisionModal({ type, plugins, onClose, onConfirm }: { type: 's
       {result?.kind === 'registration' && <div className="code-callout">
         <span>{t('modal.codeExpires', { time: formatDateTime(result.expiresAt) })}</span>
         <div className="code-value">
-          <Typography.Text strong copyable={{ text: result.code, icon: <Copy size={15} />, tooltips: [t('modal.copyCode'), t('modal.copyCode')] }}>{result.code}</Typography.Text>
+          <Typography.Text strong>{result.code}</Typography.Text>
         </div>
         <Button size="small" onClick={() => void copyCode(result.code)} aria-label={t('modal.copyCode')} icon={<Copy size={15} />}>{t('modal.copyCode')}</Button>
       </div>}

@@ -86,7 +86,7 @@ PLUGMESH_PLUGIN_HOST="$PWD/plugmesh-plugin-host" \
 ./plugmesh-server
 ```
 
-When the server is online in the console, use **Plugin instances** to load and enable the plugin, run its health check, and then assign a prefix under **Public domains**. The local server console listens on `127.0.0.1:8787` by default; use `PLUGMESH_LOCAL_PORT` to change it. `PLUGMESH_WORKER_URL`, `PLUGMESH_PLUGIN_DIRECTORY`, `PLUGMESH_PLUGIN_HOST`, `PLUGMESH_CREDENTIAL_FILE`, `PLUGMESH_CREDENTIAL_PASSWORD`, and `PLUGMESH_LOCAL_UI_DIRECTORY` can all be supplied as environment variables. Never commit an access token or credential file.
+When the server is online in the console, use **Plugin instances** to load and enable the plugin, run its health check, and then assign a prefix under **Public domains**. The local server console starts at `127.0.0.1:8787` and increments the port when it is occupied; use `PLUGMESH_LOCAL_PORT` to change the preferred port. When the plugin directory is left blank, the server uses the `plugins` directory beside the executable. `PLUGMESH_WORKER_URL`, `PLUGMESH_PLUGIN_DIRECTORY`, `PLUGMESH_PLUGIN_HOST`, `PLUGMESH_CREDENTIAL_FILE`, `PLUGMESH_CREDENTIAL_PASSWORD`, and `PLUGMESH_LOCAL_UI_DIRECTORY` can all be supplied as environment variables. Never commit an access token or credential file.
 
 ### Embed the shared library
 

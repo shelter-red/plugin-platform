@@ -52,7 +52,7 @@ bool validate_worker_url(const std::string& worker_url, std::string& error) {
   return true;
 }
 
-bool validate_config(const ServerConfig& config, std::string& error) {
+bool validate_binding_config(const ServerConfig& config, std::string& error) {
   if (config.worker_url.empty()) {
     error = "PLUGMESH_WORKER_URL is required";
     return false;
@@ -66,6 +66,23 @@ bool validate_config(const ServerConfig& config, std::string& error) {
     error = "PLUGMESH_ACCESS_TOKEN is required";
     return false;
   }
+  return true;
+}
+
+bool prepare_executable_plugin_directory(ServerConfig& config, const std::filesystem::path& executable_directory, std::string& error) {
+  if (!config.plugin_directory.empty()) return true;
+  config.plugin_directory = executable_directory / "plugins";
+  std::error_code directory_error;
+  std::filesystem::create_directories(config.plugin_directory, directory_error);
+  if (directory_error) {
+    error = "cannot create default plugin directory: " + config.plugin_directory.string() + ": " + directory_error.message();
+    return false;
+  }
+  return true;
+}
+
+bool validate_config(const ServerConfig& config, std::string& error) {
+  if (!validate_binding_config(config, error)) return false;
   if (config.plugin_directory.empty()) {
     error = "PLUGMESH_PLUGIN_DIRECTORY is required";
     return false;

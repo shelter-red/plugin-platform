@@ -92,7 +92,7 @@ std::string cookie_value(const std::string& cookie_header, const std::string_vie
 }  // namespace
 
 LocalHttpServer::LocalHttpServer(uint16_t port, PluginManager* plugins, StatusProvider status_provider, std::filesystem::path ui_directory, RegistrationHandler registration_handler, LogProvider log_provider, CredentialActionHandler credential_action_handler, std::string local_ui_password_verifier, PasswordSetupHandler password_setup_handler)
-    : port_(port), plugins_(plugins), status_provider_(std::move(status_provider)), ui_directory_(std::move(ui_directory)), registration_handler_(std::move(registration_handler)), log_provider_(std::move(log_provider)), credential_action_handler_(std::move(credential_action_handler)), local_ui_password_verifier_(std::move(local_ui_password_verifier)), password_setup_handler_(std::move(password_setup_handler)) {}
+    : preferred_port_(port), port_(port), plugins_(plugins), status_provider_(std::move(status_provider)), ui_directory_(std::move(ui_directory)), registration_handler_(std::move(registration_handler)), log_provider_(std::move(log_provider)), credential_action_handler_(std::move(credential_action_handler)), local_ui_password_verifier_(std::move(local_ui_password_verifier)), password_setup_handler_(std::move(password_setup_handler)) {}
 
 bool LocalHttpServer::run(std::string& error) {
   stopping_ = false;
@@ -105,7 +105,39 @@ bool LocalHttpServer::run(std::string& error) {
   server->set_http_handler([this](websocketpp::connection_hdl handle) { handle_http(handle.lock().get()); });
   try {
     const auto address = websocketpp::lib::asio::ip::address::from_string("127.0.0.1");
-    server->listen(websocketpp::lib::asio::ip::tcp::endpoint(address, port_));
+    auto candidate = static_cast<unsigned int>(preferred_port_);
+    for (;;) {
+      websocketpp::lib::asio::io_service probe_context;
+      websocketpp::lib::asio::ip::tcp::acceptor probe(probe_context);
+      websocketpp::lib::asio::error_code probe_error;
+      const websocketpp::lib::asio::ip::tcp::endpoint endpoint(address, static_cast<uint16_t>(candidate));
+      probe.open(endpoint.protocol(), probe_error);
+      if (!probe_error) probe.bind(endpoint, probe_error);
+      if (probe.is_open()) probe.close();
+      if (probe_error) {
+        const auto port_conflict = probe_error == websocketpp::lib::asio::error::address_in_use || probe_error == websocketpp::lib::asio::error::access_denied;
+        if (!port_conflict || candidate == 65535) {
+          error = probe_error.message();
+          running_ = false;
+          server_.store(nullptr, std::memory_order_release);
+          return false;
+        }
+        ++candidate;
+        continue;
+      }
+
+      websocketpp::lib::error_code listen_error;
+      server->listen(endpoint, listen_error);
+      if (!listen_error) break;
+      if (listen_error != websocketpp::lib::asio::error::address_in_use || candidate == 65535) {
+        error = listen_error.message();
+        running_ = false;
+        server_.store(nullptr, std::memory_order_release);
+        return false;
+      }
+      ++candidate;
+    }
+    port_.store(static_cast<uint16_t>(candidate), std::memory_order_release);
     server->start_accept();
     running_ = true;
     server->run();
@@ -145,6 +177,10 @@ void LocalHttpServer::stop() {
 
 bool LocalHttpServer::is_running() const {
   return running_.load(std::memory_order_acquire);
+}
+
+uint16_t LocalHttpServer::port() const {
+  return port_.load(std::memory_order_acquire);
 }
 
 bool LocalHttpServer::has_active_requests() const {
@@ -251,7 +287,7 @@ void LocalHttpServer::handle_http(void* handle) {
   auto status = status_provider_ ? status_provider_() : nlohmann::json::object();
   status["ok"] = true;
   status["service"] = "plugmesh-local-server";
-  status["port"] = port_;
+  status["port"] = port();
   const auto configured = status.value("configured", false);
   const auto cookie_header = connection->get_request().get_header("Cookie");
 

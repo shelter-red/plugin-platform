@@ -8,7 +8,7 @@
 - 本机 glibc 2.31 无法直接运行 workerd，`wrangler` 统一在 `node:22-bookworm-slim` 容器内执行并挂载 `/etc/ssl/certs`。
 - 已构建 `native-server/build/plugmesh-server`、`native-server/build/plugins` 和 `native-ui/dist`。
 
-也可以用 GitHub Actions 的「手动构建插件服务器」artifact 替换 `plugmesh-server` 和 `plugmesh-plugin-host`：选择与本机匹配的 `executable`/`Release` 产物，下载后先在 artifact 根目录执行 `sha256sum -c SHA256SUMS`（macOS 使用 `shasum -a 256 -c SHA256SUMS`），再保持归档内的可执行文件与 `native-ui/dist` 相对目录不变。executable artifact 已包含首次绑定 UI，但不包含示例插件或插件目录；仍需从源码构建示例插件，或提供自己的 `manifest.json`/动态库，并设置 `PLUGMESH_PLUGIN_DIRECTORY`。只有自定义 UI 布局时才需要设置 `PLUGMESH_LOCAL_UI_DIRECTORY`。shared artifact 不包含 setup UI，也不能直接替换这里的服务器进程，只能由宿主按 `native-server/include/plugmesh/server_api.h` 嵌入。
+也可以用 GitHub Actions 的「手动构建插件服务器」artifact 替换 `plugmesh-server` 和 `plugmesh-plugin-host`：选择与本机匹配的 `executable`/`Release` 产物，下载后先在 artifact 根目录执行 `sha256sum -c SHA256SUMS`（macOS 使用 `shasum -a 256 -c SHA256SUMS`），再保持归档内的可执行文件与 `native-ui/dist` 相对目录不变。executable artifact 已包含首次绑定 UI，但不包含示例插件；仍需从源码构建示例插件，或提供自己的 `manifest.json`/动态库。插件放进可执行文件同级的 `plugins` 时无需设置 `PLUGMESH_PLUGIN_DIRECTORY`，自定义目录时再设置。只有自定义 UI 布局时才需要设置 `PLUGMESH_LOCAL_UI_DIRECTORY`。shared artifact 不包含 setup UI，也不能直接替换这里的服务器进程，只能由宿主按 `native-server/include/plugmesh/server_api.h` 嵌入。
 
 ## 启动 Worker
 

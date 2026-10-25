@@ -1,5 +1,6 @@
 #include "plugmesh/local_http_server.h"
 #include "plugmesh/credential_store.h"
+#include "plugmesh/server_config.h"
 
 #include <asio.hpp>
 #include <nlohmann/json.hpp>
@@ -9,6 +10,7 @@
 #include <cctype>
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <iterator>
 #include <map>
@@ -132,6 +134,60 @@ uint16_t available_port() {
   return port;
 }
 
+bool run_executable_config_defaults() {
+  const auto root = std::filesystem::temp_directory_path() / ("plugmesh-config-smoke-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+  plugmesh::ServerConfig config;
+  config.worker_url = "http://127.0.0.1:8787";
+  config.server_id = "server-smoke";
+  config.access_token = "test-access-token";
+  std::string error;
+  if (!plugmesh::validate_binding_config(config, error) || !plugmesh::prepare_executable_plugin_directory(config, root, error)) {
+    std::cerr << "executable config defaults failed: " << error << '\n';
+    std::filesystem::remove_all(root);
+    return false;
+  }
+  const auto expected = root / "plugins";
+  const auto prepared = config.plugin_directory == expected && std::filesystem::is_directory(expected) && plugmesh::validate_config(config, error);
+  std::filesystem::remove_all(root);
+  if (!prepared) {
+    std::cerr << "executable config did not create and accept the default plugin directory: " << error << '\n';
+    return false;
+  }
+
+  config.plugin_directory.clear();
+  if (plugmesh::validate_config(config, error) || error != "PLUGMESH_PLUGIN_DIRECTORY is required") {
+    std::cerr << "shared config no longer requires an explicit plugin directory\n";
+    return false;
+  }
+  return true;
+}
+
+bool run_port_fallback_server() {
+  asio::io_context blocker_context;
+  Tcp::acceptor blocker(blocker_context, Tcp::endpoint(asio::ip::address_v4::loopback(), 0));
+  const auto preferred_port = blocker.local_endpoint().port();
+  plugmesh::LocalHttpServer server(preferred_port, nullptr, [] {
+    return Json{{"configured", false}, {"connected", false}};
+  });
+  std::string server_error;
+  std::thread server_thread([&] { server.run(server_error); });
+  for (int attempt = 0; attempt < 40 && !server.is_running(); ++attempt) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+  }
+  const auto actual_port = server.port();
+  HttpResponse response;
+  std::string request_error;
+  const auto passed = server.is_running() && actual_port > preferred_port && request_with_retry(actual_port, "GET", "/api/status", "", "", response, request_error) && expect_status(response, 200, "fallback port status");
+  server.stop();
+  if (server_thread.joinable()) server_thread.join();
+  blocker.close();
+  if (!passed) {
+    std::cerr << "local HTTP server did not fall back from occupied port " << preferred_port << ": " << (server_error.empty() ? request_error : server_error) << '\n';
+    return false;
+  }
+  return true;
+}
+
 bool run_authenticated_server(uint16_t port) {
   std::string verifier;
   std::string error;
@@ -253,7 +309,7 @@ bool run_password_setup_server(uint16_t port) {
 int main() {
   const auto* configured_port_value = std::getenv("PLUGMESH_SMOKE_PORT");
   const auto authenticated_port = configured_port_value ? static_cast<uint16_t>(std::strtoul(configured_port_value, nullptr, 10)) : available_port();
-  if (!run_authenticated_server(authenticated_port) || !run_password_setup_server(available_port())) return 1;
+  if (!run_executable_config_defaults() || !run_port_fallback_server() || !run_authenticated_server(authenticated_port) || !run_password_setup_server(available_port())) return 1;
   std::cout << "local HTTP server smoke test passed\n";
   return 0;
 }

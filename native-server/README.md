@@ -19,11 +19,11 @@
 - `PLUGMESH_WORKER_URL`
 - `PLUGMESH_SERVER_ID`
 - `PLUGMESH_ACCESS_TOKEN`
-- `PLUGMESH_PLUGIN_DIRECTORY`
+- `PLUGMESH_PLUGIN_DIRECTORY`（可选；可执行程序留空时使用同目录的 `plugins`，共享库调用方仍须显式传入）
 - `PLUGMESH_PLUGIN_HOST`（可选，`plugmesh-plugin-host` 路径；留空时查找与服务器可执行文件同目录的宿主）
 - `PLUGMESH_CREDENTIAL_FILE`（Linux 等无系统凭据存储时使用的加密文件路径；留空时 Windows/macOS 优先使用系统凭据存储）
 - `PLUGMESH_CREDENTIAL_PASSWORD`
-- `PLUGMESH_LOCAL_PORT`（可选，默认 `8787`，仅绑定 `127.0.0.1`）
+- `PLUGMESH_LOCAL_PORT`（可选，默认从 `8787` 开始，仅绑定 `127.0.0.1`；占用时自动递增）
 - `PLUGMESH_LOCAL_UI_DIRECTORY`（可选；默认查找可执行文件同目录的 `native-ui/dist`，源码运行时回退到当前目录的 `native-ui/dist`）
 
 本地管理端点仅监听回环地址：
@@ -57,7 +57,7 @@ PLUGMESH_REGISTRATION_CODE='一次性注册码' \
 native-server/build/plugmesh-server --register https://console.example.com '工作站插件服务器' ~/.config/plugmesh/credentials.json
 ```
 
-注册成功后，服务器启动时设置 `PLUGMESH_CREDENTIAL_FILE`、`PLUGMESH_CREDENTIAL_PASSWORD` 和 `PLUGMESH_PLUGIN_DIRECTORY`，即可从加密凭据文件恢复长期连接参数。
+注册成功后，服务器启动时设置 `PLUGMESH_CREDENTIAL_FILE` 和 `PLUGMESH_CREDENTIAL_PASSWORD`，即可从加密凭据文件恢复长期连接参数。插件放在服务器同目录的 `plugins` 时无需设置 `PLUGMESH_PLUGIN_DIRECTORY`；自定义目录时再显式设置。
 
 所有参数都可以省略，交给交互式提示（无浏览器环境的备用入口）：
 

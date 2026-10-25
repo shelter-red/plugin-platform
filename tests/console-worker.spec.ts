@@ -856,6 +856,7 @@ test('管理端生成一次性注册码并在弹窗中保留展示', async ({ pa
 
   await expect(dialog.getByText('PLUG-TEST-0001')).toBeVisible()
   await expect(dialog.getByText(/注册码有效至/)).toBeVisible()
+  await expect(dialog.getByRole('button', { name: '复制注册码' })).toHaveCount(1)
   await expect(dialog.getByRole('button', { name: '生成注册码' })).toBeHidden()
   expect(worker.registrationCodeRequests).toBe(1)
 })

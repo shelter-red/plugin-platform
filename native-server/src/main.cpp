@@ -14,14 +14,19 @@
 #include <iostream>
 #include <string>
 #include <thread>
+#include <vector>
 
 #ifdef _WIN32
 #include <shellapi.h>
 #include <windows.h>
 #else
-#include <limits.h>
-#include <unistd.h>
 #include <termios.h>
+#include <unistd.h>
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#else
+#include <limits.h>
+#endif
 #endif
 
 namespace {
@@ -120,6 +125,15 @@ std::filesystem::path executable_directory() {
   if (length != 0 && length < buffer.size()) {
     buffer.resize(length);
     return std::filesystem::path(buffer).parent_path();
+  }
+#elif defined(__APPLE__)
+  uint32_t size = 0;
+  _NSGetExecutablePath(nullptr, &size);
+  std::vector<char> buffer(size > 0 ? size : 1);
+  if (_NSGetExecutablePath(buffer.data(), &size) == 0) {
+    std::error_code error;
+    const auto executable = std::filesystem::weakly_canonical(buffer.data(), error);
+    if (!error) return executable.parent_path();
   }
 #else
   char buffer[PATH_MAX]{};
@@ -225,7 +239,12 @@ bool run_registration_setup(plugmesh::ServerConfig& config, uint16_t port, const
   for (int attempt = 0; attempt < 100 && !local_http.is_running() && !server_failed; ++attempt) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
-  if (local_http.is_running()) open_local_setup_browser(port);
+  if (local_http.is_running()) {
+    const auto actual_port = local_http.port();
+    if (actual_port != port) std::cout << "plugmesh-server: local port " << port << " is in use; using " << actual_port << "\n";
+    std::cout << "plugmesh-server: local setup available at http://127.0.0.1:" << actual_port << "/\n";
+    open_local_setup_browser(actual_port);
+  }
   while ((!registration_complete || callback_active || local_http.has_active_requests()) && !server_failed) std::this_thread::sleep_for(std::chrono::milliseconds(10));
   // 注册回调可能已经完成，但 HTTP 响应仍在 websocketpp 的处理栈中；
   // 等请求退出后再销毁监听器，避免 Windows 下 teardown 期间访问已释放连接。
@@ -286,9 +305,14 @@ int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--register") return register_server(argc, argv);
   const auto config = plugmesh::load_config_from_environment();
   auto resolved_config = config;
+  std::string plugin_directory_error;
+  if (!plugmesh::prepare_executable_plugin_directory(resolved_config, executable_directory(), plugin_directory_error)) {
+    std::cerr << "plugmesh-server: " << plugin_directory_error << '\n';
+    return 2;
+  }
   while (true) {
     std::string error;
-    if (!plugmesh::load_persisted_config(resolved_config, error) || !plugmesh::validate_config(resolved_config, error)) {
+    if (!plugmesh::load_persisted_config(resolved_config, error) || !plugmesh::validate_binding_config(resolved_config, error)) {
       std::cerr << "plugmesh-server: entering local setup (" << error << ")\n";
       if (!run_registration_setup(resolved_config, local_port(), local_ui_directory(), error)) {
         std::cerr << "plugmesh-server: " << error << '\n';
@@ -310,7 +334,8 @@ int main(int argc, char** argv) {
     plugmesh::ControlClient client(resolved_config, plugins);
     std::atomic<bool> rebind_requested{false};
     std::atomic<bool> credential_action_active{false};
-    plugmesh::LocalHttpServer local_http(local_port(), &plugins, [&client, &resolved_config] {
+    const auto preferred_local_port = local_port();
+    plugmesh::LocalHttpServer local_http(preferred_local_port, &plugins, [&client, &resolved_config] {
       return nlohmann::json{{"configured", true}, {"serverId", resolved_config.server_id}, {"workerUrl", resolved_config.worker_url}, {"credentialFile", resolved_config.credential_file.string()}, {"systemCredentialsAvailable", plugmesh::system_credentials_available()}, {"connected", client.connected()}};
     }, local_ui_directory(), {}, [&logs] { return logs.snapshot(); }, [&client, &resolved_config, &rebind_requested, &credential_action_active](const std::string& action, const nlohmann::json& payload, std::string& action_error) {
       credential_action_active = true;
@@ -356,9 +381,21 @@ int main(int argc, char** argv) {
       return true;
     });
     std::string local_error;
-    std::thread local_thread([&local_http, &local_error] {
-      if (!local_http.run(local_error) && !local_error.empty()) std::cerr << "plugmesh-server local UI: " << local_error << '\n';
+    std::atomic<bool> local_failed{false};
+    std::thread local_thread([&local_http, &local_error, &local_failed] {
+      if (!local_http.run(local_error)) {
+        local_failed = true;
+        if (!local_error.empty()) std::cerr << "plugmesh-server local UI: " << local_error << '\n';
+      }
     });
+    for (int attempt = 0; attempt < 100 && !local_http.is_running() && !local_failed; ++attempt) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    if (local_http.is_running()) {
+      const auto actual_port = local_http.port();
+      if (actual_port != preferred_local_port) std::cout << "plugmesh-server: local port " << preferred_local_port << " is in use; using " << actual_port << "\n";
+      std::cout << "plugmesh-server: local UI available at http://127.0.0.1:" << actual_port << "/\n";
+    }
     const auto connected = client.run(error);
     while (credential_action_active || local_http.has_active_requests()) std::this_thread::sleep_for(std::chrono::milliseconds(10));
     local_http.stop();

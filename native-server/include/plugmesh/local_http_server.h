@@ -30,6 +30,7 @@ class LocalHttpServer {
   bool run(std::string& error);
   void stop();
   bool is_running() const;
+  uint16_t port() const;
   bool has_active_requests() const;
 
  private:
@@ -41,7 +42,8 @@ class LocalHttpServer {
   bool create_session(std::string& token, std::string& error);
   void clear_session(const std::string& cookie_header);
 
-  uint16_t port_;
+  uint16_t preferred_port_;
+  std::atomic<uint16_t> port_;
   PluginManager* plugins_;
   StatusProvider status_provider_;
   std::filesystem::path ui_directory_;

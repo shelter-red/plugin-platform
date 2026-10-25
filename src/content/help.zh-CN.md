@@ -86,7 +86,7 @@ PLUGMESH_PLUGIN_HOST="$PWD/plugmesh-plugin-host" \
 ./plugmesh-server
 ```
 
-服务器在管理端显示在线后，到「插件实例」执行加载、启用，再执行健康检查；健康检查通过后，在「公开域名」分配前缀。服务器本地默认只监听 `127.0.0.1:8787`，可用 `PLUGMESH_LOCAL_PORT` 修改端口。`PLUGMESH_WORKER_URL`、`PLUGMESH_PLUGIN_DIRECTORY`、`PLUGMESH_PLUGIN_HOST`、`PLUGMESH_CREDENTIAL_FILE`、`PLUGMESH_CREDENTIAL_PASSWORD` 和 `PLUGMESH_LOCAL_UI_DIRECTORY` 都可以用环境变量配置；不要把访问令牌或凭据文件提交到代码仓库。
+服务器在管理端显示在线后，到「插件实例」执行加载、启用，再执行健康检查；健康检查通过后，在「公开域名」分配前缀。服务器本地从 `127.0.0.1:8787` 开始监听，端口占用时会自动递增，也可用 `PLUGMESH_LOCAL_PORT` 修改首选端口。插件目录留空时使用服务器程序同级的 `plugins` 目录。`PLUGMESH_WORKER_URL`、`PLUGMESH_PLUGIN_DIRECTORY`、`PLUGMESH_PLUGIN_HOST`、`PLUGMESH_CREDENTIAL_FILE`、`PLUGMESH_CREDENTIAL_PASSWORD` 和 `PLUGMESH_LOCAL_UI_DIRECTORY` 都可以用环境变量配置；不要把访问令牌或凭据文件提交到代码仓库。
 
 ### 使用共享库嵌入宿主
 
