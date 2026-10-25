@@ -76,7 +76,7 @@ button { cursor: pointer; }
 .mapping-target-proxy:hover { border-color: var(--signal); }
 .mapping-target-row strong { overflow-wrap: anywhere; color: var(--text); font-size: 11px; }
 .mapping-target-row input { width: 100%; min-width: 0; height: 34px; padding: 0 9px; color: var(--text); border: 1px solid var(--line-strong); border-radius: 0; outline: none; background: var(--bg); font-size: 11px; }
-.mapping-target-row input:focus { border-color: var(--signal); }
+.mapping-target-link { color: var(--signal); text-decoration: underline; text-underline-offset: 2px; }
 .mapping-form label { display: grid; min-width: 0; gap: 6px; color: var(--muted); font-size: 10px; }
 .mapping-form input, .mapping-form select { width: 100%; min-width: 0; height: 36px; padding: 0 9px; color: var(--text); border: 1px solid var(--line-strong); border-radius: 0; outline: none; background: var(--bg); font-size: 11px; }
 .mapping-form input:focus, .mapping-form select:focus { border-color: var(--signal); }
