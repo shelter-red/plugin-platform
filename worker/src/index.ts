@@ -566,7 +566,6 @@ async function recordAccessLog(env: Env, log: AccessLogRecord): Promise<void> {
 
 async function accessLogsApi(env: Env, workspace: Workspace): Promise<Response> {
   const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
-  await env.DB.prepare('DELETE FROM request_logs WHERE created_at < ?').bind(since).run()
   const [logs, errors] = await Promise.all([
     env.DB.prepare('SELECT id, hostname, method, path, status, duration_ms, error, created_at FROM request_logs WHERE workspace_id = ? AND created_at >= ? ORDER BY created_at DESC LIMIT 200').bind(workspace.id, since).all(),
     env.DB.prepare('SELECT COUNT(*) AS count FROM request_logs WHERE workspace_id = ? AND created_at >= ? AND status >= 500').bind(workspace.id, since).first<{ count: number }>(),

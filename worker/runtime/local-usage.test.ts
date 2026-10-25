@@ -74,3 +74,17 @@ test('成员读取本地用量分布返回 403', async () => {
   expect((await api('/api/usage/local', ADMIN_TOKEN)).status).toBe(401)
   expect(hostname.endsWith('.plugins.example.com')).toBe(true)
 })
+
+test('访问日志读取只按保留期过滤，不在 GET 请求中删除旧日志', async () => {
+  const hostname = await seedServer()
+  await seedAdmin()
+  await seedRequestLogs(hostname)
+
+  const response = await api('/api/access-logs', ADMIN_TOKEN)
+  expect(response.status).toBe(200)
+  const body = await response.json() as { results: Array<{ id: string }> }
+  expect(body.results.some((log) => log.id === 'log-runtime-old')).toBe(false)
+
+  const oldLog = await testEnv.DB.prepare('SELECT id FROM request_logs WHERE id = ?').bind('log-runtime-old').first<{ id: string }>()
+  expect(oldLog?.id).toBe('log-runtime-old')
+})
