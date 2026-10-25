@@ -106,8 +106,8 @@ git log --oneline --decorate -12
 - Linux 产物以 Debian 11/glibc 2.31 为兼容基线，携带 OpenSSL 3，并检查 GLIBC/GLIBCXX/CXXABI 上限。
 - Windows 产物携带 OpenSSL DLL；未注册双击可执行文件会打开本地 setup，注册成功后服务继续运行。
 - 交互式配置校验失败后必须原地重新输入，不能要求用户重启程序。
-- `v0.1.3` Release 已公开发布；三平台构建和 Release run `40100341851` 成功，平台验收 run `40100341893` 全部成功。
-- Windows `v0.1.3` 正式发布包已在真实 Windows 10 主机校验摘要、包内容和生产 WSS/TLS 业务拒绝路径；有效注册码绑定、Credential Manager 往返和插件宿主子进程仍需真实业务流程验收。
+- `v0.1.4` Release 已公开发布；三平台构建和 Release run `40154576302` 成功，平台验收 run `40154576466` 全部成功。
+- Windows `v0.1.3` 正式发布包已在真实 Windows 10 主机校验摘要、包内容和生产 WSS/TLS 业务拒绝路径；`v0.1.4` 的默认插件目录和端口回退已通过 Linux、MinGW/Wine 与 Actions，正式包真机复核仍待执行。
 
 ## 3. 部署与 migration
 
@@ -159,9 +159,9 @@ git diff --check                         通过
 ```
 
 - Playwright 容器使用当前 UID/GID 和 `HOME=/tmp`，避免生成 root 所有权的 Vite 缓存。
-- 推送 SHA：`58ae66ac1d324bcaf119d57c8e3c5957f7725aa7`，tag `v0.1.3`。
-- 平台验收 run `40100341893` 的 web 与 Linux/Windows/macOS native 全部成功；Release run `40100341851` 的三平台构建和发布全部成功。
-- Worker runtime 80/80 与部署路径 9/9 来自最后一次 Worker 代码变更基线；此后到 `58ae66a` 只修改原生端、发布流程、测试和文档，Worker 运行时代码未变。
+- 推送 SHA：`a192a669a61ee7c2b46490f879d00544f12b22c2`，tag `v0.1.4`。
+- 平台验收 run `40154576466` 的 web 与 Linux/Windows/macOS native 全部成功；Release run `40154576302` 的三平台构建和发布全部成功。
+- Worker runtime 80/80 与部署路径 9/9 来自最后一次 Worker 代码变更基线；此后到 `a192a66` 没有修改 Worker 运行时代码。
 - Worker runtime 日志中的强制约束和连接中断是故障注入用例预期输出，以测试退出码和汇总为准。
 
 代码再次变更后必须重新运行与风险范围匹配的验证，不能沿用上述结果。
@@ -187,8 +187,8 @@ git diff --check                         通过
 2. 确认 Workers Builds Deploy command 为 `npm run deploy`。
 3. 登录后保存真实 Email、Global API Key 和 Account ID，验证 subscriptions、Analytics、Zone、DNS 与 Worker Route。
 4. 配置公网 SMTP，验证 STARTTLS/SMTPS、维护通知和退信处理。
-5. Windows `v0.1.3` 发布包的摘要、内容、TLS 和无效注册码业务拒绝已在真实 Windows 10 验证；仍需使用有效注册码完成真实绑定、Credential Manager 往返和插件宿主子进程验收，并在目标 Linux 发行版验证发布包。
-6. 在已部署 Worker 上完成 HTTP、SSE、WebSocket、大文件、断线恢复和持续并发压力测试；当前生产 `servers`、`plugin_instances` 和 `domains` 均为 0，需先由用户完成真实绑定和插件加载。
+5. Windows `v0.1.3` 发布包的摘要、内容、TLS 和无效注册码业务拒绝已在真实 Windows 10 验证；用户已完成有效注册码绑定，仍需用 `v0.1.4` 正式包复核默认插件目录、端口回退、Credential Manager 往返和插件宿主子进程，并在目标 Linux 发行版验证发布包。
+6. 在已部署 Worker 上完成 HTTP、SSE、WebSocket、大文件、断线恢复和持续并发压力测试；最近只读状态为 `servers=1`、`online_servers=0`、`plugin_instances=0`、`domains=0`，需先让 `v0.1.4` 服务器上线并加载插件。
 
 第 1 项涉及真实密码，只能由用户操作；不得读取、生成、猜测或代为设置。第 2 项当前缺少可用的 Dashboard 登录态或 Workers CI Read 凭据。后续各项开始前仍需按第 1 节登记。
 
@@ -225,7 +225,8 @@ git diff --check                         通过
 | `e8409ba` | 修复无主站 Host 绑定时管理端误入插件代理 |
 | `680adb6` | 主站 Host 回退修复，Actions run `40090177061` 成功 |
 | `7639710` | 修复跨平台 TLS 信任链与服务器绑定失败 |
-| `58ae66a` / `v0.1.3` | 当前原生发布版本；Release run `40100341851`、平台验收 `40100341893` 成功 |
+| `58ae66a` / `v0.1.3` | 跨平台 TLS 绑定修复版本；真实 Windows 发布包已验收 |
+| `a192a66` / `v0.1.4` | 当前原生发布版本；Release run `40154576302`、平台验收 `40154576466` 成功 |
 
 ## 8. 禁止回流的旧方案
 
@@ -292,3 +293,4 @@ git diff --check                         通过
 - 2026-10-25：下一步登记（修复绑定后误入 setup、本地端口冲突与重复复制入口）：用户已完成真实服务器绑定，但原生进程仍因未设置 `PLUGMESH_PLUGIN_DIRECTORY` 输出 `entering local setup`；setup 页面明确允许插件目录留空，当前行为错误地把运行期插件目录校验和绑定凭据校验混为一体。下一步让可执行服务器在插件目录未显式配置时使用可执行文件同级 `plugins`，目录不存在时创建为空目录并以 0 插件正常启动，不放宽共享库 API 对调用方显式配置的契约；本地管理服务从首选端口（默认 `8787`）开始尝试绑定，占用时顺序递增至可用端口，浏览器和日志必须使用实际端口。管理端一次性配对码弹窗移除文本组件自带的第二个复制控件，只保留一个带错误处理的显式复制按钮。增加原生配置/启动端口回退和管理端唯一复制入口回归，完成 Linux CTest、native UI、MinGW 编译、完整本地 CI 与 diff 检查后集中推送并发布新原生版本；不读取或输出注册码、token/hash、密码或会话，不修改生产实体。
 - 2026-10-25：绑定后启动、端口回退与配对码复制修复完成：独立可执行程序现在只用 Worker URL、服务器 ID 和访问令牌判断是否需要注册 setup，插件目录留空时创建并使用可执行文件同级 `plugins`；共享库 `validate_config` 仍要求宿主显式传入插件目录。真实 Linux 二进制在不设置 `PLUGMESH_PLUGIN_DIRECTORY` 时直接进入插件发现和本地 UI 路径，没有再次输出 `entering local setup`。本地 HTTP 服务先用 Asio 实际探测首选端口，占用或拒绝时顺序递增，状态、控制台提示和 setup 浏览器均使用实际监听端口；Linux CTest 与 MinGW/Wine 均用被占用端口验证回退后 API 可达。一次性注册码弹窗已移除 Ant Design 文本自带复制控件，只保留一个显式复制按钮，并增加唯一性断言。Linux 全量原生构建及 CTest 12/12、MinGW 全目标构建、Wine 端口 smoke、native UI 5/5、完整 `npm run ci:local`（Worker smoke、管理端 UI 89/89、构建与审计）和 `git diff --check` 全部通过。尚未发布新 Release；用户当前 `v0.1.3` 二进制不会自动获得修复，下一步单独升级版本并触发三平台 Release，低频检查 Actions 后再通知下载。
 - 2026-10-25：下一步登记（发布原生启动与端口修复版本）：当前公开 `v0.1.3` 不包含提交 `0ad1336` 的默认插件目录、绑定状态判断、端口冲突自动递增和配对码单一复制入口修复。下一步把 npm/package-lock 版本更新为 `0.1.4`，保留历史 Release，运行发布 workflow 契约、版本一致性、`git diff --check` 和必要构建检查后，创建 `v0.1.4` tag 并与 `main` 一次性推送。推送后以完整提交 SHA 查找平台验收与 Release run，至少间隔约一分钟低频检查，不重复触发 workflow；三平台资产和 `SHA256SUMS` 齐全前不宣称发布完成，不修改生产 D1、注册码、凭据、插件或域名。
+- 2026-10-25：`v0.1.4` 已发布：版本提交 `a192a669a61ee7c2b46490f879d00544f12b22c2` 与 tag 已一次性推送；Release run `40154576302` 的标签校验、Linux/macOS/Windows 构建和创建 Release 全部成功，平台验收 run `40154576466` 的 changes、web 与三平台原生 job 全部成功。公开 Release 目标提交与推送 SHA 一致，三平台 zip 和 `SHA256SUMS` 均为 `uploaded`；没有重复触发 workflow。发布过程未修改生产 D1、注册码、凭据、插件或域名。下一步由用户下载 `v0.1.4` 重启已绑定服务器，确认不再因插件目录为空进入 setup，并观察首选端口占用时控制台输出的实际本地 UI 地址。
