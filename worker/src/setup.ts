@@ -1,4 +1,4 @@
-import { AdminPasswordSetupError, MIN_PASSWORD_LENGTH, setAdminPassword, type AdminPasswordState } from './auth'
+import { AdminPasswordSetupError, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, setAdminPassword, type AdminPasswordState } from './auth'
 import type { Env } from './types'
 
 const SECURITY_HEADERS = {
@@ -44,6 +44,7 @@ export async function setupApi(request: Request, env: Env, passwordState: AdminP
   const password = body.password ?? ''
   const confirmPassword = body.confirmPassword ?? ''
   if (password.length < MIN_PASSWORD_LENGTH) return setupPage(`密码至少需要 ${MIN_PASSWORD_LENGTH} 个字符。`, 400)
+  if (password.length > MAX_PASSWORD_LENGTH) return setupPage(`密码不能超过 ${MAX_PASSWORD_LENGTH} 个字符。`, 400)
   if (password !== confirmPassword) return setupPage('两次输入的密码不一致。', 400)
   try {
     await setAdminPassword(env, password)

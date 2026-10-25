@@ -1,7 +1,7 @@
 import { PluginBridge } from './durable-object'
 import { TunnelSession } from './tunnel-session'
 import { hashControlToken } from './security'
-import { authenticatePassword, changeAdminPassword, clearSessionCookie, createSession, digest, getAdminPasswordState, getCurrentUser, MIN_PASSWORD_LENGTH, sessionCookie } from './auth'
+import { authenticatePassword, changeAdminPassword, clearSessionCookie, createSession, digest, getAdminPasswordState, getCurrentUser, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, sessionCookie } from './auth'
 import type { AuthenticatedUser, CloudflarePlanSummary, CloudflareUsageLimits, Env } from './types'
 import { decryptSecret, encryptSecret } from './secrets'
 import { isEmail, parseSmtpSettings, publicSmtpSettings, sendSmtpTest, validateSmtpSettings, type SmtpSettings } from './email'
@@ -558,6 +558,7 @@ async function passwordLogin(request: Request, env: Env, url: URL): Promise<Resp
   const body = await request.json().catch(() => null) as { password?: unknown } | null
   const password = typeof body?.password === 'string' ? body.password : ''
   if (!password) return json({ code: 'password_required', message: '请输入管理员密码' }, 400)
+  if (password.length > MAX_PASSWORD_LENGTH) return json({ code: 'invalid_password', message: '密码错误' }, 401)
   const userId = await authenticatePassword(env, password)
   if (!userId) return json({ code: 'invalid_password', message: '密码错误' }, 401)
   const token = await createSession(env, userId)
@@ -573,6 +574,7 @@ async function passwordSettingsApi(request: Request, env: Env, user: Authenticat
   const confirmPassword = typeof body?.confirmPassword === 'string' ? body.confirmPassword : ''
   if (!currentPassword) return json({ code: 'current_password_required', message: '请输入当前管理员密码', field: 'currentPassword' }, 400)
   if (newPassword.length < MIN_PASSWORD_LENGTH) return json({ code: 'password_too_short', message: `密码至少需要 ${MIN_PASSWORD_LENGTH} 个字符`, field: 'newPassword' }, 400)
+  if (newPassword.length > MAX_PASSWORD_LENGTH) return json({ code: 'password_too_long', message: `密码不能超过 ${MAX_PASSWORD_LENGTH} 个字符`, field: 'newPassword' }, 400)
   if (newPassword !== confirmPassword) return json({ code: 'password_mismatch', message: '两次输入的新密码不一致', field: 'confirmPassword' }, 400)
   if (!await changeAdminPassword(env, currentPassword, newPassword)) return json({ code: 'current_password_invalid', message: '当前管理员密码错误', field: 'currentPassword' }, 401)
   return new Response(null, { status: 204 })

@@ -1,6 +1,6 @@
 import { SELF } from 'cloudflare:test'
 import { beforeEach, expect, test, vi } from 'vitest'
-import { MIN_PASSWORD_LENGTH, setAdminPassword, verifyPassword } from '../src/auth'
+import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, setAdminPassword, verifyPassword } from '../src/auth'
 import { resetDatabase, testEnv } from './helpers'
 
 beforeEach(async () => {
@@ -61,6 +61,18 @@ test('setup 校验失败时保留当前页面并允许重新输入', async () =>
   expect(mismatch.status).toBe(400)
   expect(await mismatch.text()).toContain('两次输入的密码不一致')
   expect((await testEnv.DB.prepare('SELECT COUNT(*) AS count FROM admin_credentials').first<{ count: number }>())?.count).toBe(0)
+})
+
+test('超长管理员密码在初始化和登录入口被拒绝', async () => {
+  const tooLong = 'x'.repeat(MAX_PASSWORD_LENGTH + 1)
+  const setup = await submitSetup(tooLong, tooLong)
+  expect(setup.status).toBe(400)
+  expect(await setup.text()).toContain(`密码不能超过 ${MAX_PASSWORD_LENGTH} 个字符`)
+
+  await setAdminPassword(testEnv, 'correct-horse-battery')
+  const login = await SELF.fetch('https://console.example.com/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: tooLong }) })
+  expect(login.status).toBe(401)
+  expect((await login.json() as { code: string }).code).toBe('invalid_password')
 })
 
 test('设置密码后可以使用密码登录，setup 不再初始化', async () => {

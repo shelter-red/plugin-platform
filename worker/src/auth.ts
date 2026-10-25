@@ -4,6 +4,7 @@ import type { AuthenticatedUser, Env } from './types'
 const SESSION_COOKIE = 'plugmesh_session'
 const ADMIN_CREDENTIAL_ID = 'primary'
 export const MIN_PASSWORD_LENGTH = 12
+export const MAX_PASSWORD_LENGTH = 1024
 const PASSWORD_HASH_ALGORITHM = 'pbkdf2-sha256'
 const PASSWORD_ITERATIONS = 100000
 const LEGACY_PASSWORD_ITERATIONS = 310000
