@@ -42,6 +42,7 @@ const database = {
         return query
       },
       first: async <T>() => {
+        if (sql.includes('SELECT id FROM servers') && sql.includes('status !=')) return { id: 'server-1' } as T
         if (sql.includes('SELECT user_id') && sql.includes('FROM servers')) return { user_id: 'user-1', workspace_id: 'ws_default' } as T
         return null
       },
@@ -124,7 +125,7 @@ try {
 
 assert.equal(response.status, 202)
 assert.deepEqual(resultFrames().map((frame) => frame.type), ['server.sync'])
-assert.equal(server.status, 'online')
+assert.equal(server.status, 'offline', 'connection state must not be persisted as a D1 status')
 assert.equal(pluginInserted, true)
 
 console.log('Durable Object server sync ordering smoke test passed')

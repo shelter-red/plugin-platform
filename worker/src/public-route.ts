@@ -4,6 +4,6 @@ type PublicRouteResolution = { state: 'missing' } | { state: 'unavailable' | 're
 
 export function resolvePublicRoute(route: PluginRoute | null): PublicRouteResolution {
   if (!route) return { state: 'missing' }
-  if (route.status !== 'online' || route.server_status !== 'online' || route.plugin_state !== 'enabled') return { state: 'unavailable', route }
+  if (route.plugin_state !== 'enabled') return { state: 'unavailable', route }
   return { state: 'ready', route }
 }

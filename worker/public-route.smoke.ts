@@ -18,8 +18,8 @@ const route = (overrides: Partial<PluginRoute> = {}): PluginRoute => ({
 
 assert.equal(resolvePublicRoute(null).state, 'missing')
 assert.equal(resolvePublicRoute(route()).state, 'ready')
-assert.equal(resolvePublicRoute(route({ status: 'offline' })).state, 'unavailable')
-assert.equal(resolvePublicRoute(route({ server_status: 'offline' })).state, 'unavailable')
+assert.equal(resolvePublicRoute(route({ status: 'offline' })).state, 'ready')
+assert.equal(resolvePublicRoute(route({ server_status: 'offline' })).state, 'ready')
 assert.equal(resolvePublicRoute(route({ plugin_state: 'disabled' })).state, 'unavailable')
 
 console.log('public route smoke test passed')

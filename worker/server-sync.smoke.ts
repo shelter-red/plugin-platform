@@ -22,7 +22,7 @@ function createDatabase(server: { id: string; status: string } | null, ownerId =
         },
         first: async <T>() => {
           if (sql.includes('SELECT value_json FROM platform_settings')) return { value_json: JSON.stringify({ maintenance }) } as T
-          if (sql.includes('SELECT id, status FROM servers')) return server && boundValues[1] === 'ws_default' ? server as T : null
+          if (sql.includes('SELECT id FROM servers')) return server && boundValues[1] === 'ws_default' ? server as T : null
           return null
         },
         run: async () => {
@@ -37,13 +37,14 @@ function createDatabase(server: { id: string; status: string } | null, ownerId =
   }
 }
 
-function createEnvironment(database: ReturnType<typeof createDatabase>, bridgeResponse = new Response(JSON.stringify({ accepted: true }), { status: 202 })) {
+function createEnvironment(database: ReturnType<typeof createDatabase>, bridgeResponse = new Response(JSON.stringify({ accepted: true }), { status: 202 }), online = true) {
   let bridgeCalls = 0
   let bridgeRequest: Request | null = null
   const bridge = {
     idFromName: (name: string) => name,
     get: () => ({
       fetch: async (request: Request) => {
+        if (new URL(request.url).pathname === '/status') return Response.json({ online })
         bridgeCalls += 1
         bridgeRequest = request
         return bridgeResponse
@@ -92,8 +93,8 @@ const user: AuthenticatedUser = {
 }
 
 {
-  const database = createDatabase({ id: 'server-1', status: 'offline' })
-  const environment = createEnvironment(database)
+  const database = createDatabase({ id: 'server-1', status: 'online' })
+  const environment = createEnvironment(database, undefined, false)
   const response = await syncServer(new Request('https://console.example.test/api/servers/server-1/sync', { method: 'POST' }), environment.env, user, workspace, 'server-1')
 
   assert.equal(response.status, 409)

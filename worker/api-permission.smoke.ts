@@ -41,7 +41,10 @@ const database = {
   },
 }
 
-const env = { DB: database } as unknown as Env
+const env = {
+  DB: database,
+  PLUGIN_BRIDGE: { idFromName: (id: string) => id, get: () => ({ fetch: async () => Response.json({ online: true }) }) },
+} as unknown as Env
 const ctx = {} as ExecutionContext
 const memberToken = 'member-session-token'
 const adminToken = 'admin-session-token'

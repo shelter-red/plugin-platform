@@ -21,7 +21,7 @@ const readyRoute: PluginRoute = {
 
 const routes = new Map<string, PluginRoute | null>([
   [readyRoute.hostname, readyRoute],
-  ['offline.plugins.example.test', { ...readyRoute, hostname: 'offline.plugins.example.test', server_status: 'offline' }],
+  ['offline.plugins.example.test', { ...readyRoute, hostname: 'offline.plugins.example.test', server_id: 'server-offline', server_status: 'offline' }],
   ['sse.plugins.example.test', { ...readyRoute, hostname: 'sse.plugins.example.test', manifest_json: JSON.stringify({ capabilities: { http: false, websocket: false, sse: true, fileStream: false } }) }],
   ['limited.plugins.example.test', { ...readyRoute, hostname: 'limited.plugins.example.test', manifest_json: JSON.stringify({ capabilities: { http: false, websocket: false, sse: false, fileStream: false } }) }],
   ['stale.plugins.example.test', { ...readyRoute, hostname: 'stale.plugins.example.test' }],
@@ -54,6 +54,7 @@ const database = {
 const bridge = {
   async fetch(request: Request): Promise<Response> {
     bridgeRequests.push(request)
+    if (request.headers.get('x-plugmesh-server-id') === 'server-offline') return new Response('Plugin server is offline', { status: 503, headers: { 'x-plugmesh-bridge-error': 'server-offline' } })
     if (new URL(request.url).hostname === 'stale.plugins.example.test') return new Response('Plugin server is offline', { status: 503, headers: { 'x-plugmesh-bridge-error': 'server-offline' } })
     if (request.headers.get('x-plugmesh-request-mode') === 'sse') return new Response('data: hello\n\n', { status: 200, headers: { 'content-type': 'text/event-stream' } })
     return new Response('proxied', { status: 201, headers: { 'x-plugin-response': 'ok' } })
@@ -67,7 +68,7 @@ const env = {
   PLUGIN_BRIDGE: {
     idFromName: (name: string) => name,
     get: (id: string) => {
-      assert.equal(id, 'server-ready')
+      assert.ok(['server-ready', 'server-offline'].includes(id))
       return bridge
     },
   },
@@ -104,13 +105,13 @@ assert.equal(bridgeRequests.length, 0)
 response = await fetchPublic('offline.plugins.example.test')
 assert.equal(response.status, 503)
 assert.match(await response.text(), /插件暂时不可用/)
-assert.equal(bridgeRequests.length, 0)
+assert.equal(bridgeRequests.length, 1)
 
 setPlatformSettingsCache({ ...testSettings, maintenance: true })
 response = await fetchPublic(readyRoute.hostname)
 assert.equal(response.status, 503)
 assert.match(await response.text(), /平台维护中/)
-assert.equal(bridgeRequests.length, 0)
+assert.equal(bridgeRequests.length, 1)
 
 setPlatformSettingsCache(testSettings)
 response = await fetchPublic(readyRoute.hostname, { method: 'GET' })
@@ -140,7 +141,7 @@ assert.equal(await response.text(), 'Plugin capability is not available')
 assert.equal(bridgeRequests.length, bridgeCountBeforeUnsupported)
 
 await Promise.all(waits)
-assert.deepEqual(accessLogs.map((entry) => entry.status), [201, 200, 503, 501])
-assert.deepEqual(accessLogs.map((entry) => entry.path), ['/api/items', '/api/items', '/api/items', '/api/items'])
+assert.deepEqual(accessLogs.map((entry) => entry.status), [503, 201, 200, 503, 501])
+assert.deepEqual(accessLogs.map((entry) => entry.path), ['/api/items', '/api/items', '/api/items', '/api/items', '/api/items'])
 
 console.log('public proxy smoke test passed')

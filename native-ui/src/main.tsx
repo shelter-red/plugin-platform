@@ -1,4 +1,4 @@
-import { StrictMode, useCallback, useEffect, useState } from 'react'
+import { StrictMode, useCallback, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
   Activity,
@@ -16,11 +16,15 @@ import {
   LogOut,
   Moon,
   Network,
+  Pencil,
+  Power,
+  Plus,
   RefreshCw,
   Settings2,
   ShieldCheck,
   Sun,
   Terminal,
+  Trash2,
   Wifi,
   WifiOff,
   X,
@@ -50,6 +54,25 @@ interface LocalStatus {
   serverId?: string
   workerUrl?: string
   credentialFile?: string
+  portMappings?: LocalMapping[]
+}
+
+interface LocalMapping {
+  name: string
+  protocol: string
+  listenPort: number
+  targetServerId: string
+  targetServer: string
+  targetHost: string
+  targetPort: number
+  state: string
+  enabled: boolean
+}
+
+interface MappingTarget {
+  id: string
+  name: string
+  status: string
 }
 
 interface LocalPlugin {
@@ -152,6 +175,7 @@ const emptySetupForm = {
 
 function App() {
   const { t } = useTranslation()
+  const [activeSection, setActiveSection] = useState('overview')
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem('plugmesh-local-theme')
     return saved === 'light' || saved === 'system' ? saved : 'dark'
@@ -163,6 +187,13 @@ function App() {
   const [status, setStatus] = useState<LocalStatus | null>(null)
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null)
   const [plugins, setPlugins] = useState<LocalPlugin[]>([])
+  const [mappings, setMappings] = useState<LocalMapping[]>([])
+  const [mappingTargets, setMappingTargets] = useState<MappingTarget[]>([])
+  const [mappingTargetsLoading, setMappingTargetsLoading] = useState(false)
+  const mappingTargetsInFlight = useRef(false)
+  const [mappingBusy, setMappingBusy] = useState(false)
+  const [editingMapping, setEditingMapping] = useState('')
+  const [mappingForm, setMappingForm] = useState({ name: '', protocol: 'tcp', listenPort: '', targetServerId: '', targetHost: '127.0.0.1', targetPort: '', targetPassword: '', enabled: true })
   const [logs, setLogs] = useState<LocalLog[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -207,6 +238,7 @@ function App() {
       setStatus(nextStatus)
       setDiagnostics(nextDiagnostics)
       setPlugins(nextPlugins.plugins ?? [])
+      setMappings(nextStatus.portMappings ?? [])
       setLogs(nextLogs.logs ?? [])
       setError(null)
       setLastUpdated(new Date())
@@ -218,6 +250,22 @@ function App() {
       setRefreshing(false)
     }
   }, [loadSession])
+
+  const refreshMappingTargets = useCallback(async (silent = false) => {
+    if (mappingTargetsInFlight.current) return
+    mappingTargetsInFlight.current = true
+    setMappingTargetsLoading(true)
+    try {
+      const result = await request<{ targets: MappingTarget[] }>('/api/mappings/targets')
+      setMappingTargets(result.targets ?? [])
+      if (!mappingForm.targetServerId && result.targets?.length) setMappingForm((current) => ({ ...current, targetServerId: result.targets[0].id }))
+    } catch (cause) {
+      if (!silent) setMessage({ kind: 'error', text: errorMessage(cause, 'mappings.targetsFailed') })
+    } finally {
+      mappingTargetsInFlight.current = false
+      setMappingTargetsLoading(false)
+    }
+  }, [mappingForm.targetServerId])
 
   const waitForRestart = useCallback(async () => {
     for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -248,8 +296,13 @@ function App() {
     if (!session?.authenticated) return
     void refresh()
     const timer = window.setInterval(() => void refresh(), 5000)
-    return () => window.clearInterval(timer)
-  }, [refresh, session?.authenticated])
+    void refreshMappingTargets(true)
+    const targetTimer = window.setInterval(() => void refreshMappingTargets(true), 15000)
+    return () => {
+      window.clearInterval(timer)
+      window.clearInterval(targetTimer)
+    }
+  }, [refresh, refreshMappingTargets, session?.authenticated])
   useEffect(() => localStorage.setItem('plugmesh-local-theme', theme), [theme])
   useEffect(() => {
     const media = matchMedia('(prefers-color-scheme: light)')
@@ -262,6 +315,16 @@ function App() {
     const timer = window.setTimeout(() => setMessage(null), 3200)
     return () => window.clearTimeout(timer)
   }, [message])
+  useEffect(() => {
+    if (!session?.authenticated || !session.configured || session.passwordSetupRequired) return
+    const sections = ['overview', 'plugins', 'mappings', 'setup', 'logs'].map((id) => document.getElementById(id)).filter((section): section is HTMLElement => Boolean(section))
+    const observer = new IntersectionObserver((entries) => {
+      const visible = entries.filter((entry) => entry.isIntersecting).sort((left, right) => right.intersectionRatio - left.intersectionRatio)[0]
+      if (visible) setActiveSection(visible.target.id)
+    }, { rootMargin: '-12% 0px -68% 0px', threshold: [0, 0.15, 0.4, 0.7] })
+    sections.forEach((section) => observer.observe(section))
+    return () => observer.disconnect()
+  }, [session?.authenticated, session?.configured, session?.passwordSetupRequired])
 
   const submitLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -346,6 +409,48 @@ function App() {
       setMessage({ kind: 'error', text: errorMessage(cause, 'errors.pluginActionFailed') })
     } finally {
       setBusyPlugin(null)
+    }
+  }
+
+  const saveMapping = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setMappingBusy(true)
+    try {
+      const endpoint = editingMapping ? `/api/mappings/${encodeURIComponent(editingMapping)}` : '/api/mappings'
+      await request(endpoint, { method: editingMapping ? 'PUT' : 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...mappingForm, listenPort: Number(mappingForm.listenPort), targetPort: Number(mappingForm.targetPort) }) })
+      setMappingForm((current) => ({ ...current, name: '', listenPort: '', targetPort: '', targetPassword: '' }))
+      setEditingMapping('')
+      await refresh(true)
+      setMessage({ kind: 'success', text: t('mappings.saved') })
+    } catch (cause) {
+      setMessage({ kind: 'error', text: errorMessage(cause, 'mappings.saveFailed') })
+    } finally {
+      setMappingBusy(false)
+    }
+  }
+
+  const deleteMapping = async (mapping: LocalMapping) => {
+    setMappingBusy(true)
+    try {
+      await request(`/api/mappings/${encodeURIComponent(mapping.name)}`, { method: 'DELETE' })
+      await refresh(true)
+      setMessage({ kind: 'success', text: t('mappings.deleted') })
+    } catch (cause) {
+      setMessage({ kind: 'error', text: errorMessage(cause, 'mappings.deleteFailed') })
+    } finally {
+      setMappingBusy(false)
+    }
+  }
+
+  const toggleMapping = async (mapping: LocalMapping) => {
+    setMappingBusy(true)
+    try {
+      await request(`/api/mappings/${encodeURIComponent(mapping.name)}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: mapping.name, protocol: mapping.protocol, listenPort: mapping.listenPort, targetServerId: mapping.targetServerId, targetHost: mapping.targetHost, targetPort: mapping.targetPort, enabled: !mapping.enabled }) })
+      await refresh(true)
+    } catch (cause) {
+      setMessage({ kind: 'error', text: errorMessage(cause, 'mappings.saveFailed') })
+    } finally {
+      setMappingBusy(false)
     }
   }
 
@@ -445,10 +550,11 @@ function App() {
           <div className="connection-detail">{status?.serverId ?? t('common.serverIdMissing')}</div>
         </div>
         <nav className="side-nav" aria-label={t('nav.aria')}>
-          <a className="side-link active" href="#overview"><Activity size={15} />{t('nav.overview')}</a>
-          <a className="side-link" href="#plugins"><FileCode2 size={15} />{t('nav.plugins')}<span>{plugins.length}</span></a>
-          <a className="side-link" href="#setup"><Settings2 size={15} />{t('nav.settings')}</a>
-          <a className="side-link" href="#logs"><Terminal size={15} />{t('nav.logs')}<span>{logs.length}</span></a>
+          <a className={`side-link ${activeSection === 'overview' ? 'active' : ''}`} href="#overview"><Activity size={15} />{t('nav.overview')}</a>
+          <a className={`side-link ${activeSection === 'plugins' ? 'active' : ''}`} href="#plugins"><FileCode2 size={15} />{t('nav.plugins')}<span>{plugins.length}</span></a>
+          <a className={`side-link ${activeSection === 'mappings' ? 'active' : ''}`} href="#mappings"><Network size={15} />{t('nav.mappings')}<span>{mappings.length}</span></a>
+          <a className={`side-link ${activeSection === 'setup' ? 'active' : ''}`} href="#setup"><Settings2 size={15} />{t('nav.settings')}</a>
+          <a className={`side-link ${activeSection === 'logs' ? 'active' : ''}`} href="#logs"><Terminal size={15} />{t('nav.logs')}<span>{logs.length}</span></a>
         </nav>
         <div className="rail-bottom"><div className="local-only"><HardDrive size={14} /><span>{t('nav.localOnly')}<br /><strong>127.0.0.1:{status?.port ?? '----'}</strong></span></div><a className="docs-link" href="#setup"><Terminal size={14} />{t('nav.cli')}</a></div>
       </aside>
@@ -473,6 +579,22 @@ function App() {
           <section className="metric-grid" aria-label={t('metrics.aria')}><Metric label={t('metrics.plugins')} value={diagnostics?.pluginCount ?? (loading ? t('common.unavailable') : plugins.length)} icon={<FileCode2 size={16} />} /><Metric label={t('metrics.enabled')} value={enabledCount} icon={<Cpu size={16} />} accent /><Metric label={t('metrics.failed')} value={diagnostics?.failedPluginCount ?? 0} icon={<CircleSlash size={16} />} danger={Boolean(diagnostics?.failedPluginCount)} /><Metric label={t('metrics.port')} value={status?.port ?? t('common.unavailable')} icon={<Network size={16} />} /></section>
 
           <section id="plugins" className="section-block"><div className="section-heading"><div><span className="section-index">{t('plugins.index')}</span><h2>{t('plugins.title')}</h2></div><span className="section-meta">{t('plugins.count', { count: plugins.length })} · {t('plugins.loadedCount', { count: diagnostics?.loadedPluginCount ?? 0 })}</span></div>{loading && <LoadingState />}{!loading && !error && plugins.length === 0 && <EmptyState title={t('plugins.emptyTitle')} body={t('plugins.emptyBody')} />}{!loading && !error && plugins.length > 0 && <div className="plugin-list">{plugins.map((plugin) => <PluginRow key={plugin.id} plugin={plugin} busy={busyPlugin === plugin.id} onAction={(action) => void runAction(plugin, action)} onHealth={() => void runHealth(plugin)} />)}</div>}</section>
+
+          <section id="mappings" className="section-block">
+            <div className="section-heading"><div><span className="section-index">{t('mappings.index')}</span><h2>{t('mappings.title')}</h2></div><button className="button secondary with-icon" onClick={() => void refreshMappingTargets()} disabled={mappingTargetsLoading}><RefreshCw size={14} className={mappingTargetsLoading ? 'spin' : ''} />{t('mappings.refreshTargets')}</button></div>
+            <form className="mapping-form" onSubmit={(event) => void saveMapping(event)}>
+              <label><span>{t('mappings.name')}</span><input required maxLength={64} pattern="[A-Za-z0-9_-]+" value={mappingForm.name} onChange={(event) => setMappingForm({ ...mappingForm, name: event.target.value })} /></label>
+              <label><span>{t('mappings.protocol')}</span><select value={mappingForm.protocol} onChange={(event) => setMappingForm({ ...mappingForm, protocol: event.target.value })}><option value="tcp">TCP</option><option value="http">HTTP</option><option value="websocket">WebSocket</option></select></label>
+              <label><span>{t('mappings.listenPort')}</span><input required type="number" min="1" max="65535" value={mappingForm.listenPort} onChange={(event) => setMappingForm({ ...mappingForm, listenPort: event.target.value })} /></label>
+              <label><span>{t('mappings.targetServer')}</span><select required value={mappingForm.targetServerId} onChange={(event) => setMappingForm({ ...mappingForm, targetServerId: event.target.value })}><option value="">{t('mappings.selectTarget')}</option>{mappingTargets.filter((target) => target.status === 'online').map((target) => <option key={target.id} value={target.id}>{target.name}</option>)}</select></label>
+              <label><span>{t('mappings.targetHost')}</span><input required maxLength={253} value={mappingForm.targetHost} onChange={(event) => setMappingForm({ ...mappingForm, targetHost: event.target.value })} /></label>
+              <label><span>{t('mappings.targetPort')}</span><input required type="number" min="1" max="65535" value={mappingForm.targetPort} onChange={(event) => setMappingForm({ ...mappingForm, targetPort: event.target.value })} /></label>
+              <label><span>{t('mappings.targetPassword')}</span><input type="password" autoComplete="new-password" value={mappingForm.targetPassword} onChange={(event) => setMappingForm({ ...mappingForm, targetPassword: event.target.value })} /></label>
+              <button className="button primary with-icon" type="submit" disabled={mappingBusy || !mappingForm.targetServerId}>{editingMapping ? <Pencil size={14} /> : <Plus size={14} />}{t(editingMapping ? 'mappings.update' : 'mappings.add')}</button>
+              {editingMapping && <button className="button secondary" type="button" onClick={() => { setEditingMapping(''); setMappingForm({ name: '', protocol: 'tcp', listenPort: '', targetServerId: '', targetHost: '127.0.0.1', targetPort: '', targetPassword: '', enabled: true }) }}>{t('common.cancel')}</button>}
+            </form>
+            {mappings.length === 0 ? <EmptyState title={t('mappings.emptyTitle')} body={t('mappings.emptyBody')} /> : <div className="mapping-list">{mappings.map((mapping) => <div className="mapping-row" key={mapping.name}><div className="mapping-endpoint"><strong>{mapping.name}</strong><span>{mapping.protocol.toUpperCase()} · 127.0.0.1:{mapping.listenPort} → {mapping.targetHost}:{mapping.targetPort}</span></div><div className="mapping-target"><span>{mapping.targetServer}</span><span className={`status-badge ${mapping.state === 'listening' ? 'positive' : 'warning'}`}>{t(mapping.state === 'listening' ? 'mappings.listening' : 'mappings.stopped')}</span></div><div className="mapping-actions"><button className="icon-button" title={t(mapping.enabled ? 'mappings.disable' : 'mappings.enable')} aria-label={t(mapping.enabled ? 'mappings.disable' : 'mappings.enable')} onClick={() => void toggleMapping(mapping)} disabled={mappingBusy}><Power size={15} /></button><button className="icon-button" title={t('mappings.edit')} aria-label={t('mappings.edit')} onClick={() => { setEditingMapping(mapping.name); setMappingForm({ name: mapping.name, protocol: mapping.protocol, listenPort: String(mapping.listenPort), targetServerId: mapping.targetServerId, targetHost: mapping.targetHost, targetPort: String(mapping.targetPort), targetPassword: '', enabled: mapping.enabled }); void refreshMappingTargets() }} disabled={mappingBusy}><Pencil size={15} /></button><button className="icon-button danger-icon" title={t('mappings.delete')} aria-label={t('mappings.delete')} onClick={() => void deleteMapping(mapping)} disabled={mappingBusy}><Trash2 size={15} /></button></div></div>)}</div>}
+          </section>
 
           <section id="setup" className="section-block setup-section">
             <div className="section-heading"><div><span className="section-index">{t('binding.index')}</span><h2>{t('binding.title')}</h2></div><span className="status-badge positive"><span className="status-dot" />{t('binding.configured')}</span></div>

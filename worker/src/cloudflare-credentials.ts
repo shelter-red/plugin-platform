@@ -395,10 +395,7 @@ export async function storeCloudflareCredential(env: Env, credential: Cloudflare
   if (!env.SESSION_SECRET) throw new CloudflareCredentialError(503, 'secret_missing', 'SESSION_SECRET 未配置，无法安全保存 Cloudflare 凭据')
   const sealed = await encryptSecret(env.SESSION_SECRET, JSON.stringify(credential))
   const updatedAt = new Date().toISOString()
-  await env.DB.batch([
-    env.DB.prepare('INSERT INTO cloudflare_credentials (id, ciphertext, iv, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET ciphertext = excluded.ciphertext, iv = excluded.iv, updated_at = excluded.updated_at').bind('primary', sealed.ciphertext, sealed.iv, updatedAt),
-    env.DB.prepare('DELETE FROM usage_cache WHERE key = ?').bind('cloudflare:workers'),
-  ])
+  await env.DB.prepare('INSERT INTO cloudflare_credentials (id, ciphertext, iv, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET ciphertext = excluded.ciphertext, iv = excluded.iv, updated_at = excluded.updated_at').bind('primary', sealed.ciphertext, sealed.iv, updatedAt).run()
   return updatedAt
 }
 
@@ -430,10 +427,7 @@ export async function readStoredCloudflareCredential(env: Env): Promise<StoredCl
 }
 
 export async function deleteStoredCloudflareCredential(env: Env): Promise<void> {
-  await env.DB.batch([
-    env.DB.prepare('DELETE FROM cloudflare_credentials WHERE id = ?').bind('primary'),
-    env.DB.prepare('DELETE FROM usage_cache WHERE key = ?').bind('cloudflare:workers'),
-  ])
+  await env.DB.prepare('DELETE FROM cloudflare_credentials WHERE id = ?').bind('primary').run()
 }
 
 /** subscriptions 只确认 Free 时才返回官方基线；其他套餐明确返回 unavailable。 */

@@ -1,4 +1,5 @@
 import { PluginBridge } from './durable-object'
+import { TunnelSession } from './tunnel-session'
 import { hashControlToken } from './security'
 import { authenticatePassword, changeAdminPassword, clearSessionCookie, createSession, digest, getAdminPasswordState, getCurrentUser, MIN_PASSWORD_LENGTH, sessionCookie } from './auth'
 import type { AuthenticatedUser, CloudflarePlanSummary, CloudflareUsageLimits, Env } from './types'
@@ -14,9 +15,21 @@ import { recordAudit } from './audit'
 import { DEFAULT_WORKSPACE_ID, activeWorkspaceId, createWorkspace, listWorkspaceMembers, listWorkspaces, ownerCount, parseWorkspaceRole, requireOwner, requireWrite, resolveWorkspace, workspaceForUser } from './workspaces'
 import type { Workspace, WorkspaceRole } from './types'
 
-export { PluginBridge }
+export { PluginBridge, TunnelSession }
 
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json; charset=utf-8' } })
+async function pluginServerOnline(env: Env, serverId: string, baseUrl: string): Promise<boolean> {
+  const bridge = env.PLUGIN_BRIDGE.get(env.PLUGIN_BRIDGE.idFromName(serverId))
+  const url = new URL('/status', baseUrl)
+  const response = await bridge.fetch(new Request(url))
+  if (!response.ok) return false
+  const status = await response.json().catch(() => null) as { online?: boolean } | null
+  return status?.online === true
+}
+
+async function withLiveServerStatus<T extends { id: string; status: string }>(env: Env, rows: T[], baseUrl: string): Promise<Array<T & { status: string }>> {
+  return Promise.all(rows.map(async (row) => ({ ...row, status: row.status === 'revoked' ? 'revoked' : await pluginServerOnline(env, row.id, baseUrl) ? 'online' : 'offline' })))
+}
 function configuredConsoleHostname(env: Env, request: Request): string {
   return env.CONSOLE_HOSTNAME?.trim().toLowerCase() || new URL(request.url).hostname.toLowerCase()
 }
@@ -49,12 +62,79 @@ export default {
     if (url.pathname === '/control/register') return request.headers.get('Upgrade')?.toLowerCase() === 'websocket' ? registerServerSocket(env) : registerServer(request, env)
     if (url.pathname.startsWith('/api/')) return api(request, env, url)
     if (url.pathname === '/control/connect') return connectServer(request, env, url)
+    if (url.pathname === '/control/tunnel/targets') return tunnelTargets(request, env)
+    if (url.pathname === '/control/tunnel/connect') return connectTunnel(request, env, url)
+    if (url.pathname === '/control/tunnel/target') return connectTunnelTarget(request, env, url)
     if (url.pathname.startsWith('/blobs/')) return consumeBlob(request, env, ctx, url)
     return serveConsole(request, env)
   },
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil(runScheduledMaintenance(env))
   },
+}
+
+async function authenticatedControlServer(request: Request, env: Env): Promise<{ id: string; workspace_id: string } | Response> {
+  const serverId = new URL(request.url).searchParams.get('serverId')
+  const token = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '')
+  if (!serverId || !token) return json({ error: 'Control server credentials are required' }, 401)
+  const server = await env.DB.prepare('SELECT id, workspace_id FROM servers WHERE id = ? AND token_hash = ? AND status != ?').bind(serverId, await hashControlToken(token), 'revoked').first<{ id: string; workspace_id: string }>()
+  return server ?? json({ error: 'Invalid control token' }, 401)
+}
+
+async function tunnelTargets(request: Request, env: Env): Promise<Response> {
+  if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405)
+  const source = await authenticatedControlServer(request, env)
+  if (source instanceof Response) return source
+  const result = await env.DB.prepare('SELECT id, name, status FROM servers WHERE workspace_id = ? AND id != ? AND status != ? ORDER BY name COLLATE NOCASE, id').bind(source.workspace_id, source.id, 'revoked').all<{ id: string; name: string; status: string }>()
+  return json({ results: await withLiveServerStatus(env, result.results, request.url) })
+}
+
+async function connectTunnel(request: Request, env: Env, url: URL): Promise<Response> {
+  if (request.method !== 'GET' || request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') return new Response('WebSocket upgrade required', { status: 426 })
+  const source = await authenticatedControlServer(request, env)
+  if (source instanceof Response) return source
+  const targetId = url.searchParams.get('targetServerId') ?? ''
+  const targetHost = url.searchParams.get('targetHost') ?? ''
+  const targetPort = Number(url.searchParams.get('targetPort'))
+  const protocol = url.searchParams.get('protocol') ?? 'tcp'
+  if (!targetId || targetId === source.id || !targetHost || targetHost.length > 253 || /[\s/\\?#]/.test(targetHost) || !Number.isInteger(targetPort) || targetPort < 1 || targetPort > 65535 || !['tcp', 'http', 'websocket'].includes(protocol)) return json({ error: 'Invalid tunnel target' }, 400)
+  const target = await env.DB.prepare('SELECT id FROM servers WHERE id = ? AND workspace_id = ? AND status != ?').bind(targetId, source.workspace_id, 'revoked').first<{ id: string }>()
+  if (!target) return json({ error: 'Target plugin server not found' }, 404)
+  if (!await pluginServerOnline(env, target.id, request.url)) return json({ error: 'Target plugin server is offline' }, 409)
+
+  const sessionId = crypto.randomUUID()
+  const session = env.TUNNEL_SESSION.get(env.TUNNEL_SESSION.idFromName(sessionId))
+  const sessionUrl = new URL('/source', request.url)
+  sessionUrl.searchParams.set('sessionId', sessionId)
+  sessionUrl.searchParams.set('sourceServerId', source.id)
+  sessionUrl.searchParams.set('targetServerId', target.id)
+  const response = await session.fetch(new Request(sessionUrl, request))
+  if (response.status !== 101) return response
+  const targetBridge = env.PLUGIN_BRIDGE.get(env.PLUGIN_BRIDGE.idFromName(target.id))
+  const command = await targetBridge.fetch(new Request(new URL('/tunnel/open', request.url), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-plugmesh-server-id': target.id },
+    body: JSON.stringify({ sessionId, sourceServerId: source.id, targetHost, targetPort, protocol }),
+  }))
+  if (!command.ok) {
+    response.webSocket?.close(1011, 'Target server could not start tunnel')
+    return new Response('Target plugin server could not start tunnel', { status: 503 })
+  }
+  return response
+}
+
+
+async function connectTunnelTarget(request: Request, env: Env, url: URL): Promise<Response> {
+  if (request.method !== 'GET' || request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') return new Response('WebSocket upgrade required', { status: 426 })
+  const target = await authenticatedControlServer(request, env)
+  if (target instanceof Response) return target
+  const sessionId = url.searchParams.get('sessionId') ?? ''
+  if (!sessionId) return json({ error: 'Tunnel session is required' }, 400)
+  const session = env.TUNNEL_SESSION.get(env.TUNNEL_SESSION.idFromName(sessionId))
+  const targetUrl = new URL('/target', request.url)
+  targetUrl.searchParams.set('sessionId', sessionId)
+  targetUrl.searchParams.set('serverId', target.id)
+  return session.fetch(new Request(targetUrl, request))
 }
 
 async function api(request: Request, env: Env, url: URL): Promise<Response> {
@@ -79,15 +159,25 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
 
   if (request.method === 'GET' && url.pathname === '/api/overview') {
     const [servers, plugins, domains] = await Promise.all([
-      env.DB.prepare('SELECT COUNT(*) AS count FROM servers WHERE workspace_id = ? AND status = ?').bind(workspace.id, 'online').first<{ count: number }>(),
+      env.DB.prepare('SELECT id, status FROM servers WHERE workspace_id = ? AND status != ?').bind(workspace.id, 'revoked').all<{ id: string; status: string }>(),
       env.DB.prepare('SELECT COUNT(*) AS count FROM plugin_instances WHERE workspace_id = ? AND state = ?').bind(workspace.id, 'enabled').first<{ count: number }>(),
       env.DB.prepare('SELECT COUNT(*) AS count FROM domains WHERE workspace_id = ?').bind(workspace.id).first<{ count: number }>(),
     ])
-    return json({ onlineServers: servers?.count ?? 0, enabledPlugins: plugins?.count ?? 0, domains: domains?.count ?? 0 })
+    const onlineServers = await withLiveServerStatus(env, servers.results, request.url)
+    return json({ onlineServers: onlineServers.filter((server) => server.status === 'online').length, enabledPlugins: plugins?.count ?? 0, domains: domains?.count ?? 0 })
   }
-  if (request.method === 'GET' && url.pathname === '/api/servers') return json(await env.DB.prepare('SELECT id, name, status, last_seen_at, created_at FROM servers WHERE workspace_id = ? ORDER BY created_at DESC').bind(workspace.id).all())
-  if (request.method === 'GET' && url.pathname === '/api/plugins') return json(await env.DB.prepare('SELECT plugin_instances.id, plugin_instances.plugin_id, plugin_instances.name, plugin_instances.version, plugin_instances.state, plugin_instances.desired_state, plugin_instances.server_id, servers.name AS server_name, domains.hostname AS domain_hostname, plugin_instances.manifest_json, plugin_instances.updated_at FROM plugin_instances JOIN servers ON servers.id = plugin_instances.server_id LEFT JOIN domains ON domains.plugin_instance_id = plugin_instances.id WHERE plugin_instances.workspace_id = ? ORDER BY plugin_instances.updated_at DESC').bind(workspace.id).all())
-  if (request.method === 'GET' && url.pathname === '/api/domains') return json(await env.DB.prepare('SELECT domains.id, domains.hostname, domains.status, domains.plugin_instance_id, plugin_instances.name AS plugin_name, domains.created_at FROM domains JOIN plugin_instances ON plugin_instances.id = domains.plugin_instance_id WHERE domains.workspace_id = ? ORDER BY domains.created_at DESC').bind(workspace.id).all())
+  if (request.method === 'GET' && url.pathname === '/api/servers') {
+    const rows = await env.DB.prepare('SELECT id, name, status, last_seen_at, created_at FROM servers WHERE workspace_id = ? ORDER BY created_at DESC').bind(workspace.id).all<{ id: string; name: string; status: string; last_seen_at: string | null; created_at: string }>()
+    return json({ ...rows, results: await withLiveServerStatus(env, rows.results, request.url) })
+  }
+  if (request.method === 'GET' && url.pathname === '/api/plugins') {
+    const rows = await env.DB.prepare('SELECT plugin_instances.id, plugin_instances.plugin_id, plugin_instances.name, plugin_instances.version, plugin_instances.state, plugin_instances.desired_state, plugin_instances.server_id, servers.name AS server_name, servers.status AS server_status, domains.hostname AS domain_hostname, plugin_instances.manifest_json, plugin_instances.updated_at FROM plugin_instances JOIN servers ON servers.id = plugin_instances.server_id LEFT JOIN domains ON domains.plugin_instance_id = plugin_instances.id WHERE plugin_instances.workspace_id = ? ORDER BY plugin_instances.updated_at DESC').bind(workspace.id).all<{ server_id: string; server_status: string }>()
+    return json({ ...rows, results: await Promise.all(rows.results.map(async (row) => ({ ...row, server_status: await pluginServerOnline(env, row.server_id, request.url) ? 'online' : 'offline' }))) })
+  }
+  if (request.method === 'GET' && url.pathname === '/api/domains') {
+    const rows = await env.DB.prepare('SELECT domains.id, domains.hostname, domains.status, domains.plugin_instance_id, plugin_instances.server_id, plugin_instances.state AS plugin_state, plugin_instances.name AS plugin_name, domains.created_at FROM domains JOIN plugin_instances ON plugin_instances.id = domains.plugin_instance_id WHERE domains.workspace_id = ?').bind(workspace.id).all<{ server_id: string; plugin_state: string }>()
+    return json({ ...rows, results: await Promise.all(rows.results.map(async (row) => ({ ...row, status: row.plugin_state === 'enabled' && await pluginServerOnline(env, row.server_id, request.url) ? 'online' : 'offline' }))) })
+  }
   if (request.method === 'GET' && url.pathname === '/api/audit') {
     const since = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString()
     if (user.role === 'super_admin') {
@@ -106,9 +196,9 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   const serverDetail = url.pathname.match(/^\/api\/servers\/([^/]+)$/)
   const serverSync = url.pathname.match(/^\/api\/servers\/([^/]+)\/sync$/)
   if (request.method === 'POST' && serverSync) return syncServer(request, env, user, workspace, decodeURIComponent(serverSync[1]))
-  if (request.method === 'GET' && serverDetail) return serverDetailsApi(env, workspace, decodeURIComponent(serverDetail[1]))
+  if (request.method === 'GET' && serverDetail) return serverDetailsApi(env, workspace, decodeURIComponent(serverDetail[1]), request.url)
   const pluginDetail = url.pathname.match(/^\/api\/plugins\/([^/]+)$/)
-  if (request.method === 'GET' && pluginDetail) return pluginDetailsApi(env, workspace, decodeURIComponent(pluginDetail[1]))
+  if (request.method === 'GET' && pluginDetail) return pluginDetailsApi(env, workspace, decodeURIComponent(pluginDetail[1]), request.url)
   const pluginAction = url.pathname.match(/^\/api\/plugins\/([^/]+)\/(load|unload|enable|disable|reload|health)$/)
   if (request.method === 'POST' && pluginAction) return commandPlugin(request, env, user, workspace, decodeURIComponent(pluginAction[1]), pluginAction[2] as 'load' | 'unload' | 'enable' | 'disable' | 'reload' | 'health')
   if (request.method === 'POST' && url.pathname === '/api/domains') return assignDomain(request, env, user, workspace)
@@ -214,32 +304,32 @@ async function workspaceApi(request: Request, env: Env, user: AuthenticatedUser,
   return json({ id: access.workspace.id, deleted: true })
 }
 
-async function serverDetailsApi(env: Env, workspace: Workspace, serverId: string): Promise<Response> {
+async function serverDetailsApi(env: Env, workspace: Workspace, serverId: string, baseUrl: string): Promise<Response> {
   const server = await env.DB.prepare('SELECT id, name, status, last_seen_at, created_at FROM servers WHERE id = ? AND workspace_id = ?').bind(serverId, workspace.id).first()
   if (!server) return json({ error: 'Plugin server not found' }, 404)
   const [plugins, errors] = await Promise.all([
     env.DB.prepare('SELECT plugin_instances.id, plugin_instances.plugin_id, plugin_instances.name, plugin_instances.version, plugin_instances.state, plugin_instances.desired_state, plugin_instances.server_id, servers.name AS server_name, plugin_instances.manifest_json, plugin_instances.updated_at, domains.hostname AS domain_hostname FROM plugin_instances JOIN servers ON servers.id = plugin_instances.server_id LEFT JOIN domains ON domains.plugin_instance_id = plugin_instances.id WHERE plugin_instances.server_id = ? AND plugin_instances.workspace_id = ? ORDER BY plugin_instances.updated_at DESC').bind(serverId, workspace.id).all(),
     env.DB.prepare('SELECT request_logs.id, request_logs.hostname, request_logs.method, request_logs.path, request_logs.status, request_logs.duration_ms, request_logs.error, request_logs.created_at FROM request_logs JOIN plugin_instances ON plugin_instances.id = request_logs.plugin_instance_id WHERE request_logs.workspace_id = ? AND plugin_instances.server_id = ? AND request_logs.status >= 500 ORDER BY request_logs.created_at DESC LIMIT 20').bind(workspace.id, serverId).all(),
   ])
-  return json({ server, plugins: plugins.results, recentErrors: errors.results })
+  return json({ server: { ...server, status: server.status === 'revoked' ? 'revoked' : await pluginServerOnline(env, serverId, baseUrl) ? 'online' : 'offline' }, plugins: plugins.results, recentErrors: errors.results })
 }
 
 export async function syncServer(request: Request, env: Env, user: AuthenticatedUser, workspace: Workspace, serverId: string): Promise<Response> {
   if (await isMaintenanceMode(env)) return json({ error: 'Platform is in maintenance mode' }, 503)
-  const server = await env.DB.prepare('SELECT id, status FROM servers WHERE id = ? AND workspace_id = ?').bind(serverId, workspace.id).first<{ id: string; status: string }>()
+  const server = await env.DB.prepare('SELECT id FROM servers WHERE id = ? AND workspace_id = ? AND status != ?').bind(serverId, workspace.id, 'revoked').first<{ id: string }>()
   if (!server) return json({ error: 'Plugin server not found' }, 404)
-  if (server.status !== 'online') return json({ error: 'Plugin server is offline' }, 409)
+  if (!await pluginServerOnline(env, serverId, request.url)) return json({ error: 'Plugin server is offline' }, 409)
   const bridge = env.PLUGIN_BRIDGE.get(env.PLUGIN_BRIDGE.idFromName(serverId))
   const response = await bridge.fetch(new Request(new URL('/command', request.url), { method: 'POST', headers: { 'content-type': 'application/json', 'x-plugmesh-server-id': serverId }, body: JSON.stringify({ type: 'server.sync' }) }))
   if (response.ok) await recordAudit(env, workspace.id, user.id, 'server.manifest_sync.requested', { serverId })
   return response
 }
 
-async function pluginDetailsApi(env: Env, workspace: Workspace, pluginInstanceId: string): Promise<Response> {
-  const plugin = await env.DB.prepare('SELECT plugin_instances.id, plugin_instances.plugin_id, plugin_instances.name, plugin_instances.version, plugin_instances.state, plugin_instances.desired_state, plugin_instances.server_id, plugin_instances.manifest_json, plugin_instances.created_at, plugin_instances.updated_at, servers.name AS server_name, servers.status AS server_status, domains.id AS domain_id, domains.hostname AS domain_hostname, domains.status AS domain_status FROM plugin_instances JOIN servers ON servers.id = plugin_instances.server_id LEFT JOIN domains ON domains.plugin_instance_id = plugin_instances.id WHERE plugin_instances.id = ? AND plugin_instances.workspace_id = ?').bind(pluginInstanceId, workspace.id).first()
+async function pluginDetailsApi(env: Env, workspace: Workspace, pluginInstanceId: string, baseUrl: string): Promise<Response> {
+  const plugin = await env.DB.prepare('SELECT plugin_instances.id, plugin_instances.plugin_id, plugin_instances.name, plugin_instances.version, plugin_instances.state, plugin_instances.desired_state, plugin_instances.server_id, plugin_instances.manifest_json, plugin_instances.created_at, plugin_instances.updated_at, servers.name AS server_name, servers.status AS server_status, domains.id AS domain_id, domains.hostname AS domain_hostname, domains.status AS domain_status FROM plugin_instances JOIN servers ON servers.id = plugin_instances.server_id LEFT JOIN domains ON domains.plugin_instance_id = plugin_instances.id WHERE plugin_instances.id = ? AND plugin_instances.workspace_id = ?').bind(pluginInstanceId, workspace.id).first<{ server_id: string; server_status: string }>()
   if (!plugin) return json({ error: 'Plugin instance not found' }, 404)
   const recentErrors = await env.DB.prepare('SELECT id, hostname, method, path, status, duration_ms, error, created_at FROM request_logs WHERE workspace_id = ? AND plugin_instance_id = ? AND status >= 500 ORDER BY created_at DESC LIMIT 20').bind(workspace.id, pluginInstanceId).all()
-  return json({ plugin, recentErrors: recentErrors.results })
+  return json({ plugin: { ...plugin, server_status: plugin.server_status === 'revoked' ? 'revoked' : await pluginServerOnline(env, plugin.server_id, baseUrl) ? 'online' : 'offline' }, recentErrors: recentErrors.results })
 }
 
 async function createBlob(request: Request, env: Env): Promise<Response> {
@@ -498,8 +588,8 @@ async function commandPlugin(request: Request, env: Env, user: AuthenticatedUser
   if (await isMaintenanceMode(env)) return json({ error: 'Platform is in maintenance mode' }, 503)
   const plugin = await env.DB.prepare('SELECT plugin_instances.id, plugin_instances.plugin_id, plugin_instances.server_id, plugin_instances.state, plugin_instances.desired_state, domains.hostname AS domain_hostname FROM plugin_instances LEFT JOIN domains ON domains.plugin_instance_id = plugin_instances.id WHERE plugin_instances.id = ? AND plugin_instances.workspace_id = ?').bind(pluginInstanceId, workspace.id).first<{ id: string; plugin_id: string; server_id: string; state: string; desired_state: string; domain_hostname?: string }>()
   if (!plugin) return json({ error: 'Plugin instance not found' }, 404)
-  const server = await env.DB.prepare('SELECT status FROM servers WHERE id = ? AND workspace_id = ?').bind(plugin.server_id, workspace.id).first<{ status: string }>()
-  if (!server || server.status !== 'online') return json({ error: 'Plugin server is offline' }, 409)
+  const server = await env.DB.prepare('SELECT id FROM servers WHERE id = ? AND workspace_id = ? AND status != ?').bind(plugin.server_id, workspace.id, 'revoked').first<{ id: string }>()
+  if (!server || !await pluginServerOnline(env, plugin.server_id, request.url)) return json({ error: 'Plugin server is offline' }, 409)
   const bridge = env.PLUGIN_BRIDGE.get(env.PLUGIN_BRIDGE.idFromName(plugin.server_id))
   const response = await bridge.fetch(new Request(new URL('/command', request.url), { method: 'POST', headers: { 'content-type': 'application/json', 'x-plugmesh-server-id': plugin.server_id }, body: JSON.stringify({ type: `plugin.${action}`, pluginId: plugin.plugin_id }) }))
   if (!response.ok) {
@@ -550,8 +640,8 @@ async function assignDomain(request: Request, env: Env, user: AuthenticatedUser,
   if (plugin.state !== 'enabled') return json({ error: 'Plugin must be enabled before assigning a domain' }, 409)
   const suffix = await pluginDomainSuffix(env)
   const hostname = `${prefix}${suffix}`
-  const server = await env.DB.prepare('SELECT status FROM servers WHERE id = ? AND workspace_id = ?').bind(plugin.server_id, workspace.id).first<{ status: string }>()
-  if (!server || server.status !== 'online') return json({ error: 'Plugin server is offline' }, 409)
+  const server = await env.DB.prepare('SELECT id FROM servers WHERE id = ? AND workspace_id = ? AND status != ?').bind(plugin.server_id, workspace.id, 'revoked').first<{ id: string }>()
+  if (!server || !await pluginServerOnline(env, plugin.server_id, request.url)) return json({ error: 'Plugin server is offline' }, 409)
   const health = await commandPlugin(new Request(new URL(`/api/plugins/${encodeURIComponent(plugin.id)}/health`, request.url), { method: 'POST' }), env, user, workspace, plugin.id, 'health')
   if (!health.ok) return json({ error: 'Plugin health check failed' }, 409)
   try {
@@ -886,12 +976,11 @@ export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser, fetc
     return cloudflareCredentialErrorResponse(error)
   }
   if (!stored) return json({ configured: false, cached: false })
-  // 凭据必须优先于缓存：删除或切换凭据后，旧缓存不能继续伪装成已配置。
-  const cached = await env.DB.prepare('SELECT value_json, expires_at, updated_at FROM usage_cache WHERE key = ? AND expires_at > ?').bind('cloudflare:workers', new Date().toISOString()).first<{ value_json: string; expires_at: string; updated_at: string }>()
-  const cachedResult = cached ? parseCloudflareUsageCache(cached.value_json) : null
-  if (cached && cachedResult) {
-    await enforceCloudflareUsageQuotas(env, cachedResult, cachedResult.limits)
-    return json({ ...cachedResult, cached: true, updatedAt: cached.updated_at })
+  // Analytics 缓存只存在 isolate 内存；它可重建，不应为监控额外读写 D1。
+  const cacheKey = `${stored.credential.accountId}:${stored.updatedAt}`
+  if (cloudflareUsageCache?.key === cacheKey && cloudflareUsageCache.expiresAt > Date.now()) {
+    await enforceCloudflareUsageQuotas(env, cloudflareUsageCache.result, cloudflareUsageCache.result.limits)
+    return json({ ...cloudflareUsageCache.result, cached: true, updatedAt: cloudflareUsageCache.updatedAt })
   }
 
   const { accountId } = stored.credential
@@ -1003,7 +1092,7 @@ export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser, fetc
     ...(resourceAnalyticsAvailable ? { d1, kv, durableObjects } : {}),
   }
   const updatedAt = new Date().toISOString()
-  await env.DB.prepare('INSERT INTO usage_cache (key, value_json, expires_at, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, expires_at = excluded.expires_at, updated_at = excluded.updated_at').bind('cloudflare:workers', JSON.stringify(result), new Date(Date.now() + 5 * 60 * 1000).toISOString(), updatedAt).run()
+  cloudflareUsageCache = { key: cacheKey, expiresAt: Date.now() + 5 * 60 * 1000, updatedAt, result }
   await enforceCloudflareUsageQuotas(env, result, limits)
   return json({ ...result, cached: false, updatedAt })
 }
@@ -1030,55 +1119,7 @@ type CloudflareUsageResult = {
   limits: CloudflareUsageLimits | null
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
-function isNonNegativeNumber(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0
-}
-
-function isCloudflarePlanSummary(value: unknown): value is CloudflarePlanSummary {
-  if (!isRecord(value)) return false
-  return (value.id === null || typeof value.id === 'string')
-    && (value.name === null || typeof value.name === 'string')
-    && typeof value.free === 'boolean'
-    && typeof value.confirmed === 'boolean'
-}
-
-function hasNonNegativeNumbers(value: unknown, keys: readonly string[]): boolean {
-  if (!isRecord(value)) return false
-  return keys.every((key) => isNonNegativeNumber(value[key]))
-}
-
-function isCloudflareUsageLimits(value: unknown): value is CloudflareUsageLimits {
-  if (!isRecord(value)) return false
-  const keys: Array<keyof CloudflareUsageLimits> = ['workerRequests', 'd1RowsRead', 'd1RowsWritten', 'kvRead', 'kvWrite', 'kvDelete', 'kvList', 'doRequests']
-  return keys.every((key) => Number.isSafeInteger(value[key]) && (value[key] as number) > 0)
-}
-
-function parseCloudflareUsageCache(value: string): CloudflareUsageResult | null {
-  try {
-    const result = JSON.parse(value) as unknown
-    if (!isRecord(result) || result.configured !== true || result.accountIdConfigured !== true || result.source !== 'cloudflare_graphql') return null
-    if (!isRecord(result.period) || typeof result.period.start !== 'string' || typeof result.period.end !== 'string') return null
-    if (!isNonNegativeNumber(result.requests)) return null
-    const resourceAnalyticsAvailable = result.resourceAnalyticsAvailable !== false
-    if (resourceAnalyticsAvailable) {
-      if (!hasNonNegativeNumbers(result.d1, ['readQueries', 'writeQueries', 'rowsRead', 'rowsWritten'])) return null
-      if (!hasNonNegativeNumbers(result.kv, ['read', 'write', 'delete', 'list'])) return null
-      if (!hasNonNegativeNumbers(result.durableObjects, ['requests', 'cpuTime', 'storedBytes'])) return null
-    } else if (result.resourceAnalyticsError !== undefined && typeof result.resourceAnalyticsError !== 'string') {
-      return null
-    }
-    if (!isCloudflarePlanSummary(result.plan)) return null
-    if (result.limitSource !== 'cloudflare_subscriptions_free_baseline' && result.limitSource !== 'unavailable') return null
-    if (result.limits !== null && !isCloudflareUsageLimits(result.limits)) return null
-    return result as CloudflareUsageResult
-  } catch {
-    return null
-  }
-}
+let cloudflareUsageCache: { key: string; expiresAt: number; updatedAt: string; result: CloudflareUsageResult } | null = null
 
 async function enforceCloudflareUsageQuotas(env: Env, usage: CloudflareUsageResult, limits: CloudflareUsageLimits | null): Promise<void> {
   if (!limits) return

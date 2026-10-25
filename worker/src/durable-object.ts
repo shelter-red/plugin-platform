@@ -53,9 +53,11 @@ export class PluginBridge {
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url)
+    if (url.pathname === '/status') return Response.json({ online: Boolean(this.serverSocket && this.serverSocket.readyState === WebSocket.OPEN) })
     if (url.pathname === '/connect') return this.connectServer(request)
     if (url.pathname === '/proxy') return this.proxyRequest(request)
     if (url.pathname === '/command') return this.command(request)
+    if (url.pathname === '/tunnel/open') return this.openTunnel(request)
     if (url.pathname === '/websocket') return this.proxyWebSocket(request)
     return new Response('Not found', { status: 404 })
   }
@@ -74,7 +76,6 @@ export class PluginBridge {
     server.addEventListener('close', () => {
       if (this.serverSocket !== server) return
       this.serverSocket = null
-      void this.markServerOffline()
       this.failPendingRequests('Plugin server disconnected', 503)
       this.failPendingCommands('Plugin server disconnected')
       this.closePublicSockets(1011, 'Plugin server disconnected')
@@ -223,6 +224,25 @@ export class PluginBridge {
     return new Response(JSON.stringify({ accepted: true, requestId, state: result.state ?? null, status: result.status ?? null, bodySize: result.bodySize ?? null }), { status: 202, headers: { 'content-type': 'application/json' } })
   }
 
+  private async openTunnel(request: Request): Promise<Response> {
+    if (request.method !== 'POST' || request.headers.get('x-plugmesh-server-id') !== this.serverId) return new Response('Forbidden', { status: 403 })
+    if (!this.serverSocket || this.serverSocket.readyState !== WebSocket.OPEN) return new Response('Plugin server is offline', { status: 503 })
+    const body = await request.json().catch(() => null) as { sessionId?: unknown; sourceServerId?: unknown; targetHost?: unknown; targetPort?: unknown; protocol?: unknown } | null
+    if (!body || typeof body.sessionId !== 'string' || typeof body.sourceServerId !== 'string' || typeof body.targetHost !== 'string' || !Number.isInteger(body.targetPort) || typeof body.protocol !== 'string') return new Response('Invalid tunnel request', { status: 400 })
+    try {
+      this.serverSocket.send(JSON.stringify(makeFrame('tunnel.open', this.serverId, {
+        sessionId: body.sessionId,
+        sourceServerId: body.sourceServerId,
+        targetHost: body.targetHost,
+        targetPort: body.targetPort,
+        protocol: body.protocol,
+      })))
+      return new Response(null, { status: 202 })
+    } catch {
+      return new Response('Tunnel request could not be sent', { status: 502 })
+    }
+  }
+
   private async sendPluginCommand(type: string, pluginId?: string): Promise<{ ok: boolean; state?: string; status?: number; bodySize?: number; error?: string; requestId: string }> {
     const frame = makeFrame(type, this.serverId, {}, pluginId)
     if (!this.serverSocket || this.serverSocket.readyState !== WebSocket.OPEN) return { ok: false, error: 'Plugin server is offline', requestId: frame.requestId }
@@ -302,7 +322,6 @@ export class PluginBridge {
       return
     }
     if (frame.type === 'server.heartbeat') {
-      void this.markServerOnline()
       return
     }
     if (frame.type === 'server.rotate' || frame.type === 'server.revoke') {
@@ -369,7 +388,7 @@ export class PluginBridge {
       const owner = await this.env.DB.prepare('SELECT user_id, workspace_id FROM servers WHERE id = ?').bind(this.serverId).first<{ user_id: string; workspace_id: string }>()
       if (frame.type === 'server.rotate') {
         const accessToken = crypto.randomUUID() + crypto.randomUUID()
-        const updated = await this.env.DB.prepare('UPDATE servers SET token_hash = ?, status = ?, last_seen_at = ? WHERE id = ? AND status != ?').bind(await hashControlToken(accessToken), 'online', new Date().toISOString(), this.serverId, 'revoked').run()
+        const updated = await this.env.DB.prepare('UPDATE servers SET token_hash = ? WHERE id = ? AND status != ?').bind(await hashControlToken(accessToken), this.serverId, 'revoked').run()
         if ((updated.meta.changes ?? 0) !== 1) {
           this.sendServerActionError(frame.requestId, 'Server binding is revoked or unavailable')
           return
@@ -664,33 +683,6 @@ export class PluginBridge {
     await this.env.BLOB_BUCKET.delete(upload.key).catch(() => undefined)
   }
 
-  private async markServerOnline(): Promise<boolean> {
-    if (!this.serverId) return false
-    const updated = await this.env.DB.prepare('UPDATE servers SET status = ?, last_seen_at = ? WHERE id = ? AND status != ?').bind('online', new Date().toISOString(), this.serverId, 'revoked').run()
-    if ((updated.meta.changes ?? 0) === 1) return true
-    this.serverSocket?.close(1008, 'Server binding revoked')
-    return false
-  }
-
-  private async markServerOffline() {
-    if (!this.serverId) return
-    const disconnectedAt = new Date().toISOString()
-    const server = await this.env.DB.prepare('UPDATE servers SET status = ?, last_seen_at = ? WHERE id = ? AND status != ? AND (last_seen_at IS NULL OR last_seen_at <= ?)').bind('offline', disconnectedAt, this.serverId, 'revoked', disconnectedAt).run()
-    if ((server.meta.changes ?? 0) !== 1) return
-    await this.env.DB.batch([
-      this.env.DB.prepare(`
-        UPDATE plugin_instances SET state = ?, updated_at = ?
-        WHERE server_id = ? AND state != ?
-          AND EXISTS (SELECT 1 FROM servers WHERE servers.id = ? AND servers.status = ? AND servers.last_seen_at = ?)
-      `).bind('server_offline', new Date().toISOString(), this.serverId, 'server_offline', this.serverId, 'offline', disconnectedAt),
-      this.env.DB.prepare(`
-        UPDATE domains SET status = ?
-        WHERE plugin_instance_id IN (SELECT id FROM plugin_instances WHERE server_id = ?)
-          AND EXISTS (SELECT 1 FROM servers WHERE servers.id = ? AND servers.status = ? AND servers.last_seen_at = ?)
-      `).bind('offline', this.serverId, this.serverId, 'offline', disconnectedAt),
-    ])
-  }
-
   private async completeServerSync(payload: Record<string, unknown>, requestId: string) {
     let result: { ok: boolean; error?: string }
     try {
@@ -706,7 +698,7 @@ export class PluginBridge {
   }
 
   private async registerServer(payload: Record<string, unknown>): Promise<{ ok: boolean; error?: string }> {
-    if (!await this.markServerOnline()) return { ok: false, error: 'Server binding is revoked or unavailable' }
+    if (!await this.validateServerBinding()) return { ok: false, error: 'Server binding is revoked or unavailable' }
     const server = await this.env.DB.prepare('SELECT user_id, workspace_id FROM servers WHERE id = ? AND status != ?').bind(this.serverId, 'revoked').first<{ user_id: string; workspace_id: string }>()
     if (!server) return { ok: false, error: 'Plugin server is not registered' }
     if (!Array.isArray(payload.manifests)) {
@@ -741,6 +733,13 @@ export class PluginBridge {
     return { ok: true }
   }
 
+  private async validateServerBinding(): Promise<boolean> {
+    const server = await this.env.DB.prepare('SELECT id FROM servers WHERE id = ? AND status != ?').bind(this.serverId, 'revoked').first<{ id: string }>()
+    if (server) return true
+    this.serverSocket?.close(1008, 'Server binding revoked')
+    return false
+  }
+
   private async rejectServerRegistration(message: string): Promise<void> {
     const socket = this.serverSocket
     if (!socket || socket.readyState !== WebSocket.OPEN) return
@@ -749,7 +748,6 @@ export class PluginBridge {
     } catch {
       // The close path still marks the server offline when sending fails.
     }
-    await this.markServerOffline()
     socket.close(1008, 'Invalid server registration')
   }
 }
