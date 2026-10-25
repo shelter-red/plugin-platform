@@ -75,9 +75,9 @@ cd native-server/build && ctest --output-on-failure
 | 部署方式 | 必填 | 可选 |
 | --- | --- | --- |
 | Cloudflare 部署按钮 | Cloudflare 账号授权 | 无 |
-| 本地一条命令 | `CLOUDFLARE_API_TOKEN`（仅供 Wrangler 部署） | `CLOUDFLARE_ACCOUNT_ID`（仅多账号） |
+| 本地一条命令 | `CLOUDFLARE_API_TOKEN`，或已登录的 Wrangler OAuth | `CLOUDFLARE_ACCOUNT_ID`（仅多账号） |
 
-本地令牌至少需要 Workers Scripts: Edit、D1: Edit、Workers R2 Storage: Edit。
+API Token 至少需要 Workers Scripts: Edit、D1: Edit、Workers R2 Storage: Edit；也可以先执行 `npx wrangler login` 使用 OAuth。
 
 ### 方式一：Cloudflare 部署按钮
 
@@ -98,7 +98,9 @@ cd native-server/build && ctest --output-on-failure
 
 ```bash
 npm ci
+# 二选一：
 export CLOUDFLARE_API_TOKEN=...
+# 或使用已登录的 Wrangler OAuth：npx wrangler login
 # 仅账号多于一个时设置
 export CLOUDFLARE_ACCOUNT_ID=...
 npm run deploy
@@ -113,7 +115,7 @@ npm run deploy
 5. 首次缺失时生成 `SESSION_SECRET`，已有值不轮换；
 6. 发布 Worker。
 
-部署统一由 Cloudflare Workers Builds 触发（`WORKERS_CI=1` 时脚本自动进入托管模式），仓库不再保留 `deploy.yml` 部署工作流；本地或自有 CI 仍可直接执行 `npm run deploy`，只需配置 `CLOUDFLARE_API_TOKEN`，多账号环境再设置 `CLOUDFLARE_ACCOUNT_ID`。
+部署统一由 Cloudflare Workers Builds 触发（`WORKERS_CI=1` 时脚本自动进入托管模式），仓库不再保留 `deploy.yml` 部署工作流；本地或自有 CI 可使用 `CLOUDFLARE_API_TOKEN`，也可复用 Wrangler OAuth 登录，多账号环境再设置 `CLOUDFLARE_ACCOUNT_ID`。
 
 ### 部署故障排查：接口报 `no such table`
 

@@ -24,7 +24,7 @@ usage() {
                 按 Cloudflare Workers Builds 方式部署；WORKERS_CI=1 时自动启用
   -h, --help    显示本帮助
 
-基础配置（真实部署必填）：
+基础配置（真实部署时需要 API Token，或使用已登录的 Wrangler OAuth）：
   CLOUDFLARE_API_TOKEN    Cloudflare API Token，需 Workers Scripts、D1、R2 编辑权限
   CLOUDFLARE_ACCOUNT_ID   可选；账号多于一个时填写
 
@@ -126,10 +126,13 @@ if [[ $CLOUDFLARE_BUILD -eq 1 ]]; then
     PROVISION_ON_DEPLOY=1
   fi
 else
-  [[ -n "${CLOUDFLARE_API_TOKEN:-}" ]] || fail "缺少 CLOUDFLARE_API_TOKEN。真实部署只需这一项基础凭据，请先按 README 创建 API Token。"
-
   echo "==> 验证 Cloudflare 凭据"
-  wrangler whoami >/dev/null || fail "Cloudflare 凭据无效，或账号不唯一；请检查 CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID"
+  if [[ -n "${CLOUDFLARE_API_TOKEN:-}" ]]; then
+    wrangler whoami >/dev/null || fail "Cloudflare API Token 无效，或账号不唯一；请检查 CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID"
+  else
+    echo "    未设置 CLOUDFLARE_API_TOKEN，使用 Wrangler OAuth 登录"
+    wrangler whoami >/dev/null || fail "未找到有效的 Cloudflare API Token 或 Wrangler OAuth 登录"
+  fi
 
   echo "==> 准备 D1 数据库 $DB_NAME"
   database_id=$(read_database_id)
