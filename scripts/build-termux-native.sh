@@ -88,6 +88,8 @@ Run the server from this directory:
 
 The package uses Termux's native OpenSSL and zlib libraries. It is a
 command-line Linux-like Termux build, not an APK and not an Android app.
+The Native UI is optional and is included only when --include-ui is used
+with an existing native-ui/dist build.
 Keep plugmesh-server, plugmesh-plugin-host, and the plugins directory together.
 EOF
 

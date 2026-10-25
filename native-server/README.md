@@ -122,8 +122,10 @@ Android 首版使用 Termux 的命令行环境，不提供 APK，也不需要安
 ```bash
 pkg update
 pkg install clang cmake make openssl zlib tar coreutils
-bash scripts/build-termux-native.sh --include-ui
+bash scripts/build-termux-native.sh
 ```
+
+如需把已构建的 Native UI 一并放入包内，再安装 Node.js 并先执行 `npm run native-ui:build`，然后运行 `bash scripts/build-termux-native.sh --include-ui`。
 
 脚本不修改 `/etc/apt`，不下载或编译 x86_64 OpenSSL，也不执行 glibc ABI 检查。它使用 `$PREFIX` 下的 Android/Termux 原生库，生成 `dist/plugmesh-server-termux.tar.gz` 和 `dist/SHA256SUMS`。解压后直接通过命令行启动：
 

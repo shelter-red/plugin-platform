@@ -11,6 +11,7 @@ for required in \
   'OPENSSL_ROOT_DIR="$PREFIX"' \
   'Android Termux' \
   'TERMUX-README.txt' \
+  'Native UI is optional' \
   'tar -C "$dist_dir" -czf'; do
   grep -Fq "$required" <<<"$read_script" || { echo "missing Termux build contract: $required" >&2; exit 1; }
 done
