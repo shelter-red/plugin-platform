@@ -220,6 +220,7 @@ export class PluginBridge {
   }
 
   private async command(request: Request): Promise<Response> {
+    if (request.method !== 'POST' || request.headers.get('x-plugmesh-server-id') !== this.serverId) return new Response('Forbidden', { status: 403 })
     if (!this.serverSocket || this.serverSocket.readyState !== WebSocket.OPEN) return new Response('Plugin server is offline', { status: 503 })
     const body = await request.json().catch(() => null) as { type?: string; pluginId?: string } | null
     if (!body?.type || (!body.type.startsWith('plugin.') && body.type !== 'server.sync')) return new Response('Invalid command', { status: 400 })

@@ -79,9 +79,17 @@ state.serverSocket = socket
 state.serverId = 'server-1'
 
 let commandSettled = false
-const command = bridge.fetch(new Request('https://bridge.test/command', {
+
+const unauthorized = await bridge.fetch(new Request('https://bridge.test/command', {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ type: 'server.sync' }),
+}))
+assert.equal(unauthorized.status, 403)
+
+const command = bridge.fetch(new Request('https://bridge.test/command', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', 'x-plugmesh-server-id': 'server-1' },
   body: JSON.stringify({ type: 'server.sync' }),
 })).finally(() => { commandSettled = true })
 
