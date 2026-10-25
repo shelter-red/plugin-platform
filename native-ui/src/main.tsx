@@ -290,9 +290,25 @@ function App() {
     }
   }, [mappingForm.targetServerId])
 
-  const prepareRemoteMapping = (target: MappingTarget, proxy: RemotePortMapping) => {
-    setMappingForm((current) => ({ ...current, name: `${target.name}-${proxy.name}`, protocol: proxy.protocol, targetServerId: target.id, targetHost: proxy.targetHost, targetPort: String(proxy.targetPort), targetPassword: '', enabled: true }))
-    setMessage({ kind: 'success', text: t('mappings.proxyPrepared', { name: proxy.name }) })
+  const mapRemoteProxy = async (target: MappingTarget, proxy: RemotePortMapping) => {
+    if (mappingBusy) return
+    const usedPorts = new Set(mappings.map((mapping) => mapping.listenPort))
+    const listenPort = Array.from({ length: 1000 }, (_, index) => 30000 + index).find((port) => !usedPorts.has(port))
+    if (!listenPort) {
+      setMessage({ kind: 'error', text: t('mappings.noLocalPort') })
+      return
+    }
+    const name = `${target.name}-${proxy.name}`.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64) || `proxy-${proxy.targetPort}`
+    setMappingBusy(true)
+    try {
+      await request('/api/mappings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, protocol: proxy.protocol, listenPort, targetServerId: target.id, targetHost: proxy.targetHost, targetPort: proxy.targetPort, targetPassword: '', enabled: true }) })
+      await refresh(true)
+      setMessage({ kind: 'success', text: t('mappings.proxyMapped', { name, port: listenPort }) })
+    } catch (cause) {
+      setMessage({ kind: 'error', text: errorMessage(cause, 'mappings.proxyMapFailed') })
+    } finally {
+      setMappingBusy(false)
+    }
   }
 
   const authorizeMappingTarget = async (target: MappingTarget) => {
@@ -628,7 +644,7 @@ function App() {
 
           <section id="mappings" className="section-block">
             <div className="section-heading"><div><span className="section-index">{t('mappings.index')}</span><h2>{t('mappings.title')}</h2></div><button className="button secondary with-icon" onClick={() => void refreshMappingTargets()} disabled={mappingTargetsLoading}><RefreshCw size={14} className={mappingTargetsLoading ? 'spin' : ''} />{t('mappings.refreshTargets')}</button></div>
-                         {mappingTargets.length > 0 && <div className="mapping-target-list"><div className="mapping-target-list-heading"><strong>{t('mappings.targetTableTitle')}</strong><span>{t('mappings.targetTableBody')}</span></div>{mappingTargets.map((target) => <div className="mapping-target-row" key={target.id}><div className="mapping-target-summary"><strong>{target.name}</strong><span className={`status-badge ${target.status === 'online' ? 'positive' : 'warning'}`}>{target.status}</span><span>{t('mappings.remotePlugins', { count: target.plugins.length })} · {t('mappings.remoteProxies', { count: target.portMappings.length })}</span></div><label><span className="sr-only">{t('mappings.targetPassword')}</span><input type="password" autoComplete="new-password" placeholder={t('mappings.targetPasswordPlaceholder')} value={mappingTargetPasswords[target.id] ?? ''} onChange={(event) => setMappingTargetPasswords((current) => ({ ...current, [target.id]: event.target.value }))} /></label><button className="button secondary with-icon" type="button" onClick={() => void authorizeMappingTarget(target)} disabled={mappingTargetAuthBusy !== null || target.status !== 'online'}>{mappingTargetAuthBusy === target.id ? <LoaderCircle size={14} className="spin" /> : <KeyRound size={14} />}{t('mappings.authorizeTarget')}</button>{(target.plugins.length > 0 || target.portMappings.length > 0) && <div className="mapping-target-details">{target.plugins.map((plugin) => <span className="mapping-target-chip" key={plugin.id}><FileCode2 size={12} />{plugin.name}{plugin.capabilities.http ? ` · ${plugin.domain ?? t('mappings.httpPlugin')}` : ''}</span>)}{target.portMappings.filter((proxy) => proxy.enabled && proxy.protocol !== 'http').map((proxy) => <button className="mapping-target-proxy" key={proxy.name} type="button" onClick={() => prepareRemoteMapping(target, proxy)}><Network size={12} />{proxy.name} · {proxy.protocol.toUpperCase()}:{proxy.targetPort} · {t('mappings.mapProxy')}</button>)}</div>}</div>)}</div>}
+                         {mappingTargets.length > 0 && <div className="mapping-target-list"><div className="mapping-target-list-heading"><strong>{t('mappings.targetTableTitle')}</strong><span>{t('mappings.targetTableBody')}</span></div>{mappingTargets.map((target) => <div className="mapping-target-row" key={target.id}><div className="mapping-target-summary"><strong>{target.name}</strong><span className={`status-badge ${target.status === 'online' ? 'positive' : 'warning'}`}>{target.status}</span><span>{t('mappings.remotePlugins', { count: target.plugins.length })} · {t('mappings.remoteProxies', { count: target.portMappings.length })}</span></div><label><span className="sr-only">{t('mappings.targetPassword')}</span><input type="password" autoComplete="new-password" placeholder={t('mappings.targetPasswordPlaceholder')} value={mappingTargetPasswords[target.id] ?? ''} onChange={(event) => setMappingTargetPasswords((current) => ({ ...current, [target.id]: event.target.value }))} /></label><button className="button secondary with-icon" type="button" onClick={() => void authorizeMappingTarget(target)} disabled={mappingTargetAuthBusy !== null || target.status !== 'online'}>{mappingTargetAuthBusy === target.id ? <LoaderCircle size={14} className="spin" /> : <KeyRound size={14} />}{t('mappings.authorizeTarget')}</button>{(target.plugins.length > 0 || target.portMappings.length > 0) && <div className="mapping-target-details">{target.plugins.map((plugin) => <span className="mapping-target-chip" key={plugin.id}><FileCode2 size={12} />{plugin.name}{plugin.capabilities.http ? ` · ${plugin.domain ?? t('mappings.httpPlugin')}` : ''}</span>)}{target.portMappings.filter((proxy) => proxy.enabled && proxy.protocol !== 'http').map((proxy) => <button className="mapping-target-proxy" key={proxy.name} type="button" onClick={() => void mapRemoteProxy(target, proxy)} disabled={mappingBusy || mappingTargetAuthBusy !== null}><Network size={12} />{proxy.name} · {proxy.protocol.toUpperCase()}:{proxy.targetPort} · {t('mappings.mapProxy')}</button>)}</div>}</div>)}</div>}
              <form className="mapping-form" onSubmit={(event) => void saveMapping(event)}>
               <label><span>{t('mappings.name')}</span><input required maxLength={64} pattern="[A-Za-z0-9_-]+" value={mappingForm.name} onChange={(event) => setMappingForm({ ...mappingForm, name: event.target.value })} /></label>
               <label><span>{t('mappings.protocol')}</span><select value={mappingForm.protocol} onChange={(event) => setMappingForm({ ...mappingForm, protocol: event.target.value })}><option value="tcp">TCP</option><option value="http">HTTP</option><option value="websocket">WebSocket</option></select></label>
