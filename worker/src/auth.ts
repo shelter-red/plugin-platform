@@ -58,17 +58,21 @@ export async function hashPassword(password: string): Promise<{ passwordHash: st
 }
 
 export async function verifyPassword(password: string, passwordHash: string, passwordSalt: string): Promise<boolean> {
-  const parts = passwordHash.split('$')
-  const versioned = parts.length === 3 && parts[0] === PASSWORD_HASH_ALGORITHM
-  const iterations = versioned ? Number(parts[1]) : LEGACY_PASSWORD_ITERATIONS
-  const encodedHash = versioned ? parts[2]! : passwordHash
-  if (!Number.isSafeInteger(iterations) || iterations < 1 || iterations > LEGACY_PASSWORD_ITERATIONS) return false
-  const expected = fromBase64(encodedHash)
-  const actual = fromBase64(await derivePassword(password, fromBase64(passwordSalt), iterations))
-  if (expected.length !== actual.length) return false
-  let difference = 0
-  for (let index = 0; index < expected.length; index += 1) difference |= expected[index]! ^ actual[index]!
-  return difference === 0
+  try {
+    const parts = passwordHash.split('$')
+    const versioned = parts.length === 3 && parts[0] === PASSWORD_HASH_ALGORITHM
+    const iterations = versioned ? Number(parts[1]) : LEGACY_PASSWORD_ITERATIONS
+    const encodedHash = versioned ? parts[2]! : passwordHash
+    if (!Number.isSafeInteger(iterations) || iterations < 1 || iterations > LEGACY_PASSWORD_ITERATIONS) return false
+    const expected = fromBase64(encodedHash)
+    const actual = fromBase64(await derivePassword(password, fromBase64(passwordSalt), iterations))
+    if (expected.length !== actual.length) return false
+    let difference = 0
+    for (let index = 0; index < expected.length; index += 1) difference |= expected[index]! ^ actual[index]!
+    return difference === 0
+  } catch {
+    return false
+  }
 }
 
 export async function getAdminPasswordState(env: Env): Promise<AdminPasswordState> {

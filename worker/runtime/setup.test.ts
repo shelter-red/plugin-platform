@@ -110,6 +110,10 @@ test('仍可校验旧版无前缀的 310000 次 PBKDF2 哈希', async () => {
   expect(await verifyPassword('wrong-password', encode(new Uint8Array(bits)), encode(salt))).toBe(false)
 })
 
+test('损坏的管理员凭据按认证失败处理而不抛异常', async () => {
+  expect(await verifyPassword('password', 'pbkdf2-sha256$100000$not-base64', 'not-base64')).toBe(false)
+})
+
 test('生产已有管理员和默认工作区时可以原子完成初始化', async () => {
   const now = new Date().toISOString()
   await testEnv.DB.batch([
