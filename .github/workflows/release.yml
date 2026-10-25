@@ -218,10 +218,11 @@ jobs:
         run: |
           set -euo pipefail
           docker run --rm \
+            --entrypoint /bin/bash \
             -v "$GITHUB_WORKSPACE:/src" \
             -w /src \
             ghcr.io/termux/package-builder:latest \
-            bash -lc 'export PREFIX=/data/data/com.termux/files/usr; bash scripts/build-termux-native.sh --artifact-type ALL --build-type Release --include-ui'
+            -lc 'export PREFIX=/data/data/com.termux/files/usr; bash scripts/build-termux-native.sh --artifact-type ALL --build-type Release --include-ui'
 
       - name: 上传 Termux 产物
         uses: actions/upload-artifact@v4
