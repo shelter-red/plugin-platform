@@ -1,6 +1,7 @@
 import { SELF } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
 import { CONTROL_TOKEN, DEFAULT_WORKSPACE_ID, hashToken, resetDatabase, seedServer, testEnv } from './helpers'
+import { TunnelSession } from '../src/tunnel-session'
 
 const TARGET_ID = 'server-tunnel-target'
 const TARGET_TOKEN = 'runtime-tunnel-target-token'
@@ -32,6 +33,24 @@ async function messageBytes(data: unknown): Promise<Uint8Array> {
 }
 
 describe('TCP tunnel control and binary data path', () => {
+  it('keeps the short-lived session pairing in Durable Object memory', async () => {
+    const state = {
+      storage: {
+        get: async () => { throw new Error('tunnel session must not read Durable Object storage') },
+        put: async () => { throw new Error('tunnel session must not write Durable Object storage') },
+      },
+    } as unknown as DurableObjectState
+    const tunnel = new TunnelSession(state, {})
+    const source = await tunnel.fetch(new Request('https://console.example.com/source?sessionId=session-memory&targetServerId=target&sourceServerId=source', { headers: { Upgrade: 'websocket' } }))
+    expect(source.status).toBe(101)
+    source.webSocket?.accept()
+    const target = await tunnel.fetch(new Request('https://console.example.com/target?serverId=target&sessionId=session-memory', { headers: { Upgrade: 'websocket' } }))
+    expect(target.status).toBe(101)
+    target.webSocket?.accept()
+    source.webSocket?.close()
+    target.webSocket?.close()
+  })
+
   it('discovers same-workspace servers and relays binary WebSocket frames in both directions', async () => {
     await resetDatabase()
     await seedServer()

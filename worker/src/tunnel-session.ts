@@ -4,13 +4,14 @@ const MAX_TUNNEL_FRAME_BYTES = 64 * 1024
 export class TunnelSession {
   private source: WebSocket | null = null
   private target: WebSocket | null = null
+  private sessionId = ''
   private targetServerId = ''
   private pending: Array<{ side: 'source' | 'target'; data: string | ArrayBuffer }> = []
   private pendingBytes = 0
   private sourceMessages = Promise.resolve()
   private targetMessages = Promise.resolve()
 
-  constructor(private readonly state: DurableObjectState, _env: unknown) {}
+  constructor(_state: DurableObjectState, _env: unknown) {}
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url)
@@ -29,13 +30,9 @@ export class TunnelSession {
     if (side === 'source') {
       if (this.source || this.targetServerId) return new Response('Tunnel session already exists', { status: 409 })
       this.targetServerId = serverId
-      await this.state.storage.put('targetServerId', serverId)
-      await this.state.storage.put('sessionId', sessionId)
+      this.sessionId = sessionId
     } else {
-      const expectedTarget = this.targetServerId || await this.state.storage.get<string>('targetServerId')
-      const expectedSession = await this.state.storage.get<string>('sessionId')
-      if (!expectedTarget || !expectedSession || expectedTarget !== serverId || expectedSession !== sessionId || this.target) return new Response('Tunnel target does not match session', { status: 403 })
-      this.targetServerId = expectedTarget
+      if (!this.targetServerId || !this.sessionId || this.targetServerId !== serverId || this.sessionId !== sessionId || this.target) return new Response('Tunnel target does not match session', { status: 403 })
     }
 
     const pair = new WebSocketPair()
