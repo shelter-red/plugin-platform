@@ -122,8 +122,13 @@ async function saveCredential(accountId: string | null = ACCOUNT_ID): Promise<vo
   expect(response.status).toBe(200)
 }
 
-async function clearUsageCache(): Promise<void> {
-  await testEnv.DB.prepare('DELETE FROM usage_cache WHERE key = ?').bind('cloudflare:workers').run()
+async function rotateUsageCredentialForFreshRead(): Promise<void> {
+  await saveCredential()
+}
+
+async function hasD1UsageCacheTable(): Promise<boolean> {
+  const table = await testEnv.DB.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").bind('usage_cache').first()
+  return Boolean(table)
 }
 
 beforeEach(async () => {
@@ -157,8 +162,7 @@ test('Free subscriptions 提供官方基线，Analytics 合并资源并只在内
   expect(calls[0].path).toBe(`/client/v4/accounts/${ACCOUNT_ID}/subscriptions`)
   expect(calls.every((call) => call.email === CLOUDFLARE_STUB_EMAIL && call.key === CLOUDFLARE_STUB_GLOBAL_API_KEY)).toBe(true)
 
-  const cacheRow = await testEnv.DB.prepare('SELECT key FROM usage_cache WHERE key = ?').bind('cloudflare:workers').first()
-  expect(cacheRow).toBeNull()
+  expect(await hasD1UsageCacheTable()).toBe(false)
 
   const second = await cloudflareUsageApi(testEnv, admin, (async () => { throw new Error('valid cache must not call outbound') }) as typeof fetch)
   expect(second.status).toBe(200)
@@ -224,7 +228,7 @@ test('非 Free 与空/未知 subscriptions 都返回 unavailable，不应用免�
     limits: null,
   })
 
-  await clearUsageCache()
+  await rotateUsageCredentialForFreshRead()
   const emptyCalls: UsageCall[] = []
   const empty = await cloudflareUsageApi(testEnv, admin, usageFetcher(emptyCalls, {
     subscriptions: () => planSubscriptions(null),
@@ -238,15 +242,8 @@ test('非 Free 与空/未知 subscriptions 都返回 unavailable，不应用免�
   })
 })
 
-test('旧缓存缺 plan/limits 时视为 miss 并重新回源', { timeout: 20_000 }, async () => {
+test('用量缓存只保存在内存，不创建 D1 缓存行', { timeout: 20_000 }, async () => {
   await saveCredential()
-  await testEnv.DB.prepare('INSERT INTO usage_cache (key, value_json, expires_at, updated_at) VALUES (?, ?, ?, ?)').bind(
-    'cloudflare:workers',
-    JSON.stringify({ configured: true, requests: 999 }),
-    new Date(Date.now() + 60_000).toISOString(),
-    new Date().toISOString(),
-  ).run()
-
   const calls: UsageCall[] = []
   const response = await cloudflareUsageApi(testEnv, admin, usageFetcher(calls, { graphql: graphqlHandler }))
   expect(response.status).toBe(200)
@@ -258,6 +255,7 @@ test('旧缓存缺 plan/limits 时视为 miss 并重新回源', { timeout: 20_00
     limits: FREE_LIMITS,
   })
   expect(calls).toHaveLength(3)
+  expect(await hasD1UsageCacheTable()).toBe(false)
 })
 
 test('Billing 缺失时仍可刷新用量，凭据无效或 Analytics 缺失仍返回真实 HTTP', { timeout: 20_000 }, async () => {
@@ -275,14 +273,14 @@ test('Billing 缺失时仍可刷新用量，凭据无效或 Analytics 缺失仍�
     limitSource: 'unavailable',
     limits: null,
   })
-  await clearUsageCache()
+  await rotateUsageCredentialForFreshRead()
 
   const subscriptionInvalid = await cloudflareUsageApi(testEnv, admin, usageFetcher([], {
     subscriptions: () => new Response('unauthorized', { status: 401 }),
   }))
   expect(subscriptionInvalid.status).toBe(401)
   expect(await subscriptionInvalid.json()).toMatchObject({ code: 'credential_invalid' })
-  await clearUsageCache()
+  await rotateUsageCredentialForFreshRead()
 
   const analyticsDenied = await cloudflareUsageApi(testEnv, admin, usageFetcher([], {
     graphql: () => new Response('forbidden', { status: 403 }),
@@ -296,8 +294,7 @@ test('Billing 缺失时仍可刷新用量，凭据无效或 Analytics 缺失仍�
   expect(analyticsInvalid.status).toBe(401)
   expect(await analyticsInvalid.json()).toMatchObject({ code: 'credential_invalid', upstreamStatus: 401 })
 
-  const cached = await testEnv.DB.prepare('SELECT key FROM usage_cache WHERE key = ?').bind('cloudflare:workers').first()
-  expect(cached).toBeNull()
+  expect(await hasD1UsageCacheTable()).toBe(false)
   expect((await api('/api/usage/cloudflare', MEMBER_TOKEN)).status).toBe(403)
 })
 
@@ -308,31 +305,24 @@ test('Cloudflare 网络失败返回 502 而不是未捕获异常', { timeout: 20
   expect(await response.json()).toMatchObject({ code: 'cloudflare_upstream_error' })
 })
 
-test('未配置 Cloudflare 凭据时先判空，旧缓存不能伪装已配置且不请求任何 Cloudflare API', { timeout: 20_000 }, async () => {
-  await testEnv.DB.prepare('INSERT INTO usage_cache (key, value_json, expires_at, updated_at) VALUES (?, ?, ?, ?)').bind(
-    'cloudflare:workers',
-    JSON.stringify({ configured: true, requests: 999 }),
-    new Date(Date.now() + 60_000).toISOString(),
-    new Date().toISOString(),
-  ).run()
+test('未配置 Cloudflare 凭据时判空且不请求任何 Cloudflare API', { timeout: 20_000 }, async () => {
   const calls: UsageCall[] = []
   const response = await cloudflareUsageApi(testEnv, admin, usageFetcher(calls, { graphql: graphqlHandler }))
   expect(response.status).toBe(200)
   expect(await response.json()).toEqual({ configured: false, cached: false })
   expect(calls).toHaveLength(0)
+  expect(await hasD1UsageCacheTable()).toBe(false)
 })
 
 test('旧格式 Cloudflare 凭据不读取旧缓存也不发起请求', { timeout: 20_000 }, async () => {
   const legacy = await encryptSecret(testEnv.SESSION_SECRET!, JSON.stringify({ accessToken: 'legacy-access', refreshToken: 'legacy-refresh', accountId: ACCOUNT_ID }))
-  await testEnv.DB.batch([
-    testEnv.DB.prepare('INSERT INTO cloudflare_credentials (id, ciphertext, iv, updated_at) VALUES (?, ?, ?, ?)').bind('primary', legacy.ciphertext, legacy.iv, new Date().toISOString()),
-    testEnv.DB.prepare('INSERT INTO usage_cache (key, value_json, expires_at, updated_at) VALUES (?, ?, ?, ?)').bind('cloudflare:workers', JSON.stringify({ configured: true, requests: 999 }), new Date(Date.now() + 60_000).toISOString(), new Date().toISOString()),
-  ])
+  await testEnv.DB.prepare('INSERT INTO cloudflare_credentials (id, ciphertext, iv, updated_at) VALUES (?, ?, ?, ?)').bind('primary', legacy.ciphertext, legacy.iv, new Date().toISOString()).run()
   const calls: UsageCall[] = []
   const response = await cloudflareUsageApi(testEnv, admin, usageFetcher(calls, { graphql: graphqlHandler }))
   expect(response.status).toBe(409)
   expect(await response.json()).toMatchObject({ code: 'credential_unreadable' })
   expect(calls).toHaveLength(0)
+  expect(await hasD1UsageCacheTable()).toBe(false)
 })
 
 test('确认 Free 且 D1 行读取达到官方基线时进入维护模式', { timeout: 20_000 }, async () => {

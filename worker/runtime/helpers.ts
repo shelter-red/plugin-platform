@@ -37,7 +37,6 @@ export async function resetDatabase(): Promise<void> {
     testEnv.DB.prepare('DELETE FROM audit_log'),
     testEnv.DB.prepare('DELETE FROM temp_objects'),
     testEnv.DB.prepare('DELETE FROM usage_snapshots'),
-    testEnv.DB.prepare('DELETE FROM usage_cache'),
     testEnv.DB.prepare('DELETE FROM platform_usage'),
     testEnv.DB.prepare('DELETE FROM platform_settings'),
     testEnv.DB.prepare('DELETE FROM sessions'),
@@ -75,9 +74,11 @@ export async function seedServer(options: { pluginState?: string; domainStatus?:
 }
 
 async function waitForServerStatus(expected: string): Promise<void> {
+  const bridge = testEnv.PLUGIN_BRIDGE.get(testEnv.PLUGIN_BRIDGE.idFromName(SERVER_ID))
   for (let attempt = 0; attempt < 100; attempt += 1) {
-    const row = await testEnv.DB.prepare('SELECT status FROM servers WHERE id = ?').bind(SERVER_ID).first<{ status: string }>()
-    if (row?.status === expected) return
+    const response = await bridge.fetch(new Request('https://worker.invalid/status'))
+    const status = await response.json() as { online: boolean }
+    if ((status.online ? 'online' : 'offline') === expected) return
     await new Promise((resolve) => setTimeout(resolve, 20))
   }
   throw new Error(`server status did not become ${expected}`)

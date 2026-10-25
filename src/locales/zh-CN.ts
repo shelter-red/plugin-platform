@@ -326,7 +326,7 @@ export default {
     card: {
       workerRequests: 'Worker 请求',
       officialPeriod: '官方周期',
-      platformRequests: '平台请求计数',
+      platformRequests: '公开插件请求',
       window24h: '24 小时窗口',
       notConnected: '未接入',
       unlimited: '不限',
@@ -358,7 +358,6 @@ export default {
     unknownTime: '时间未知',
     notConfigured: '未配置',
     updatedAt: '更新于 {{time}}',
-    windowStartedAt: '窗口始于 {{time}}',
     noData: '暂无数据',
     breakdown: {
       title: '本地请求分布',

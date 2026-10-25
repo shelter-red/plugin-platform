@@ -258,7 +258,6 @@ export interface LocalUsage {
   /** 平台自身 D1 请求日志统计，与 Cloudflare 凭据无关。 */
   source?: 'platform_local'
   requestCount: number
-  requestWindowStartedAt: string | null
   activeConnections: number
   r2Bytes: number
   r2Objects: number

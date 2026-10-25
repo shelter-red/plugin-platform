@@ -22,7 +22,6 @@ const cloudflareSettings = {
 
 const localUsage = {
   requestCount: 1_200,
-  requestWindowStartedAt: '2026-10-21T00:00:00.000Z',
   activeConnections: 4,
   r2Bytes: 2_048,
   r2Objects: 2,

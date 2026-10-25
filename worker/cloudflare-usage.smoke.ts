@@ -23,7 +23,6 @@ const database = {
         if (sql.includes('FROM cloudflare_credentials')) {
           return { ciphertext: credential.ciphertext, iv: credential.iv, updated_at: '2026-10-23T00:00:00.000Z' } as T
         }
-        if (sql.includes('FROM usage_cache')) return null
         if (sql.includes('FROM platform_settings')) {
           return { value_json: JSON.stringify({ maintenance: false, pluginDomainSuffix: '.plugins.example.com', quotas: { activeConnections: 100, r2Bytes: 1024, r2Objects: 10 } }) } as T
         }

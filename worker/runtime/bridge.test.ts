@@ -111,13 +111,15 @@ test('真实 Durable Object 为公开 WebSocket 分配独立 connectionId', { ti
   socket.close(1000, 'test complete')
 })
 
-test('控制连接断开后公开入口进入维护页并落库离线状态', { timeout: 20_000 }, async () => {
+test('控制连接断开后公开入口立即离线且不把运行态写入 D1', { timeout: 20_000 }, async () => {
   const hostname = await seedServer()
   const { socket } = await openControl()
   socket.close(1000, 'simulated network drop')
   for (let attempt = 0; attempt < 100; attempt += 1) {
-    const row = await testEnv.DB.prepare('SELECT status FROM servers WHERE id = ?').bind('server-runtime').first<{ status: string }>()
-    if (row?.status === 'offline') break
+    const bridge = testEnv.PLUGIN_BRIDGE.get(testEnv.PLUGIN_BRIDGE.idFromName('server-runtime'))
+    const response = await bridge.fetch(new Request('https://worker.invalid/status'))
+    const status = await response.json() as { online: boolean }
+    if (!status.online) break
     await new Promise((resolve) => setTimeout(resolve, 20))
   }
   const response = await publicRequest(hostname, '/after-disconnect')
@@ -125,8 +127,8 @@ test('控制连接断开后公开入口进入维护页并落库离线状态', { 
   expect(await response.text()).toContain('插件暂时不可用')
   const state = await testEnv.DB.prepare('SELECT state FROM plugin_instances WHERE id = ?').bind('plugin-runtime').first<{ state: string }>()
   const domain = await testEnv.DB.prepare('SELECT status FROM domains WHERE id = ?').bind('domain-runtime').first<{ status: string }>()
-  expect(state?.state).toBe('server_offline')
-  expect(domain?.status).toBe('offline')
+  expect(state?.state).toBe('enabled')
+  expect(domain?.status).toBe('online')
 })
 
 test('未启用的插件在真实 D1 路由解析后返回维护页', async () => {

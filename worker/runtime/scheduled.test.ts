@@ -1,5 +1,5 @@
 import { beforeEach, expect, test } from 'vitest'
-import { runScheduledMaintenance } from '../src/index'
+import { recordUsageSnapshot, runScheduledMaintenance } from '../src/index'
 import { resetDatabase, seedServer, testEnv } from './helpers'
 
 beforeEach(resetDatabase)
@@ -13,6 +13,7 @@ test('定时维护任务在真实 D1 上按保留期清理数据并删除过期 
   await testEnv.DB.batch([
     testEnv.DB.prepare('INSERT INTO request_logs (id, user_id, domain_id, plugin_instance_id, hostname, method, path, status, duration_ms, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind('log-old', 'user-runtime', 'domain-runtime', 'plugin-runtime', 'old.example.com', 'GET', '/', 200, 5, null, daysAgo(31)),
     testEnv.DB.prepare('INSERT INTO request_logs (id, user_id, domain_id, plugin_instance_id, hostname, method, path, status, duration_ms, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind('log-new', 'user-runtime', 'domain-runtime', 'plugin-runtime', 'new.example.com', 'GET', '/', 200, 5, null, daysAgo(10)),
+    testEnv.DB.prepare('INSERT INTO request_logs (id, user_id, domain_id, plugin_instance_id, hostname, method, path, status, duration_ms, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind('log-recent', 'user-runtime', 'domain-runtime', 'plugin-runtime', 'recent.example.com', 'GET', '/', 200, 5, null, hoursAgo(1)),
     testEnv.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind('audit-old', 'user-runtime', 'old.action', '{}', daysAgo(181)),
     testEnv.DB.prepare('INSERT INTO audit_log (id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)').bind('audit-new', 'user-runtime', 'new.action', '{}', daysAgo(170)),
     testEnv.DB.prepare('INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)').bind('session-expired', 'user-runtime', 'hash-session-expired', hoursAgo(1), daysAgo(30)),
@@ -25,14 +26,14 @@ test('定时维护任务在真实 D1 上按保留期清理数据并删除过期 
   await testEnv.DB.batch([
     testEnv.DB.prepare('INSERT INTO temp_objects (id, object_key, token_hash, content_type, size_bytes, expires_at, consumed_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').bind('temp-expired', 'stream/expired.bin', 'hash-temp-expired', 'application/octet-stream', 512, hoursAgo(1), null, hoursAgo(2)),
     testEnv.DB.prepare('INSERT INTO temp_objects (id, object_key, token_hash, content_type, size_bytes, expires_at, consumed_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').bind('temp-stale', 'stream/stale.bin', 'hash-temp-stale', 'application/octet-stream', 512, inDays(1), daysAgo(2), daysAgo(2)),
-    testEnv.DB.prepare('INSERT INTO platform_usage (key, request_count, request_window_started_at, active_connections, r2_bytes, r2_objects, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind('global', 3, daysAgo(1), 0, 1024, 2, daysAgo(1)),
+    testEnv.DB.prepare('INSERT INTO platform_usage (key, active_connections, r2_bytes, r2_objects, updated_at) VALUES (?, ?, ?, ?, ?)').bind('global', 0, 1024, 2, daysAgo(1)),
     testEnv.DB.prepare('INSERT INTO usage_snapshots (captured_at, request_count, active_connections, r2_bytes, r2_objects) VALUES (?, ?, ?, ?, ?)').bind(daysAgo(31), 1, 0, 0, 0),
   ])
 
   await runScheduledMaintenance(testEnv)
 
   const requestLogs = await testEnv.DB.prepare('SELECT id FROM request_logs ORDER BY id').all<{ id: string }>()
-  expect(requestLogs.results.map((row) => row.id)).toEqual(['log-new'])
+  expect(requestLogs.results.map((row) => row.id)).toEqual(['log-new', 'log-recent'])
   const audit = await testEnv.DB.prepare('SELECT id FROM audit_log ORDER BY id').all<{ id: string }>()
   expect(audit.results.map((row) => row.id)).toEqual(['audit-new'])
   const sessions = await testEnv.DB.prepare('SELECT id FROM sessions ORDER BY id').all<{ id: string }>()
@@ -47,7 +48,29 @@ test('定时维护任务在真实 D1 上按保留期清理数据并删除过期 
   const usage = await testEnv.DB.prepare('SELECT r2_bytes, r2_objects FROM platform_usage WHERE key = ?').bind('global').first<{ r2_bytes: number; r2_objects: number }>()
   expect(`${usage?.r2_bytes ?? -1}/${usage?.r2_objects ?? -1}`).toBe('0/0')
 
-  const snapshots = await testEnv.DB.prepare('SELECT captured_at FROM usage_snapshots').all<{ captured_at: string }>()
+  const snapshots = await testEnv.DB.prepare('SELECT captured_at, request_count FROM usage_snapshots').all<{ captured_at: string; request_count: number }>()
   expect(snapshots.results.length).toBe(1)
   expect(snapshots.results[0]!.captured_at >= daysAgo(1)).toBe(true)
+  expect(snapshots.results[0]!.request_count).toBe(1)
+})
+
+test('用量快照按新增与过期请求增量维护滚动 24 小时计数', async () => {
+  await seedServer()
+  const now = Date.now()
+  const previousAt = new Date(now - 15 * 60 * 1000).toISOString()
+  const expiredAt = new Date(now - 24 * 60 * 60 * 1000 - 7 * 60 * 1000).toISOString()
+  const recentAt = new Date(now - 5 * 60 * 1000).toISOString()
+  const log = (id: string, createdAt: string) => testEnv.DB.prepare('INSERT INTO request_logs (id, user_id, domain_id, plugin_instance_id, hostname, method, path, status, duration_ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(id, 'user-runtime', 'domain-runtime', 'plugin-runtime', `${id}.example.com`, 'GET', '/', 200, 1, createdAt)
+  await testEnv.DB.batch([
+    testEnv.DB.prepare('INSERT INTO platform_usage (key, active_connections, r2_bytes, r2_objects, updated_at) VALUES (?, 0, 0, 0, ?)').bind('global', new Date(now).toISOString()),
+    testEnv.DB.prepare('INSERT INTO usage_snapshots (captured_at, request_count, active_connections, r2_bytes, r2_objects) VALUES (?, ?, 0, 0, 0)').bind(previousAt, 9),
+    log('log-expired', expiredAt),
+    log('log-recent-1', recentAt),
+    log('log-recent-2', new Date(now - 3 * 60 * 1000).toISOString()),
+  ])
+
+  await recordUsageSnapshot(testEnv)
+
+  const latest = await testEnv.DB.prepare('SELECT request_count FROM usage_snapshots ORDER BY captured_at DESC LIMIT 1').first<{ request_count: number }>()
+  expect(latest?.request_count).toBe(10)
 })

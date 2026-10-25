@@ -65,14 +65,7 @@ test('Cloudflare 设置 GET 不泄露凭据并限制为管理员访问', async (
   expect((await api('/api/settings/cloudflare', MEMBER_TOKEN)).status).toBe(403)
 })
 
-test('保存 Global API Key 前完成校验、加密落库、清缓存且不回显密钥', async () => {
-  await testEnv.DB.prepare('INSERT INTO usage_cache (key, value_json, expires_at, updated_at) VALUES (?, ?, ?, ?)').bind(
-    'cloudflare:workers',
-    JSON.stringify({ configured: true, requests: 99 }),
-    new Date(Date.now() + 60_000).toISOString(),
-    new Date().toISOString(),
-  ).run()
-
+test('保存 Global API Key 前完成校验、加密落库且不回显密钥', async () => {
   const saved = await api('/api/settings/cloudflare', ADMIN_TOKEN, {
     method: 'PUT',
     body: JSON.stringify({ email: CLOUDFLARE_STUB_EMAIL, globalApiKey: CLOUDFLARE_STUB_GLOBAL_API_KEY }),
@@ -93,8 +86,8 @@ test('保存 Global API Key 前完成校验、加密落库、清缓存且不回�
   expect(stored?.ciphertext).toBeTruthy()
   expect(stored?.ciphertext).not.toContain(CLOUDFLARE_STUB_GLOBAL_API_KEY)
   expect(stored?.ciphertext).not.toContain(CLOUDFLARE_STUB_ACCOUNT_ID)
-  const cache = await testEnv.DB.prepare('SELECT COUNT(*) AS count FROM usage_cache WHERE key = ?').bind('cloudflare:workers').first<{ count: number }>()
-  expect(cache?.count).toBe(0)
+  const cacheTable = await testEnv.DB.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").bind('usage_cache').first()
+  expect(cacheTable).toBeNull()
 
   const read = await api('/api/settings/cloudflare', ADMIN_TOKEN)
   const readBody = await read.json() as Record<string, unknown>
@@ -182,7 +175,7 @@ test('旧格式凭据要求重新配置，不返回旧密钥', async () => {
   expect(body).toMatchObject({ code: 'credential_unreadable' })
 })
 
-test('DELETE 只删除本地凭据和缓存，不调用 Cloudflare', async () => {
+test('DELETE 只删除本地凭据，不调用 Cloudflare', async () => {
   await api('/api/settings/cloudflare', ADMIN_TOKEN, {
     method: 'PUT',
     body: JSON.stringify({ email: CLOUDFLARE_STUB_EMAIL, globalApiKey: CLOUDFLARE_STUB_GLOBAL_API_KEY }),
@@ -193,8 +186,8 @@ test('DELETE 只删除本地凭据和缓存，不调用 Cloudflare', async () =>
   expect(await response.json()).toMatchObject({ configured: false, credentialKind: null })
   const stored = await testEnv.DB.prepare('SELECT COUNT(*) AS count FROM cloudflare_credentials').first<{ count: number }>()
   expect(stored?.count).toBe(0)
-  const cache = await testEnv.DB.prepare('SELECT COUNT(*) AS count FROM usage_cache WHERE key = ?').bind('cloudflare:workers').first<{ count: number }>()
-  expect(cache?.count).toBe(0)
+  const cacheTable = await testEnv.DB.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").bind('usage_cache').first()
+  expect(cacheTable).toBeNull()
 })
 
 test('缺失 SESSION_SECRET 时返回 HTTP 503 secret_missing', async () => {

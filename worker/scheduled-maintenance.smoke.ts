@@ -14,8 +14,9 @@ const database = {
         return query
       },
       first: async <T>() => {
-        if (sql.includes('FROM platform_usage')) {
-          return { request_count: 12, active_connections: 2, r2_bytes: 4096, r2_objects: 1 } as T
+        if (sql.includes('FROM request_logs')) {
+          executed.push({ sql, values })
+          return { count: 12 } as T
         }
         return null as T
       },
@@ -48,7 +49,10 @@ const expectAge = (value: unknown, days: number) => {
 }
 
 const snapshot = find('INSERT INTO usage_snapshots')
-assert.deepEqual(snapshot.values.slice(1), [12, 2, 4096, 1])
+assert.equal(snapshot.values.length, 3)
+assert.equal(snapshot.values[1], 12)
+assert.equal(snapshot.values[2], 'global')
+assert.match(find('SELECT COUNT(*) AS count FROM request_logs').sql, /created_at > \? AND created_at <= \?/)
 expectAge(find('DELETE FROM usage_snapshots').values[0], 30)
 expectAge(find('DELETE FROM request_logs').values[0], 30)
 expectAge(find('DELETE FROM audit_log').values[0], 180)

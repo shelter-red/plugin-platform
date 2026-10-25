@@ -326,7 +326,7 @@ export default {
     card: {
       workerRequests: 'Worker requests',
       officialPeriod: 'Official period',
-      platformRequests: 'Platform request counter',
+      platformRequests: 'Public plugin requests',
       window24h: '24-hour window',
       notConnected: 'Not connected',
       unlimited: 'Unlimited',
@@ -357,7 +357,6 @@ export default {
     unknownTime: 'time unknown',
     notConfigured: 'Not configured',
     updatedAt: 'Updated {{time}}',
-    windowStartedAt: 'Window started {{time}}',
     noData: 'No data',
     breakdown: {
       title: 'Local request breakdown',

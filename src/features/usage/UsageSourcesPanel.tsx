@@ -12,7 +12,7 @@ export function UsageSourcesPanel({ usage, localUsage }: {
   const hasLocalUsage = localUsage !== null
   return <Panel title={t('usage.sourcesTitle')} subtitle={t('usage.sourcesSubtitle')}>
     <div className="source-row"><span className="source-name"><span className={`source-dot ${connected ? 'green' : 'pending'}`} />Cloudflare Analytics API</span><span className="muted">{connected ? `${usage?.cached ? t('usage.cached') : t('usage.latest')} · ${usage.updatedAt ? formatDateTime(usage.updatedAt) : t('usage.unknownTime')}` : t('usage.notConfigured')}</span></div>
-    <div className="source-row"><span className="source-name"><span className={`source-dot ${hasLocalUsage ? 'green' : 'pending'}`} />{t('overview.note.localCount')}</span><span className="muted">{localUsage?.updatedAt ? t('usage.updatedAt', { time: formatDateTime(localUsage.updatedAt) }) : t('usage.card.notConnected')}</span><span className="muted">{localUsage?.requestWindowStartedAt ? t('usage.windowStartedAt', { time: formatDateTime(localUsage.requestWindowStartedAt) }) : t('usage.noData')}</span></div>
+    <div className="source-row"><span className="source-name"><span className={`source-dot ${hasLocalUsage ? 'green' : 'pending'}`} />{t('overview.note.localCount')}</span><span className="muted">{localUsage?.updatedAt ? t('usage.updatedAt', { time: formatDateTime(localUsage.updatedAt) }) : t('usage.card.notConnected')}</span><span className="muted">{t('usage.card.window24h')}</span></div>
     <p className="field-hint">{t('usage.localIndependentHint')}</p>
   </Panel>
 }

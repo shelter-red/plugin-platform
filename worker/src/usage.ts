@@ -97,21 +97,6 @@ export function normalizePluginDomainSuffix(value: unknown): string | null {
   return `.${domain}`
 }
 
-// 平台请求只计数不拦截：24 小时窗口内的请求数用于展示，真正的额度上限在 Cloudflare 官方侧。
-export async function recordRequest(env: Env): Promise<void> {
-  await ensureUsageRow(env)
-  const now = new Date()
-  const nowIso = now.toISOString()
-  const windowStart = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString()
-  await env.DB.prepare(`
-    UPDATE platform_usage
-    SET request_count = CASE WHEN request_window_started_at <= ? THEN 1 ELSE request_count + 1 END,
-        request_window_started_at = CASE WHEN request_window_started_at <= ? THEN ? ELSE request_window_started_at END,
-        updated_at = ?
-    WHERE key = ?
-  `).bind(windowStart, windowStart, nowIso, nowIso, usageKey).run()
-}
-
 export async function reserveActiveConnection(env: Env, quotas: PlatformQuotas): Promise<boolean> {
   await ensureUsageRow(env)
   const result = await env.DB.prepare('UPDATE platform_usage SET active_connections = active_connections + 1, updated_at = ? WHERE key = ? AND active_connections < ?').bind(new Date().toISOString(), usageKey, quotas.activeConnections).run()
@@ -155,7 +140,7 @@ export function cloudflareQuotaReason(usage: {
 
 async function ensureUsageRow(env: Env): Promise<void> {
   const now = new Date().toISOString()
-  await env.DB.prepare('INSERT OR IGNORE INTO platform_usage (key, request_count, request_window_started_at, active_connections, r2_bytes, r2_objects, updated_at) VALUES (?, 0, ?, 0, 0, 0, ?)').bind(usageKey, now, now).run()
+  await env.DB.prepare('INSERT OR IGNORE INTO platform_usage (key, active_connections, r2_bytes, r2_objects, updated_at) VALUES (?, 0, 0, 0, ?)').bind(usageKey, now).run()
 }
 
 async function ensurePlatformSettingsRow(env: Env): Promise<void> {

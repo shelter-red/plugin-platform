@@ -6,7 +6,7 @@ import type { AuthenticatedUser, CloudflarePlanSummary, CloudflareUsageLimits, E
 import { decryptSecret, encryptSecret } from './secrets'
 import { isEmail, parseSmtpSettings, publicSmtpSettings, sendSmtpTest, validateSmtpSettings, type SmtpSettings } from './email'
 import { CloudflareCredentialError, cloudflarePlanLimits, configureCloudflareDomain, deleteStoredCloudflareCredential, maskCloudflareAccountId, readCloudflareSubscriptions, readStoredCloudflareCredential, storeCloudflareCredential, validateCloudflareCredential } from './cloudflare-credentials'
-import { activateMaintenance, cloudflareQuotaReason, defaultPlatformSettings, getPlatformSettings, isMaintenanceMode, normalizePluginDomainSuffix, recordRequest, releaseR2Usage, reserveR2Usage, setPlatformSettingsCache } from './usage'
+import { activateMaintenance, cloudflareQuotaReason, defaultPlatformSettings, getPlatformSettings, isMaintenanceMode, normalizePluginDomainSuffix, releaseR2Usage, reserveR2Usage, setPlatformSettingsCache } from './usage'
 import { findPluginRoute, invalidatePluginRoute } from './route-cache'
 import { selectPublicRequestMode } from './request-mode'
 import { resolvePublicRoute } from './public-route'
@@ -335,7 +335,6 @@ async function pluginDetailsApi(env: Env, workspace: Workspace, pluginInstanceId
 async function createBlob(request: Request, env: Env): Promise<Response> {
   const settings = await getPlatformSettings(env)
   if (settings.maintenance) return json({ error: 'Platform is in maintenance mode' }, 503)
-  await recordRequest(env)
   await cleanupExpiredBlobs(env)
   if (!request.body) return json({ error: 'Request body is required' }, 400)
   if (!request.headers.has('content-length')) return json({ error: 'Content-Length header is required' }, 411)
@@ -735,7 +734,6 @@ async function proxyPublicHost(request: Request, env: Env, url: URL, ctx: Execut
   if (resolution.state === 'unavailable') return maintenanceResponse('插件暂时不可用', '公开入口尚未就绪、插件当前未启用或插件服务器当前离线。')
   const domain = resolution.route
   const startedAt = Date.now()
-  await recordRequest(env)
   const mode = selectPublicRequestMode(request, domain.manifest_json)
   if (!mode) {
     ctx.waitUntil(recordAccessLog(env, { workspaceId: domain.workspace_id, userId: domain.user_id, domainId: domain.domain_id, pluginInstanceId: domain.plugin_instance_id, hostname: domain.hostname, method: request.method, path: url.pathname, status: 501, durationMs: Date.now() - startedAt, error: 'plugin capability unavailable' }))
@@ -1138,9 +1136,13 @@ export async function localUsageApi(env: Env, user: AuthenticatedUser, url = new
   const workspaceId = workspace?.id ?? null
   const range = url.searchParams.get('range')
   const durationMs = range === '24h' ? 24 * 60 * 60 * 1000 : range === '30d' ? 30 * 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000
-  const since = new Date(Date.now() - durationMs).toISOString()
-  const [usage, snapshots, users, plugins, domains] = await Promise.all([
-    env.DB.prepare('SELECT request_count, request_window_started_at, active_connections, r2_bytes, r2_objects, updated_at FROM platform_usage WHERE key = ?').bind('global').first<{ request_count: number; request_window_started_at: string; active_connections: number; r2_bytes: number; r2_objects: number; updated_at: string }>(),
+  const fetchedAt = new Date()
+  const fetchedAtIso = fetchedAt.toISOString()
+  const since = new Date(fetchedAt.getTime() - durationMs).toISOString()
+  const requestSince = new Date(fetchedAt.getTime() - 24 * 60 * 60 * 1000).toISOString()
+  const [usage, requests, snapshots, users, plugins, domains] = await Promise.all([
+    env.DB.prepare('SELECT active_connections, r2_bytes, r2_objects FROM platform_usage WHERE key = ?').bind('global').first<{ active_connections: number; r2_bytes: number; r2_objects: number }>(),
+    env.DB.prepare('SELECT COUNT(*) AS count FROM request_logs WHERE created_at >= ? AND created_at <= ?').bind(requestSince, fetchedAtIso).first<{ count: number }>(),
     env.DB.prepare('SELECT captured_at, request_count, active_connections, r2_bytes, r2_objects FROM usage_snapshots WHERE captured_at >= ? ORDER BY captured_at ASC').bind(since).all<UsageSnapshot>(),
     env.DB.prepare('SELECT request_logs.user_id AS id, COALESCE(users.display_name, users.email, request_logs.user_id) AS label, COUNT(*) AS requests FROM request_logs LEFT JOIN users ON users.id = request_logs.user_id WHERE request_logs.created_at >= ? AND (? IS NULL OR request_logs.workspace_id = ?) GROUP BY request_logs.user_id ORDER BY requests DESC, label ASC LIMIT 5').bind(since, workspaceId, workspaceId).all<UsageBreakdownEntry>(),
     env.DB.prepare('SELECT request_logs.plugin_instance_id AS id, COALESCE(plugin_instances.name, request_logs.plugin_instance_id) AS label, COUNT(*) AS requests FROM request_logs LEFT JOIN plugin_instances ON plugin_instances.id = request_logs.plugin_instance_id WHERE request_logs.created_at >= ? AND (? IS NULL OR request_logs.workspace_id = ?) GROUP BY request_logs.plugin_instance_id ORDER BY requests DESC, label ASC LIMIT 5').bind(since, workspaceId, workspaceId).all<UsageBreakdownEntry>(),
@@ -1149,14 +1151,13 @@ export async function localUsageApi(env: Env, user: AuthenticatedUser, url = new
   return json({
     // 本地用量来自本平台 D1 中的请求日志，与 Cloudflare 凭据无关，未配置 Cloudflare 时也应返回。
     source: 'platform_local',
-    requestCount: usage?.request_count ?? 0,
-    requestWindowStartedAt: usage?.request_window_started_at ?? null,
+    requestCount: requests?.count ?? 0,
     activeConnections: usage?.active_connections ?? 0,
     r2Bytes: usage?.r2_bytes ?? 0,
     r2Objects: usage?.r2_objects ?? 0,
-    updatedAt: usage?.updated_at ?? null,
+    updatedAt: fetchedAtIso,
     snapshots: snapshots.results,
-    // 本地计数按用户、插件和域名拆分，范围与快照一致，均来自公开请求日志。
+    // 明细只按当前工作区筛选；全局请求卡片与平台快照不受工作区切换影响。
     breakdown: { users: users.results, plugins: plugins.results, domains: domains.results },
   })
 }
@@ -1176,10 +1177,24 @@ type UsageSnapshot = {
 }
 
 export async function recordUsageSnapshot(env: Env): Promise<void> {
-  const usage = await env.DB.prepare('SELECT request_count, active_connections, r2_bytes, r2_objects FROM platform_usage WHERE key = ?').bind('global').first<{ request_count: number; active_connections: number; r2_bytes: number; r2_objects: number }>()
-  if (!usage) return
   const capturedAt = new Date().toISOString()
-  await env.DB.prepare('INSERT INTO usage_snapshots (captured_at, request_count, active_connections, r2_bytes, r2_objects) VALUES (?, ?, ?, ?, ?)').bind(capturedAt, usage.request_count, usage.active_connections, usage.r2_bytes, usage.r2_objects).run()
+  const windowStart = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+  const previous = await env.DB.prepare('SELECT captured_at, request_count FROM usage_snapshots WHERE captured_at > ? ORDER BY captured_at DESC LIMIT 1').bind(windowStart).first<{ captured_at: string; request_count: number }>()
+  let requestCount = 0
+  if (previous) {
+    const previousAt = Date.parse(previous.captured_at)
+    const previousWindowStart = new Date(previousAt - 24 * 60 * 60 * 1000).toISOString()
+    const [added, expired] = await Promise.all([
+      env.DB.prepare('SELECT COUNT(*) AS count FROM request_logs WHERE created_at > ? AND created_at <= ?').bind(previous.captured_at, capturedAt).first<{ count: number }>(),
+      env.DB.prepare('SELECT COUNT(*) AS count FROM request_logs WHERE created_at > ? AND created_at <= ?').bind(previousWindowStart, windowStart).first<{ count: number }>(),
+    ])
+    requestCount = Math.max(0, previous.request_count + (added?.count ?? 0) - (expired?.count ?? 0))
+  } else {
+    const current = await env.DB.prepare('SELECT COUNT(*) AS count FROM request_logs WHERE created_at > ? AND created_at <= ?').bind(windowStart, capturedAt).first<{ count: number }>()
+    requestCount = current?.count ?? 0
+  }
+  await env.DB.prepare(`INSERT INTO usage_snapshots (captured_at, request_count, active_connections, r2_bytes, r2_objects)
+    SELECT ?, ?, active_connections, r2_bytes, r2_objects FROM platform_usage WHERE key = ?`).bind(capturedAt, requestCount, 'global').run()
   await env.DB.prepare('DELETE FROM usage_snapshots WHERE captured_at < ?').bind(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()).run()
 }
 
