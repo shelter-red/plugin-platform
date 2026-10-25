@@ -633,6 +633,8 @@ async function readJsonBody(request: Request, maxBytes: number): Promise<JsonBod
       }
       chunks.push(value)
     }
+  } catch {
+    return { ok: false, tooLarge: false }
   } finally {
     reader.releaseLock()
   }
