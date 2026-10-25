@@ -5,6 +5,7 @@ import { hashControlToken } from './security'
 import { parseResponseStatus, responseHeaders } from './response-validation'
 import { restorePluginState, type RestorablePluginState } from './plugin-restore'
 
+const MAX_CONTROL_COMMAND_BYTES = 8 * 1024
 const MAX_PROXY_REQUEST_BODY_BYTES = 32 * 1024
 const MAX_PROXY_RESPONSE_BODY_BYTES = 16 * 1024 * 1024
 const MAX_WEBSOCKET_MESSAGE_BYTES = 32 * 1024
@@ -222,7 +223,14 @@ export class PluginBridge {
   private async command(request: Request): Promise<Response> {
     if (request.method !== 'POST' || request.headers.get('x-plugmesh-server-id') !== this.serverId) return new Response('Forbidden', { status: 403 })
     if (!this.serverSocket || this.serverSocket.readyState !== WebSocket.OPEN) return new Response('Plugin server is offline', { status: 503 })
-    const body = await request.json().catch(() => null) as { type?: string; pluginId?: string } | null
+    const bodyResult = await readRequestBody(request, MAX_CONTROL_COMMAND_BYTES)
+    if (!bodyResult.ok) return new Response('Command request is too large', { status: 413 })
+    let body: { type?: string; pluginId?: string } | null
+    try {
+      body = JSON.parse(new TextDecoder().decode(bodyResult.body)) as { type?: string; pluginId?: string }
+    } catch {
+      return new Response('Invalid command', { status: 400 })
+    }
     if (!body?.type || (!body.type.startsWith('plugin.') && body.type !== 'server.sync')) return new Response('Invalid command', { status: 400 })
     const result = await this.sendPluginCommand(body.type, body.pluginId)
     const requestId = result.requestId

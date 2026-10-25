@@ -92,6 +92,18 @@ const wrongServer = await bridge.fetch(new Request('https://bridge.test/command'
   body: JSON.stringify({ type: 'server.sync' }),
 }))
 assert.equal(wrongServer.status, 403)
+const malformed = await bridge.fetch(new Request('https://bridge.test/command', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', 'x-plugmesh-server-id': 'server-1' },
+  body: '{',
+}))
+assert.equal(malformed.status, 400)
+const oversized = await bridge.fetch(new Request('https://bridge.test/command', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', 'x-plugmesh-server-id': 'server-1' },
+  body: JSON.stringify({ type: 'server.sync', pluginId: 'x'.repeat(8192) }),
+}))
+assert.equal(oversized.status, 413)
 
 const command = bridge.fetch(new Request('https://bridge.test/command', {
   method: 'POST',
