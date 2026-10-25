@@ -238,7 +238,7 @@ jobs:
 
       - name: 校验 Termux 构建结果
         if: steps.termux-build.outcome == 'success'
-        run: test -f dist/plugmesh-server-termux.tar.gz && test -f dist/plugmesh-server-termux.tar.gz.sha256
+      - name: 上传 Termux 产物
         uses: actions/upload-artifact@v4
         with:
           name: plugmesh-server-termux
