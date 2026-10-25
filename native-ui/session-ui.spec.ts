@@ -105,6 +105,21 @@ test('local UI creates, edits and removes an embedded TCP mapping', async ({ pag
   await expect(page.locator('.mapping-row')).toHaveCount(0)
 })
 
+test('local UI maps a discovered remote proxy with one click', async ({ page }) => {
+  await page.goto('/')
+  await page.getByLabel('本地 UI 口令').fill('smoke-password')
+  await page.getByRole('button', { name: '登录' }).click()
+  await page.getByRole('link', { name: /端口映射/ }).click()
+  await page.getByRole('button', { name: '刷新目标服务器' }).click()
+  const targetRow = page.locator('.mapping-target-row', { hasText: 'SSH host' })
+  await expect(targetRow).toContainText('Remote plugin')
+  await targetRow.getByRole('button', { name: '一键映射' }).click()
+  const mapping = page.locator('.mapping-row', { hasText: 'SSH-host-remote-ssh' })
+  await expect(mapping).toContainText('127.0.0.1:30000')
+  await mapping.getByRole('button', { name: '删除映射' }).click()
+  await expect(page.locator('.mapping-row')).toHaveCount(0)
+})
+
 test('local UI theme switches between dark, light and system', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark' })
   await page.goto('/')

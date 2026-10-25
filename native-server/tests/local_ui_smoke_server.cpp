@@ -51,7 +51,12 @@ int run_authenticated_server(uint16_t port, const std::filesystem::path& ui_dire
     };
   }, ui_directory, {}, [&logs] { return logs.snapshot(); }, {}, verifier, {}, [&mappings_mutex, &mappings](const std::string& method, const std::string& resource, const nlohmann::json& payload, std::string&) {
     std::lock_guard lock(mappings_mutex);
-    if (method == "GET" && resource == "/api/mappings/targets") return nlohmann::json{{"targets", nlohmann::json::array({nlohmann::json{{"id", "target-server"}, {"name", "SSH host"}, {"status", "online"}}})}};
+    if (method == "GET" && resource == "/api/mappings/targets") {
+      nlohmann::json remote_plugin = {{"id", "remote-plugin"}, {"name", "Remote plugin"}, {"capabilities", {{"http", false}}}};
+      nlohmann::json remote_proxy = {{"name", "remote-ssh"}, {"protocol", "tcp"}, {"targetHost", "127.0.0.1"}, {"targetPort", 2222}, {"enabled", true}};
+      nlohmann::json target = {{"id", "target-server"}, {"name", "SSH host"}, {"status", "online"}, {"plugins", nlohmann::json::array({remote_plugin})}, {"portMappings", nlohmann::json::array({remote_proxy})}};
+      return nlohmann::json{{"targets", nlohmann::json::array({target})}};
+    }
     if (method == "POST" && resource == "/api/mappings") {
       mappings.push_back(nlohmann::json{{"name", payload.value("name", std::string())}, {"protocol", payload.value("protocol", std::string("tcp"))}, {"listenPort", payload.value("listenPort", 0)}, {"targetServerId", payload.value("targetServerId", std::string())}, {"targetServer", "SSH host"}, {"targetHost", payload.value("targetHost", std::string())}, {"targetPort", payload.value("targetPort", 0)}, {"enabled", payload.value("enabled", true)}, {"state", "listening"}});
     } else if (method == "PUT" && resource.rfind("/api/mappings/", 0) == 0) {
