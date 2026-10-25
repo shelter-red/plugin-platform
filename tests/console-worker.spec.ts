@@ -326,6 +326,16 @@ test('管理端显示 Worker 实时数据并在刷新后提示', async ({ page }
   await expect(page.locator('.ant-notification-notice').filter({ hasText: '平台数据已刷新' })).toBeVisible()
 })
 
+test('管理端可见时每 15 秒静默刷新运行态数据', async ({ page }) => {
+  const worker = await mockWorker(page)
+  await page.clock.install()
+  await page.goto('/')
+
+  await expect.poll(() => worker.localUsageRequests).toBe(1)
+  await page.clock.fastForward(15_000)
+  await expect.poll(() => worker.localUsageRequests).toBe(2)
+})
+
 test('默认工作区与带图标控件保持对齐且不遮挡文字', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 })
   await mockWorker(page)
@@ -509,7 +519,7 @@ test('未配置 Cloudflare 时官方用量为空但平台本地计数仍显示',
   await expect(workerCard.locator('.resource-card-percent')).toHaveCount(0)
 
   const platform = page.locator('.usage-section').filter({ hasText: '平台统计' })
-  await expect(platform.locator('.resource-card').filter({ hasText: '平台请求计数' })).toContainText('1,200')
+  await expect(platform.locator('.resource-card').filter({ hasText: '公开插件请求' })).toContainText('1,200')
 })
 
 test('用量接口 401/403 在用量页显示 HTTP 状态、错误码和消息', async ({ page }) => {

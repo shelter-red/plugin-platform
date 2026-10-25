@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { detailedErrorMessage } from '../errors'
 import type { Notify } from '../components/ToastProvider'
@@ -49,6 +49,10 @@ export function useConsoleData({ notify }: { notify: Notify }) {
   const [smtpSettings, setSmtpSettings] = useState<SmtpSettings | null>(null)
   const [apiLive, setApiLive] = useState(false)
   const [range, setRange] = useState<'24h' | '7d' | '30d'>('7d')
+  const dataRefreshRef = useRef<Promise<void> | null>(null)
+  const refreshDataRef = useRef<((announce?: boolean) => Promise<void>) | null>(null)
+  const workspaceKeyRef = useRef(workspaceKey)
+  workspaceKeyRef.current = workspaceKey
 
   useEffect(() => {
     if (!authEnabled && !import.meta.env.VITE_API_BASE) return
@@ -159,24 +163,58 @@ export function useConsoleData({ notify }: { notify: Notify }) {
   }
 
   const refreshData = async (announce = true) => {
+    if (dataRefreshRef.current) return dataRefreshRef.current
+    const requestWorkspaceKey = workspaceKey
     setDataLoading(true)
+    const pending = (async () => {
+      try {
+        const [nextOverview, nextServers, nextPlugins, nextDomains, nextLocalUsage] = await Promise.all([fetchOverview(), fetchServers(), fetchPlugins(), fetchDomains(), fetchLocalUsage(range).catch(() => null)])
+        if (workspaceKeyRef.current !== requestWorkspaceKey) return
+        setOverview(nextOverview)
+        setServers(nextServers)
+        setPlugins(nextPlugins)
+        setDomains(nextDomains)
+        if (nextLocalUsage) setLocalUsage(nextLocalUsage)
+        setApiLive(true)
+        setDataError(null)
+        if (announce) notify('success', t('toast.refreshed'))
+      } catch {
+        if (workspaceKeyRef.current !== requestWorkspaceKey) return
+        setDataError('toast.dataUnavailable')
+        notify('error', t('toast.refreshFailed'))
+      } finally {
+        if (workspaceKeyRef.current === requestWorkspaceKey) setDataLoading(false)
+      }
+    })()
+    dataRefreshRef.current = pending
     try {
-      const [nextOverview, nextServers, nextPlugins, nextDomains, nextLocalUsage] = await Promise.all([fetchOverview(), fetchServers(), fetchPlugins(), fetchDomains(), fetchLocalUsage(range).catch(() => null)])
-      setOverview(nextOverview)
-      setServers(nextServers)
-      setPlugins(nextPlugins)
-      setDomains(nextDomains)
-      if (nextLocalUsage) setLocalUsage(nextLocalUsage)
-      setApiLive(true)
-      setDataError(null)
-      if (announce) notify('success', t('toast.refreshed'))
-    } catch {
-      setDataError('toast.dataUnavailable')
-      notify('error', t('toast.refreshFailed'))
+      await pending
     } finally {
-      setDataLoading(false)
+      if (dataRefreshRef.current === pending) dataRefreshRef.current = null
     }
   }
+
+  refreshDataRef.current = refreshData
+
+  useEffect(() => {
+    if (!apiConnected || !workspaceReady) return
+    let disposed = false
+    const refreshVisibleData = () => {
+      if (disposed || document.visibilityState !== 'visible') return
+      void refreshDataRef.current?.(false)
+    }
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refreshVisibleData()
+    }
+    const timer = window.setInterval(refreshVisibleData, 15_000)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      disposed = true
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      dataRefreshRef.current = null
+    }
+  }, [apiConnected, workspaceReady, workspaceKey])
 
   const refreshUsage = async (announce = true) => {
     setUsageRefreshing(true)
