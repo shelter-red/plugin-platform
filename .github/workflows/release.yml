@@ -197,9 +197,44 @@ jobs:
           path: dist/*.zip*
           if-no-files-found: error
 
+  termux:
+    name: 构建 Android Termux CLI
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 准备 Node.js 和本地 UI
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 构建本地 UI
+        run: |
+          npm ci
+          npm run native-ui:build
+
+      - name: 使用官方 Termux builder 构建
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/src" \
+            -w /src \
+            ghcr.io/termux/package-builder:latest \
+            bash -lc 'export PREFIX=/data/data/com.termux/files/usr; bash scripts/build-termux-native.sh --artifact-type ALL --build-type Release --include-ui'
+
+      - name: 上传 Termux 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugmesh-server-termux
+          path: |
+            dist/plugmesh-server-termux.tar.gz
+            dist/plugmesh-server-termux.tar.gz.sha256
+          if-no-files-found: error
+
   publish:
     name: 创建 Release
-    needs: build
+    needs: [build, termux]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -218,7 +253,7 @@ jobs:
         run: |
           set -euo pipefail
           cd dist
-          sha256sum ./*.zip > SHA256SUMS
+          sha256sum ./*.zip ./*.tar.gz > SHA256SUMS
           cat SHA256SUMS
 
       - name: 上传到 GitHub Release
@@ -228,6 +263,7 @@ jobs:
           target_commitish: ${{ github.sha }}
           files: |
             dist/*.zip
+            dist/*.tar.gz
             dist/SHA256SUMS
           fail_on_unmatched_files: true
           body: |
@@ -236,5 +272,6 @@ jobs:
             - `plugmesh-server-linux.zip`：Linux x86_64（内含 OpenSSL 3 运行库）
             - `plugmesh-server-windows.zip`：Windows x64（内含随包 OpenSSL DLL）
             - `plugmesh-server-macos.zip`：macOS（`brew install openssl@3`）
+             - `plugmesh-server-termux.tar.gz`：Android Termux CLI（不是 APK，需在 Termux 中解压并安装 clang/cmake/openssl/zlib 运行依赖）
 
             校验：`sha256sum -c SHA256SUMS`；从源码构建方式见仓库 `native-server/README.md`。
