@@ -57,7 +57,10 @@ int run_authenticated_server(uint16_t port, const std::filesystem::path& ui_dire
       nlohmann::json target = {{"id", "target-server"}, {"name", "SSH host"}, {"status", "online"}, {"plugins", nlohmann::json::array({remote_plugin})}, {"portMappings", nlohmann::json::array({remote_proxy})}};
       return nlohmann::json{{"targets", nlohmann::json::array({target})}};
     }
-    if (method == "POST" && resource == "/api/mappings") {
+    if (method == "POST" && resource == "/api/mappings/targets/target-server/authorize") {
+       return nlohmann::json{{"authorized", true}, {"targetId", "target-server"}};
+     }
+     if (method == "POST" && resource == "/api/mappings") {
       mappings.push_back(nlohmann::json{{"name", payload.value("name", std::string())}, {"protocol", payload.value("protocol", std::string("tcp"))}, {"listenPort", payload.value("listenPort", 0)}, {"targetServerId", payload.value("targetServerId", std::string())}, {"targetServer", "SSH host"}, {"targetHost", payload.value("targetHost", std::string())}, {"targetPort", payload.value("targetPort", 0)}, {"enabled", payload.value("enabled", true)}, {"state", "listening"}});
     } else if (method == "PUT" && resource.rfind("/api/mappings/", 0) == 0) {
       const auto name = resource.substr(std::string("/api/mappings/").size());
