@@ -557,9 +557,53 @@ async function refreshCloudflareUsageOnSchedule(env: Env): Promise<void> {
   await cloudflareUsageApi(env, administrator)
 }
 
+const MAX_AUTH_REQUEST_BYTES = 8 * 1024
+
+type JsonBodyResult = { ok: true; value: unknown } | { ok: false; tooLarge: boolean }
+
+async function readJsonBody(request: Request, maxBytes: number): Promise<JsonBodyResult> {
+  const declaredLength = request.headers.get('content-length')
+  if (declaredLength !== null) {
+    const contentLength = Number(declaredLength)
+    if (!Number.isSafeInteger(contentLength) || contentLength < 0) return { ok: false, tooLarge: false }
+    if (contentLength > maxBytes) return { ok: false, tooLarge: true }
+  }
+  if (!request.body) return { ok: false, tooLarge: false }
+  const reader = request.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      total += value.byteLength
+      if (total > maxBytes) {
+        await reader.cancel()
+        return { ok: false, tooLarge: true }
+      }
+      chunks.push(value)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  const bytes = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  try {
+    return { ok: true, value: JSON.parse(new TextDecoder().decode(bytes)) }
+  } catch {
+    return { ok: false, tooLarge: false }
+  }
+}
+
 async function passwordLogin(request: Request, env: Env, url: URL): Promise<Response> {
   if (request.method !== 'POST') return json({ code: 'method_not_allowed', message: 'Method not allowed' }, 405)
-  const body = await request.json().catch(() => null) as { password?: unknown } | null
+  const parsed = await readJsonBody(request, MAX_AUTH_REQUEST_BYTES)
+  if (!parsed.ok) return parsed.tooLarge ? json({ code: 'request_too_large', message: '请求体过大' }, 413) : json({ code: 'invalid_request', message: '请求格式无效' }, 400)
+  const body = parsed.value as { password?: unknown } | null
   const password = typeof body?.password === 'string' ? body.password : ''
   if (!password) return json({ code: 'password_required', message: '请输入管理员密码' }, 400)
   if (password.length > MAX_PASSWORD_LENGTH) return json({ code: 'invalid_password', message: '密码错误' }, 401)
@@ -572,7 +616,9 @@ async function passwordLogin(request: Request, env: Env, url: URL): Promise<Resp
 async function passwordSettingsApi(request: Request, env: Env, user: AuthenticatedUser): Promise<Response> {
   if (user.role !== 'super_admin') return json({ error: 'Forbidden' }, 403)
   if (request.method !== 'PUT') return json({ error: 'Method not allowed' }, 405)
-  const body = await request.json().catch(() => null) as { currentPassword?: unknown; newPassword?: unknown; confirmPassword?: unknown } | null
+  const parsed = await readJsonBody(request, MAX_AUTH_REQUEST_BYTES)
+  if (!parsed.ok) return parsed.tooLarge ? json({ code: 'request_too_large', message: '请求体过大' }, 413) : json({ code: 'invalid_request', message: '请求格式无效' }, 400)
+  const body = parsed.value as { currentPassword?: unknown; newPassword?: unknown; confirmPassword?: unknown } | null
   const currentPassword = typeof body?.currentPassword === 'string' ? body.currentPassword : ''
   const newPassword = typeof body?.newPassword === 'string' ? body.newPassword : ''
   const confirmPassword = typeof body?.confirmPassword === 'string' ? body.confirmPassword : ''

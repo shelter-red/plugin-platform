@@ -73,6 +73,9 @@ test('超长管理员密码在初始化和登录入口被拒绝', async () => {
   const login = await SELF.fetch('https://console.example.com/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: tooLong }) })
   expect(login.status).toBe(401)
   expect((await login.json() as { code: string }).code).toBe('invalid_password')
+  const oversized = await SELF.fetch('https://console.example.com/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'correct-horse-battery', ignored: 'x'.repeat(9000) }) })
+  expect(oversized.status).toBe(413)
+  expect((await oversized.json() as { code: string }).code).toBe('request_too_large')
 })
 
 test('设置密码后可以使用密码登录，setup 不再初始化', async () => {
