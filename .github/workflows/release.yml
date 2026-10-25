@@ -2,8 +2,6 @@ name: 发布原生端
 
 on:
   push:
-    branches:
-      - release-v0.2.4
     tags:
       - 'v*'
   workflow_dispatch:
@@ -35,7 +33,7 @@ jobs:
 
       - name: 校验发布标签
         env:
-          RELEASE_TAG: ${{ inputs.release_tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || 'v0.2.4' }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
           set -euo pipefail
           if [[ ! "$RELEASE_TAG" =~ ^v[^/[:space:]]+$ ]]; then
@@ -217,28 +215,16 @@ jobs:
           npm run native-ui:build
 
       - name: 使用 Termux builder 构建
-        id: termux-build
-        continue-on-error: true
         run: |
-          set +e
+          set -euo pipefail
           docker run --rm \
             --user "$(id -u):$(id -g)" \
             --entrypoint /bin/bash \
             -v "$GITHUB_WORKSPACE:/src" \
             -w /src \
             androidzeros/termux-package-builder:latest \
-            -lc 'export PREFIX=/data/data/com.termux/files/usr; bash scripts/build-termux-native.sh --artifact-type ALL --build-type Release --include-ui' \
-            > /tmp/termux-build.log 2>&1
-          status=$?
-          cat /tmp/termux-build.log
-          while IFS= read -r line; do
-            [[ -n "$line" ]] && echo "::error file=.github/workflows/release.yml,line=236::$line"
-          done < <(tail -30 /tmp/termux-build.log)
-          exit "$status"
+            -lc 'export PREFIX=/data/data/com.termux/files/usr; bash scripts/build-termux-native.sh --artifact-type ALL --build-type Release --include-ui'
 
-      - name: 校验 Termux 构建结果
-        if: steps.termux-build.outcome == 'success'
-        run: test -f dist/plugmesh-server-termux.tar.gz && test -f dist/plugmesh-server-termux.tar.gz.sha256
       - name: 上传 Termux 产物
         uses: actions/upload-artifact@v4
         with:
@@ -255,7 +241,7 @@ jobs:
     permissions:
       contents: write
     env:
-      RELEASE_TAG: ${{ inputs.release_tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || 'v0.2.4' }}
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
 
