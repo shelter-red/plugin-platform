@@ -23,6 +23,11 @@ jobs:
     name: 校验发布标签
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
+      - name: 校验发布包契约
+        run: bash scripts/release-workflow.test.sh
+
       - name: 校验 tag
         env:
           RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
@@ -130,7 +135,13 @@ jobs:
           Copy-Item native-ui/dist/* dist/plugmesh-server/native-ui/dist/ -Recurse -Force
           Copy-Item native-server/README.md dist/plugmesh-server/README.md
           Copy-Item native-server/build-win/Release/plugmesh-plugin-host.exe dist/plugmesh-server/
-          Copy-Item native-server/include/plugmesh/plugin_api.h dist/plugmesh-server/
+          New-Item -ItemType Directory -Force -Path dist/plugmesh-server/sdk/include/plugmesh, dist/plugmesh-server/sdk/lib, dist/plugmesh-server/sdk/examples, dist/plugmesh-server/sdk/plugins/sample.plugin | Out-Null
+          Copy-Item native-server/include/plugmesh/*.h dist/plugmesh-server/sdk/include/plugmesh/
+          Copy-Item native-server/examples/sample_plugin.cpp dist/plugmesh-server/sdk/examples/
+          Copy-Item native-server/build-win/Release/plugmesh-server.dll dist/plugmesh-server/
+          Copy-Item native-server/build-win/Release/plugmesh-server.lib dist/plugmesh-server/sdk/lib/
+          Copy-Item native-server/build-win/plugins/sample.plugin/* dist/plugmesh-server/sdk/plugins/sample.plugin/
+          Copy-Item native-server/PORT-MAPPING.md dist/plugmesh-server/PORT-MAPPING.md
           Get-ChildItem "$vcpkg\installed\x64-windows\bin\*.dll" -ErrorAction SilentlyContinue |
             Copy-Item -Destination dist/plugmesh-server/
           Compress-Archive -Path dist/plugmesh-server -DestinationPath dist/plugmesh-server-windows.zip -Force
@@ -147,7 +158,31 @@ jobs:
           cp -R native-ui/dist/. dist/plugmesh-server/native-ui/dist/
           cp native-server/README.md dist/plugmesh-server/README.md
           cp native-server/build/plugmesh-plugin-host dist/plugmesh-server/
-          cp native-server/include/plugmesh/plugin_api.h dist/plugmesh-server/
+          mkdir -p dist/plugmesh-server/sdk/include/plugmesh dist/plugmesh-server/sdk/lib dist/plugmesh-server/sdk/examples dist/plugmesh-server/sdk/plugins/sample.plugin
+          cp native-server/include/plugmesh/*.h dist/plugmesh-server/sdk/include/plugmesh/
+          cp native-server/examples/sample_plugin.cpp dist/plugmesh-server/sdk/examples/
+          cp native-server/build/libplugmesh-server.dylib dist/plugmesh-server/sdk/lib/
+          cp native-server/build/libplugmesh-server.dylib dist/plugmesh-server/
+          cp native-server/build/plugins/sample.plugin/* dist/plugmesh-server/sdk/plugins/sample.plugin/
+          openssl_prefix="$(brew --prefix openssl@3)"
+          cp "$openssl_prefix/lib/libssl.3.dylib" "$openssl_prefix/lib/libcrypto.3.dylib" dist/plugmesh-server/
+          cp "$openssl_prefix/lib/libssl.3.dylib" "$openssl_prefix/lib/libcrypto.3.dylib" dist/plugmesh-server/sdk/lib/
+          for ssl_library in dist/plugmesh-server/libssl.3.dylib dist/plugmesh-server/sdk/lib/libssl.3.dylib; do
+            crypto_path="$(otool -L "$ssl_library" | awk '/libcrypto\.3\.dylib/ { print $1; exit }')"
+            if [ -n "$crypto_path" ]; then install_name_tool -change "$crypto_path" '@loader_path/libcrypto.3.dylib' "$ssl_library"; fi
+          done
+          for binary in dist/plugmesh-server/plugmesh-server dist/plugmesh-server/plugmesh-plugin-host; do
+            ssl_path="$(otool -L "$binary" | awk '/libssl\.3\.dylib/ { print $1; exit }')"
+            crypto_path="$(otool -L "$binary" | awk '/libcrypto\.3\.dylib/ { print $1; exit }')"
+            if [ -n "$ssl_path" ]; then install_name_tool -change "$ssl_path" '@executable_path/libssl.3.dylib' "$binary"; fi
+            if [ -n "$crypto_path" ]; then install_name_tool -change "$crypto_path" '@executable_path/libcrypto.3.dylib' "$binary"; fi
+          done
+          ssl_path="$(otool -L dist/plugmesh-server/libplugmesh-server.dylib | awk '/libssl\.3\.dylib/ { print $1; exit }')"
+          crypto_path="$(otool -L dist/plugmesh-server/libplugmesh-server.dylib | awk '/libcrypto\.3\.dylib/ { print $1; exit }')"
+          if [ -n "$ssl_path" ]; then install_name_tool -change "$ssl_path" '@loader_path/libssl.3.dylib' dist/plugmesh-server/libplugmesh-server.dylib; fi
+          if [ -n "$crypto_path" ]; then install_name_tool -change "$crypto_path" '@loader_path/libcrypto.3.dylib' dist/plugmesh-server/libplugmesh-server.dylib; fi
+          cp dist/plugmesh-server/libplugmesh-server.dylib dist/plugmesh-server/sdk/lib/
+          cp native-server/PORT-MAPPING.md dist/plugmesh-server/PORT-MAPPING.md
           cd dist
           zip -r plugmesh-server-macos.zip plugmesh-server
           shasum -a 256 plugmesh-server-macos.zip > plugmesh-server-macos.zip.sha256

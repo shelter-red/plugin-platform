@@ -198,7 +198,10 @@ bool run_authenticated_server(uint16_t port) {
 
   plugmesh::LocalHttpServer server(port, nullptr, [] {
     return Json{{"configured", true}, {"connected", false}};
-  }, {}, {}, {}, {}, verifier);
+  }, {}, {}, {}, {}, verifier, {}, [](const std::string& method, const std::string& resource, const Json&, std::string&) {
+    if (resource == "/api/mappings/targets" && method == "GET") return Json{{"targets", Json::array({Json{{"id", "target"}, {"name", "Target"}}})}};
+    return Json{{"mappings", Json::array()}};
+  });
   std::string server_error;
   std::thread server_thread([&] { server.run(server_error); });
   const auto stop_server = [&] {
@@ -222,6 +225,10 @@ bool run_authenticated_server(uint16_t port) {
     stop_server();
     return false;
   }
+  if (!http_request(port, "GET", "/api/mappings", "", "", response, error) || !expect_status(response, 401, "unauthenticated mapping list")) {
+    stop_server();
+    return false;
+  }
   if (!http_request(port, "POST", "/api/session", R"({"password":"wrong-password"})", "", response, error) || !expect_status(response, 401, "invalid login") || !expect_code(response, "invalid_password", "invalid login")) {
     stop_server();
     return false;
@@ -241,6 +248,14 @@ bool run_authenticated_server(uint16_t port) {
     return false;
   }
   if (!http_request(port, "GET", "/api/plugins", "", cookie, response, error) || !expect_status(response, 200, "plugin list")) {
+    stop_server();
+    return false;
+  }
+  if (!http_request(port, "GET", "/api/mappings/targets", "", cookie, response, error) || !expect_status(response, 200, "mapping target list") || Json::parse(response.body).at("targets").size() != 1) {
+    stop_server();
+    return false;
+  }
+  if (!http_request(port, "POST", "/api/mappings", R"({"name":"ssh"})", cookie, response, error) || !expect_status(response, 201, "mapping create")) {
     stop_server();
     return false;
   }

@@ -4,12 +4,14 @@
 #include "plugmesh/plugin_manager.h"
 
 #include <atomic>
+#include <algorithm>
 #include <charconv>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <mutex>
 #include <string>
 #include <thread>
 
@@ -33,17 +35,37 @@ int run_authenticated_server(uint16_t port, const std::filesystem::path& ui_dire
   }();
   if (!plugins.discover(plugin_directory, plugin_error)) std::cerr << "local UI smoke plugin discovery failed: " << plugin_error << '\n';
   plugmesh::LocalLogBuffer logs;
+  std::mutex mappings_mutex;
+  nlohmann::json mappings = nlohmann::json::array();
   plugins.set_log_writer([&logs](int level, const char* message) { logs.append(level, message); });
-  plugmesh::LocalHttpServer server(port, &plugins, [worker_url, credential_file] {
+  plugmesh::LocalHttpServer server(port, &plugins, [worker_url, credential_file, &mappings_mutex, &mappings] {
+    std::lock_guard lock(mappings_mutex);
     return nlohmann::json{
         {"configured", true},
         {"connected", false},
         {"serverId", "smoke-server"},
         {"workerUrl", worker_url},
         {"credentialFile", credential_file},
+        {"portMappings", mappings},
         {"systemCredentialsAvailable", plugmesh::system_credentials_available()},
     };
-  }, ui_directory, {}, [&logs] { return logs.snapshot(); }, {}, verifier);
+  }, ui_directory, {}, [&logs] { return logs.snapshot(); }, {}, verifier, {}, [&mappings_mutex, &mappings](const std::string& method, const std::string& resource, const nlohmann::json& payload, std::string&) {
+    std::lock_guard lock(mappings_mutex);
+    if (method == "GET" && resource == "/api/mappings/targets") return nlohmann::json{{"targets", nlohmann::json::array({nlohmann::json{{"id", "target-server"}, {"name", "SSH host"}, {"status", "online"}}})}};
+    if (method == "POST" && resource == "/api/mappings") {
+      mappings.push_back(nlohmann::json{{"name", payload.value("name", std::string())}, {"protocol", payload.value("protocol", std::string("tcp"))}, {"listenPort", payload.value("listenPort", 0)}, {"targetServerId", payload.value("targetServerId", std::string())}, {"targetServer", "SSH host"}, {"targetHost", payload.value("targetHost", std::string())}, {"targetPort", payload.value("targetPort", 0)}, {"enabled", payload.value("enabled", true)}, {"state", "listening"}});
+    } else if (method == "PUT" && resource.rfind("/api/mappings/", 0) == 0) {
+      const auto name = resource.substr(std::string("/api/mappings/").size());
+      for (auto& mapping : mappings) if (mapping.value("name", std::string()) == name) {
+        mapping.update(payload);
+        mapping["state"] = mapping.value("enabled", true) ? "listening" : "stopped";
+      }
+    } else if (method == "DELETE" && resource.rfind("/api/mappings/", 0) == 0) {
+      const auto name = resource.substr(std::string("/api/mappings/").size());
+      mappings.erase(std::remove_if(mappings.begin(), mappings.end(), [&name](const auto& mapping) { return mapping.value("name", std::string()) == name; }), mappings.end());
+    }
+    return nlohmann::json{{"mappings", mappings}};
+  });
   std::string error;
   if (!server.run(error)) {
     if (!error.empty()) std::cerr << "local UI smoke server failed: " << error << '\n';

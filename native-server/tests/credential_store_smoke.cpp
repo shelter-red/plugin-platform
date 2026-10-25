@@ -6,6 +6,8 @@
 #include <fstream>
 #include <iostream>
 
+#include <nlohmann/json.hpp>
+
 int main() {
   const auto path = std::filesystem::temp_directory_path() / "plugmesh-credential-store-smoke.json";
   std::error_code ignored;
@@ -23,6 +25,17 @@ int main() {
   if (verifier.find("local-ui-password") != std::string::npos) {
     std::cerr << "local UI password is stored in verifier\n";
     return 3;
+  }
+  nlohmann::json challenge;
+  std::string proof;
+  if (!plugmesh::make_local_ui_password_challenge(verifier, challenge, error) || !plugmesh::make_local_ui_password_proof("local-ui-password", challenge, "source\ntarget\nsession", proof, error) || !plugmesh::verify_local_ui_password_proof(verifier, challenge, "source\ntarget\nsession", proof) || plugmesh::verify_local_ui_password_proof(verifier, challenge, "source\ntarget\nother-session", proof) || challenge.dump().find("local-ui-password") != std::string::npos) {
+    std::cerr << "password challenge proof validation failed: " << error << '\n';
+    return 16;
+  }
+  std::string wrong_proof;
+  if (!plugmesh::make_local_ui_password_proof("wrong-password", challenge, "source\ntarget\nsession", wrong_proof, error) || plugmesh::verify_local_ui_password_proof(verifier, challenge, "source\ntarget\nsession", wrong_proof)) {
+    std::cerr << "wrong password generated an accepted proof\n";
+    return 17;
   }
   const plugmesh::StoredCredentials expected{"https://worker.example", "server-1", "access-token", verifier};
   if (!plugmesh::save_credentials(path, expected, "correct-password", error)) {

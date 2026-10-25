@@ -74,9 +74,12 @@ cmake -S native-server -B "$build_dir" \
   -DOPENSSL_USE_STATIC_LIBS=OFF
 
 if [[ "$artifact_type" == SHARED ]]; then
-  cmake --build "$build_dir" --target plugmesh-server-shared plugmesh-plugin-host --parallel
+  cmake --build "$build_dir" --target plugmesh-server-shared plugmesh-plugin-host plugmesh-sample --parallel
 else
-  cmake --build "$build_dir" --target plugmesh-server plugmesh-plugin-host --parallel
+  cmake --build "$build_dir" --target plugmesh-server plugmesh-plugin-host plugmesh-sample --parallel
+fi
+if [[ "$artifact_type" == ALL ]]; then
+  cmake --build "$build_dir" --target plugmesh-server-shared --parallel
 fi
 
 check_abi() {
@@ -93,15 +96,21 @@ check_abi() {
   fi
 }
 
-mkdir -p "/src/dist/$package_name"
-if [[ "$artifact_type" == SHARED ]]; then
-  cp "$build_dir/libplugmesh-server.so" "/src/dist/$package_name/"
-  check_abi "$build_dir/libplugmesh-server.so"
-else
+mkdir -p "/src/dist/$package_name/sdk"
+if [[ "$artifact_type" != SHARED ]]; then
   cp "$build_dir/plugmesh-server" "/src/dist/$package_name/"
   check_abi "$build_dir/plugmesh-server"
 fi
+if [[ "$artifact_type" != EXECUTABLE ]]; then
+  mkdir -p "/src/dist/$package_name/sdk/lib"
+  cp "$build_dir/libplugmesh-server.so" "/src/dist/$package_name/"
+  cp "$build_dir/libplugmesh-server.so" "/src/dist/$package_name/sdk/lib/"
+  cp "$openssl_libdir/libssl.so.3" "$openssl_libdir/libcrypto.so.3" "/src/dist/$package_name/sdk/lib/"
+  check_abi "$build_dir/libplugmesh-server.so"
+fi
 cp "$build_dir/plugmesh-plugin-host" "/src/dist/$package_name/"
+mkdir -p "/src/dist/$package_name/sdk/plugins/sample.plugin"
+cp "$build_dir/libplugmesh-sample.so" "$build_dir/plugins/sample.plugin/manifest.json" "/src/dist/$package_name/sdk/plugins/sample.plugin/"
 check_abi "$build_dir/plugmesh-plugin-host"
 for library in libssl.so.3 libcrypto.so.3; do
   library_path="$openssl_libdir/$library"
@@ -110,12 +119,12 @@ for library in libssl.so.3 libcrypto.so.3; do
   check_abi "$library_path"
 done
 
-if [[ "$artifact_type" == SHARED ]]; then
-  cp native-server/include/plugmesh/server_api.h "/src/dist/$package_name/"
-else
-  cp native-server/include/plugmesh/plugin_api.h "/src/dist/$package_name/"
-fi
+mkdir -p "/src/dist/$package_name/sdk/include/plugmesh"
+cp native-server/include/plugmesh/server_api.h native-server/include/plugmesh/plugin_api.h "/src/dist/$package_name/sdk/include/plugmesh/"
+cp native-server/examples/sample_plugin.cpp "/src/dist/$package_name/sdk/"
+cp native-server/PORT-MAPPING.md "/src/dist/$package_name/PORT-MAPPING.md"
 cp native-server/README.md "/src/dist/$package_name/README.md"
+cp /etc/ssl/certs/ca-certificates.crt "/src/dist/$package_name/ca-certificates.crt"
 if [[ "$include_ui" == true ]]; then
   [[ -d native-ui/dist ]] || { echo 'native-ui/dist was not built' >&2; exit 1; }
   mkdir -p "/src/dist/$package_name/native-ui/dist"

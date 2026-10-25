@@ -16,6 +16,7 @@ on:
         required: true
         type: choice
         options:
+          - all
           - linux
           - windows
           - macos
@@ -34,8 +35,12 @@ permissions:
 
 jobs:
   build:
-    name: ${{ inputs.target_platform }} / ${{ inputs.artifact_type }} / ${{ inputs.build_type }}
-    runs-on: ${{ inputs.target_platform == 'windows' && 'windows-latest' || inputs.target_platform == 'macos' && 'macos-latest' || 'ubuntu-latest' }}
+    name: ${{ matrix.target_platform }} / ${{ inputs.artifact_type }} / ${{ inputs.build_type }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target_platform: ${{ fromJSON(inputs.target_platform == 'all' && '["linux","windows","macos"]' || format('["{0}"]', inputs.target_platform)) }}
+    runs-on: ${{ matrix.target_platform == 'windows' && 'windows-latest' || matrix.target_platform == 'macos' && 'macos-latest' || 'ubuntu-latest' }}
     env:
       BUILD_TYPE: ${{ inputs.build_type }}
       BUILD_ARTIFACT: ${{ inputs.artifact_type == 'shared' && 'SHARED' || 'EXECUTABLE' }}
@@ -53,7 +58,7 @@ jobs:
           npm run native-ui:build
 
       - name: 准备 OpenSSL（Windows）
-        if: inputs.target_platform == 'windows'
+        if: matrix.target_platform == 'windows'
         shell: pwsh
         run: |
           $vcpkg = $env:VCPKG_INSTALLATION_ROOT
@@ -61,11 +66,11 @@ jobs:
           & "$vcpkg\vcpkg.exe" install openssl:x64-windows
 
       - name: 准备 OpenSSL（macOS）
-        if: inputs.target_platform == 'macos'
+        if: matrix.target_platform == 'macos'
         run: brew install openssl@3
 
       - name: 配置（macOS）
-        if: inputs.target_platform == 'macos'
+        if: matrix.target_platform == 'macos'
         run: |
           cmake -S native-server -B native-server/build-manual \
             -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
@@ -73,7 +78,7 @@ jobs:
             -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)"
 
       - name: 配置（Windows）
-        if: inputs.target_platform == 'windows'
+        if: matrix.target_platform == 'windows'
         shell: pwsh
         run: |
           $vcpkg = $env:VCPKG_INSTALLATION_ROOT
@@ -85,7 +90,7 @@ jobs:
             -DPLUGMESH_BUILD_ARTIFACT="$env:BUILD_ARTIFACT"
 
       - name: 构建和打包 Linux 兼容基线
-        if: inputs.target_platform == 'linux'
+        if: matrix.target_platform == 'linux'
         shell: bash
         run: |
           set -euo pipefail
@@ -101,45 +106,70 @@ jobs:
               "${ui_arg[@]}"
 
       - name: 构建（macOS）
-        if: inputs.target_platform == 'macos'
+        if: matrix.target_platform == 'macos'
         shell: bash
         run: |
           target=plugmesh-server
           if [ "$BUILD_ARTIFACT" = SHARED ]; then target=plugmesh-server-shared; fi
-          cmake --build native-server/build-manual --target "$target" plugmesh-plugin-host --parallel
+          cmake --build native-server/build-manual --target "$target" plugmesh-plugin-host plugmesh-sample --parallel
 
       - name: 构建（Windows）
-        if: inputs.target_platform == 'windows'
+        if: matrix.target_platform == 'windows'
         shell: pwsh
         run: |
           $target = if ($env:BUILD_ARTIFACT -eq 'SHARED') { 'plugmesh-server-shared' } else { 'plugmesh-server' }
-          cmake --build native-server/build-manual --target $target plugmesh-plugin-host --config $env:BUILD_TYPE --parallel
+          cmake --build native-server/build-manual --target $target plugmesh-plugin-host plugmesh-sample --config $env:BUILD_TYPE --parallel
 
       - name: 打包（macOS）
-        if: inputs.target_platform == 'macos'
+        if: matrix.target_platform == 'macos'
         shell: bash
         run: |
           set -euo pipefail
           package="plugmesh-plugin-server-macos-${{ inputs.artifact_type }}-${{ inputs.build_type }}"
-          mkdir -p "dist/$package"
+          root="dist/$package"
+          mkdir -p "$root/sdk/include/plugmesh" "$root/sdk/lib" "$root/sdk/examples" "$root/sdk/plugins/sample.plugin"
           if [ "$BUILD_ARTIFACT" = SHARED ]; then
-            cp native-server/build-manual/libplugmesh-server.dylib "dist/$package/"
-            cp native-server/include/plugmesh/server_api.h "dist/$package/"
+            cp native-server/build-manual/libplugmesh-server.dylib "$root/"
+            cp native-server/build-manual/libplugmesh-server.dylib "$root/sdk/lib/"
           else
-            cp native-server/build-manual/plugmesh-server "dist/$package/"
-            mkdir -p "dist/$package/native-ui/dist"
-            cp -R native-ui/dist/. "dist/$package/native-ui/dist/"
+            cp native-server/build-manual/plugmesh-server "$root/"
+            mkdir -p "$root/native-ui/dist"
+            cp -R native-ui/dist/. "$root/native-ui/dist/"
           fi
-          cp native-server/build-manual/plugmesh-plugin-host "dist/$package/"
-          cp native-server/include/plugmesh/plugin_api.h "dist/$package/"
-          cp native-server/README.md "dist/$package/"
-          printf '类型：%s\n平台：macOS\n构建类型：%s\n' "${{ inputs.artifact_type }}" "${{ inputs.build_type }}" > "dist/$package/BUILD-INFO.txt"
+          cp native-server/build-manual/plugmesh-plugin-host "$root/"
+          cp native-server/include/plugmesh/*.h "$root/sdk/include/plugmesh/"
+          cp native-server/examples/sample_plugin.cpp "$root/sdk/examples/"
+          cp native-server/build-manual/plugins/sample.plugin/* "$root/sdk/plugins/sample.plugin/"
+          cp native-server/PORT-MAPPING.md "$root/PORT-MAPPING.md"
+          cp native-server/README.md "$root/README.md"
+          openssl_prefix="$(brew --prefix openssl@3)"
+          cp "$openssl_prefix/lib/libssl.3.dylib" "$openssl_prefix/lib/libcrypto.3.dylib" "$root/"
+          cp "$openssl_prefix/lib/libssl.3.dylib" "$openssl_prefix/lib/libcrypto.3.dylib" "$root/sdk/lib/"
+          for ssl_library in "$root/libssl.3.dylib" "$root/sdk/lib/libssl.3.dylib"; do
+            crypto_path="$(otool -L "$ssl_library" | awk '/libcrypto\\.3\\.dylib/ { print $1; exit }')"
+            if [ -n "$crypto_path" ]; then install_name_tool -change "$crypto_path" '@loader_path/libcrypto.3.dylib' "$ssl_library"; fi
+          done
+          for binary in "$root/plugmesh-plugin-host" "$root/plugmesh-server"; do
+            if [ -f "$binary" ]; then
+              ssl_path="$(otool -L "$binary" | awk '/libssl\\.3\\.dylib/ { print $1; exit }')"
+              crypto_path="$(otool -L "$binary" | awk '/libcrypto\\.3\\.dylib/ { print $1; exit }')"
+              if [ -n "$ssl_path" ]; then install_name_tool -change "$ssl_path" '@executable_path/libssl.3.dylib' "$binary"; fi
+              if [ -n "$crypto_path" ]; then install_name_tool -change "$crypto_path" '@executable_path/libcrypto.3.dylib' "$binary"; fi
+            fi
+          done
+          if [ "$BUILD_ARTIFACT" = SHARED ]; then
+            ssl_path="$(otool -L "$root/libplugmesh-server.dylib" | awk '/libssl\\.3\\.dylib/ { print $1; exit }')"
+            crypto_path="$(otool -L "$root/libplugmesh-server.dylib" | awk '/libcrypto\\.3\\.dylib/ { print $1; exit }')"
+            if [ -n "$ssl_path" ]; then install_name_tool -change "$ssl_path" '@loader_path/libssl.3.dylib' "$root/libplugmesh-server.dylib"; fi
+            if [ -n "$crypto_path" ]; then install_name_tool -change "$crypto_path" '@loader_path/libcrypto.3.dylib' "$root/libplugmesh-server.dylib"; fi
+          fi
+          printf '类型：%s\n平台：macOS\n构建类型：%s\n' "${{ inputs.artifact_type }}" "${{ inputs.build_type }}" > "$root/BUILD-INFO.txt"
           archive="$package.tar.gz"
           tar -C dist -czf "dist/$archive" "$package"
           (cd dist && shasum -a 256 "$archive" > SHA256SUMS)
 
       - name: 打包（Windows）
-        if: inputs.target_platform == 'windows'
+        if: matrix.target_platform == 'windows'
         shell: pwsh
         run: |
           $package = "plugmesh-plugin-server-windows-${{ inputs.artifact_type }}-${{ inputs.build_type }}"
@@ -147,20 +177,23 @@ jobs:
           $config = $env:BUILD_TYPE
           $vcpkg = $env:VCPKG_INSTALLATION_ROOT
           if (-not $vcpkg) { $vcpkg = 'C:\vcpkg' }
-          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          New-Item -ItemType Directory -Force -Path $root, "$root/sdk/include/plugmesh", "$root/sdk/lib", "$root/sdk/examples", "$root/sdk/plugins/sample.plugin" | Out-Null
           if ($env:BUILD_ARTIFACT -eq 'SHARED') {
             Copy-Item "native-server/build-manual/$config/plugmesh-server.dll" "$root/"
-            Copy-Item "native-server/build-manual/$config/plugmesh-server.lib" "$root/"
-            Copy-Item native-server/include/plugmesh/server_api.h "$root/"
+            Copy-Item "native-server/build-manual/$config/plugmesh-server.lib" "$root/sdk/lib/"
           } else {
             Copy-Item "native-server/build-manual/$config/plugmesh-server.exe" "$root/"
             New-Item -ItemType Directory -Force -Path "$root/native-ui/dist" | Out-Null
             Copy-Item native-ui/dist/* "$root/native-ui/dist/" -Recurse -Force
           }
           Copy-Item "native-server/build-manual/$config/plugmesh-plugin-host.exe" "$root/"
-          Get-ChildItem "$vcpkg/installed/x64-windows/bin/*.dll" -ErrorAction SilentlyContinue |
-            Copy-Item -Destination $root -Force
-          Copy-Item native-server/include/plugmesh/plugin_api.h "$root/"
+          foreach ($dllRoot in @("$vcpkg/installed/x64-windows/bin", "$vcpkg/installed/x64-windows/debug/bin")) {
+            Get-ChildItem "$dllRoot/*.dll" -ErrorAction SilentlyContinue | Copy-Item -Destination $root -Force
+          }
+          Copy-Item native-server/include/plugmesh/*.h "$root/sdk/include/plugmesh/"
+          Copy-Item native-server/examples/sample_plugin.cpp "$root/sdk/examples/"
+          Copy-Item native-server/build-manual/plugins/sample.plugin/* "$root/sdk/plugins/sample.plugin/"
+          Copy-Item native-server/PORT-MAPPING.md "$root/PORT-MAPPING.md"
           Copy-Item native-server/README.md "$root/"
           "类型：${{ inputs.artifact_type }}`n平台：Windows x64`n构建类型：${{ inputs.build_type }}" | Set-Content -Encoding utf8 "$root/BUILD-INFO.txt"
           $archive = "$package.zip"
@@ -170,7 +203,7 @@ jobs:
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
-          name: plugmesh-plugin-server-${{ inputs.target_platform }}-${{ inputs.artifact_type }}-${{ inputs.build_type }}
+          name: plugmesh-plugin-server-${{ matrix.target_platform }}-${{ inputs.artifact_type }}-${{ inputs.build_type }}
           path: dist/*
           if-no-files-found: error
           retention-days: 14

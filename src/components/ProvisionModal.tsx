@@ -14,6 +14,7 @@ export function ProvisionModal({ type, plugins, onClose, onConfirm }: { type: 's
   const [value, setValue] = useState('')
   const [selectedPluginId, setSelectedPluginId] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<ModalResult | null>(null)
 
@@ -53,8 +54,10 @@ export function ProvisionModal({ type, plugins, onClose, onConfirm }: { type: 's
     }
     try {
       await navigator.clipboard.writeText(code)
+      setCopied(true)
       setError(null)
     } catch {
+      setCopied(false)
       setError(t('modal.copyFailed'))
     }
   }
@@ -79,7 +82,7 @@ export function ProvisionModal({ type, plugins, onClose, onConfirm }: { type: 's
         <div className="code-value">
           <Typography.Text strong>{result.code}</Typography.Text>
         </div>
-        <Button size="small" onClick={() => void copyCode(result.code)} aria-label={t('modal.copyCode')} icon={<Copy size={15} />}>{t('modal.copyCode')}</Button>
+        <Button size="small" onClick={() => void copyCode(result.code)} aria-label={t(copied ? 'modal.copiedCode' : 'modal.copyCode')} icon={<Copy size={15} />}>{t(copied ? 'modal.copiedCode' : 'modal.copyCode')}</Button>
       </div>}
       {result?.kind === 'plugin' && <Result status="success" title={t('modal.loadConfirmed')} subTitle={t('modal.loadConfirmedState', { state: result.state })} />}
       {result?.kind === 'domain' && <Result status="success" title={t('modal.domainAssigned')} subTitle={result.hostname} />}

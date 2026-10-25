@@ -595,6 +595,7 @@ export default {
     plugin: { title: 'Load plugin', description: 'Pick a discovered manifest from a connected server.' },
     codeExpires: 'Code valid until {{time}}',
     copyCode: 'Copy registration code',
+    copiedCode: 'Copied',
     loadConfirmed: 'Load command accepted',
     loadConfirmedState: 'Current plugin state: {{state}}',
     domainAssigned: 'Public domain assigned',

@@ -596,6 +596,7 @@ export default {
     plugin: { title: '加载插件', description: '从已连接的服务器选择一个已发现的 manifest。' },
     codeExpires: '注册码有效至 {{time}}',
     copyCode: '复制注册码',
+    copiedCode: '已复制',
     loadConfirmed: '加载命令已确认',
     loadConfirmedState: '插件当前状态：{{state}}',
     domainAssigned: '公开域名已分配',
