@@ -13,7 +13,8 @@ for required in \
   'Android Termux' \
   'TERMUX-README.txt' \
   'Native UI is optional' \
-  'tar -C "$dist_dir" -czf'; do
+  'tar -C "$dist_dir" -czf' \
+  'sha256sum "$archive_name" > "$archive_name.sha256"'; do
   grep -Fq -- "$required" <<<"$read_script" || { echo "missing Termux build contract: $required" >&2; exit 1; }
 done
 

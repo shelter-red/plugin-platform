@@ -248,6 +248,10 @@ git diff --check                         通过
 - 部署使用的 `CLOUDFLARE_API_TOKEN`，它不是平台业务凭据。
 - 测试中的负断言和历史兼容 fixture。
 
+## 10. 当前追加步骤登记
+
+- 2026-10-26：登记遗漏项补齐步骤：把 Termux Android CLI 作为正式 Release 资产加入 `release.yml`，使用官方 `ghcr.io/termux/package-builder` 构建环境运行 `scripts/build-termux-native.sh`，补充发布契约、校验和与 Release 说明；不制作 APK，不伪造 Android 构建。完成后运行定向契约/构建验证，提交、推送并重新发版。
+
 ## 9. 最近动作
 
 - 2026-10-25：额度口径复核确认主仓 `ae10ee6` 与 `~/pay/cfpay` 的 `927cf60` 均已在代码中统一 D1 账户级自然日统计，但两仓均尚未推送/部署，因此线上首页与平台监控仍可能显示旧口径。本阶段先完成内置映射授权回归的编译与验证，再分别核对两仓测试和 `git diff --check`；不在未验证前推送或修改生产数据。

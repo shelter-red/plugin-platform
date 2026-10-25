@@ -96,5 +96,5 @@ EOF
 
 rm -f "$dist_dir/$archive_name"
 tar -C "$dist_dir" -czf "$dist_dir/$archive_name" "$package_name"
-(cd "$dist_dir" && sha256sum "$archive_name" > SHA256SUMS)
+(cd "$dist_dir" && sha256sum "$archive_name" > "$archive_name.sha256")
 printf 'Termux package written to %s\n' "$dist_dir/$archive_name"
