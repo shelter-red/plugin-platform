@@ -113,7 +113,28 @@ plugmesh_server_destroy(server);
 
 库文件和可执行文件都需要 OpenSSL 3 运行库；Linux 发布包会随包提供兼容基线构建的运行库。共享库还需要调用方链接本项目导出的 C ABI，并把插件宿主放在可执行文件旁或显式传入路径。手动构建入口会把共享库、插件宿主、公共头和构建说明一起打包。
 
-## Windows 构建
+## Android Termux CLI 构建
+
+Android 首版使用 Termux 的命令行环境，不提供 APK，也不需要安装 Android App。Termux 自带的 clang、CMake、OpenSSL 和 zlib 负责构建与运行；不要使用 `scripts/build-linux-native.sh`，那个脚本针对 Debian/glibc x86_64 基线。
+
+在 Termux 中安装依赖并从仓库根目录构建：
+
+```bash
+pkg update
+pkg install clang cmake make openssl zlib tar coreutils
+bash scripts/build-termux-native.sh --include-ui
+```
+
+脚本不修改 `/etc/apt`，不下载或编译 x86_64 OpenSSL，也不执行 glibc ABI 检查。它使用 `$PREFIX` 下的 Android/Termux 原生库，生成 `dist/plugmesh-server-termux.tar.gz` 和 `dist/SHA256SUMS`。解压后直接通过命令行启动：
+
+```bash
+tar -xzf dist/plugmesh-server-termux.tar.gz
+cd plugmesh-server-termux
+./plugmesh-server
+```
+
+Termux 包内的 `plugmesh-server`、`plugmesh-plugin-host` 和 `plugins/` 必须保持相对位置；运行时继续使用 Termux 的 OpenSSL/zlib，不应把 Debian Linux 包中的 `.so` 或 glibc 运行库复制进来。端口映射、SSH/大文件流和本地 UI 的行为与其它原生构建一致。
+
 
 ### MSVC
 
