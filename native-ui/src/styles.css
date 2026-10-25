@@ -64,7 +64,14 @@ button { cursor: pointer; }
 .section-heading h2 { margin: 10px 0 0; font-size: 18px; font-weight: 400; }
 .section-meta { color: var(--muted); font-size: 10px; }
 .plugin-list { border-top: 1px solid var(--line); }
-.mapping-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: end; gap: 12px; padding: 18px 0 22px; border-bottom: 1px solid var(--line); }
+.mapping-target-list { padding: 14px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.mapping-target-list-heading { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 10px; color: var(--muted); font-size: 10px; }
+.mapping-target-list-heading strong { color: var(--text); font-size: 12px; }
+.mapping-target-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(160px, .8fr) 132px; align-items: center; gap: 12px; min-height: 50px; padding: 8px 0; border-top: 1px solid var(--line); }
+.mapping-target-row > div { display: grid; gap: 5px; min-width: 0; }
+.mapping-target-row strong { overflow-wrap: anywhere; color: var(--text); font-size: 11px; }
+.mapping-target-row input { width: 100%; min-width: 0; height: 34px; padding: 0 9px; color: var(--text); border: 1px solid var(--line-strong); border-radius: 0; outline: none; background: var(--bg); font-size: 11px; }
+.mapping-target-row input:focus { border-color: var(--signal); }
 .mapping-form label { display: grid; min-width: 0; gap: 6px; color: var(--muted); font-size: 10px; }
 .mapping-form input, .mapping-form select { width: 100%; min-width: 0; height: 36px; padding: 0 9px; color: var(--text); border: 1px solid var(--line-strong); border-radius: 0; outline: none; background: var(--bg); font-size: 11px; }
 .mapping-form input:focus, .mapping-form select:focus { border-color: var(--signal); }

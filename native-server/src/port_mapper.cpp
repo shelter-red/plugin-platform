@@ -247,7 +247,7 @@ std::vector<Mapping> load_config(const Json& config, const Settings& settings, c
 }
 
 template <typename Client>
-void run_tunnel(Client& client, Tcp::socket& local, const Settings& settings, const Mapping& mapping, const WorkerUri& worker_uri, const std::function<void()>& authorization_complete) {
+void run_tunnel(Client& client, Tcp::socket& local, const Settings& settings, const Mapping& mapping, const WorkerUri& worker_uri, const std::function<void(const std::shared_ptr<std::string>&)>& authorization_complete) {
   client.clear_access_channels(websocketpp::log::alevel::all);
   client.clear_error_channels(websocketpp::log::elevel::all);
   client.init_asio();
@@ -338,9 +338,9 @@ void run_tunnel(Client& client, Tcp::socket& local, const Settings& settings, co
         std::lock_guard lock(state->mutex);
         state->ready = true;
         if (!password->empty()) {
+          if (authorization_complete) authorization_complete(password);
           OPENSSL_cleanse(password->data(), password->size());
           password->clear();
-          if (authorization_complete) authorization_complete();
         }
       }
       state->changed.notify_all();
@@ -348,9 +348,9 @@ void run_tunnel(Client& client, Tcp::socket& local, const Settings& settings, co
     }
     if (type == plugmesh::tunnel::kReady) {
       if (!password->empty()) {
+        if (authorization_complete) authorization_complete(password);
         OPENSSL_cleanse(password->data(), password->size());
         password->clear();
-        if (authorization_complete) authorization_complete();
       }
       std::lock_guard lock(state->mutex);
       state->ready = true;
@@ -541,8 +541,15 @@ bool PortMapper::start(const ServerConfig& server_config, std::string& error) {
     std::vector<std::unique_ptr<MappingListener>> listeners;
     for (auto& mapping : mappings) {
       if (!mapping.enabled) continue;
-      std::lock_guard password_lock(impl_->password_mutex);
-      if (const auto password = impl_->target_passwords.find(mapping.name); password != impl_->target_passwords.end()) mapping.target_password = std::make_shared<std::string>(password->second);
+      {
+        std::lock_guard password_lock(impl_->password_mutex);
+        const auto password = impl_->target_passwords.find(mapping.target_server_id);
+        if (password != impl_->target_passwords.end()) {
+          mapping.target_password = std::make_shared<std::string>(password->second);
+        } else if (const auto legacy_password = impl_->target_passwords.find(mapping.name); legacy_password != impl_->target_passwords.end()) {
+          mapping.target_password = std::make_shared<std::string>(legacy_password->second);
+        }
+      }
       auto listener = std::make_unique<MappingListener>();
       listener->mapping = std::move(mapping);
       listener->context = std::make_unique<asio::io_context>();
@@ -575,12 +582,15 @@ bool PortMapper::start(const ServerConfig& server_config, std::string& error) {
           }
           current->active_sockets.push_back(incoming);
           current->sessions.emplace_back([this, incoming, mapping, settings, uri] {
-            const auto clear_password = [this, name = mapping.name, secret = mapping.target_password] {
+            const auto clear_password = [this, name = mapping.name, target_id = mapping.target_server_id, secret = mapping.target_password](const std::shared_ptr<std::string>&) {
               if (secret && !secret->empty()) {
                 OPENSSL_cleanse(secret->data(), secret->size());
                 secret->clear();
               }
-              impl_->clear_target_password(name);
+              if (name != "target-authorization-probe") {
+                impl_->clear_target_password(name);
+                if (target_id != name) impl_->clear_target_password(target_id);
+              }
             };
             try {
               if (uri.secure) {
@@ -618,6 +628,60 @@ std::string PortMapper::snapshot() const {
 
 nlohmann::json PortMapper::handle_request(const std::string& method, const std::string& resource, const nlohmann::json& payload, std::string& error) {
   std::lock_guard lifecycle_lock(impl_->lifecycle_mutex);
+  const std::string authorize_prefix = "/api/mappings/targets/";
+  const std::string authorize_suffix = "/authorize";
+  if (method == "POST" && resource.size() > authorize_prefix.size() + authorize_suffix.size() && resource.compare(0, authorize_prefix.size(), authorize_prefix) == 0 && resource.compare(resource.size() - authorize_suffix.size(), authorize_suffix.size(), authorize_suffix) == 0) {
+    const auto target_id = resource.substr(authorize_prefix.size(), resource.size() - authorize_prefix.size() - authorize_suffix.size());
+    const auto password = payload.value("targetPassword", std::string());
+    if (password.empty() || password.size() > 1024) {
+      error = "target server password is required and must be at most 1024 bytes";
+      return Json::object();
+    }
+    try {
+      const auto settings = load_settings(impl_->config);
+      const auto targets = parse_targets(settings);
+      const auto target = std::find_if(targets.begin(), targets.end(), [&target_id](const Json& item) { return item.value("id", std::string()) == target_id; });
+      if (target == targets.end()) {
+        error = "target plugin server is not available in this workspace";
+        return Json::object();
+      }
+      const auto uri = parse_worker_uri(settings.worker_url);
+      Mapping probe;
+      probe.name = "target-authorization-probe";
+      probe.target_server_id = target_id;
+      probe.target_server_name = target->value("name", target_id);
+      probe.target_host = "127.0.0.1";
+      probe.target_port = 1;
+      probe.protocol = "tcp";
+      probe.target_password = std::make_shared<std::string>(password);
+      asio::io_context context;
+      Tcp::acceptor acceptor(context, Tcp::endpoint(asio::ip::address_v4::loopback(), 0));
+      Tcp::socket peer(context);
+      peer.connect(acceptor.local_endpoint());
+      Tcp::socket local = acceptor.accept();
+      const auto authorization_complete = [this, &local, target_id](const std::shared_ptr<std::string>& authorized_password) {
+        {
+          std::lock_guard password_lock(impl_->password_mutex);
+          const auto previous = impl_->target_passwords.find(target_id);
+          if (previous != impl_->target_passwords.end()) OPENSSL_cleanse(previous->second.data(), previous->second.size());
+          impl_->target_passwords[target_id] = *authorized_password;
+        }
+        asio::error_code ignored;
+        local.shutdown(Tcp::socket::shutdown_both, ignored);
+      };
+      if (uri.secure) {
+        TlsClient client;
+        run_tunnel(client, local, settings, probe, uri, authorization_complete);
+      } else {
+        PlainClient client;
+        run_tunnel(client, local, settings, probe, uri, authorization_complete);
+      }
+      return Json{{"authorized", true}, {"targetId", target_id}};
+    } catch (const std::exception& exception) {
+      error = exception.what();
+      return Json::object();
+    }
+  }
   if (resource == "/api/mappings/targets" && method == "GET") {
     try { return Json{{"targets", parse_targets(load_settings(impl_->config))}}; }
     catch (const std::exception& exception) { error = exception.what(); return Json::object(); }

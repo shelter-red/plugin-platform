@@ -189,6 +189,8 @@ function App() {
   const [plugins, setPlugins] = useState<LocalPlugin[]>([])
   const [mappings, setMappings] = useState<LocalMapping[]>([])
   const [mappingTargets, setMappingTargets] = useState<MappingTarget[]>([])
+  const [mappingTargetPasswords, setMappingTargetPasswords] = useState<Record<string, string>>({})
+  const [mappingTargetAuthBusy, setMappingTargetAuthBusy] = useState<string | null>(null)
   const [mappingTargetsLoading, setMappingTargetsLoading] = useState(false)
   const mappingTargetsInFlight = useRef(false)
   const [mappingBusy, setMappingBusy] = useState(false)
@@ -266,6 +268,24 @@ function App() {
       setMappingTargetsLoading(false)
     }
   }, [mappingForm.targetServerId])
+
+  const authorizeMappingTarget = async (target: MappingTarget) => {
+    const password = mappingTargetPasswords[target.id] ?? ''
+    if (!password) {
+      setMessage({ kind: 'error', text: t('mappings.targetPasswordRequired') })
+      return
+    }
+    setMappingTargetAuthBusy(target.id)
+    try {
+      await request(`/api/mappings/targets/${encodeURIComponent(target.id)}/authorize`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ targetPassword: password }) })
+      setMappingTargetPasswords((current) => ({ ...current, [target.id]: '' }))
+      setMessage({ kind: 'success', text: t('mappings.targetAuthorized', { name: target.name }) })
+    } catch (cause) {
+      setMessage({ kind: 'error', text: errorMessage(cause, 'mappings.targetAuthorizeFailed') })
+    } finally {
+      setMappingTargetAuthBusy(null)
+    }
+  }
 
   const waitForRestart = useCallback(async () => {
     for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -582,7 +602,8 @@ function App() {
 
           <section id="mappings" className="section-block">
             <div className="section-heading"><div><span className="section-index">{t('mappings.index')}</span><h2>{t('mappings.title')}</h2></div><button className="button secondary with-icon" onClick={() => void refreshMappingTargets()} disabled={mappingTargetsLoading}><RefreshCw size={14} className={mappingTargetsLoading ? 'spin' : ''} />{t('mappings.refreshTargets')}</button></div>
-            <form className="mapping-form" onSubmit={(event) => void saveMapping(event)}>
+                         {mappingTargets.length > 0 && <div className="mapping-target-list"><div className="mapping-target-list-heading"><strong>{t('mappings.targetTableTitle')}</strong><span>{t('mappings.targetTableBody')}</span></div>{mappingTargets.map((target) => <div className="mapping-target-row" key={target.id}><div><strong>{target.name}</strong><span className={`status-badge ${target.status === 'online' ? 'positive' : 'warning'}`}>{target.status}</span></div><label><span className="sr-only">{t('mappings.targetPassword')}</span><input type="password" autoComplete="new-password" placeholder={t('mappings.targetPasswordPlaceholder')} value={mappingTargetPasswords[target.id] ?? ''} onChange={(event) => setMappingTargetPasswords((current) => ({ ...current, [target.id]: event.target.value }))} /></label><button className="button secondary with-icon" type="button" onClick={() => void authorizeMappingTarget(target)} disabled={mappingTargetAuthBusy !== null || target.status !== 'online'}>{mappingTargetAuthBusy === target.id ? <LoaderCircle size={14} className="spin" /> : <KeyRound size={14} />}{t('mappings.authorizeTarget')}</button></div>)}</div>}
+             <form className="mapping-form" onSubmit={(event) => void saveMapping(event)}>
               <label><span>{t('mappings.name')}</span><input required maxLength={64} pattern="[A-Za-z0-9_-]+" value={mappingForm.name} onChange={(event) => setMappingForm({ ...mappingForm, name: event.target.value })} /></label>
               <label><span>{t('mappings.protocol')}</span><select value={mappingForm.protocol} onChange={(event) => setMappingForm({ ...mappingForm, protocol: event.target.value })}><option value="tcp">TCP</option><option value="http">HTTP</option><option value="websocket">WebSocket</option></select></label>
               <label><span>{t('mappings.listenPort')}</span><input required type="number" min="1" max="65535" value={mappingForm.listenPort} onChange={(event) => setMappingForm({ ...mappingForm, listenPort: event.target.value })} /></label>

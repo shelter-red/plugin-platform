@@ -137,6 +137,12 @@ int main() {
     std::cerr << "oversized target password should be rejected before persistence\n";
     return 1;
   }
+  error.clear();
+  const auto empty_authorization = mapper.handle_request("POST", "/api/mappings/targets/target/authorize", nlohmann::json{{"targetPassword", ""}}, error);
+  if (error != "target server password is required and must be at most 1024 bytes" || !empty_authorization.empty()) {
+    std::cerr << "empty target authorization password should be rejected\n";
+    return 1;
+  }
 
   if (conflicting_mapper.start(server_config, error) || error.empty()) {
     std::cerr << "conflicting listener port should fail startup\n";
