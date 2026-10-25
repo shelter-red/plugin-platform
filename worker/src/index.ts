@@ -93,7 +93,16 @@ async function authenticatedControlServer(request: Request, env: Env): Promise<{
   return server ?? json({ error: 'Invalid control token' }, 401)
 }
 
-async function remoteServerInfo(env: Env, serverId: string, workspaceId: string, requestUrl: string): Promise<{ plugins: unknown[]; portMappings: unknown[]; pluginDomains: Record<string, string> }> {
+const REMOTE_SERVER_INFO_TTL_MS = 10_000
+
+type RemoteServerInfo = { plugins: unknown[]; portMappings: unknown[]; pluginDomains: Record<string, string> }
+const remoteServerInfoCache = new Map<string, { expiresAt: number; value: RemoteServerInfo }>()
+
+async function remoteServerInfo(env: Env, serverId: string, workspaceId: string, requestUrl: string): Promise<RemoteServerInfo> {
+  const cacheKey = `${workspaceId}:${serverId}`
+  const cached = remoteServerInfoCache.get(cacheKey)
+  if (cached && cached.expiresAt > Date.now()) return cached.value
+  if (cached) remoteServerInfoCache.delete(cacheKey)
   const bridge = env.PLUGIN_BRIDGE.get(env.PLUGIN_BRIDGE.idFromName(serverId))
   const response = await bridge.fetch(new Request(new URL('/command', requestUrl), {
     method: 'POST',
@@ -103,7 +112,9 @@ async function remoteServerInfo(env: Env, serverId: string, workspaceId: string,
   if (!response.ok) return { plugins: [], portMappings: [], pluginDomains: {} }
   const body = await response.json().catch(() => null) as { payload?: { manifests?: unknown; portMappings?: unknown } } | null
   const domains = await env.DB.prepare('SELECT plugin_instances.plugin_id, domains.hostname FROM plugin_instances JOIN domains ON domains.plugin_instance_id = plugin_instances.id WHERE plugin_instances.server_id = ? AND plugin_instances.workspace_id = ? AND domains.status != ?').bind(serverId, workspaceId, 'offline').all<{ plugin_id: string; hostname: string }>()
-  return { plugins: Array.isArray(body?.payload?.manifests) ? body.payload.manifests : [], portMappings: Array.isArray(body?.payload?.portMappings) ? body.payload.portMappings : [], pluginDomains: Object.fromEntries(domains.results.map((domain) => [domain.plugin_id, domain.hostname])) }
+  const value = { plugins: Array.isArray(body?.payload?.manifests) ? body.payload.manifests : [], portMappings: Array.isArray(body?.payload?.portMappings) ? body.payload.portMappings : [], pluginDomains: Object.fromEntries(domains.results.map((domain) => [domain.plugin_id, domain.hostname])) }
+  remoteServerInfoCache.set(cacheKey, { expiresAt: Date.now() + REMOTE_SERVER_INFO_TTL_MS, value })
+  return value
 }
 
 async function tunnelTargets(request: Request, env: Env): Promise<Response> {
