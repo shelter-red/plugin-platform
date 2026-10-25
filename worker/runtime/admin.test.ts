@@ -108,6 +108,15 @@ test('未知插件动作直接返回 404，不进入 Durable Object 命令队列
   socket.close(1000, 'test complete')
 })
 
+test('畸形资源路径编码返回 404 而不是未处理异常', { timeout: 20_000 }, async () => {
+  await seedServer()
+  await seedMemberSession()
+
+  const response = await api('/api/servers/%', MEMBER_TOKEN)
+  expect(response.status).toBe(404)
+  expect(await response.json()).toEqual({ error: 'Not found' })
+})
+
 test('域名分配校验前缀、插件状态、服务器在线与健康检查', { timeout: 30_000 }, async () => {
   await seedServer()
   await seedAdmin()

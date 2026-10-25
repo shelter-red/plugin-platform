@@ -34,6 +34,14 @@ function configuredConsoleHostname(env: Env, request: Request): string {
   return env.CONSOLE_HOSTNAME?.trim().toLowerCase() || new URL(request.url).hostname.toLowerCase()
 }
 
+function decodePathSegment(value: string): string | null {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return null
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url)
@@ -195,12 +203,24 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   if (url.pathname === '/api/usage/local') return localUsageApi(env, user, url, workspace)
   const serverDetail = url.pathname.match(/^\/api\/servers\/([^/]+)$/)
   const serverSync = url.pathname.match(/^\/api\/servers\/([^/]+)\/sync$/)
-  if (request.method === 'POST' && serverSync) return syncServer(request, env, user, workspace, decodeURIComponent(serverSync[1]))
-  if (request.method === 'GET' && serverDetail) return serverDetailsApi(env, workspace, decodeURIComponent(serverDetail[1]), request.url)
+  if (request.method === 'POST' && serverSync) {
+    const serverId = decodePathSegment(serverSync[1])
+    return serverId === null ? json({ error: 'Not found' }, 404) : syncServer(request, env, user, workspace, serverId)
+  }
+  if (request.method === 'GET' && serverDetail) {
+    const serverId = decodePathSegment(serverDetail[1])
+    return serverId === null ? json({ error: 'Not found' }, 404) : serverDetailsApi(env, workspace, serverId, request.url)
+  }
   const pluginDetail = url.pathname.match(/^\/api\/plugins\/([^/]+)$/)
-  if (request.method === 'GET' && pluginDetail) return pluginDetailsApi(env, workspace, decodeURIComponent(pluginDetail[1]), request.url)
+  if (request.method === 'GET' && pluginDetail) {
+    const pluginId = decodePathSegment(pluginDetail[1])
+    return pluginId === null ? json({ error: 'Not found' }, 404) : pluginDetailsApi(env, workspace, pluginId, request.url)
+  }
   const pluginAction = url.pathname.match(/^\/api\/plugins\/([^/]+)\/(load|unload|enable|disable|reload|health)$/)
-  if (request.method === 'POST' && pluginAction) return commandPlugin(request, env, user, workspace, decodeURIComponent(pluginAction[1]), pluginAction[2] as 'load' | 'unload' | 'enable' | 'disable' | 'reload' | 'health')
+  if (request.method === 'POST' && pluginAction) {
+    const pluginId = decodePathSegment(pluginAction[1])
+    return pluginId === null ? json({ error: 'Not found' }, 404) : commandPlugin(request, env, user, workspace, pluginId, pluginAction[2] as 'load' | 'unload' | 'enable' | 'disable' | 'reload' | 'health')
+  }
   if (request.method === 'POST' && url.pathname === '/api/domains') return assignDomain(request, env, user, workspace)
   if (request.method === 'POST' && url.pathname === '/api/registration-codes') return createRegistrationCode(env, user, workspace)
   return json({ error: 'Not found' }, 404)
@@ -231,11 +251,13 @@ async function workspaceApi(request: Request, env: Env, user: AuthenticatedUser,
 
   const memberDetail = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/members\/([^/]+)$/)
   if (memberDetail) {
-    const access = await accessibleWorkspace(env, user, decodeURIComponent(memberDetail[1]))
+    const workspaceId = decodePathSegment(memberDetail[1])
+    const userId = decodePathSegment(memberDetail[2])
+    if (workspaceId === null || userId === null) return json({ error: 'Not found' }, 404)
+    const access = await accessibleWorkspace(env, user, workspaceId)
     if ('status' in access) return access.status === 404 ? workspaceNotFound() : workspaceDenied()
     const denied = requireOwner(access.workspace)
     if (denied) return denied
-    const userId = decodeURIComponent(memberDetail[2])
     const membership = await env.DB.prepare('SELECT user_id, role FROM workspace_members WHERE workspace_id = ? AND user_id = ?').bind(access.workspace.id, userId).first<{ user_id: string; role: WorkspaceRole }>()
     if (!membership) return json({ error: 'Workspace member not found' }, 404)
     if (request.method === 'DELETE') {
@@ -256,7 +278,9 @@ async function workspaceApi(request: Request, env: Env, user: AuthenticatedUser,
 
   const members = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/members$/)
   if (members) {
-    const access = await accessibleWorkspace(env, user, decodeURIComponent(members[1]))
+    const workspaceId = decodePathSegment(members[1])
+    if (workspaceId === null) return json({ error: 'Not found' }, 404)
+    const access = await accessibleWorkspace(env, user, workspaceId)
     if ('status' in access) return access.status === 404 ? workspaceNotFound() : workspaceDenied()
     if (request.method === 'GET') return json({ results: await listWorkspaceMembers(env, access.workspace.id) })
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
@@ -279,7 +303,9 @@ async function workspaceApi(request: Request, env: Env, user: AuthenticatedUser,
 
   const detail = url.pathname.match(/^\/api\/workspaces\/([^/]+)$/)
   if (!detail) return json({ error: 'Not found' }, 404)
-  const access = await accessibleWorkspace(env, user, decodeURIComponent(detail[1]))
+  const workspaceId = decodePathSegment(detail[1])
+  if (workspaceId === null) return json({ error: 'Not found' }, 404)
+  const access = await accessibleWorkspace(env, user, workspaceId)
   if ('status' in access) return access.status === 404 ? workspaceNotFound() : workspaceDenied()
   const denied = requireOwner(access.workspace)
   if (denied) return denied
