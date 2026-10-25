@@ -343,6 +343,8 @@ export default {
       d1UtcDay: 'UTC {{date}}',
       d1RowsWritten: 'D1 行写入',
       writeQueries: '{{count}} 次写入查询',
+      d1Storage: 'D1 存储',
+      snapshot: '当前快照',
       kvRead: 'KV 读取',
       kvWrite: 'KV 写入',
       kvDelete: 'KV 删除',

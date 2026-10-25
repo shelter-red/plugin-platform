@@ -128,6 +128,7 @@ export const CLOUDFLARE_FREE_LIMITS: CloudflareUsageLimits = {
   workerRequests: 100_000,
   d1RowsRead: 5_000_000,
   d1RowsWritten: 100_000,
+  d1StorageBytes: 5_000_000_000,
   kvRead: 100_000,
   kvWrite: 1_000,
   kvDelete: 1_000,

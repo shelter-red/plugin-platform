@@ -200,6 +200,7 @@ export interface CloudflareUsageLimits {
   workerRequests: number
   d1RowsRead: number
   d1RowsWritten: number
+  d1StorageBytes: number
   kvRead: number
   kvWrite: number
   kvDelete: number
@@ -231,6 +232,7 @@ export interface CloudflareUsage {
     writeQueries: number
     rowsRead: number
     rowsWritten: number
+    storageBytes: number
   }
   kv?: {
     read: number

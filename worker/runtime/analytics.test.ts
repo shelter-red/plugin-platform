@@ -13,6 +13,7 @@ const FREE_LIMITS = {
   workerRequests: 100_000,
   d1RowsRead: 5_000_000,
   d1RowsWritten: 100_000,
+  d1StorageBytes: 5_000_000_000,
   kvRead: 100_000,
   kvWrite: 1_000,
   kvDelete: 1_000,
@@ -96,6 +97,11 @@ const resourcesPayload = {
           { sum: { readQueries: 3, writeQueries: 2, rowsRead: 100, rowsWritten: 7 } },
           { sum: { readQueries: 1, writeQueries: 4 } },
         ],
+        d1StorageAdaptiveGroups: [
+          { dimensions: { databaseId: 'database-a', datetimeHour: '2026-10-25T01:00:00Z' }, max: { databaseSizeBytes: 1000 } },
+          { dimensions: { databaseId: 'database-a', datetimeHour: '2026-10-25T02:00:00Z' }, max: { databaseSizeBytes: 1500 } },
+          { dimensions: { databaseId: 'database-b', datetimeHour: '2026-10-25T01:00:00Z' }, max: { databaseSizeBytes: 2048 } },
+        ],
         kvOperationsAdaptiveGroups: [
           { sum: { requests: 5 }, dimensions: { actionType: 'read' } },
           { sum: { requests: 2 }, dimensions: { actionType: 'write' } },
@@ -150,7 +156,7 @@ test('Free subscriptions 提供官方基线，Analytics 合并资源并只在内
     accountIdConfigured: true,
     cached: false,
     requests: 4321,
-    d1: { readQueries: 4, writeQueries: 6, rowsRead: 100, rowsWritten: 7 },
+    d1: { readQueries: 4, writeQueries: 6, rowsRead: 100, rowsWritten: 7, storageBytes: 3548 },
     kv: { read: 5, write: 2, delete: 1, list: 3 },
     durableObjects: { requests: 15, cpuTime: 30, storedBytes: 4096 },
     source: 'cloudflare_graphql',

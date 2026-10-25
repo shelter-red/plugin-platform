@@ -119,17 +119,18 @@ export async function releaseR2Usage(env: Env, bytes: number): Promise<void> {
   await env.DB.prepare('UPDATE platform_usage SET r2_bytes = MAX(r2_bytes - ?, 0), r2_objects = MAX(r2_objects - 1, 0), updated_at = ? WHERE key = ?').bind(bytes, new Date().toISOString(), usageKey).run()
 }
 
-// 逐项比对 Cloudflare 免费额度：D1 按行读写、KV 按每种操作、DO 按请求数分别判断，
+// 逐项比对 Cloudflare 免费额度：D1 按行读写和存储、KV 按每种操作、DO 按请求数分别判断，
 // 任何一项触顶都进入维护模式，避免合并统计掩盖单项超限。
 export function cloudflareQuotaReason(usage: {
   requests?: number
-  d1?: { rowsRead: number; rowsWritten: number }
+  d1?: { rowsRead: number; rowsWritten: number; storageBytes?: number }
   kv?: { read: number; write: number; delete: number; list: number }
   durableObjects?: { requests: number }
 }, quotas: CloudflareUsageLimits): string | null {
   if ((usage.requests ?? 0) >= quotas.workerRequests) return 'Worker request quota reached'
   if ((usage.d1?.rowsRead ?? 0) >= quotas.d1RowsRead) return 'D1 rows read quota reached'
   if ((usage.d1?.rowsWritten ?? 0) >= quotas.d1RowsWritten) return 'D1 rows written quota reached'
+  if ((usage.d1?.storageBytes ?? 0) >= quotas.d1StorageBytes) return 'D1 storage quota reached'
   if ((usage.kv?.read ?? 0) >= quotas.kvRead) return 'KV read quota reached'
   if ((usage.kv?.write ?? 0) >= quotas.kvWrite) return 'KV write quota reached'
   if ((usage.kv?.delete ?? 0) >= quotas.kvDelete) return 'KV delete quota reached'

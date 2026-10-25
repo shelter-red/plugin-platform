@@ -343,6 +343,8 @@ export default {
       d1UtcDay: 'UTC {{date}}',
       d1RowsWritten: 'D1 rows written',
       writeQueries: '{{count}} write queries',
+      d1Storage: 'D1 storage',
+      snapshot: 'Current snapshot',
       kvRead: 'KV reads',
       kvWrite: 'KV writes',
       kvDelete: 'KV deletes',

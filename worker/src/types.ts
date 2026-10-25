@@ -80,6 +80,7 @@ export interface CloudflareUsageLimits {
   workerRequests: number
   d1RowsRead: number
   d1RowsWritten: number
+  d1StorageBytes: number
   kvRead: number
   kvWrite: number
   kvDelete: number

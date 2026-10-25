@@ -60,6 +60,11 @@ const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
     resourceVariables = body.variables ?? null
     return Response.json({ data: { viewer: { accounts: [{
         d1Today: [{ sum: { readQueries: 10, writeQueries: 4, rowsRead: 20, rowsWritten: 5 } }],
+        d1StorageAdaptiveGroups: [
+          { dimensions: { databaseId: 'database-a', datetimeHour: '2026-10-25T01:00:00Z' }, max: { databaseSizeBytes: 100 } },
+          { dimensions: { databaseId: 'database-a', datetimeHour: '2026-10-25T02:00:00Z' }, max: { databaseSizeBytes: 150 } },
+          { dimensions: { databaseId: 'database-b', datetimeHour: '2026-10-25T01:00:00Z' }, max: { databaseSizeBytes: 200 } },
+        ],
       kvOperationsAdaptiveGroups: [
         { sum: { requests: 8 }, dimensions: { actionType: 'read' } },
         { sum: { requests: 3 }, dimensions: { actionType: 'write' } },
@@ -89,7 +94,7 @@ const result = await response.json() as {
 assert.equal(result.requests, 99)
 assert.deepEqual(result.d1Period, { date: new Date().toISOString().slice(0, 10), timezone: 'UTC' })
 assert.equal(resourceVariables?.today, result.d1Period.date)
-assert.deepEqual(result.d1, { readQueries: 10, writeQueries: 4, rowsRead: 20, rowsWritten: 5 })
+assert.deepEqual(result.d1, { readQueries: 10, writeQueries: 4, rowsRead: 20, rowsWritten: 5, storageBytes: 350 })
 assert.deepEqual(result.kv, { read: 8, write: 3, delete: 1, list: 2 })
 assert.deepEqual(result.durableObjects, { requests: 7, cpuTime: 12, storedBytes: 4096 })
 assert.deepEqual(result.plan, { id: 'free', name: 'Free Website', free: true, confirmed: true })
@@ -102,6 +107,7 @@ assert.equal(cloudflareQuotaReason(result, CLOUDFLARE_FREE_LIMITS), null)
 assert.equal(cloudflareQuotaReason(result, { ...CLOUDFLARE_FREE_LIMITS, workerRequests: 99 }), 'Worker request quota reached')
 assert.equal(cloudflareQuotaReason(result, { ...CLOUDFLARE_FREE_LIMITS, d1RowsRead: 20 }), 'D1 rows read quota reached')
 assert.equal(cloudflareQuotaReason(result, { ...CLOUDFLARE_FREE_LIMITS, d1RowsWritten: 5 }), 'D1 rows written quota reached')
+assert.equal(cloudflareQuotaReason(result, { ...CLOUDFLARE_FREE_LIMITS, d1StorageBytes: 350 }), 'D1 storage quota reached')
 assert.equal(cloudflareQuotaReason(result, { ...CLOUDFLARE_FREE_LIMITS, kvRead: 8 }), 'KV read quota reached')
 assert.equal(cloudflareQuotaReason(result, { ...CLOUDFLARE_FREE_LIMITS, kvWrite: 3 }), 'KV write quota reached')
 assert.equal(cloudflareQuotaReason(result, { ...CLOUDFLARE_FREE_LIMITS, kvDelete: 1 }), 'KV delete quota reached')

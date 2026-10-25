@@ -985,6 +985,7 @@ export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser, fetc
   const end = new Date()
   const start = new Date(end.getTime() - 24 * 60 * 60 * 1000)
   const d1Today = end.toISOString().slice(0, 10)
+  const d1StorageStart = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate() - 29)).toISOString()
 
   // 免费基线只能来自 subscriptions；不能从平台设置手填，也不能用旧缓存猜测。
   let subscriptions: Awaited<ReturnType<typeof readCloudflareSubscriptions>>
@@ -1019,7 +1020,7 @@ export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser, fetc
   const resourceAnalyticsRequest = () => fetchImpl('https://api.cloudflare.com/client/v4/graphql', {
     method: 'POST',
     headers: { 'X-Auth-Email': auth.email, 'X-Auth-Key': auth.globalApiKey, 'content-type': 'application/json' },
-    body: JSON.stringify({ query: `query ResourceUsage($accountTag: String!, $start: Date, $end: Date, $today: Date) { viewer { accounts(filter: { accountTag: $accountTag }) { d1Today: d1AnalyticsAdaptiveGroups(limit: 10000, filter: { date_geq: $today, date_leq: $today }) { sum { readQueries writeQueries rowsRead rowsWritten } } kvOperationsAdaptiveGroups(limit: 10000, filter: { date_geq: $start, date_leq: $end }) { sum { requests } dimensions { actionType } } durableObjectsInvocationsAdaptiveGroups(limit: 1000, filter: { date_geq: $start, date_leq: $end }) { sum { requests } } durableObjectsPeriodicGroups(limit: 1000, filter: { date_geq: $start, date_leq: $end }) { sum { cpuTime } } durableObjectsStorageGroups(limit: 1000, filter: { date_geq: $start, date_leq: $end }) { max { storedBytes } } } } }`, variables: { accountTag: accountId, start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10), today: d1Today } }),
+    body: JSON.stringify({ query: `query ResourceUsage($accountTag: String!, $start: Date, $end: Date, $today: Date, $d1StorageStart: Time, $d1StorageEnd: Time) { viewer { accounts(filter: { accountTag: $accountTag }) { d1Today: d1AnalyticsAdaptiveGroups(limit: 10000, filter: { date_geq: $today, date_leq: $today }) { sum { readQueries writeQueries rowsRead rowsWritten } } d1StorageAdaptiveGroups(limit: 10000, filter: { datetime_geq: $d1StorageStart, datetime_leq: $d1StorageEnd }) { dimensions { databaseId datetimeHour } max { databaseSizeBytes } } kvOperationsAdaptiveGroups(limit: 10000, filter: { date_geq: $start, date_leq: $end }) { sum { requests } dimensions { actionType } } durableObjectsInvocationsAdaptiveGroups(limit: 1000, filter: { date_geq: $start, date_leq: $end }) { sum { requests } } durableObjectsPeriodicGroups(limit: 1000, filter: { date_geq: $start, date_leq: $end }) { sum { cpuTime } } durableObjectsStorageGroups(limit: 1000, filter: { date_geq: $start, date_leq: $end }) { max { storedBytes } } } } }`, variables: { accountTag: accountId, start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10), today: d1Today, d1StorageStart, d1StorageEnd: end.toISOString() } }),
   })
   let resourceResponse: Response
   try {
@@ -1043,6 +1044,7 @@ export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser, fetc
       viewer?: {
         accounts?: Array<{
           d1Today?: Array<{ sum?: { readQueries?: number; writeQueries?: number; rowsRead?: number; rowsWritten?: number } }>
+          d1StorageAdaptiveGroups?: Array<{ dimensions?: { databaseId?: string; datetimeHour?: string }; max?: { databaseSizeBytes?: number } }>
           kvOperationsAdaptiveGroups?: Array<{ sum?: { requests?: number }; dimensions?: { actionType?: string } }>
           durableObjectsInvocationsAdaptiveGroups?: Array<{ sum?: { requests?: number } }>
           durableObjectsPeriodicGroups?: Array<{ sum?: { cpuTime?: number } }>
@@ -1057,12 +1059,22 @@ export async function cloudflareUsageApi(env: Env, user: AuthenticatedUser, fetc
     resourceAnalyticsError = 'Cloudflare Resource Analytics 返回错误，资源明细暂未读取'
   }
   const resourceAccount = resourceAnalyticsAvailable ? resourcePayload?.data?.viewer?.accounts?.[0] : undefined
-  const d1 = resourceAccount?.d1Today?.reduce((total, row) => ({
+  const latestD1StorageByDatabase = new Map<string, { hour: string; bytes: number }>()
+  for (const row of resourceAccount?.d1StorageAdaptiveGroups ?? []) {
+    const databaseId = row.dimensions?.databaseId
+    const hour = row.dimensions?.datetimeHour
+    if (!databaseId || !hour) continue
+    const latest = latestD1StorageByDatabase.get(databaseId)
+    if (!latest || hour > latest.hour) latestD1StorageByDatabase.set(databaseId, { hour, bytes: Number(row.max?.databaseSizeBytes ?? 0) })
+  }
+  const d1StorageBytes = [...latestD1StorageByDatabase.values()].reduce((total, row) => total + row.bytes, 0)
+  const d1 = resourceAccount?.d1Today?.reduce<{ readQueries: number; writeQueries: number; rowsRead: number; rowsWritten: number; storageBytes: number }>((total, row) => ({
     readQueries: total.readQueries + (row.sum?.readQueries ?? 0),
     writeQueries: total.writeQueries + (row.sum?.writeQueries ?? 0),
     rowsRead: total.rowsRead + (row.sum?.rowsRead ?? 0),
     rowsWritten: total.rowsWritten + (row.sum?.rowsWritten ?? 0),
-  }), { readQueries: 0, writeQueries: 0, rowsRead: 0, rowsWritten: 0 }) ?? { readQueries: 0, writeQueries: 0, rowsRead: 0, rowsWritten: 0 }
+    storageBytes: total.storageBytes,
+  }), { readQueries: 0, writeQueries: 0, rowsRead: 0, rowsWritten: 0, storageBytes: d1StorageBytes }) ?? { readQueries: 0, writeQueries: 0, rowsRead: 0, rowsWritten: 0, storageBytes: d1StorageBytes }
   const kv = resourceAccount?.kvOperationsAdaptiveGroups?.reduce((total, row) => {
     const requestsForAction = row.sum?.requests ?? 0
     if (row.dimensions?.actionType === 'read') total.read += requestsForAction
@@ -1110,7 +1122,7 @@ type CloudflareUsageResult = {
   requests: number
   resourceAnalyticsAvailable?: boolean
   resourceAnalyticsError?: string
-  d1?: { readQueries: number; writeQueries: number; rowsRead: number; rowsWritten: number }
+  d1?: { readQueries: number; writeQueries: number; rowsRead: number; rowsWritten: number; storageBytes: number }
   kv?: { read: number; write: number; delete: number; list: number }
   durableObjects?: { requests: number; cpuTime: number; storedBytes: number }
   source: 'cloudflare_graphql'

@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { Button } from 'antd'
-import { Activity, ArrowDownToLine, ArrowUpFromLine, ArrowUpRight, Cloud, HardDrive, List, Package, PenLine, Search, Trash2 } from 'lucide-react'
+import { Activity, ArrowDownToLine, ArrowUpFromLine, ArrowUpRight, Cloud, Database, HardDrive, List, Package, PenLine, Search, Trash2 } from 'lucide-react'
 import type { CloudflareUsage, CloudflareUsageLimits, LocalUsage, PlatformSettings } from '../../api'
 import type { Page } from '../../app/routes'
 import { Panel } from '../../components/Panel'
@@ -21,6 +21,9 @@ export function UsageResourcesPanel({ settings, usage, localUsage, onNavigate }:
   const percent = (current: number | null | undefined, limit: number | undefined) => current != null && limit != null ? usagePercent(current, limit) : undefined
   const limit = (value: number | undefined) => value !== undefined ? formatNumber(value) : notRead
   const cloudflareLimit = (key: LimitKey) => limitsConfirmed ? limit(limits[key]) : notRead
+  const cloudflareFormattedLimit = (key: LimitKey) => limitsConfirmed
+    ? key === 'd1StorageBytes' ? formatBytes(limits[key]) ?? notRead : limit(limits[key])
+    : notRead
   const cloudflarePercent = (current: number | null | undefined, key: LimitKey) => limitsConfirmed ? percent(current, limits[key]) : undefined
 
   return <Panel title={t('overview.resources.title')} subtitle={t('overview.resources.subtitle')} extra={<Button type="text" size="small" aria-label={t('overview.resources.detail')} title={t('overview.resources.detail')} onClick={() => onNavigate('usage')} icon={<ArrowUpRight size={15} />} />}>
@@ -39,6 +42,7 @@ export function UsageResourcesPanel({ settings, usage, localUsage, onNavigate }:
         <ResourceRow label={t('usage.card.workerRequests')} value={typeof usage?.requests === 'number' ? formatNumber(usage.requests) : '—'} limit={cloudflareLimit('workerRequests')} percent={cloudflarePercent(usage?.requests, 'workerRequests')} icon={Cloud} />
         <ResourceRow label={t('usage.card.d1RowsRead')} value={usage?.d1 ? formatNumber(usage.d1.rowsRead) : '—'} limit={cloudflareLimit('d1RowsRead')} percent={cloudflarePercent(usage?.d1?.rowsRead, 'd1RowsRead')} icon={ArrowDownToLine} />
         <ResourceRow label={t('usage.card.d1RowsWritten')} value={usage?.d1 ? formatNumber(usage.d1.rowsWritten) : '—'} limit={cloudflareLimit('d1RowsWritten')} percent={cloudflarePercent(usage?.d1?.rowsWritten, 'd1RowsWritten')} icon={ArrowUpFromLine} />
+        <ResourceRow label={t('usage.card.d1Storage')} value={usage?.d1 ? formatBytes(usage.d1.storageBytes) ?? '—' : '—'} limit={cloudflareFormattedLimit('d1StorageBytes')} percent={cloudflarePercent(usage?.d1?.storageBytes, 'd1StorageBytes')} icon={Database} />
         <ResourceRow label={t('usage.card.kvRead')} value={usage?.kv ? formatNumber(usage.kv.read) : '—'} limit={cloudflareLimit('kvRead')} percent={cloudflarePercent(usage?.kv?.read, 'kvRead')} icon={Search} />
         <ResourceRow label={t('usage.card.kvWrite')} value={usage?.kv ? formatNumber(usage.kv.write) : '—'} limit={cloudflareLimit('kvWrite')} percent={cloudflarePercent(usage?.kv?.write, 'kvWrite')} icon={PenLine} />
         <ResourceRow label={t('usage.card.kvDelete')} value={usage?.kv ? formatNumber(usage.kv.delete) : '—'} limit={cloudflareLimit('kvDelete')} percent={cloudflarePercent(usage?.kv?.delete, 'kvDelete')} icon={Trash2} />

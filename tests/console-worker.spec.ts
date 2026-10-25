@@ -37,7 +37,7 @@ const cloudflareFreeUsage = {
   updatedAt: '2026-10-21T00:00:00.000Z',
   period: { start: '2026-10-21T00:00:00.000Z', end: '2026-10-22T00:00:00.000Z' },
   requests: 50_000,
-  d1: { readQueries: 2_000, writeQueries: 500, rowsRead: 1_250_000, rowsWritten: 50_000 },
+  d1: { readQueries: 2_000, writeQueries: 500, rowsRead: 1_250_000, rowsWritten: 50_000, storageBytes: 2_500_000_000 },
   kv: { read: 50_000, write: 500, delete: 200, list: 100 },
   durableObjects: { requests: 25_000, cpuTime: 10, storedBytes: 2_048 },
   plan: { id: 'free', name: 'Free', free: true, confirmed: true },
@@ -46,6 +46,7 @@ const cloudflareFreeUsage = {
     workerRequests: 100_000,
     d1RowsRead: 5_000_000,
     d1RowsWritten: 100_000,
+    d1StorageBytes: 5_000_000_000,
     kvRead: 100_000,
     kvWrite: 1_000,
     kvDelete: 1_000,
@@ -480,18 +481,19 @@ test('用量页只保留一个刷新入口', async ({ page }) => {
   await expect(page.getByRole('button', { name: '去配置' })).toHaveCount(0)
 })
 
-test('Cloudflare 免费额度显示八项已用量、上限和百分比', async ({ page }) => {
+test('Cloudflare 免费额度显示九项已用量、上限和百分比', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 })
   const worker = await mockWorker(page)
   worker.usage = cloudflareFreeUsage
   await page.goto('/usage')
 
   const section = page.locator('.usage-section').filter({ hasText: 'Cloudflare 免费额度（每日）' })
-  await expect(section.locator('.resource-card')).toHaveCount(8)
+  await expect(section.locator('.resource-card')).toHaveCount(9)
   const expected = [
     ['Worker 请求', '50,000', '100,000', '已用 50%'],
     ['D1 行读取', '1,250,000', '5,000,000', '已用 25%'],
     ['D1 行写入', '50,000', '100,000', '已用 50%'],
+    ['D1 存储', '2.3 GB', '4.7 GB', '已用 50%'],
     ['KV 读取', '50,000', '100,000', '已用 50%'],
     ['KV 写入', '500', '1,000', '已用 50%'],
     ['KV 删除', '200', '1,000', '已用 20%'],
