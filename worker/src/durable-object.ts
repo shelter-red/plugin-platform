@@ -241,7 +241,14 @@ export class PluginBridge {
   private async openTunnel(request: Request): Promise<Response> {
     if (request.method !== 'POST' || request.headers.get('x-plugmesh-server-id') !== this.serverId) return new Response('Forbidden', { status: 403 })
     if (!this.serverSocket || this.serverSocket.readyState !== WebSocket.OPEN) return new Response('Plugin server is offline', { status: 503 })
-    const body = await request.json().catch(() => null) as { sessionId?: unknown; sourceServerId?: unknown; targetHost?: unknown; targetPort?: unknown; protocol?: unknown } | null
+    const bodyResult = await readRequestBody(request, MAX_CONTROL_COMMAND_BYTES)
+    if (!bodyResult.ok) return new Response('Tunnel request too large', { status: 413 })
+    let body: { sessionId?: unknown; sourceServerId?: unknown; targetHost?: unknown; targetPort?: unknown; protocol?: unknown } | null
+    try {
+      body = JSON.parse(new TextDecoder().decode(bodyResult.body)) as { sessionId?: unknown; sourceServerId?: unknown; targetHost?: unknown; targetPort?: unknown; protocol?: unknown }
+    } catch {
+      return new Response('Invalid tunnel request', { status: 400 })
+    }
     if (!body || typeof body.sessionId !== 'string' || typeof body.sourceServerId !== 'string' || typeof body.targetHost !== 'string' || !Number.isInteger(body.targetPort) || typeof body.protocol !== 'string') return new Response('Invalid tunnel request', { status: 400 })
     try {
       this.serverSocket.send(JSON.stringify(makeFrame('tunnel.open', this.serverId, {
