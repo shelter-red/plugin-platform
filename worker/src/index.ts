@@ -18,6 +18,10 @@ import type { Workspace, WorkspaceRole } from './types'
 export { PluginBridge, TunnelSession }
 
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json; charset=utf-8' } })
+const MAX_REGISTRATION_REQUEST_BYTES = 2048
+const MAX_REGISTRATION_CODE_LENGTH = 256
+const MAX_SERVER_NAME_LENGTH = 128
+
 async function pluginServerOnline(env: Env, serverId: string, baseUrl: string): Promise<boolean> {
   const bridge = env.PLUGIN_BRIDGE.get(env.PLUGIN_BRIDGE.idFromName(serverId))
   const url = new URL('/status', baseUrl)
@@ -703,7 +707,13 @@ async function connectServer(request: Request, env: Env, url: URL): Promise<Resp
 
 async function registerServer(request: Request, env: Env): Promise<Response> {
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
-  const body = await request.json().catch(() => null) as { code?: string; name?: string } | null
+  const contentLength = request.headers.get('content-length')
+  if (contentLength !== null) {
+    const size = Number(contentLength)
+    if (!Number.isSafeInteger(size) || size < 0) return json({ error: 'Registration request is invalid', code: 'invalid_registration_request' }, 400)
+    if (size > MAX_REGISTRATION_REQUEST_BYTES) return json({ error: 'Registration request is too large', code: 'registration_request_too_large' }, 413)
+  }
+  const body = await request.json().catch(() => null) as { code?: unknown; name?: unknown } | null
   const result = await createServerRegistration(env, body?.code, body?.name)
   if ('error' in result) return json({ error: result.error, code: result.code }, result.status)
   return json(result.value, 201)
@@ -736,8 +746,9 @@ function registerServerSocket(env: Env): Response {
   return new Response(null, { status: 101, webSocket: client })
 }
 
-export async function createServerRegistration(env: Env, code: string | undefined, name: string | undefined): Promise<{ value: { serverId: string; accessToken: string; protocolVersion: number } } | { error: string; code: string; status: number }> {
-  if (!code || !name?.trim()) return { error: 'code and name are required', code: 'invalid_registration_request', status: 400 }
+export async function createServerRegistration(env: Env, code: unknown, name: unknown): Promise<{ value: { serverId: string; accessToken: string; protocolVersion: number } } | { error: string; code: string; status: number }> {
+  if (typeof code !== 'string' || typeof name !== 'string' || !name.trim()) return { error: 'code and name are required', code: 'invalid_registration_request', status: 400 }
+  if (code.length > MAX_REGISTRATION_CODE_LENGTH || name.length > MAX_SERVER_NAME_LENGTH) return { error: 'Registration fields are too long', code: 'registration_field_too_long', status: 400 }
   const codeHash = await hashControlToken(code)
   const serverId = crypto.randomUUID()
   const accessToken = crypto.randomUUID() + crypto.randomUUID()

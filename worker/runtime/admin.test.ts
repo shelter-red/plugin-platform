@@ -117,6 +117,24 @@ test('畸形资源路径编码返回 404 而不是未处理异常', { timeout: 2
   expect(await response.json()).toEqual({ error: 'Not found' })
 })
 
+test('服务器注册拒绝错误类型和超大输入', { timeout: 20_000 }, async () => {
+  const malformed = await SELF.fetch('https://console.example.com/control/register', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ code: 'one-time-code', name: { value: 'not-a-string' } }),
+  })
+  expect(malformed.status).toBe(400)
+  expect(await malformed.json()).toMatchObject({ code: 'invalid_registration_request' })
+
+  const oversized = await SELF.fetch('https://console.example.com/control/register', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'content-length': '2049' },
+    body: JSON.stringify({ code: 'one-time-code', name: 'Server' }),
+  })
+  expect(oversized.status).toBe(413)
+  expect(await oversized.json()).toMatchObject({ code: 'registration_request_too_large' })
+})
+
 test('域名分配校验前缀、插件状态、服务器在线与健康检查', { timeout: 30_000 }, async () => {
   await seedServer()
   await seedAdmin()
