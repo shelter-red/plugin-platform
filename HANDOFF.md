@@ -250,6 +250,8 @@ git diff --check                         通过
 
 ## 9. 最近动作
 
+- 2026-10-25：额度口径复核确认主仓 `ae10ee6` 与 `~/pay/cfpay` 的 `927cf60` 均已在代码中统一 D1 账户级自然日统计，但两仓均尚未推送/部署，因此线上首页与平台监控仍可能显示旧口径。本阶段先完成内置映射授权回归的编译与验证，再分别核对两仓测试和 `git diff --check`；不在未验证前推送或修改生产数据。
+
 - 2026-10-24：生产应用 `0009_password_auth.sql`，复核无待执行 migration；公开入口从 1101 恢复到首次 setup 状态。
 - 2026-10-24：`bf68565` 增加 `migration_required` 三态门禁及 CI 容器所有权修复。
 - 2026-10-24：`4ce207c` 推送；平台验收 run `40082466727` 完成成功。
@@ -324,3 +326,4 @@ git diff --check                         通过
 - 2026-10-25：下一阶段登记（控制台运行态自动刷新）：审计确认主控制台当前没有定时刷新，服务器/插件/域名列表和本地活跃连接只在首次加载、切换工作区或手动刷新时更新；这与 Worker 已采用 DO 内存在线态不一致。实现限定为运行态数据 `overview`、servers、plugins、domains、local usage`，页面可见时每 15 秒刷新一次；同一工作区只允许一个刷新请求在途，组件卸载、切换工作区和页面隐藏时清理/跳过，恢复可见后立即补一次。复用现有 `refreshData(false)`，不新增 API；Cloudflare Analytics、账户设置、审计和访问日志不做前端轮询，继续由手动刷新/Worker 定时任务提供，避免扩大 Cloudflare API 与 D1 读取。增加前端自动刷新生命周期/请求去重回归，验证构建与现有 UI smoke；不改变后端计数和跨 isolate 连接/R2配额语义。先单独提交本登记，再修改实现；完成后更新验证结果并中文提交，不推送。
 - 2026-10-25：控制台运行态自动刷新实现完成：主控制台可见时每 15 秒静默刷新 overview、servers、plugins、domains 和 local usage；页面隐藏暂停，恢复可见立即刷新，组件卸载和工作区切换清理定时器。手动刷新与自动刷新共用一个在途请求，且响应绑定工作区代次，旧工作区的迟到响应不会覆盖新工作区数据；Cloudflare Analytics、审计、访问日志和账户设置仍不轮询。测试文案同步到“公开插件请求”。验证：`npm run ci:local` 全部通过，包含 UI 约定 82/82、CSS 审计 467/467、Worker smoke、管理端 UI 90/90、构建和发布包契约；定向控制台 Worker 测试 32/32，`git diff --check` 通过。未部署、未推送；本仓其它 native-server、隧道、TLS、SDK、Release 修改仍未纳入本阶段提交。
 - 2026-10-25：下一步登记（内置映射授权回归补强）：现有 `plugmesh-tunnel-mapping-smoke` 只让 mock Worker 立即发送 `kReady` 并回显数据，尚未证明目标插件服务器首次要求本地 UI 密码、源端以 nonce/context 生成证明、授权后同一源服务器免重复验证，以及目标密码 verifier 轮换后信任失效。下一步仅补授权挑战/错误/重连回归和必要的无秘密日志断言，保持密码不落盘、不进入 Worker/D1、目标地址校验及二进制转发边界；同时修正 CTest 的真实执行记录，完成 Linux CTest、MinGW 编译、native UI、Worker runtime/smoke、`git diff --check` 后提交本阶段结果。未完成前不进入 Release 推送，不修改生产实体。
+- 2026-10-25：内置映射授权回归已完成：`plugmesh-tunnel-mapping-smoke` 通过首次密码挑战、同源重连免重复验证、verifier 轮换撤销信任、密码不写入映射配置和端口冲突保护；Linux 原生全量构建与 CTest 13/13、MinGW 全目标构建、Native UI 6/6、Worker typecheck、Worker smoke、`git diff --check` 全部通过。`~/pay/cfpay` `npm run typecheck`、定向 Analytics 3/3、全量测试 128 passed/2 skipped 通过。额度统一修复仍未推送/部署，本阶段未修改生产实体；Worker runtime 未因本阶段仅改原生测试而重复运行，既有 Ubuntu 26.04 runtime 记录仍为 18 文件、84 tests passed。
