@@ -636,8 +636,12 @@ nlohmann::json PortMapper::handle_request(const std::string& method, const std::
     constexpr std::string_view prefix = "/api/mappings/";
     return resource.rfind(prefix, 0) == 0 ? resource.substr(prefix.size()) : std::string();
   };
-    const auto requested_name = payload.value("name", std::string());
+  const auto requested_name = payload.value("name", std::string());
   const auto submitted_password = payload.value("targetPassword", std::string());
+  if (submitted_password.size() > 1024) {
+    error = "target server password is too long";
+    return Json::object();
+  }
   if (method == "POST" || method == "PUT") {
     auto item = payload;
     item.erase("targetPassword");

@@ -131,6 +131,13 @@ int main() {
   }
 
   plugmesh::PortMapper conflicting_mapper;
+  error.clear();
+  const auto oversized_password = mapper.handle_request("POST", "/api/mappings", nlohmann::json{{"name", "oversized"}, {"protocol", "tcp"}, {"listenPort", unused_port()}, {"targetServerId", "target"}, {"targetHost", "127.0.0.1"}, {"targetPort", 22}, {"targetPassword", std::string(1025, 'x')}}, error);
+  if (error != "target server password is too long" || !oversized_password.empty()) {
+    std::cerr << "oversized target password should be rejected before persistence\n";
+    return 1;
+  }
+
   if (conflicting_mapper.start(server_config, error) || error.empty()) {
     std::cerr << "conflicting listener port should fail startup\n";
     return 1;
