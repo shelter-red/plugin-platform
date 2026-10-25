@@ -277,7 +277,8 @@ export async function readCloudflareSubscriptions(
     planId: typeof subscription?.rate_plan?.id === 'string' ? subscription.rate_plan.id : null,
     planName: typeof subscription?.rate_plan?.public_name === 'string' ? subscription.rate_plan.public_name : null,
   }))
-  const freeSubscription = subscriptions.find((subscription) => subscription.planId === 'free')
+  const inactiveStates = new Set(['Cancelled', 'Failed', 'Expired'])
+  const freeSubscription = subscriptions.find((subscription) => subscription.planId === 'free' && !inactiveStates.has(subscription.state ?? ''))
   const firstConfirmed = subscriptions.find((subscription) => Boolean(subscription.planId))
   const selected = freeSubscription ?? firstConfirmed
   return {

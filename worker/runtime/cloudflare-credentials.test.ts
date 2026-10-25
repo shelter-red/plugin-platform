@@ -25,8 +25,8 @@ function accountPage(ids: string[], page: number, totalPages: number): Response 
   return Response.json({ success: true, result: ids.map((id, index) => ({ id, name: `Account ${page}-${index}` })), result_info: { page, per_page: 50, count: ids.length, total_pages: totalPages } })
 }
 
-function subscriptions(planId: string | null): Response {
-  return Response.json({ success: true, result: [{ id: 'sub-1', state: 'active', rate_plan: planId ? { id: planId, public_name: 'Plan' } : undefined }] })
+function subscriptions(planId: string | null, state = 'active'): Response {
+  return Response.json({ success: true, result: [{ id: 'sub-1', state, rate_plan: planId ? { id: planId, public_name: 'Plan' } : undefined }] })
 }
 
 beforeEach(async () => { await resetDatabase() })
@@ -76,7 +76,13 @@ test('Global API Key 自动配置 Zone、通配 DNS 和 Worker Route', async () 
   await expect(configureCloudflareDomain(AUTH, ACCOUNT_A, '.plugins.example.com', fetchImpl)).resolves.toMatchObject({ zoneId: 'zone-1', hostname: '*.plugins.example.com' })
 })
 
-test('只从订阅确认 Free 计划，并加密保存 Global API Key', async () => {
+test('已取消、失败或过期的 Free 订阅不提供免费额度基线', async () => {
+  for (const state of ['Cancelled', 'Failed', 'Expired']) {
+    const result = await readCloudflareSubscriptions(AUTH, ACCOUNT_A, jsonFetcher({ [`/client/v4/accounts/${ACCOUNT_A}/subscriptions`]: () => subscriptions('free', state) }))
+    expect(result.plan).toMatchObject({ id: 'free', free: false, confirmed: true })
+  }
+})
+
   expect((await readCloudflareSubscriptions(AUTH, ACCOUNT_A, jsonFetcher({ [`/client/v4/accounts/${ACCOUNT_A}/subscriptions`]: () => subscriptions('pro') })) ).plan.free).toBe(false)
   const updatedAt = await storeCloudflareCredential(testEnv, { kind: 'global_api_key', email: EMAIL, globalApiKey: KEY, accountId: ACCOUNT_A, verifiedAt: '2026-10-24T00:00:00.000Z' })
   expect(await readStoredCloudflareCredential(testEnv)).toEqual({ kind: 'global_api_key', credential: { kind: 'global_api_key', email: EMAIL, globalApiKey: KEY, accountId: ACCOUNT_A, verifiedAt: '2026-10-24T00:00:00.000Z' }, updatedAt })
