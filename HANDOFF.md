@@ -32,6 +32,7 @@ git log --oneline --decorate -12
 ### 当前结论
 
 - 当前工作项：修复本地服务器导航跟随、Linux CA 信任链和配对码复制反馈；新增通用多映射插件并将运行包与开发包完整纳入三平台 Release。映射通过现有 Worker/plugin 协议实现，未验证前不得宣称原始 TCP 可用；Release 至少包含服务器程序及运行依赖、插件宿主、`server_api.h` 与嵌入库、`plugin_api.h` 与可构建 SDK/sample、通用映射程序、配置示例和使用说明。
+- 新增日志要求：插件服务器到 Worker 的通信日志必须在本机磁盘持久保留，检查轮转/容量上限与敏感字段脱敏；不得保存 access token、注册码、密码、会话或转发请求正文。
 - 登录只使用管理员密码。首次未配置时进入 `/setup`，不再使用 GitHub OAuth、邀请登录或 `SETUP_TOKEN`。
 - Cloudflare 业务凭据只接受账号 Email、Global API Key 和 Account ID，不接受 Cloudflare OAuth 或 API Token。
 - 生产 D1 已应用 `0001` 至 `0009`，Cloudflare 1101 已消失；管理员密码已由用户完成初始化，D1 中 `admin_credentials=1`。
