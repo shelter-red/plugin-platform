@@ -7,6 +7,7 @@ read_script=$(<"$script")
 read_workflow=$(<"$workflow")
 
 for required in \
+  'id: prebuilt' \
   'ref="termux-release-${RELEASE_TAG}"' \
   'test "$(cat termux-prebuilt/SOURCE_COMMIT)" = "$GITHUB_SHA"' \
   'sha256sum -c plugmesh-server-termux.tar.gz.sha256'; do
