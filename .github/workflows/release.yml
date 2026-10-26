@@ -204,17 +204,46 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: 查找本次标签的预构建 Termux 资产
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          ref="termux-release-${RELEASE_TAG}"
+          if git ls-remote --exit-code --heads origin "$ref" >/dev/null; then
+            echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 下载预构建 Termux 资产
+        if: steps.prebuilt.outputs.ref != ''
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.prebuilt.outputs.ref }}
+          path: termux-prebuilt
+
       - name: 准备 Node.js 和本地 UI
+        if: steps.prebuilt.outputs.ref == ''
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
       - name: 构建本地 UI
+        if: steps.prebuilt.outputs.ref == ''
         run: |
           npm ci
           npm run native-ui:build
 
+      - name: 放置并校验预构建 Termux 资产
+        if: steps.prebuilt.outputs.ref != ''
+        run: |
+          set -euo pipefail
+          test "$(cat termux-prebuilt/SOURCE_COMMIT)" = "$GITHUB_SHA"
+          mkdir -p dist
+          cp termux-prebuilt/plugmesh-server-termux.tar.gz* dist/
+
       - name: 使用 Termux builder 构建
+        if: steps.prebuilt.outputs.ref == ''
         run: |
           set -euo pipefail
           docker run --rm \
@@ -224,6 +253,12 @@ jobs:
             -w /src \
             androidzeros/termux-package-builder:latest \
             -lc 'export PREFIX=/data/data/com.termux/files/usr; bash scripts/build-termux-native.sh --artifact-type ALL --build-type Release --include-ui'
+
+      - name: 校验 Termux 构建结果
+        run: |
+          set -euo pipefail
+          test -f dist/plugmesh-server-termux.tar.gz
+          (cd dist && sha256sum -c plugmesh-server-termux.tar.gz.sha256)
 
       - name: 上传 Termux 产物
         uses: actions/upload-artifact@v4

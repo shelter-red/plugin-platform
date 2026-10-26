@@ -2,7 +2,16 @@
 set -euo pipefail
 
 script="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)/scripts/build-termux-native.sh"
+workflow="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)/.github/workflows/release.yml"
 read_script=$(<"$script")
+read_workflow=$(<"$workflow")
+
+for required in \
+  'ref="termux-release-${RELEASE_TAG}"' \
+  'test "$(cat termux-prebuilt/SOURCE_COMMIT)" = "$GITHUB_SHA"' \
+  'sha256sum -c plugmesh-server-termux.tar.gz.sha256'; do
+  grep -Fq -- "$required" <<<"$read_workflow" || { echo "missing Termux release contract: $required" >&2; exit 1; }
+done
 
 for required in \
   'CMAKE_C_COMPILER="$CC"' \

@@ -250,7 +250,7 @@ git diff --check                         通过
 
 ## 10. 当前追加步骤登记
 
-- 2026-10-26：Termux Release job 已连续验证官方 GHCR、官方 Docker Hub `termux/package-builder` 与兼容镜像 `androidzeros/termux-package-builder`；GitHub Actions 均在容器启动前因镜像 layer `Verifying Checksum` 失败退出，具体 run `40212288376`、`40213267114`、`40214333438`、`40216624871`、`40217358211` 均未生成产物，桌面 Linux/macOS 构建通过。已用 `1aafdb2` 清理一次性临时分支触发器和诊断逻辑，保留 Termux job 与正式资产契约；待镜像供应方修复 layer 或提供可用的 Termux builder 后重新打 tag 发布，不能用 glibc/Linux 二进制冒充 Termux 包。
+- 2026-10-26：Termux builder 镜像拉取连续在容器启动前因 layer `Verifying Checksum` 失败（runs `40212288376`、`40213267114`、`40214333438`、`40216624871`、`40217358211`）；改用用户提供的 Android 15/AArch64 Termux 设备原生构建。Termux clang 21.1.8、CMake 4.4.4、OpenSSL 3.6.3/zlib 均可用；`scripts/build-termux-native.sh --artifact-type ALL --build-type Release --include-ui` 成功，产物为 Android 24/AArch64，动态库均解析到设备 Termux/Bionic，归档 SHA-256 `a2ab6e54e5cab6b3d8ce75440a032209f7f56f584978ce22defef77f135f666b` 已在设备端和本地验证。Release workflow 正加上按标签读取且校验源提交的预构建资产分支，完成本地契约验证后推送、重建最终标签源对应包并发版；绝不把 Linux/glibc 包冒充 Termux 包。
 
 ## 9. 最近动作
 
