@@ -54,6 +54,10 @@ class MockWorker {
       if (message->get_opcode() != websocketpp::frame::opcode::binary || !plugmesh::tunnel::parse(message->get_payload(), type, payload)) return;
       if (type == plugmesh::tunnel::kAuthenticate) {
         const auto valid = plugmesh::verify_local_ui_password_proof(verifier_, challenge_, "source\ntarget\ntest-session", payload);
+        if (!valid) {
+          std::cerr << "MockWorker rejected target authorization proof (payload_bytes=" << payload.size()
+                    << ", context=source/target/test-session)\n";
+        }
         authorized_ = valid;
         websocketpp::lib::error_code error;
         worker_.send(handle, plugmesh::tunnel::frame(plugmesh::tunnel::kAuthResult, std::string(1, valid ? '\1' : '\0')), websocketpp::frame::opcode::binary, error);
@@ -231,8 +235,12 @@ int main() {
   plugmesh::TunnelTrustStore trust_a;
   if (!trust_a.load(trust_path, verifier_a, error) || !trust_a.trust("source", error) || !trust_a.trusts("source")) return 1;
   plugmesh::TunnelTrustStore trust_rotated;
-  if (!trust_rotated.load(trust_path, verifier_b, error) || trust_rotated.trusts("source")) {
-    std::cerr << "password verifier rotation did not invalidate old tunnel trust\n";
+  error.clear();
+  const auto rotation_loaded = trust_rotated.load(trust_path, verifier_b, error);
+  const auto old_trust_retained = trust_rotated.trusts("source");
+  if (!rotation_loaded || old_trust_retained) {
+    std::cerr << "password verifier rotation did not invalidate old tunnel trust (loaded=" << rotation_loaded
+              << ", trusted=" << old_trust_retained << ", error=" << (error.empty() ? "<none>" : error) << ")\n";
     return 1;
   }
   plugmesh::TunnelTrustStore trust_after_rotation;

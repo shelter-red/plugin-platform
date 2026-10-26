@@ -174,15 +174,19 @@ bool run_port_fallback_server() {
   for (int attempt = 0; attempt < 40 && !server.is_running(); ++attempt) {
     std::this_thread::sleep_for(std::chrono::milliseconds(25));
   }
+  const auto server_running = server.is_running();
   const auto actual_port = server.port();
   HttpResponse response;
   std::string request_error;
-  const auto passed = server.is_running() && actual_port > preferred_port && request_with_retry(actual_port, "GET", "/api/status", "", "", response, request_error) && expect_status(response, 200, "fallback port status");
+  const auto passed = server_running && actual_port > preferred_port && request_with_retry(actual_port, "GET", "/api/status", "", "", response, request_error) && expect_status(response, 200, "fallback port status");
   server.stop();
   if (server_thread.joinable()) server_thread.join();
   blocker.close();
   if (!passed) {
-    std::cerr << "local HTTP server did not fall back from occupied port " << preferred_port << ": " << (server_error.empty() ? request_error : server_error) << '\n';
+    std::cerr << "local HTTP server did not fall back from occupied port " << preferred_port
+              << " (running=" << server_running << ", actual_port=" << actual_port
+              << ", server_error=" << (server_error.empty() ? "<none>" : server_error)
+              << ", request_error=" << (request_error.empty() ? "<none>" : request_error) << ")\n";
     return false;
   }
   return true;

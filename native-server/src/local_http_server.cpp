@@ -101,7 +101,10 @@ bool LocalHttpServer::run(std::string& error) {
   server->clear_access_channels(websocketpp::log::alevel::all);
   server->clear_error_channels(websocketpp::log::elevel::all);
   server->init_asio();
+  // Windows SO_REUSEADDR allows a second socket to bind an occupied port.
+#if !defined(_WIN32)
   server->set_reuse_addr(true);
+#endif
   server->set_http_handler([this](websocketpp::connection_hdl handle) { handle_http(handle.lock().get()); });
   try {
     const auto address = websocketpp::lib::asio::ip::address::from_string("127.0.0.1");
@@ -112,7 +115,9 @@ bool LocalHttpServer::run(std::string& error) {
       websocketpp::lib::asio::error_code probe_error;
       const websocketpp::lib::asio::ip::tcp::endpoint endpoint(address, static_cast<uint16_t>(candidate));
       probe.open(endpoint.protocol(), probe_error);
+#if !defined(_WIN32)
       if (!probe_error) probe.set_option(websocketpp::lib::asio::socket_base::reuse_address(true), probe_error);
+#endif
       if (!probe_error) probe.bind(endpoint, probe_error);
       if (probe.is_open()) probe.close();
       if (probe_error) {
@@ -130,7 +135,8 @@ bool LocalHttpServer::run(std::string& error) {
       websocketpp::lib::error_code listen_error;
       server->listen(endpoint, listen_error);
       if (!listen_error) break;
-      if (listen_error != websocketpp::lib::asio::error::address_in_use || candidate == 65535) {
+      const auto listen_port_conflict = listen_error == websocketpp::lib::asio::error::address_in_use || listen_error == websocketpp::lib::asio::error::access_denied;
+      if (!listen_port_conflict || candidate == 65535) {
         error = listen_error.message();
         running_ = false;
         server_.store(nullptr, std::memory_order_release);

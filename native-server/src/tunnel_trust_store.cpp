@@ -9,7 +9,12 @@
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
 
-#if !defined(_WIN32)
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
 #include <sys/stat.h>
 #endif
 
@@ -49,6 +54,7 @@ bool TunnelTrustStore::load(const std::filesystem::path& path, const std::string
   Json state;
   try {
     input >> state;
+    input.close();
     const auto values = state.at("trustedSourceServerIds").get<std::set<std::string>>();
     const auto stored_mac = state.at("mac").get<std::string>();
     const auto expected_mac = mac_for(verifier_, values);
@@ -100,7 +106,8 @@ bool TunnelTrustStore::persist(std::string& error) const {
     error = "unable to create tunnel trust directory";
     return false;
   }
-  const auto temporary = path_.string() + ".tmp";
+  auto temporary = path_;
+  temporary += ".tmp";
   const Json state{{"trustedSourceServerIds", trusted_sources_}, {"mac", mac_for(verifier_, trusted_sources_)}};
   {
     std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
@@ -122,10 +129,17 @@ bool TunnelTrustStore::persist(std::string& error) const {
     return false;
   }
 #endif
+#if defined(_WIN32)
+  if (!MoveFileExW(temporary.c_str(), path_.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+    filesystem_error = std::error_code(static_cast<int>(GetLastError()), std::system_category());
+  }
+#else
   std::filesystem::rename(temporary, path_, filesystem_error);
+#endif
   if (filesystem_error) {
-    std::filesystem::remove(temporary);
-    error = "unable to replace tunnel trust state";
+    std::error_code remove_error;
+    std::filesystem::remove(temporary, remove_error);
+    error = "unable to replace tunnel trust state: " + filesystem_error.message();
     return false;
   }
   return true;
