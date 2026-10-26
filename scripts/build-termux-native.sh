@@ -43,12 +43,10 @@ package_dir="$dist_dir/$package_name"
 rm -rf "$package_dir"
 mkdir -p "$dist_dir"
 
-export CC="${CC:-clang}"
 export CXX="${CXX:-clang++}"
 cmake -S "$repo_root/native-server" -B "$build_dir" \
   -DCMAKE_BUILD_TYPE="$build_type" \
   -DPLUGMESH_BUILD_ARTIFACT="$artifact_type" \
-  -DCMAKE_C_COMPILER="$CC" \
   -DCMAKE_CXX_COMPILER="$CXX" \
   -DCMAKE_PREFIX_PATH="$PREFIX" \
   -DOPENSSL_ROOT_DIR="$PREFIX" \

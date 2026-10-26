@@ -15,7 +15,6 @@ for required in \
 done
 
 for required in \
-  'CMAKE_C_COMPILER="$CC"' \
   'CMAKE_CXX_COMPILER="$CXX"' \
   'CMAKE_PREFIX_PATH="$PREFIX"' \
   'OPENSSL_ROOT_DIR="$PREFIX"' \
@@ -84,6 +83,15 @@ if grep -Fq '/etc/apt' <<<"$read_script" || grep -Fq 'linux-x86_64' <<<"$read_sc
   echo 'Termux build must not depend on Debian apt, x86_64 OpenSSL, or glibc checks' >&2
   exit 1
 fi
+
+main_file="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)/native-server/src/main.cpp"
+for required in \
+  'android_executable_path(const char* argv0)' \
+  '#elif defined(__ANDROID__)' \
+  'executable_directory(argc > 0 ? argv[0] : nullptr)' \
+  'directories.find'; do
+  grep -Fq -- "$required" "$main_file" || { echo "missing Android executable path contract: $required" >&2; exit 1; }
+done
 
 cmake_file="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)/native-server/CMakeLists.txt"
 grep -Fq 'NOT PLUGMESH_TERMUX' "$cmake_file" || { echo 'CMake must exclude Termux from Linux runtime flags' >&2; exit 1; }

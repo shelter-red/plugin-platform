@@ -120,7 +120,53 @@ uint16_t local_port() {
   return end != value && *end == '\0' && parsed > 0 && parsed <= 65535 ? static_cast<uint16_t>(parsed) : 8787;
 }
 
-std::filesystem::path executable_directory() {
+#ifdef __ANDROID__
+std::filesystem::path android_executable_path(const char* argv0) {
+  if (!argv0 || !*argv0) return {};
+
+  const auto canonical_file = [](const std::filesystem::path& candidate) {
+    std::error_code error;
+    const auto resolved = std::filesystem::canonical(candidate, error);
+    if (error) return std::filesystem::path{};
+    if (!std::filesystem::is_regular_file(resolved, error) || error) return std::filesystem::path{};
+    return resolved;
+  };
+
+  const std::filesystem::path argument(argv0);
+  if (argument.is_absolute()) return canonical_file(argument);
+  if (argument.has_parent_path()) {
+    std::error_code error;
+    const auto current = std::filesystem::current_path(error);
+    return error ? std::filesystem::path{} : canonical_file(current / argument);
+  }
+
+  if (const char* path_environment = std::getenv("PATH"); path_environment && *path_environment) {
+    const std::string directories(path_environment);
+    std::size_t start = 0;
+    while (start <= directories.size()) {
+      const auto end = directories.find(':', start);
+      const auto entry = directories.substr(start, end == std::string::npos ? std::string::npos : end - start);
+      std::error_code error;
+      const auto directory = entry.empty() ? std::filesystem::current_path(error) : std::filesystem::path(entry);
+      if (!error) {
+        const auto resolved = canonical_file(directory / argument);
+        if (!resolved.empty()) return resolved;
+      }
+      if (end == std::string::npos) break;
+      start = end + 1;
+    }
+  }
+
+  std::error_code error;
+  const auto current = std::filesystem::current_path(error);
+  return error ? std::filesystem::path{} : canonical_file(current / argument);
+}
+#endif
+
+std::filesystem::path executable_directory(const char* argv0 = nullptr) {
+#ifndef __ANDROID__
+  (void)argv0;
+#endif
 #ifdef _WIN32
   std::wstring buffer(32768, L'\0');
   const auto length = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
@@ -137,6 +183,9 @@ std::filesystem::path executable_directory() {
     const auto executable = std::filesystem::weakly_canonical(buffer.data(), error);
     if (!error) return executable.parent_path();
   }
+#elif defined(__ANDROID__)
+  const auto executable = android_executable_path(argv0);
+  if (!executable.empty()) return executable.parent_path();
 #else
   char buffer[PATH_MAX]{};
   const auto length = readlink("/proc/self/exe", buffer, sizeof(buffer) - 1);
@@ -331,7 +380,7 @@ int main(int argc, char** argv) {
   const auto config = plugmesh::load_config_from_environment();
   auto resolved_config = config;
   std::string plugin_directory_error;
-  if (!plugmesh::prepare_executable_plugin_directory(resolved_config, executable_directory(), plugin_directory_error)) {
+  if (!plugmesh::prepare_executable_plugin_directory(resolved_config, executable_directory(argc > 0 ? argv[0] : nullptr), plugin_directory_error)) {
     std::cerr << "plugmesh-server: " << plugin_directory_error << '\n';
     return 2;
   }
