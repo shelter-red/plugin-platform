@@ -56,7 +56,7 @@ jobs:
           - os: windows-latest
             name: windows
             archive: plugmesh-server-windows.zip
-          - os: macos-15
+          - os: macos-14
             name: macos
             archive: plugmesh-server-macos.zip
     steps:

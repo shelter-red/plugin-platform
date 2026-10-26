@@ -11,8 +11,8 @@ grep -Fq 'run: bash scripts/release-workflow.test.sh' "$WORKFLOW"
 grep -Fq 'run: bash scripts/termux-build.test.sh' "$WORKFLOW"
 grep -Fq 'Copy-Item native-server/build-win/Release/plugmesh-plugin-host.exe dist/plugmesh-server/' "$WORKFLOW"
 grep -Fq 'cp native-server/build/plugmesh-plugin-host dist/plugmesh-server/' "$WORKFLOW"
-grep -Fq -- '- os: macos-15' "$WORKFLOW"
-grep -Fq 'runs-on: macos-15' "$ROOT/.github/workflows/platform-ci.yml"
+grep -Fq -- '- os: macos-14' "$WORKFLOW"
+grep -Fq 'runs-on: macos-14' "$ROOT/.github/workflows/platform-ci.yml"
 ! grep -Fq 'native-ui/dist/' "$WORKFLOW"
 ! grep -Fq -- '--include-ui' "$WORKFLOW"
 ! grep -Fq 'plugmesh-port-mapper' "$WORKFLOW"
@@ -45,7 +45,7 @@ for (const marker of ['sdk/lib/', 'server_api.h', 'plugin_api.h', 'ca-certificat
 }
 assert.ok(!linux.includes('/native-ui/dist/'), 'Linux Release 不得复制外置 native-ui/dist')
 const manual = fs.readFileSync(process.argv[4], 'utf8')
-assert.ok(manual.includes("matrix.target_platform == 'macos' && 'macos-15'"), '手动 macOS 构建必须固定到 macos-15')
+assert.ok(manual.includes("matrix.target_platform == 'macos' && 'macos-14'"), '手动 macOS 构建必须固定到 macos-14')
 for (const marker of [
   '          - all',
   '          - executable',

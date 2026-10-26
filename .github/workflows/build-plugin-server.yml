@@ -40,7 +40,7 @@ jobs:
       fail-fast: false
       matrix:
         target_platform: ${{ fromJSON(inputs.target_platform == 'all' && '["linux","windows","macos"]' || format('["{0}"]', inputs.target_platform)) }}
-    runs-on: ${{ matrix.target_platform == 'windows' && 'windows-latest' || matrix.target_platform == 'macos' && 'macos-15' || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.target_platform == 'windows' && 'windows-latest' || matrix.target_platform == 'macos' && 'macos-14' || 'ubuntu-latest' }}
     env:
       BUILD_TYPE: ${{ inputs.build_type }}
       BUILD_ARTIFACT: ${{ inputs.artifact_type == 'shared' && 'SHARED' || 'EXECUTABLE' }}
