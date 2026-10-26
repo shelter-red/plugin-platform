@@ -5,7 +5,6 @@ artifact_type=ALL
 build_type=Release
 package_name=plugmesh-server-termux
 archive_name=plugmesh-server-termux.tar.gz
-include_ui=false
 
 while (($#)); do
   case "$1" in
@@ -13,7 +12,6 @@ while (($#)); do
     --build-type) build_type="$2"; shift 2 ;;
     --package-name) package_name="$2"; shift 2 ;;
     --archive-name) archive_name="$2"; shift 2 ;;
-    --include-ui) include_ui=true; shift ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -33,6 +31,12 @@ done
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repo_root=$(cd -- "$script_dir/.." && pwd)
+require_embedded_ui=ON
+if [[ "$artifact_type" == SHARED ]]; then
+  require_embedded_ui=OFF
+else
+  [[ -f "$repo_root/native-ui/dist/index.html" ]] || { echo 'native-ui/dist/index.html must be built before compiling the Termux server' >&2; exit 1; }
+fi
 build_dir="$repo_root/native-server/build-termux"
 dist_dir="$repo_root/dist"
 package_dir="$dist_dir/$package_name"
@@ -49,7 +53,8 @@ cmake -S "$repo_root/native-server" -B "$build_dir" \
   -DCMAKE_PREFIX_PATH="$PREFIX" \
   -DOPENSSL_ROOT_DIR="$PREFIX" \
   -DOPENSSL_USE_STATIC_LIBS=OFF \
-  -DPLUGMESH_TERMUX=ON
+  -DPLUGMESH_TERMUX=ON \
+  -DPLUGMESH_REQUIRE_EMBEDDED_UI="$require_embedded_ui"
 
 if [[ "$artifact_type" != SHARED ]]; then
   cmake --build "$build_dir" --target plugmesh-server --parallel
@@ -69,15 +74,22 @@ if [[ "$artifact_type" == ALL || "$artifact_type" == SHARED ]]; then
   cp "$build_dir/libplugmesh-server.so" "$package_dir/"
 fi
 cp "$repo_root/native-server/README.md" "$repo_root/native-server/PORT-MAPPING.md" "$package_dir/"
-if [[ "$include_ui" == true ]]; then
-  [[ -d "$repo_root/native-ui/dist" ]] || { echo 'native-ui/dist was not built' >&2; exit 1; }
-  mkdir -p "$package_dir/native-ui/dist"
-  cp -a "$repo_root/native-ui/dist/." "$package_dir/native-ui/dist/"
-fi
 
 printf '类型：%s\n平台：Android Termux (%s)\n构建类型：%s\n依赖：Termux clang/cmake/openssl/zlib\n' \
   "${artifact_type,,}" "$(uname -m)" "$build_type" > "$package_dir/BUILD-INFO.txt"
-cat > "$package_dir/TERMUX-README.txt" <<'EOF'
+if [[ "$artifact_type" == SHARED ]]; then
+  cat > "$package_dir/TERMUX-README.txt" <<'EOF'
+Plugmesh Android Termux shared library package
+
+This package contains the Plugmesh server shared library, plugin host, and
+sample plugin for Termux. It does not include the plugmesh-server executable
+or an embedded Native UI. Build an EXECUTABLE or ALL package to run the server.
+
+The package uses Termux's native OpenSSL and zlib libraries. It is not an APK
+and not an Android app.
+EOF
+else
+  cat > "$package_dir/TERMUX-README.txt" <<'EOF'
 Plugmesh Android Termux CLI
 
 Install the native dependencies in Termux:
@@ -89,10 +101,11 @@ Run the server from this directory:
 
 The package uses Termux's native OpenSSL and zlib libraries. It is a
 command-line Linux-like Termux build, not an APK and not an Android app.
-The Native UI is optional and is included only when --include-ui is used
-with an existing native-ui/dist build.
+The Native UI is embedded in plugmesh-server and refreshed on every start
+under the Termux user's data directory. No separate UI directory is needed.
 Keep plugmesh-server, plugmesh-plugin-host, and the plugins directory together.
 EOF
+fi
 
 rm -f "$dist_dir/$archive_name"
 tar -C "$dist_dir" -czf "$dist_dir/$archive_name" "$package_name"

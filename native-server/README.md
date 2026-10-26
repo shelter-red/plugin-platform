@@ -24,7 +24,7 @@
 - `PLUGMESH_CREDENTIAL_FILE`（Linux 等无系统凭据存储时使用的加密文件路径；留空时 Windows/macOS 优先使用系统凭据存储）
 - `PLUGMESH_CREDENTIAL_PASSWORD`
 - `PLUGMESH_LOCAL_PORT`（可选，默认从 `8787` 开始，仅绑定 `127.0.0.1`；占用时自动递增）
-- `PLUGMESH_LOCAL_UI_DIRECTORY`（可选；默认查找可执行文件同目录的 `native-ui/dist`，源码运行时回退到当前目录的 `native-ui/dist`）
+- `PLUGMESH_LOCAL_UI_DIRECTORY`（可选，指定 UI 解出目录；默认 Windows `%LOCALAPPDATA%/Plugmesh/native-ui/dist`、macOS `~/Library/Application Support/Plugmesh/native-ui/dist`、Linux/Termux `$XDG_DATA_HOME/plugmesh/native-ui/dist` 或 `~/.local/share/plugmesh/native-ui/dist`）
 - `PLUGMESH_LOG_FILE`（可选；默认 Linux 写入 `$XDG_STATE_HOME/plugmesh` 或 `~/.local/state/plugmesh`，macOS 写入 `~/Library/Logs/Plugmesh`，Windows 写入 `%LOCALAPPDATA%/Plugmesh/logs`；单文件 1 MiB、保留 3 个轮转文件）
 
 本地管理端点仅监听回环地址：
@@ -38,7 +38,7 @@
 - `POST /api/register`：仅在连接配置缺失时可用，调用 Worker 注册并把长期凭据加密保存到本地。
 - `POST /api/credentials/rotate`：通过当前控制连接轮换 Worker 访问令牌，并立即更新系统凭据或加密凭据文件。
 - `POST /api/credentials/revoke`：撤销 Worker 侧服务器绑定、删除本地凭据并重新进入 setup mode。
-- `GET /`、`GET /assets/*`：提供 `native-ui/dist` 中的 React 本地控制台；非资源路径回退到 `index.html`。
+- `GET /`、`GET /assets/*`：提供服务器二进制内嵌的 React 本地控制台；每次启动都会覆盖刷新 UI 解出目录，非资源路径回退到 `index.html`。
 
 当 Worker 地址、服务器 ID 或访问令牌缺失时，`plugmesh-server` 不会直接退出，而是进入 setup mode，并自动打开 `http://127.0.0.1:<port>/` 等待本地控制台提交一次性注册码。注册成功后当前进程继续启动控制连接；注册接口在正常运行态关闭。已绑定状态可以在本地控制台轮换访问令牌或撤销绑定；撤销完成后当前进程清空内存配置并重新打开 setup mode。CLI `--register` 仍作为无浏览器环境的备用入口。
 
@@ -77,9 +77,9 @@ native-server/build/plugmesh-server --register
 
 ## 使用 GitHub Actions 构建产物
 
-`.github/workflows/build-plugin-server.yml` 只接受手动触发。选择 `executable` 时，artifact 名称形如 `plugmesh-plugin-server-linux-executable-Release`，包含 `plugmesh-server`、`plugmesh-plugin-host`、`plugin_api.h`、README、构建信息和归档校验和，并包含可直接使用的 `native-ui/dist`；选择 `shared` 时还包含 Linux 的 `libplugmesh-server.so`、macOS 的 `libplugmesh-server.dylib` 或 Windows 的 DLL/导入库，以及 `server_api.h`，共享库不包含本地 setup UI。下载后在 artifact 根目录执行 `sha256sum -c SHA256SUMS`（macOS 使用 `shasum -a 256 -c SHA256SUMS`），确认归档未被替换后再解压。
+`.github/workflows/build-plugin-server.yml` 只接受手动触发。选择 `executable` 时，artifact 名称形如 `plugmesh-plugin-server-linux-executable-Release`，包含 `plugmesh-server`、`plugmesh-plugin-host`、`plugin_api.h`、README、构建信息和归档校验和；UI 已编译进服务器二进制。选择 `shared` 时还包含 Linux 的 `libplugmesh-server.so`、macOS 的 `libplugmesh-server.dylib` 或 Windows 的 DLL/导入库，以及 `server_api.h`，共享库不提供本地 setup 流程。下载后在 artifact 根目录执行 `sha256sum -c SHA256SUMS`（macOS 使用 `shasum -a 256 -c SHA256SUMS`），确认归档未被替换后再解压。
 
-Linux 产物在兼容 glibc 2.31 的基线中构建，随包提供以同一基线构建的 OpenSSL 3 和静态 C++ 运行时，不要把其他系统的 `libssl.so.3` 或 `libcrypto.so.3` 替换进包内；macOS 产物从源码构建时需要 `brew install openssl@3`；Windows 产物会随包复制构建所需的 vcpkg DLL。所有平台都需要把 `plugmesh-plugin-host` 与服务器放在同一目录，或设置 `PLUGMESH_PLUGIN_HOST`。可执行 artifact 已包含 `native-ui/dist`，双击未注册的服务器会自动打开首次绑定页；从源码运行或自定义 UI 时才需要设置 `PLUGMESH_LOCAL_UI_DIRECTORY`。无浏览器环境可以直接使用上面的 `--register` CLI。
+Linux 产物在兼容 glibc 2.31 的基线中构建，随包提供以同一基线构建的 OpenSSL 3 和静态 C++ 运行时，不要把其他系统的 `libssl.so.3` 或 `libcrypto.so.3` 替换进包内；macOS 产物从源码构建时需要 `brew install openssl@3`；Windows 产物会随包复制构建所需的 vcpkg DLL。所有平台都需要把 `plugmesh-plugin-host` 与服务器放在同一目录，或设置 `PLUGMESH_PLUGIN_HOST`。可执行 artifact 的 UI 已嵌入 `plugmesh-server`，启动时总是覆盖刷新到对应的用户数据目录；源码构建须先生成 `native-ui/dist` 再配置 CMake，自定义解出目录可用 `PLUGMESH_LOCAL_UI_DIRECTORY` 指定。无浏览器环境可以直接使用上面的 `--register` CLI。
 
 构建产物中的 `plugin_api.h` 是插件动态库 ABI，`server_api.h` 是共享库嵌入接口，二者用途不同。插件目录仍按一个插件一个子目录放置 `manifest.json` 和 `.so`/`.dylib`/`.dll`，服务器只会发现 manifest 中 `library` 位于该子目录内的插件。
 

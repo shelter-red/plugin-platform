@@ -40,7 +40,7 @@ jobs:
       fail-fast: false
       matrix:
         target_platform: ${{ fromJSON(inputs.target_platform == 'all' && '["linux","windows","macos"]' || format('["{0}"]', inputs.target_platform)) }}
-    runs-on: ${{ matrix.target_platform == 'windows' && 'windows-latest' || matrix.target_platform == 'macos' && 'macos-latest' || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.target_platform == 'windows' && 'windows-latest' || matrix.target_platform == 'macos' && 'macos-15' || 'ubuntu-latest' }}
     env:
       BUILD_TYPE: ${{ inputs.build_type }}
       BUILD_ARTIFACT: ${{ inputs.artifact_type == 'shared' && 'SHARED' || 'EXECUTABLE' }}
@@ -75,7 +75,8 @@ jobs:
           cmake -S native-server -B native-server/build-manual \
             -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
             -DPLUGMESH_BUILD_ARTIFACT="$BUILD_ARTIFACT" \
-            -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)"
+            -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)" \
+            -DPLUGMESH_REQUIRE_EMBEDDED_UI=ON
 
       - name: 配置（Windows）
         if: matrix.target_platform == 'windows'
@@ -87,23 +88,21 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$vcpkg\scripts\buildsystems\vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
             -DVCPKG_APPLOCAL_DEPS=OFF `
-            -DPLUGMESH_BUILD_ARTIFACT="$env:BUILD_ARTIFACT"
+            -DPLUGMESH_BUILD_ARTIFACT="$env:BUILD_ARTIFACT" `
+            -DPLUGMESH_REQUIRE_EMBEDDED_UI=ON
 
       - name: 构建和打包 Linux 兼容基线
         if: matrix.target_platform == 'linux'
         shell: bash
         run: |
           set -euo pipefail
-          ui_arg=()
-          if [[ "${{ inputs.artifact_type }}" == executable ]]; then ui_arg+=(--include-ui); fi
           docker run --rm -v "$GITHUB_WORKSPACE:/src" -w /src debian:11 \
             bash scripts/build-linux-native.sh \
               --artifact-type "$BUILD_ARTIFACT" \
               --build-type "$BUILD_TYPE" \
               --package-name "plugmesh-plugin-server-linux-${{ inputs.artifact_type }}-${{ inputs.build_type }}" \
               --archive-name "plugmesh-plugin-server-linux-${{ inputs.artifact_type }}-${{ inputs.build_type }}.tar.gz" \
-              --archive-format tar \
-              "${ui_arg[@]}"
+              --archive-format tar
 
       - name: 构建（macOS）
         if: matrix.target_platform == 'macos'
@@ -133,8 +132,6 @@ jobs:
             cp native-server/build-manual/libplugmesh-server.dylib "$root/sdk/lib/"
           else
             cp native-server/build-manual/plugmesh-server "$root/"
-            mkdir -p "$root/native-ui/dist"
-            cp -R native-ui/dist/. "$root/native-ui/dist/"
           fi
           cp native-server/build-manual/plugmesh-plugin-host "$root/"
           cp native-server/include/plugmesh/*.h "$root/sdk/include/plugmesh/"
@@ -183,8 +180,6 @@ jobs:
             Copy-Item "native-server/build-manual/$config/plugmesh-server.lib" "$root/sdk/lib/"
           } else {
             Copy-Item "native-server/build-manual/$config/plugmesh-server.exe" "$root/"
-            New-Item -ItemType Directory -Force -Path "$root/native-ui/dist" | Out-Null
-            Copy-Item native-ui/dist/* "$root/native-ui/dist/" -Recurse -Force
           }
           Copy-Item "native-server/build-manual/$config/plugmesh-plugin-host.exe" "$root/"
           foreach ($dllRoot in @("$vcpkg/installed/x64-windows/bin", "$vcpkg/installed/x64-windows/debug/bin")) {

@@ -79,8 +79,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 构建内嵌 UI
+        run: |
+          npm ci
+          npm run native-ui:build
       - name: 配置
-        run: cmake -S native-server -B native-server/build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S native-server -B native-server/build -DCMAKE_BUILD_TYPE=Release -DPLUGMESH_REQUIRE_EMBEDDED_UI=ON
       - name: 构建
         shell: bash
         run: |
@@ -128,6 +135,13 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 构建内嵌 UI
+        run: |
+          npm ci
+          npm run native-ui:build
       - name: 配置
         shell: pwsh
         run: |
@@ -141,7 +155,8 @@ jobs:
           cmake -S native-server -B native-server/build-win -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="$vcpkg\scripts\buildsystems\vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
-            -DVCPKG_APPLOCAL_DEPS=OFF
+            -DVCPKG_APPLOCAL_DEPS=OFF `
+            -DPLUGMESH_REQUIRE_EMBEDDED_UI=ON
       - name: 构建
         shell: pwsh
         run: |
@@ -205,9 +220,16 @@ jobs:
   macos-native:
     needs: changes
     if: needs.changes.outputs.native == 'true'
-    runs-on: macos-latest
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 构建内嵌 UI
+        run: |
+          npm ci
+          npm run native-ui:build
       - name: 准备临时钥匙串
         shell: bash
         run: |
@@ -223,7 +245,8 @@ jobs:
           brew install openssl@3
           cmake -S native-server -B native-server/build \
             -DCMAKE_BUILD_TYPE=Release \
-            -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)"
+            -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)" \
+            -DPLUGMESH_REQUIRE_EMBEDDED_UI=ON
       - name: 构建
         shell: bash
         run: |

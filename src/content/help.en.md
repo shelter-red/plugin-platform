@@ -94,7 +94,7 @@ Worker connection states and control-frame types are persisted locally under Lin
 
 ### Embed the shared library
 
-The shared-library artifact contains the server library, `plugmesh-plugin-host`, `server_api.h`, and build notes. The host application must store credentials and pass the registered Worker URL, server ID, access token, plugin directory, and host executable path through `plugmesh_server_config`; the library does not implement `--register` or the local UI setup flow. Executable artifacts include `native-ui/dist` and open the local setup page automatically when launched without registration. Linux executable artifacts include OpenSSL 3 built against the glibc 2.31 compatibility baseline; ship the matching runtime with shared-library applications as well.
+The shared-library artifact contains the server library, `plugmesh-plugin-host`, `server_api.h`, and build notes. The host application must store credentials and pass the registered Worker URL, server ID, access token, plugin directory, and host executable path through `plugmesh_server_config`; the library does not implement `--register` or the local UI setup flow. Executable artifacts embed the Native UI in the server binary and overwrite its user-data-directory copy at startup. Linux executable artifacts include OpenSSL 3 built against the glibc 2.31 compatibility baseline; ship the matching runtime with shared-library applications as well.
 
 The minimal C ABI lifecycle is:
 

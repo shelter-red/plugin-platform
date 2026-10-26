@@ -205,7 +205,7 @@ npx wrangler dev --config wrangler.toml --var SESSION_SECRET:local-only-session-
 
 workflow 只接受手动触发，不会因为普通推送重复构建。每个 artifact 包含所选服务器产物、`plugmesh-plugin-host`、插件 ABI 公共头、`server_api.h`（共享库）和构建说明，并附带 `SHA256SUMS`。共享库通过 `native-server/include/plugmesh/server_api.h` 提供稳定 C ABI；可执行程序仍使用 `--register` 或环境变量完成绑定。
 
-下载 artifact 后先在根目录校验 `SHA256SUMS`（Linux：`sha256sum -c SHA256SUMS`；macOS：`shasum -a 256 -c SHA256SUMS`），再按 [`src/content/help.zh-CN.md`](src/content/help.zh-CN.md) 或 [`native-server/README.md`](native-server/README.md) 绑定服务器并加载插件。可执行程序默认读取同目录的 `plugins`，仅在自定义目录时设置 `PLUGMESH_PLUGIN_DIRECTORY`。可执行 artifact 已包含 `native-ui/dist`，未注册时双击 `plugmesh-server` 会自动打开首次绑定页；共享库不是独立程序，也不包含 setup UI，宿主必须链接 `server_api.h` C ABI 并负责保存已绑定凭据。
+下载 artifact 后先在根目录校验 `SHA256SUMS`（Linux：`sha256sum -c SHA256SUMS`；macOS：`shasum -a 256 -c SHA256SUMS`），再按 [`src/content/help.zh-CN.md`](src/content/help.zh-CN.md) 或 [`native-server/README.md`](native-server/README.md) 绑定服务器并加载插件。可执行程序默认读取同目录的 `plugins`，仅在自定义目录时设置 `PLUGMESH_PLUGIN_DIRECTORY`。可执行 artifact 将 UI 嵌入服务器二进制，启动时会覆盖解出到用户数据目录；共享库不是独立程序，也不提供 setup UI，宿主必须链接 `server_api.h` C ABI 并负责保存已绑定凭据。
 
 ## 发布原生端
 
@@ -216,7 +216,8 @@ workflow 只接受手动触发，不会因为普通推送重复构建。每个 a
 | `plugmesh-server-linux.zip` | Linux x86_64，内含兼容 glibc 2.31 基线的 OpenSSL 3 |
 | `plugmesh-server-windows.zip` | Windows x64，内含随包 OpenSSL DLL |
 | `plugmesh-server-macos.zip` | macOS，运行时需 `brew install openssl@3` |
-| `SHA256SUMS` | 三个 zip 的 SHA-256 校验和 |
+| `plugmesh-server-termux.tar.gz` | Android AArch64 Termux CLI，UI 内嵌于服务器二进制 |
+| `SHA256SUMS` | 所有平台归档的 SHA-256 校验和 |
 
 产物不做代码签名。下载后先校验再运行：
 
@@ -243,4 +244,4 @@ docker run --rm -v "$PWD:/app" -v /etc/ssl/certs:/etc/ssl/certs:ro -w /app node:
 - `src/`：管理端 SPA。
 - `worker/`：Cloudflare Worker、Durable Object、D1 migration 和协议定义。
 - `native-server/`：跨平台 C++ 服务器基础层和插件 C ABI。
-- `native-ui/`：本地服务器 React 控制台；构建产物由 C++ localhost HTTP 服务从 `native-ui/dist` 静态目录提供，不编译进二进制。
+- `native-ui/`：本地服务器 React 控制台；构建产物由 CMake 编译进原生服务器二进制，并在启动时覆盖解出到用户数据目录。

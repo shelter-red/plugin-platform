@@ -6,7 +6,6 @@ build_type=Release
 package_name=plugmesh-server
 archive_name=plugmesh-server-linux.zip
 archive_format=zip
-include_ui=false
 
 while (($#)); do
   case "$1" in
@@ -15,7 +14,6 @@ while (($#)); do
     --package-name) package_name="$2"; shift 2 ;;
     --archive-name) archive_name="$2"; shift 2 ;;
     --archive-format) archive_format="$2"; shift 2 ;;
-    --include-ui) include_ui=true; shift ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -27,6 +25,13 @@ fi
 if [[ "$archive_format" != zip && "$archive_format" != tar ]]; then
   echo "invalid archive format: $archive_format" >&2
   exit 2
+fi
+
+if [[ "$artifact_type" != SHARED ]]; then
+  [[ -f native-ui/dist/index.html ]] || { echo 'native-ui/dist/index.html must be built before compiling the server' >&2; exit 1; }
+  require_embedded_ui=ON
+else
+  require_embedded_ui=OFF
 fi
 
 export DEBIAN_FRONTEND=noninteractive
@@ -71,7 +76,8 @@ cmake -S native-server -B "$build_dir" \
   -DOPENSSL_INCLUDE_DIR="$openssl_prefix/include" \
   -DOPENSSL_SSL_LIBRARY="$openssl_libdir/libssl.so.3" \
   -DOPENSSL_CRYPTO_LIBRARY="$openssl_libdir/libcrypto.so.3" \
-  -DOPENSSL_USE_STATIC_LIBS=OFF
+  -DOPENSSL_USE_STATIC_LIBS=OFF \
+  -DPLUGMESH_REQUIRE_EMBEDDED_UI="$require_embedded_ui"
 
 if [[ "$artifact_type" == SHARED ]]; then
   cmake --build "$build_dir" --target plugmesh-server-shared plugmesh-plugin-host plugmesh-sample --parallel
@@ -125,11 +131,6 @@ cp native-server/examples/sample_plugin.cpp "/src/dist/$package_name/sdk/"
 cp native-server/PORT-MAPPING.md "/src/dist/$package_name/PORT-MAPPING.md"
 cp native-server/README.md "/src/dist/$package_name/README.md"
 cp /etc/ssl/certs/ca-certificates.crt "/src/dist/$package_name/ca-certificates.crt"
-if [[ "$include_ui" == true ]]; then
-  [[ -d native-ui/dist ]] || { echo 'native-ui/dist was not built' >&2; exit 1; }
-  mkdir -p "/src/dist/$package_name/native-ui/dist"
-  cp -a native-ui/dist/. "/src/dist/$package_name/native-ui/dist/"
-fi
 
 printf '类型：%s\n平台：Linux x86_64\n构建类型：%s\n' "${artifact_type,,}" "$build_type" > "/src/dist/$package_name/BUILD-INFO.txt"
 if [[ "$archive_format" == zip ]]; then

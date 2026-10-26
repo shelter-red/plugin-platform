@@ -76,7 +76,7 @@ $env:PLUGMESH_REGISTRATION_CODE = '一次性注册码'
 .\plugmesh-server.exe --register https://platform.example.com '边缘服务器' "$env:USERPROFILE\.plugmesh\credentials.json"
 ```
 
-绑定后启动服务器。`plugmesh-plugin-host` 放在 `plugmesh-server` 同一目录时可以省略 `PLUGMESH_PLUGIN_HOST`；否则必须指定它。Release 可执行包从可执行文件同目录的 `native-ui/dist` 提供本机管理界面；`PLUGMESH_LOCAL_UI_DIRECTORY` 只用于源码运行或自定义界面目录。
+绑定后启动服务器。`plugmesh-plugin-host` 放在 `plugmesh-server` 同一目录时可以省略 `PLUGMESH_PLUGIN_HOST`；否则必须指定它。Release 可执行包将本机管理界面内嵌在服务器二进制中，并在每次启动时覆盖解出到用户数据目录。`PLUGMESH_LOCAL_UI_DIRECTORY` 可用于指定自定义 UI 解出目录。
 
 ```bash
 PLUGMESH_CREDENTIAL_FILE="$HOME/.config/plugmesh/credentials.json" \

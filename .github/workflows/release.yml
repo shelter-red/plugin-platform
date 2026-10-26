@@ -56,7 +56,7 @@ jobs:
           - os: windows-latest
             name: windows
             archive: plugmesh-server-windows.zip
-          - os: macos-latest
+          - os: macos-15
             name: macos
             archive: plugmesh-server-macos.zip
     steps:
@@ -95,14 +95,16 @@ jobs:
           cmake -S native-server -B native-server/build-win -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="$vcpkg\scripts\buildsystems\vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
-            -DVCPKG_APPLOCAL_DEPS=OFF
+            -DVCPKG_APPLOCAL_DEPS=OFF `
+            -DPLUGMESH_REQUIRE_EMBEDDED_UI=ON
 
       - name: 配置（macOS）
         if: runner.os == 'macOS'
         run: |
           cmake -S native-server -B native-server/build \
             -DCMAKE_BUILD_TYPE=Release \
-            -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)"
+            -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)" \
+            -DPLUGMESH_REQUIRE_EMBEDDED_UI=ON
 
       - name: 构建和打包 Linux 兼容基线
         if: runner.os == 'Linux'
@@ -115,8 +117,7 @@ jobs:
               --build-type Release \
               --package-name plugmesh-server \
               --archive-name plugmesh-server-linux.zip \
-              --archive-format zip \
-              --include-ui
+              --archive-format zip
 
       - name: 构建（macOS）
         if: runner.os == 'macOS'
@@ -134,8 +135,6 @@ jobs:
           if (-not $vcpkg) { $vcpkg = 'C:\vcpkg' }
           New-Item -ItemType Directory -Force -Path dist/plugmesh-server | Out-Null
           Copy-Item native-server/build-win/Release/plugmesh-server.exe dist/plugmesh-server/
-          New-Item -ItemType Directory -Force -Path dist/plugmesh-server/native-ui/dist | Out-Null
-          Copy-Item native-ui/dist/* dist/plugmesh-server/native-ui/dist/ -Recurse -Force
           Copy-Item native-server/README.md dist/plugmesh-server/README.md
           Copy-Item native-server/build-win/Release/plugmesh-plugin-host.exe dist/plugmesh-server/
           New-Item -ItemType Directory -Force -Path dist/plugmesh-server/sdk/include/plugmesh, dist/plugmesh-server/sdk/lib, dist/plugmesh-server/sdk/examples, dist/plugmesh-server/sdk/plugins/sample.plugin | Out-Null
@@ -157,8 +156,6 @@ jobs:
           set -euo pipefail
           mkdir -p dist/plugmesh-server
           cp native-server/build/plugmesh-server dist/plugmesh-server/
-          mkdir -p dist/plugmesh-server/native-ui/dist
-          cp -R native-ui/dist/. dist/plugmesh-server/native-ui/dist/
           cp native-server/README.md dist/plugmesh-server/README.md
           cp native-server/build/plugmesh-plugin-host dist/plugmesh-server/
           mkdir -p dist/plugmesh-server/sdk/include/plugmesh dist/plugmesh-server/sdk/lib dist/plugmesh-server/sdk/examples dist/plugmesh-server/sdk/plugins/sample.plugin
@@ -253,7 +250,7 @@ jobs:
             -v "$GITHUB_WORKSPACE:/src" \
             -w /src \
             androidzeros/termux-package-builder:latest \
-            -lc 'export PREFIX=/data/data/com.termux/files/usr; bash scripts/build-termux-native.sh --artifact-type ALL --build-type Release --include-ui'
+            -lc 'export PREFIX=/data/data/com.termux/files/usr; bash scripts/build-termux-native.sh --artifact-type ALL --build-type Release'
 
       - name: 校验 Termux 构建结果
         run: |

@@ -9,13 +9,46 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(PLUGMESH_BUILD_ARTIFACT "ALL" CACHE STRING "Build artifact: ALL, EXECUTABLE or SHARED")
 option(PLUGMESH_TERMUX "Build for the Android Termux runtime" OFF)
+if (PLUGMESH_BUILD_ARTIFACT STREQUAL "SHARED")
+  set(PLUGMESH_REQUIRE_EMBEDDED_UI_DEFAULT OFF)
+else()
+  set(PLUGMESH_REQUIRE_EMBEDDED_UI_DEFAULT ON)
+endif()
+option(PLUGMESH_REQUIRE_EMBEDDED_UI "Require Native UI assets for this server build" "${PLUGMESH_REQUIRE_EMBEDDED_UI_DEFAULT}")
+set(PLUGMESH_NATIVE_UI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../native-ui/dist" CACHE PATH "Native UI build output to embed")
 if (NOT PLUGMESH_BUILD_ARTIFACT STREQUAL "ALL" AND NOT PLUGMESH_BUILD_ARTIFACT STREQUAL "EXECUTABLE" AND NOT PLUGMESH_BUILD_ARTIFACT STREQUAL "SHARED")
   message(FATAL_ERROR "PLUGMESH_BUILD_ARTIFACT must be ALL, EXECUTABLE or SHARED")
 endif()
 
+file(GLOB_RECURSE PLUGMESH_NATIVE_UI_FILES CONFIGURE_DEPENDS LIST_DIRECTORIES FALSE "${PLUGMESH_NATIVE_UI_DIR}/*")
+list(LENGTH PLUGMESH_NATIVE_UI_FILES PLUGMESH_NATIVE_UI_COUNT)
+if (PLUGMESH_REQUIRE_EMBEDDED_UI AND PLUGMESH_NATIVE_UI_COUNT EQUAL 0)
+  message(FATAL_ERROR "Native UI assets are required; build native-ui/dist before configuring native-server")
+endif()
+set(PLUGMESH_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+file(MAKE_DIRECTORY "${PLUGMESH_GENERATED_DIR}")
+set(PLUGMESH_EMBEDDED_UI_FILE "${PLUGMESH_GENERATED_DIR}/embedded_ui_assets.inc")
+add_custom_command(
+  OUTPUT "${PLUGMESH_EMBEDDED_UI_FILE}"
+  COMMAND "${CMAKE_COMMAND}"
+    "-DUI_DIRECTORY=${PLUGMESH_NATIVE_UI_DIR}"
+    "-DOUTPUT_FILE=${PLUGMESH_EMBEDDED_UI_FILE}"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_native_ui.cmake"
+  DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_native_ui.cmake"
+    ${PLUGMESH_NATIVE_UI_FILES}
+  COMMENT "Embedding Native UI assets"
+  VERBATIM
+)
+add_custom_target(plugmesh-embedded-ui-assets DEPENDS "${PLUGMESH_EMBEDDED_UI_FILE}")
+
 if (NOT MSVC)
   # 自家源码保持 0 警告；第三方头文件不产生警告，已用 -Wall -Wextra 全量构建确认。
   add_compile_options(-Wall -Wextra)
+endif()
+
+if (MSVC)
+  set_source_files_properties(src/embedded_ui.cpp PROPERTIES COMPILE_OPTIONS /utf-8)
 endif()
 
 if (MINGW)
@@ -30,6 +63,7 @@ add_library(plugmesh_core STATIC
   src/control_client.cpp
   src/control_protocol.cpp
   src/credential_store.cpp
+  src/embedded_ui.cpp
   src/local_http_server.cpp
   src/plugin_host_client.cpp
   src/plugin_host_protocol.cpp
@@ -41,6 +75,7 @@ add_library(plugmesh_core STATIC
   src/tls_support.cpp
   src/tunnel_trust_store.cpp
 )
+add_dependencies(plugmesh_core plugmesh-embedded-ui-assets)
 set_target_properties(plugmesh_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_compile_definitions(plugmesh_core PUBLIC ASIO_STANDALONE)
 # 内置 websocketpp 只用 __cplusplus 判断 C++11 能力，而 MSVC 默认把 __cplusplus
@@ -48,6 +83,7 @@ target_compile_definitions(plugmesh_core PUBLIC ASIO_STANDALONE)
 # Windows 构建直接报 C1083。项目固定 C++20，这里显式声明完整 C++11 STL 支持。
 target_compile_definitions(plugmesh_core PUBLIC _WEBSOCKETPP_CPP11_STL_)
 target_include_directories(plugmesh_core PUBLIC include)
+target_include_directories(plugmesh_core PRIVATE "${PLUGMESH_GENERATED_DIR}")
 target_include_directories(plugmesh_core SYSTEM PUBLIC third_party/include)
 target_link_libraries(plugmesh_core PUBLIC OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
 
@@ -146,6 +182,13 @@ target_link_libraries(plugmesh-tls-support-smoke PRIVATE plugmesh_core)
 add_executable(plugmesh-local-http-server-smoke tests/local_http_server_smoke.cpp)
 target_link_libraries(plugmesh-local-http-server-smoke PRIVATE plugmesh_core)
 
+add_executable(plugmesh-embedded-ui-smoke tests/embedded_ui_smoke.cpp)
+target_link_libraries(plugmesh-embedded-ui-smoke PRIVATE plugmesh_core)
+
+add_executable(plugmesh-embedded-ui-safe-write-smoke tests/embedded_ui_safe_write_smoke.cpp)
+target_include_directories(plugmesh-embedded-ui-safe-write-smoke PRIVATE src)
+target_link_libraries(plugmesh-embedded-ui-safe-write-smoke PRIVATE plugmesh_core)
+
 add_executable(plugmesh-local-ui-smoke-server tests/local_ui_smoke_server.cpp)
 target_link_libraries(plugmesh-local-ui-smoke-server PRIVATE plugmesh_core)
 
@@ -172,6 +215,22 @@ add_test(NAME plugmesh-plugin-manager-smoke COMMAND plugmesh-plugin-manager-smok
 add_test(NAME plugmesh-plugin-manager-crash-smoke COMMAND plugmesh-plugin-manager-crash-smoke $<TARGET_FILE:plugmesh-plugin-host> "${CMAKE_CURRENT_BINARY_DIR}/plugins")
 add_test(NAME plugmesh-plugin-websocket-lifecycle-smoke COMMAND plugmesh-plugin-websocket-lifecycle-smoke $<TARGET_FILE:plugmesh-plugin-host> "${CMAKE_CURRENT_BINARY_DIR}/plugins")
 add_test(NAME plugmesh-local-http-server-smoke COMMAND plugmesh-local-http-server-smoke)
+add_test(NAME plugmesh-embedded-ui-safe-write-smoke COMMAND plugmesh-embedded-ui-safe-write-smoke)
+if (PLUGMESH_NATIVE_UI_COUNT GREATER 0)
+  add_test(NAME plugmesh-embedded-ui-smoke COMMAND plugmesh-embedded-ui-smoke)
+  add_test(NAME plugmesh-embedded-ui-rebuild-smoke
+    COMMAND "${CMAKE_COMMAND}"
+      "-DPLUGMESH_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
+      "-DPLUGMESH_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/embedded-ui-rebuild-smoke"
+      "-DPLUGMESH_GENERATOR=${CMAKE_GENERATOR}"
+      "-DPLUGMESH_GENERATOR_PLATFORM=${CMAKE_GENERATOR_PLATFORM}"
+      "-DPLUGMESH_GENERATOR_TOOLSET=${CMAKE_GENERATOR_TOOLSET}"
+      "-DPLUGMESH_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+      "-DPLUGMESH_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}"
+      "-DPLUGMESH_PREFIX_PATH=${CMAKE_PREFIX_PATH}"
+      "-DPLUGMESH_OPENSSL_ROOT_DIR=${OPENSSL_ROOT_DIR}"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/embedded_ui_rebuild_smoke.cmake")
+endif()
 add_test(NAME plugmesh-tunnel-mapping-smoke COMMAND plugmesh-tunnel-mapping-smoke)
 add_test(NAME plugmesh-tunnel-integration-smoke COMMAND plugmesh-tunnel-integration-smoke)
 if (TARGET plugmesh-server-api-smoke)

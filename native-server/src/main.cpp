@@ -1,5 +1,6 @@
 #include "plugmesh/control_client.h"
 #include "plugmesh/credential_store.h"
+#include "plugmesh/embedded_ui.h"
 #include "plugmesh/local_http_server.h"
 #include "plugmesh/local_log_buffer.h"
 #include "plugmesh/port_mapper.h"
@@ -163,10 +164,15 @@ std::filesystem::path default_log_file() {
 
 std::filesystem::path local_ui_directory() {
   if (const char* value = std::getenv("PLUGMESH_LOCAL_UI_DIRECTORY"); value && *value) return value;
-  const auto packaged = executable_directory() / "native-ui" / "dist";
-  std::error_code error;
-  if (std::filesystem::is_directory(packaged, error)) return packaged;
-  return std::filesystem::current_path(error) / "native-ui" / "dist";
+#ifdef _WIN32
+  if (const char* data = std::getenv("LOCALAPPDATA"); data && *data) return std::filesystem::path(data) / "Plugmesh" / "native-ui" / "dist";
+#elif defined(__APPLE__)
+  if (const char* home = std::getenv("HOME"); home && *home) return std::filesystem::path(home) / "Library" / "Application Support" / "Plugmesh" / "native-ui" / "dist";
+#else
+  if (const char* data = std::getenv("XDG_DATA_HOME"); data && *data && std::filesystem::path(data).is_absolute()) return std::filesystem::path(data) / "plugmesh" / "native-ui" / "dist";
+  if (const char* home = std::getenv("HOME"); home && *home) return std::filesystem::path(home) / ".local" / "share" / "plugmesh" / "native-ui" / "dist";
+#endif
+  return executable_directory() / "native-ui" / "dist";
 }
 
 void open_local_setup_browser(uint16_t port) {
@@ -316,6 +322,12 @@ int register_server(int argc, char** argv) {
 
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--register") return register_server(argc, argv);
+  const auto ui_directory = local_ui_directory();
+  std::string ui_error;
+  if (!plugmesh::extract_embedded_ui(ui_directory, ui_error)) {
+    std::cerr << "plugmesh-server: unable to prepare embedded Native UI: " << ui_error << '\n';
+    return 2;
+  }
   const auto config = plugmesh::load_config_from_environment();
   auto resolved_config = config;
   std::string plugin_directory_error;
@@ -327,7 +339,7 @@ int main(int argc, char** argv) {
     std::string error;
     if (!plugmesh::load_persisted_config(resolved_config, error) || !plugmesh::validate_binding_config(resolved_config, error)) {
       std::cerr << "plugmesh-server: entering local setup (" << error << ")\n";
-      if (!run_registration_setup(resolved_config, local_port(), local_ui_directory(), error)) {
+      if (!run_registration_setup(resolved_config, local_port(), ui_directory, error)) {
         std::cerr << "plugmesh-server: " << error << '\n';
         return 2;
       }
@@ -362,7 +374,7 @@ int main(int argc, char** argv) {
     const auto preferred_local_port = local_port();
     plugmesh::LocalHttpServer local_http(preferred_local_port, &plugins, [&client, &resolved_config, &port_mapper] {
       return nlohmann::json{{"configured", true}, {"serverId", resolved_config.server_id}, {"workerUrl", resolved_config.worker_url}, {"credentialFile", resolved_config.credential_file.string()}, {"portMappingsFile", resolved_config.port_mappings_file.string()}, {"portMappings", nlohmann::json::parse(port_mapper.snapshot())}, {"systemCredentialsAvailable", plugmesh::system_credentials_available()}, {"connected", client.connected()}};
-    }, local_ui_directory(), {}, [&logs] { return logs.snapshot(); }, [&client, &resolved_config, &rebind_requested, &credential_action_active](const std::string& action, const nlohmann::json& payload, std::string& action_error) {
+    }, ui_directory, {}, [&logs] { return logs.snapshot(); }, [&client, &resolved_config, &rebind_requested, &credential_action_active](const std::string& action, const nlohmann::json& payload, std::string& action_error) {
       credential_action_active = true;
       struct ActionGuard {
         std::atomic<bool>& active;
