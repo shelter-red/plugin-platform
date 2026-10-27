@@ -65,10 +65,26 @@ if [[ "$artifact_type" == ALL || "$artifact_type" == SHARED ]]; then
 fi
 
 mkdir -p "$package_dir/plugins/sample.plugin"
+write_local_launcher() {
+  local name="$1"
+  local binary="$package_dir/$name.bin"
+  local launcher="$package_dir/$name"
+  mv "$package_dir/$name" "$binary"
+  cat > "$launcher" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+script_dir=\$(CDPATH= cd -- "\$(dirname -- "\$0")" && pwd)
+export LD_LIBRARY_PATH="\$script_dir\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}"
+exec "\$script_dir/$name.bin" "\$@"
+EOF
+  chmod 0755 "$launcher"
+}
 if [[ "$artifact_type" != SHARED ]]; then
-  cp "$build_dir/plugmesh-server" "$package_dir/"
+  cp "$build_dir/plugmesh-server" "$package_dir/plugmesh-server"
+  write_local_launcher plugmesh-server
 fi
-cp "$build_dir/plugmesh-plugin-host" "$package_dir/"
+cp "$build_dir/plugmesh-plugin-host" "$package_dir/plugmesh-plugin-host"
+write_local_launcher plugmesh-plugin-host
 cp "$build_dir/libplugmesh-sample.so" "$build_dir/plugins/sample.plugin/manifest.json" "$package_dir/plugins/sample.plugin/"
 if [[ "$artifact_type" == ALL || "$artifact_type" == SHARED ]]; then
   cp "$build_dir/libplugmesh-server.so" "$package_dir/"
@@ -87,8 +103,10 @@ sample plugin for Termux. It does not include the plugmesh-server executable
 or an embedded Native UI. Build an EXECUTABLE or ALL package to run the server.
 
 The package uses the Termux native OpenSSL and zlib libraries and carries the
-matching libc++_shared.so runtime beside its binaries. It is not an APK and not
-an Android app.
+matching libc++_shared.so runtime beside its binaries. The plugmesh-plugin-host
+launcher puts this directory first in LD_LIBRARY_PATH before starting its .bin ELF,
+so an older global Termux libc++ is not selected.
+It is not an APK and not an Android app.
 EOF
 else
   cat > "$package_dir/TERMUX-README.txt" <<'EOF'
@@ -102,11 +120,13 @@ Run the server from this directory:
   ./plugmesh-server
 
 The package uses the Termux native OpenSSL and zlib libraries and carries the
-matching libc++_shared.so runtime beside its binaries. It is a
-command-line Linux-like Termux build, not an APK and not an Android app.
+matching libc++_shared.so runtime beside its binaries. The plugmesh-server and
+plugmesh-plugin-host launchers put this directory first in LD_LIBRARY_PATH before
+starting their .bin ELF files, so an older global Termux libc++ is not selected.
+It is a command-line Linux-like Termux build, not an APK and not an Android app.
 The Native UI is embedded in plugmesh-server and refreshed on every start
 under the Termux user's data directory. No separate UI directory is needed.
-Keep plugmesh-server, plugmesh-plugin-host, and the plugins directory together.
+Keep the launchers, their .bin files, libc++_shared.so, and the plugins directory together.
 EOF
 fi
 

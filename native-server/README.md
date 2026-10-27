@@ -134,7 +134,7 @@ bash scripts/build-termux-native.sh
 bash scripts/build-termux-native.sh --artifact-type SHARED
 ```
 
-脚本不修改 `/etc/apt`，不下载或编译 x86_64 OpenSSL，也不执行 glibc ABI 检查。它使用 `$PREFIX` 下的 Android/Termux 原生库，生成 `dist/plugmesh-server-termux.tar.gz` 和 `dist/plugmesh-server-termux.tar.gz.sha256`。归档同时携带构建时匹配的 `libc++_shared.so`，服务器通过 `$ORIGIN` 优先加载该运行库，避免设备上旧版 libc++ 缺少 ABI 符号；不会复制 Debian Linux 包中的 `.so` 或 glibc 运行库。校验并解压后直接通过命令行启动：
+脚本不修改 `/etc/apt`，不下载或编译 x86_64 OpenSSL，也不执行 glibc ABI 检查。它使用 `$PREFIX` 下的 Android/Termux 原生库，生成 `dist/plugmesh-server-termux.tar.gz` 和 `dist/plugmesh-server-termux.tar.gz.sha256`。归档同时携带构建时匹配的 `libc++_shared.so`；`plugmesh-server` 与 `plugmesh-plugin-host` 是同目录启动器，会先把包目录放到 `LD_LIBRARY_PATH` 最前面，再启动旁边的 `.bin` ELF，因此旧设备上的全局 libc++ 不会抢先加载。不要只直接执行 `.bin` 文件。不会复制 Debian Linux 包中的 `.so` 或 glibc 运行库。校验并解压后直接通过命令行启动：
 
 ```bash
 (cd dist && sha256sum -c plugmesh-server-termux.tar.gz.sha256)
@@ -143,7 +143,7 @@ cd plugmesh-server-termux
 ./plugmesh-server
 ```
 
-Termux 包内的 `plugmesh-server`、`plugmesh-plugin-host` 和 `plugins/` 必须保持相对位置；运行时继续使用 Termux 的 OpenSSL/zlib，不应把 Debian Linux 包中的 `.so` 或 glibc 运行库复制进来。端口映射、SSH/大文件流和本地 UI 的行为与其它原生构建一致。
+Termux 包内的 `plugmesh-server`、`plugmesh-server.bin`、`plugmesh-plugin-host`、`plugmesh-plugin-host.bin`、`libc++_shared.so` 和 `plugins/` 必须保持相对位置；运行时继续使用 Termux 的 OpenSSL/zlib，不应把 Debian Linux 包中的 `.so` 或 glibc 运行库复制进来。端口映射、SSH/大文件流和本地 UI 的行为与其它原生构建一致。
 
 
 ### MSVC
