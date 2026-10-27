@@ -16,13 +16,22 @@ done
 
 for required in \
   'CMAKE_CXX_COMPILER="$CXX"' \
-  'CMAKE_PREFIX_PATH="$PREFIX"' \
-  'OPENSSL_ROOT_DIR="$PREFIX"' \
+  '"-DCMAKE_PREFIX_PATH=${termux_static_prefix:+$termux_static_prefix:}$PREFIX"' \
+  '"-DOPENSSL_ROOT_DIR=${termux_static_prefix:-$PREFIX}"' \
+  '"-DOPENSSL_USE_STATIC_LIBS=$([[ "$termux_static_deps" == ON ]] && echo ON || echo OFF)"' \
   '-DPLUGMESH_TERMUX=ON' \
+  '"-DPLUGMESH_TERMUX_STATIC_DEPS=$termux_static_deps"' \
+  '"-DPLUGMESH_TERMUX_STATIC_PREFIX=$termux_static_prefix"' \
+  'PLUGMESH_TERMUX_STATIC_PREFIX is required for static Termux dependencies' \
+  'libc++.a' \
+  'libc++abi.a' \
+  'libunwind.a' \
+  'libssl.a' \
+  'libcrypto.a' \
   'require_embedded_ui=ON' \
   'if [[ "$artifact_type" == SHARED ]]; then' \
   'require_embedded_ui=OFF' \
-  '-DPLUGMESH_REQUIRE_EMBEDDED_UI="$require_embedded_ui"' \
+  '"-DPLUGMESH_REQUIRE_EMBEDDED_UI=$require_embedded_ui"' \
   'native-ui/dist/index.html must be built before compiling the Termux server' \
   'Android Termux' \
   'TERMUX-README.txt' \
@@ -106,6 +115,9 @@ grep -Fq 'NOT PLUGMESH_TERMUX' "$cmake_file" || { echo 'CMake must exclude Termu
 grep -Fq 'elseif (PLUGMESH_TERMUX)' "$cmake_file" || { echo 'CMake must configure Termux runtime lookup' >&2; exit 1; }
 grep -Fq 'set(CMAKE_SKIP_RPATH TRUE)' "$cmake_file" || { echo 'Termux build must disable CMake host RPATH injection' >&2; exit 1; }
 grep -Fq 'SKIP_BUILD_RPATH TRUE' "$cmake_file" || { echo 'Termux build must not retain host PREFIX RPATH' >&2; exit 1; }
-grep -Fq '"-Wl,-rpath,\\$ORIGIN"' "$cmake_file" || { echo 'Termux binaries must use package-relative runtime lookup' >&2; exit 1; }
+grep -Fq 'PLUGMESH_TERMUX_STATIC_DEPS' "$cmake_file" || { echo 'Termux CMake must expose static dependency mode' >&2; exit 1; }
+grep -Fq 'target_link_options(${target_name}' "$cmake_file" && grep -Fq -- '-nostdlib++' "$cmake_file" || { echo 'Termux static mode must suppress shared libc++' >&2; exit 1; }
+grep -Fq '"${PLUGMESH_TERMUX_LIBCXX}" "${PLUGMESH_TERMUX_LIBCXXABI}"' "$cmake_file" || { echo 'Termux static mode must link libc++ and libc++abi archives explicitly' >&2; exit 1; }
+grep -Fq '"${PLUGMESH_TERMUX_LIBUNWIND}" dl m c' "$cmake_file" || { echo 'Termux static mode must link libunwind explicitly' >&2; exit 1; }
 
 printf '%s\n' 'Termux build contract passed'

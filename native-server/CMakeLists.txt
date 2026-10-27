@@ -154,18 +154,44 @@ if (UNIX AND NOT APPLE AND NOT PLUGMESH_TERMUX)
     endif()
   endforeach()
 elseif (PLUGMESH_TERMUX)
-  # Termux may have an older libc++_shared.so installed than the one used to
-  # compile this package. The build script carries the matching runtime beside
-  # each shipped binary, so Android's loader must prefer the package copy.
+  # The package launcher supplies LD_LIBRARY_PATH/LD_PRELOAD explicitly. Do not
+  # emit a malformed or host-prefix RPATH into the Android ELF files.
   set(CMAKE_SKIP_RPATH TRUE)
   foreach(target_name plugmesh-server plugmesh-plugin-host plugmesh-server-shared plugmesh-sample)
     if (TARGET ${target_name})
       set_target_properties(${target_name} PROPERTIES
         SKIP_BUILD_RPATH TRUE
-        INSTALL_RPATH "$ORIGIN")
-      target_link_options(${target_name} PRIVATE "-Wl,-rpath,\\$ORIGIN")
+        SKIP_INSTALL_RPATH TRUE)
     endif()
   endforeach()
+  if (PLUGMESH_TERMUX_STATIC_DEPS)
+    if (NOT PLUGMESH_TERMUX_STATIC_PREFIX)
+      message(FATAL_ERROR "PLUGMESH_TERMUX_STATIC_PREFIX is required when PLUGMESH_TERMUX_STATIC_DEPS is ON")
+    endif()
+    find_file(PLUGMESH_TERMUX_LIBCXX libc++.a
+      PATHS "${PLUGMESH_TERMUX_STATIC_PREFIX}/lib" NO_DEFAULT_PATH)
+    find_file(PLUGMESH_TERMUX_LIBCXXABI libc++abi.a
+      PATHS "${PLUGMESH_TERMUX_STATIC_PREFIX}/lib" NO_DEFAULT_PATH)
+    find_file(PLUGMESH_TERMUX_LIBUNWIND libunwind.a
+      PATHS "${PLUGMESH_TERMUX_STATIC_PREFIX}/lib" NO_DEFAULT_PATH)
+    find_path(PLUGMESH_TERMUX_LIBCXX_INCLUDE_DIR cstddef
+      PATHS "${PLUGMESH_TERMUX_STATIC_PREFIX}/include/c++/v1" NO_DEFAULT_PATH)
+    if (NOT PLUGMESH_TERMUX_LIBCXX OR NOT PLUGMESH_TERMUX_LIBCXXABI OR
+        NOT PLUGMESH_TERMUX_LIBUNWIND OR NOT PLUGMESH_TERMUX_LIBCXX_INCLUDE_DIR)
+      message(FATAL_ERROR "static libc++, libc++abi, libunwind archives and headers are required")
+    endif()
+    add_compile_options(-nostdinc++ "-isystem${PLUGMESH_TERMUX_LIBCXX_INCLUDE_DIR}")
+    foreach(target_name plugmesh-server plugmesh-plugin-host plugmesh-server-shared plugmesh-sample)
+      if (TARGET ${target_name})
+        target_link_options(${target_name} PRIVATE -nostdlib++
+          -Wl,--start-group)
+        target_link_libraries(${target_name} PRIVATE
+          "${PLUGMESH_TERMUX_LIBCXX}" "${PLUGMESH_TERMUX_LIBCXXABI}"
+          "${PLUGMESH_TERMUX_LIBUNWIND}" dl m c)
+        target_link_options(${target_name} PRIVATE -Wl,--end-group)
+      endif()
+    endforeach()
+  endif()
 endif()
 
 add_executable(plugmesh-plugin-loader-smoke tests/plugin_loader_smoke.cpp)
