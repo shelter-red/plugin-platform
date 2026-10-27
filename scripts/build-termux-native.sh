@@ -29,6 +29,8 @@ done
 [[ -f "$PREFIX/include/openssl/ssl.h" ]] || { echo "missing Termux OpenSSL headers under $PREFIX" >&2; exit 1; }
 [[ -f "$PREFIX/lib/libssl.so" || -f "$PREFIX/lib/libssl.so.3" ]] || { echo "missing Termux OpenSSL library under $PREFIX" >&2; exit 1; }
 
+[[ -f "$PREFIX/lib/libc++_shared.so" ]] || { echo "missing Termux libc++ runtime under $PREFIX/lib" >&2; exit 1; }
+
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repo_root=$(cd -- "$script_dir/.." && pwd)
 require_embedded_ui=ON
@@ -71,6 +73,7 @@ cp "$build_dir/libplugmesh-sample.so" "$build_dir/plugins/sample.plugin/manifest
 if [[ "$artifact_type" == ALL || "$artifact_type" == SHARED ]]; then
   cp "$build_dir/libplugmesh-server.so" "$package_dir/"
 fi
+cp "$PREFIX/lib/libc++_shared.so" "$package_dir/"
 cp "$repo_root/native-server/README.md" "$repo_root/native-server/PORT-MAPPING.md" "$package_dir/"
 
 printf '类型：%s\n平台：Android Termux (%s)\n构建类型：%s\n依赖：Termux clang/cmake/openssl/zlib\n' \
@@ -83,8 +86,9 @@ This package contains the Plugmesh server shared library, plugin host, and
 sample plugin for Termux. It does not include the plugmesh-server executable
 or an embedded Native UI. Build an EXECUTABLE or ALL package to run the server.
 
-The package uses Termux's native OpenSSL and zlib libraries. It is not an APK
-and not an Android app.
+The package uses the Termux native OpenSSL and zlib libraries and carries the
+matching libc++_shared.so runtime beside its binaries. It is not an APK and not
+an Android app.
 EOF
 else
   cat > "$package_dir/TERMUX-README.txt" <<'EOF'
@@ -97,7 +101,8 @@ Install the native dependencies in Termux:
 Run the server from this directory:
   ./plugmesh-server
 
-The package uses Termux's native OpenSSL and zlib libraries. It is a
+The package uses the Termux native OpenSSL and zlib libraries and carries the
+matching libc++_shared.so runtime beside its binaries. It is a
 command-line Linux-like Termux build, not an APK and not an Android app.
 The Native UI is embedded in plugmesh-server and refreshed on every start
 under the Termux user's data directory. No separate UI directory is needed.

@@ -147,6 +147,19 @@ if (UNIX AND NOT APPLE AND NOT PLUGMESH_TERMUX)
       target_link_options(${target_name} PRIVATE -static-libstdc++ -static-libgcc)
     endif()
   endforeach()
+elseif (PLUGMESH_TERMUX)
+  # Termux may have an older libc++_shared.so installed than the one used to
+  # compile this package. The build script carries the matching runtime beside
+  # each shipped binary, so Android's loader must prefer the package copy.
+  set(CMAKE_SKIP_RPATH TRUE)
+  foreach(target_name plugmesh-server plugmesh-plugin-host plugmesh-server-shared plugmesh-sample)
+    if (TARGET ${target_name})
+      set_target_properties(${target_name} PROPERTIES
+        SKIP_BUILD_RPATH TRUE
+        INSTALL_RPATH "$ORIGIN")
+      target_link_options(${target_name} PRIVATE "-Wl,-rpath,\\$ORIGIN")
+    endif()
+  endforeach()
 endif()
 
 add_executable(plugmesh-plugin-loader-smoke tests/plugin_loader_smoke.cpp)

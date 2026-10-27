@@ -28,6 +28,8 @@ for required in \
   'TERMUX-README.txt' \
   'does not include the plugmesh-server executable' \
   'Native UI is embedded in plugmesh-server' \
+  'libc++_shared.so' \
+  'missing Termux libc++ runtime' \
   'tar -C "$dist_dir" -czf' \
   'sha256sum "$archive_name" > "$archive_name.sha256"'; do
   grep -Fq -- "$required" <<<"$read_script" || { echo "missing Termux build contract: $required" >&2; exit 1; }
@@ -44,6 +46,7 @@ printf '%s\n' 'README fixture' > "$sim_repo/native-server/README.md"
 printf '%s\n' 'Port mapping fixture' > "$sim_repo/native-server/PORT-MAPPING.md"
 printf '%s\n' 'header fixture' > "$prefix/include/openssl/ssl.h"
 printf '%s\n' 'library fixture' > "$prefix/lib/libssl.so"
+printf '%s\n' 'libc++ fixture' > "$prefix/lib/libc++_shared.so"
 cat > "$fake_bin/cmake" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -95,5 +98,9 @@ done
 
 cmake_file="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)/native-server/CMakeLists.txt"
 grep -Fq 'NOT PLUGMESH_TERMUX' "$cmake_file" || { echo 'CMake must exclude Termux from Linux runtime flags' >&2; exit 1; }
+grep -Fq 'elseif (PLUGMESH_TERMUX)' "$cmake_file" || { echo 'CMake must configure Termux runtime lookup' >&2; exit 1; }
+grep -Fq 'set(CMAKE_SKIP_RPATH TRUE)' "$cmake_file" || { echo 'Termux build must disable CMake host RPATH injection' >&2; exit 1; }
+grep -Fq 'SKIP_BUILD_RPATH TRUE' "$cmake_file" || { echo 'Termux build must not retain host PREFIX RPATH' >&2; exit 1; }
+grep -Fq '"-Wl,-rpath,\\$ORIGIN"' "$cmake_file" || { echo 'Termux binaries must use package-relative runtime lookup' >&2; exit 1; }
 
 printf '%s\n' 'Termux build contract passed'
