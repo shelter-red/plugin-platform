@@ -7,6 +7,12 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+if (WIN32)
+  # Keep the native client usable on Windows 7. This controls SDK declarations
+  # and prevents accidental use of APIs introduced after Windows 7.
+  add_compile_definitions(_WIN32_WINNT=0x0601 WINVER=0x0601)
+endif()
+
 set(PLUGMESH_BUILD_ARTIFACT "ALL" CACHE STRING "Build artifact: ALL, EXECUTABLE or SHARED")
 option(PLUGMESH_TERMUX "Build for the Android Termux runtime" OFF)
 if (PLUGMESH_BUILD_ARTIFACT STREQUAL "SHARED")
@@ -255,6 +261,15 @@ if (WIN32)
   # websocketpp 在 MinGW 下默认回退 boost::thread，这里强制使用 C++11 <thread>。
   target_compile_definitions(plugmesh_core PUBLIC _WEBSOCKETPP_CPP11_THREAD_)
   target_link_libraries(plugmesh_core PRIVATE advapi32 ws2_32 mswsock crypt32)
+  foreach(target_name plugmesh-server plugmesh-plugin-host)
+    if (TARGET ${target_name})
+      if (MINGW)
+        target_link_options(${target_name} PRIVATE "-Wl,--major-subsystem-version,6,--minor-subsystem-version,1")
+      elseif (MSVC)
+        target_link_options(${target_name} PRIVATE "/SUBSYSTEM:CONSOLE,6.01")
+      endif()
+    endif()
+  endforeach()
   if (TARGET plugmesh-server)
     target_link_libraries(plugmesh-server PRIVATE shell32)
   endif()

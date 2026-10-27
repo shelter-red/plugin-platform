@@ -156,7 +156,10 @@ cmake -S native-server -B build-win -G "Visual Studio 17 2022" -A x64 \
 cmake --build build-win --config Release
 ```
 
-### MinGW-w64 交叉编译
+### Windows 7 兼容性
+
+原生 Windows 目标将 Win32 API 最低版本固定为 Windows 7（`_WIN32_WINNT=0x0601`、`WINVER=0x0601`）。要在 Windows 7 上运行，使用下方 MinGW-w64 交叉构建路径；当前 GitHub Release 的 MSVC/vcpkg Windows 包仍面向现代 Windows，不宣称兼容 Windows 7。OpenSSL DLL 也必须使用面向 Windows 7 的构建版本。
+
 
 没有 Windows 主机时，可用 MinGW-w64 在 Linux 上交叉编译，检查 Windows 分支能否编译和链接：
 

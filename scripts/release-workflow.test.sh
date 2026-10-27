@@ -62,5 +62,11 @@ assert.ok(manual.includes('-DPLUGMESH_REQUIRE_EMBEDDED_UI=ON'), '手动可执行
 assert.ok(!manual.includes('native-ui/dist/'), '手动构建 workflow 不得复制外置 native-ui/dist')
 assert.ok(!manual.includes('--include-ui'), '手动构建 workflow 不得使用可选 UI 参数')
 assert.ok(!manual.includes('plugmesh-port-mapper'), '手动构建 workflow 不得提供独立映射程序')
+const root = require('node:path').dirname(require('node:path').dirname(require('node:path').dirname(process.argv[2])))
+const cmake = fs.readFileSync(require('node:path').join(root, 'native-server/CMakeLists.txt'), 'utf8')
+const mingw = fs.readFileSync(require('node:path').join(root, 'native-server/cmake/mingw-w64-toolchain.cmake'), 'utf8')
+assert.ok(cmake.includes('_WIN32_WINNT=0x0601') && cmake.includes('WINVER=0x0601'), 'Windows 原生目标必须固定 Win7 API 版本')
+assert.ok(cmake.includes('--major-subsystem-version,6,--minor-subsystem-version,1') && cmake.includes('/SUBSYSTEM:CONSOLE,6.01'), 'Windows 可执行文件必须固定 Win7 PE subsystem 版本')
+assert.ok(mingw.includes('CMAKE_SYSTEM_VERSION 6.1'), 'MinGW 工具链必须固定 Windows 7 系统版本')
 console.log('release workflow package contract passed')
 NODE

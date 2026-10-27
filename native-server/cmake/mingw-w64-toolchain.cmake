@@ -2,6 +2,7 @@
 # 需要 posix 线程模型的工具链（Ubuntu: g++-mingw-w64-x86-64-posix），
 # websocketpp 与 std::thread 依赖它而不是 boost::thread。
 set(CMAKE_SYSTEM_NAME Windows)
+set(CMAKE_SYSTEM_VERSION 6.1)
 set(CMAKE_SYSTEM_PROCESSOR x86_64)
 set(CMAKE_C_COMPILER x86_64-w64-mingw32-gcc-posix)
 set(CMAKE_CXX_COMPILER x86_64-w64-mingw32-g++-posix)
