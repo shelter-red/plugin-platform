@@ -39,6 +39,9 @@ for required in \
   'Native UI is embedded in plugmesh-server' \
   'libc++_shared.so' \
   'missing Termux libc++ runtime' \
+  'ca_bundle="$PREFIX/etc/tls/cert.pem"' \
+  'ca-certificates.crt' \
+  'missing Termux CA bundle' \
   'write_local_launcher' \
   'LD_LIBRARY_PATH' \
   'local binary="$package_dir/$name.bin"' \
@@ -54,13 +57,14 @@ trap 'rm -rf "$tmp_root"' EXIT
 sim_repo="$tmp_root/repo"
 fake_bin="$tmp_root/bin"
 prefix="$tmp_root/prefix"
-mkdir -p "$sim_repo/scripts" "$sim_repo/native-server" "$fake_bin" "$prefix/include/openssl" "$prefix/lib"
+mkdir -p "$sim_repo/scripts" "$sim_repo/native-server" "$fake_bin" "$prefix/include/openssl" "$prefix/lib" "$prefix/etc/tls"
 cp "$script" "$sim_repo/scripts/build-termux-native.sh"
 printf '%s\n' 'README fixture' > "$sim_repo/native-server/README.md"
 printf '%s\n' 'Port mapping fixture' > "$sim_repo/native-server/PORT-MAPPING.md"
 printf '%s\n' 'header fixture' > "$prefix/include/openssl/ssl.h"
 printf '%s\n' 'library fixture' > "$prefix/lib/libssl.so"
 printf '%s\n' 'libc++ fixture' > "$prefix/lib/libc++_shared.so"
+printf '%s\n' 'CA bundle fixture' > "$prefix/etc/tls/cert.pem"
 cat > "$fake_bin/cmake" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -115,6 +119,7 @@ grep -Fq 'NOT PLUGMESH_TERMUX' "$cmake_file" || { echo 'CMake must exclude Termu
 grep -Fq 'elseif (PLUGMESH_TERMUX)' "$cmake_file" || { echo 'CMake must configure Termux runtime lookup' >&2; exit 1; }
 grep -Fq 'set(CMAKE_SKIP_RPATH TRUE)' "$cmake_file" || { echo 'Termux build must disable CMake host RPATH injection' >&2; exit 1; }
 grep -Fq 'SKIP_BUILD_RPATH TRUE' "$cmake_file" || { echo 'Termux build must not retain host PREFIX RPATH' >&2; exit 1; }
+grep -Fq 'PLUGMESH_TERMUX_FORCE_IPV4' "$cmake_file" || { echo 'Termux build must force IPv4 DNS resolution' >&2; exit 1; }
 grep -Fq 'PLUGMESH_TERMUX_STATIC_DEPS' "$cmake_file" || { echo 'Termux CMake must expose static dependency mode' >&2; exit 1; }
 grep -Fq 'target_link_options(${target_name}' "$cmake_file" && grep -Fq -- '-nostdlib++' "$cmake_file" || { echo 'Termux static mode must suppress shared libc++' >&2; exit 1; }
 grep -Fq '"${PLUGMESH_TERMUX_LIBCXX}" "${PLUGMESH_TERMUX_LIBCXXABI}"' "$cmake_file" || { echo 'Termux static mode must link libc++ and libc++abi archives explicitly' >&2; exit 1; }

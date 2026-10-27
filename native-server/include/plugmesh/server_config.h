@@ -12,6 +12,7 @@ struct ServerConfig {
   std::string local_ui_password_verifier;
   std::filesystem::path plugin_directory;
   std::filesystem::path credential_file;
+  std::filesystem::path credential_key_file;
   std::filesystem::path tunnel_trust_file;
   std::filesystem::path port_mappings_file;
 };

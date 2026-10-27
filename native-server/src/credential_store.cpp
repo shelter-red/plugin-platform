@@ -464,6 +464,25 @@ bool save_credentials(const std::filesystem::path& path, const StoredCredentials
   return write_file(path, envelope.dump(2), error);
 }
 
+bool ensure_credential_key(const std::filesystem::path& path, std::string& key, std::string& error) {
+  if (path.empty()) {
+    error = "credential key file path is required";
+    return false;
+  }
+  std::ifstream existing(path, std::ios::binary);
+  if (existing) {
+    std::getline(existing, key);
+    if (!key.empty()) return true;
+  }
+  std::array<unsigned char, 32> bytes{};
+  if (RAND_bytes(bytes.data(), static_cast<int>(bytes.size())) != 1) {
+    error = "unable to generate credential key";
+    return false;
+  }
+  key = encode_base64(std::vector<unsigned char>(bytes.begin(), bytes.end()));
+  return write_file(path, key + "\n", error);
+}
+
 bool load_credentials(const std::filesystem::path& path, const std::string& password, StoredCredentials& credentials, std::string& error) {
   std::ifstream file(path, std::ios::binary);
   if (!file) {

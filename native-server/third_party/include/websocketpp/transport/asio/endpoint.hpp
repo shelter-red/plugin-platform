@@ -883,7 +883,11 @@ protected:
             port = pu->get_port_str();
         }
 
+#ifdef PLUGMESH_TERMUX_FORCE_IPV4
+        tcp::resolver::query query(tcp::v4(), host, port);
+#else
         tcp::resolver::query query(host,port);
+#endif
 
         if (m_alog->static_test(log::alevel::devel)) {
             m_alog->write(log::alevel::devel,

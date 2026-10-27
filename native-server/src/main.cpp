@@ -224,6 +224,17 @@ std::filesystem::path local_ui_directory() {
   return executable_directory() / "native-ui" / "dist";
 }
 
+std::filesystem::path default_credential_file() {
+#ifdef _WIN32
+  if (const char* data = std::getenv("LOCALAPPDATA"); data && *data) return std::filesystem::path(data) / "Plugmesh" / "credentials.json";
+#elif defined(__APPLE__)
+  if (const char* home = std::getenv("HOME"); home && *home) return std::filesystem::path(home) / "Library" / "Application Support" / "Plugmesh" / "credentials.json";
+#else
+  if (const char* home = std::getenv("HOME"); home && *home) return std::filesystem::path(home) / ".config" / "plugmesh" / "credentials.json";
+#endif
+  return executable_directory() / "plugmesh-credentials.json";
+}
+
 void open_local_setup_browser(uint16_t port) {
   const auto url = std::string("http://127.0.0.1:") + std::to_string(port) + "/";
 #ifdef _WIN32
@@ -253,11 +264,18 @@ bool run_registration_setup(plugmesh::ServerConfig& config, uint16_t port, const
     const auto worker_url = text("workerUrl");
     const auto server_name = text("serverName");
     const auto code = text("registrationCode");
-    const auto password = text("credentialPassword");
+    std::string password = text("credentialPassword");
     const auto local_ui_password = text("localUiPassword");
     const auto local_ui_password_confirmation = text("localUiPasswordConfirmation");
     const auto credential_file = text("credentialFile").empty() ? config.credential_file.string() : text("credentialFile");
-    const auto use_system_store = credential_file.empty();
+    const auto resolved_credential_file = credential_file.empty() ? default_credential_file() : std::filesystem::path(credential_file);
+     const auto key_file = config.credential_key_file.empty() ? std::filesystem::path(resolved_credential_file.string() + ".key") : config.credential_key_file;
+     if (password.empty() && !plugmesh::ensure_credential_key(key_file, password, callback_error)) {
+       callback_error_code = "credential_save_failed";
+       callback_active = false;
+       return nlohmann::json::object();
+     }
+     const auto use_system_store = false;
     if (worker_url.empty() || server_name.empty() || code.empty() || local_ui_password.size() < 8 || local_ui_password != local_ui_password_confirmation || (!use_system_store && password.empty()) || (use_system_store && !plugmesh::system_credentials_available())) {
       if (local_ui_password.size() < 8) callback_error = "本地 UI 口令至少需要 8 个字符";
       else if (local_ui_password != local_ui_password_confirmation) callback_error = "本地 UI 口令与确认口令不一致";
@@ -282,7 +300,7 @@ bool run_registration_setup(plugmesh::ServerConfig& config, uint16_t port, const
       return nlohmann::json::object();
     }
     const plugmesh::StoredCredentials credentials{worker_url, registration.server_id, registration.access_token, local_ui_password_verifier};
-    if (!plugmesh::save_credentials(credential_file, credentials, password, callback_error)) {
+    if (!plugmesh::save_credentials(resolved_credential_file, credentials, password, callback_error)) {
       callback_error_code = "credential_save_failed";
       callback_active = false;
       return nlohmann::json::object();
@@ -292,11 +310,12 @@ bool run_registration_setup(plugmesh::ServerConfig& config, uint16_t port, const
     config.server_id = registration.server_id;
     config.access_token = registration.access_token;
     config.local_ui_password_verifier = local_ui_password_verifier;
-    config.credential_file = credential_file;
+    config.credential_file = resolved_credential_file;
+     config.credential_key_file = key_file;
     registered = true;
     callback_active = false;
     registration_complete = true;
-    return nlohmann::json{{"serverId", registration.server_id}, {"credentialFile", credential_file}};
+    return nlohmann::json{{"serverId", registration.server_id}, {"credentialFile", resolved_credential_file.string()}};
   });
   std::thread local_thread([&local_http, &server_error, &server_failed] {
     if (!local_http.run(server_error)) {
@@ -335,7 +354,7 @@ int register_server(int argc, char** argv) {
   }
   const auto worker_url = argument_or_prompt(argc, argv, 2, "PLUGMESH_WORKER_URL", "Worker URL: ");
   const auto server_name = argument_or_prompt(argc, argv, 3, "PLUGMESH_SERVER_NAME", "Server name: ");
-  const auto credential_file = argument_or_prompt(argc, argv, 4, "PLUGMESH_CREDENTIAL_FILE", "Credential file: ");
+  const auto credential_file = argc > 4 ? argument_or_prompt(argc, argv, 4, "PLUGMESH_CREDENTIAL_FILE", "Credential file: ") : default_credential_file().string();
   if (worker_url.empty() || server_name.empty() || credential_file.empty()) {
     std::cerr << "plugmesh-server: worker URL, server name and credential file are required\n";
     return 2;
@@ -351,7 +370,12 @@ int register_server(int argc, char** argv) {
     return 1;
   }
   std::string password;
-  if (!read_required_secret("PLUGMESH_CREDENTIAL_PASSWORD", "Credential file password: ", password, error)) return 2;
+  const auto key_file = std::filesystem::path(credential_file + ".key");
+  if (const char* configured_password = std::getenv("PLUGMESH_CREDENTIAL_PASSWORD"); configured_password && *configured_password) password = configured_password;
+  else if (!plugmesh::ensure_credential_key(key_file, password, error)) {
+    std::cerr << "plugmesh-server: " << error << '\n';
+    return 1;
+  }
   plugmesh::RegistrationResult registration;
   if (!plugmesh::register_server(worker_url, code, server_name, registration, error)) {
     std::cerr << "plugmesh-server: " << error << '\n';
@@ -379,6 +403,8 @@ int main(int argc, char** argv) {
   }
   const auto config = plugmesh::load_config_from_environment();
   auto resolved_config = config;
+  if (resolved_config.credential_file.empty()) resolved_config.credential_file = default_credential_file();
+  if (resolved_config.credential_key_file.empty()) resolved_config.credential_key_file = resolved_config.credential_file.string() + ".key";
   std::string plugin_directory_error;
   if (!plugmesh::prepare_executable_plugin_directory(resolved_config, executable_directory(argc > 0 ? argv[0] : nullptr), plugin_directory_error)) {
     std::cerr << "plugmesh-server: " << plugin_directory_error << '\n';

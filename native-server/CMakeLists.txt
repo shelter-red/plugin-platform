@@ -154,6 +154,7 @@ if (UNIX AND NOT APPLE AND NOT PLUGMESH_TERMUX)
     endif()
   endforeach()
 elseif (PLUGMESH_TERMUX)
+  add_compile_definitions(PLUGMESH_TERMUX_FORCE_IPV4)
   # The package launcher supplies LD_LIBRARY_PATH/LD_PRELOAD explicitly. Do not
   # emit a malformed or host-prefix RPATH into the Android ELF files.
   set(CMAKE_SKIP_RPATH TRUE)

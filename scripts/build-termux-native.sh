@@ -27,6 +27,11 @@ for command in cmake clang++ tar sha256sum; do
   command -v "$command" >/dev/null || { echo "missing command: $command (install it with pkg)" >&2; exit 1; }
 done
 [[ -f "$PREFIX/include/openssl/ssl.h" ]] || { echo "missing Termux OpenSSL headers under $PREFIX" >&2; exit 1; }
+ca_bundle="$PREFIX/etc/tls/cert.pem"
+if [[ ! -f "$ca_bundle" ]]; then
+  ca_bundle="$PREFIX/etc/tls/certs/ca-bundle.crt"
+fi
+[[ -f "$ca_bundle" ]] || { echo "missing Termux CA bundle under $PREFIX/etc/tls" >&2; exit 1; }
 termux_static_deps="${PLUGMESH_TERMUX_STATIC_DEPS:-OFF}"
 termux_static_prefix="${PLUGMESH_TERMUX_STATIC_PREFIX:-}"
 if [[ "$termux_static_deps" == ON ]]; then
@@ -96,7 +101,10 @@ write_local_launcher() {
 set -euo pipefail
 script_dir=\$(CDPATH= cd -- "\$(dirname -- "\$0")" && pwd)
 export LD_LIBRARY_PATH="\$script_dir\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}"
-export LD_PRELOAD="\$script_dir/libc++_shared.so\${LD_PRELOAD:+:\$LD_PRELOAD}"
+if [[ -f "\$script_dir/libc++_shared.so" ]]; then
+  export LD_PRELOAD="\$script_dir/libc++_shared.so\${LD_PRELOAD:+:\$LD_PRELOAD}"
+fi
+export PLUGMESH_CA_BUNDLE="\$script_dir/ca-certificates.crt"
 exec "\$script_dir/$name.bin" "\$@"
 EOF
   chmod 0755 "$launcher"
@@ -104,9 +112,7 @@ EOF
 install_termux_binary() {
   local name="$1"
   cp "$build_dir/$name" "$package_dir/$name"
-  if [[ "$termux_static_deps" != ON ]]; then
-    write_local_launcher "$name"
-  fi
+  write_local_launcher "$name"
 }
 if [[ "$artifact_type" != SHARED ]]; then
   install_termux_binary plugmesh-server
@@ -120,6 +126,7 @@ if [[ "$termux_static_deps" != ON ]]; then
   cp "$PREFIX/lib/libc++_shared.so" "$package_dir/"
 fi
 cp "$repo_root/native-server/README.md" "$repo_root/native-server/PORT-MAPPING.md" "$package_dir/"
+cp "$ca_bundle" "$package_dir/ca-certificates.crt"
 
 printf '类型：%s\n平台：Android Termux (%s)\n构建类型：%s\n依赖：Termux clang/cmake/openssl/zlib\n' \
   "${artifact_type,,}" "$(uname -m)" "$build_type" > "$package_dir/BUILD-INFO.txt"
@@ -141,11 +148,11 @@ Plugmesh Android Termux CLI (static C++/OpenSSL build)
 Run the server from this directory:
   ./plugmesh-server
 
-The server and plugin host statically carry libc++ and OpenSSL. The executable
-only requires Android system libraries, so it does not use the device's global
-libc++_shared.so and is not affected by an older Termux C++ runtime.
-It is a command-line Linux-like Termux build, not an APK and not an Android app.
-Keep the executable and plugins directory together.
+The server and plugin host statically carry libc++ and OpenSSL. The launcher
+sets the package CA bundle explicitly and the executable only requires Android
+system libraries, so it does not use the device's global libc++_shared.so and is
+not affected by an older Termux C++ runtime. Keep the launchers, `.bin` files,
+CA bundle, and plugins directory together.
 EOF
 else
   cat > "$package_dir/TERMUX-README.txt" <<'EOF'

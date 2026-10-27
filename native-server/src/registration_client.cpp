@@ -6,8 +6,10 @@
 #include <websocketpp/config/asio_client.hpp>
 
 #include <nlohmann/json.hpp>
+#include <openssl/err.h>
 
 #include <type_traits>
+#include <cstdlib>
 
 namespace plugmesh {
 
@@ -31,6 +33,7 @@ bool register_with_client(const std::string& worker_url, const std::string& code
   Client client;
   client.clear_access_channels(websocketpp::log::alevel::all);
   client.clear_error_channels(websocketpp::log::elevel::all);
+  if (std::getenv("PLUGMESH_DEBUG_TLS") != nullptr) client.set_error_channels(websocketpp::log::elevel::all);
   client.init_asio();
   if constexpr (std::is_same_v<Client, TlsClient>) {
     const websocketpp::uri uri(endpoint(worker_url));
@@ -69,7 +72,16 @@ bool register_with_client(const std::string& worker_url, const std::string& code
     client.close(handle, websocketpp::close::status::normal, "registration complete", close_error);
   });
   client.set_fail_handler([&client, &error, &failure](websocketpp::connection_hdl handle) {
-    if (error.empty()) error = "registration connection failed";
+    if (error.empty()) {
+      const auto connection = client.get_con_from_hdl(handle);
+      error = "registration connection failed: " + connection->get_ec().message();
+      unsigned long openssl_error = 0;
+      while ((openssl_error = ERR_get_error()) != 0) {
+        char detail[256]{};
+        ERR_error_string_n(openssl_error, detail, sizeof(detail));
+        error += "; " + std::string(detail);
+      }
+    }
     if constexpr (std::is_same_v<Client, TlsClient>) {
       const auto connection = client.get_con_from_hdl(handle);
       const auto connection_error = connection->get_ec();

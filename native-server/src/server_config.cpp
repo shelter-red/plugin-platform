@@ -3,6 +3,7 @@
 #include "plugmesh/credential_store.h"
 
 #include <cstdlib>
+#include <fstream>
 
 #include <websocketpp/uri.hpp>
 
@@ -23,13 +24,19 @@ ServerConfig load_config_from_environment() {
   config.local_ui_password_verifier = read_env("PLUGMESH_LOCAL_UI_PASSWORD_VERIFIER");
   config.plugin_directory = read_env("PLUGMESH_PLUGIN_DIRECTORY");
   config.credential_file = read_env("PLUGMESH_CREDENTIAL_FILE");
+  config.credential_key_file = read_env("PLUGMESH_CREDENTIAL_KEY_FILE");
+  if (config.credential_key_file.empty() && !config.credential_file.empty()) config.credential_key_file = config.credential_file.string() + ".key";
   config.tunnel_trust_file = read_env("PLUGMESH_TUNNEL_TRUST_FILE");
   return config;
 }
 
 bool load_persisted_config(ServerConfig& config, std::string& error) {
   if (!config.worker_url.empty() && !config.server_id.empty() && !config.access_token.empty()) return true;
-  const auto password = read_env("PLUGMESH_CREDENTIAL_PASSWORD");
+  auto password = read_env("PLUGMESH_CREDENTIAL_PASSWORD");
+  if (password.empty() && !config.credential_key_file.empty()) {
+    std::ifstream key_file(config.credential_key_file, std::ios::binary);
+    if (key_file) std::getline(key_file, password);
+  }
   return load_credentials_into_config(config.credential_file, password, config.worker_url, config.server_id, config.access_token, config.local_ui_password_verifier, error);
 }
 
