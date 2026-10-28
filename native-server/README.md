@@ -141,7 +141,7 @@ bash scripts/build-termux-native.sh
 bash scripts/build-termux-native.sh --artifact-type SHARED
 ```
 
-脚本不修改 `/etc/apt`，不下载或编译 x86_64 OpenSSL，也不执行 glibc ABI 检查。它使用 `$PREFIX` 下的 Android/Termux 原生库，生成 `dist/plugmesh-server-termux.tar.gz` 和 `dist/plugmesh-server-termux.tar.gz.sha256`。归档同时携带 `$PREFIX/etc/tls/cert.pem` 复制出的 `ca-certificates.crt`，静态 OpenSSL 因而能验证 Worker TLS；普通构建归档携带匹配的 `libc++_shared.so`；`plugmesh-server` 与 `plugmesh-plugin-host` 是同目录启动器，会先把包目录放到 `LD_LIBRARY_PATH` 最前面，再启动旁边的 `.bin` ELF。全静态构建则把 libc++、libc++abi、libunwind、OpenSSL 静态归入 ELF，不依赖设备的 `libc++_shared.so`，因此旧设备上的全局 libc++ 不会抢先加载。不会复制 Debian Linux 包中的 `.so` 或 glibc 运行库。校验并解压后直接通过命令行启动：
+脚本不修改 `/etc/apt`，不下载或编译 x86_64 OpenSSL，也不执行 glibc ABI 检查。它使用 `$PREFIX` 下的 Android/Termux 原生库，本地默认生成 `dist/plugmesh-server-termux.tar.gz` 和 `dist/plugmesh-server-termux.tar.gz.sha256`；正式 Release 名称会附加 tag，例如 `plugmesh-server-termux-v0.3.3.tar.gz` 及同名 `.sha256` sidecar。归档同时携带 `$PREFIX/etc/tls/cert.pem` 复制出的 `ca-certificates.crt`，静态 OpenSSL 因而能验证 Worker TLS；普通构建归档携带匹配的 `libc++_shared.so`；`plugmesh-server` 与 `plugmesh-plugin-host` 是同目录启动器，会先把包目录放到 `LD_LIBRARY_PATH` 最前面，再启动旁边的 `.bin` ELF。全静态构建则把 libc++、libc++abi、libunwind、OpenSSL 静态归入 ELF，不依赖设备的 `libc++_shared.so`，因此旧设备上的全局 libc++ 不会抢先加载。不会复制 Debian Linux 包中的 `.so` 或 glibc 运行库。校验并解压后直接通过命令行启动：
 
 ```bash
 (cd dist && sha256sum -c plugmesh-server-termux.tar.gz.sha256)
@@ -157,12 +157,12 @@ Termux 包内的 `plugmesh-server`、`plugmesh-server.bin`、`plugmesh-plugin-ho
 
 服务器本身保持前台进程模型；服务管理器负责开机启动、异常重启和日志生命周期。先完成一次绑定并确认凭据文件/系统凭据可被目标用户读取，再安装服务。不要把注册码、访问令牌或凭据口令写入服务脚本。
 
-- Linux：`bash ./plugmesh-service.sh install --executable "$PWD/plugmesh-server"`，安装用户级 `systemd` unit；用 `uninstall` 移除，`status` 查看状态。无 systemd 的发行版应使用同一可执行文件配置到发行版的用户服务管理器。
-- macOS：`bash ./plugmesh-service.sh install --executable "$PWD/plugmesh-server"`，安装 `~/Library/LaunchAgents/com.shelter-red.plugmesh-server.plist`；用 `uninstall` 移除。
-- Termux：安装 `termux-services` 后执行同一脚本，会创建 `$PREFIX/var/service/plugmesh-server`；没有该包时脚本创建 `~/.termux/boot/plugmesh-server`，需要额外安装 Termux:Boot 才能在 Android 启动时运行。
-- Windows 7 及更高版本：在 PowerShell 执行 `scripts\\install-plugmesh-service.ps1 -Action install -Executable C:\\Plugmesh\\plugmesh-server.exe`，使用当前用户的 Task Scheduler 登录触发器；`uninstall` 删除任务。服务使用前台模式启动，凭据通过系统 Credential Manager 或环境变量/文件配置提供。
+- Linux：`bash ./plugmesh-service.sh install --executable "$PWD/plugmesh-server"` 安装并启动用户级 `systemd` unit，开机登录后启动、异常退出后重启；`start`、`stop`、`status`、`uninstall` 管理生命周期。
+- macOS：同一脚本安装 `~/Library/LaunchAgents/com.shelter-red.plugmesh-server.plist`，登录时启动并由 `launchd` 保持运行；支持相同的生命周期命令。
+- Termux：安装 `termux-services` 后脚本注册 runit 服务，使用 `sv up/down/status` 管理；未安装时注册 `~/.termux/boot/plugmesh-server`，需安装 Termux:Boot，脚本仍提供 `start`、`stop`、`status` PID 控制。
+- Windows 7 及更高版本：在 PowerShell 执行 `.\install-plugmesh-service.ps1 -Action install -Executable C:\Plugmesh\plugmesh-server.exe`，通过当前用户登录触发器启动 Task Scheduler 任务；非零退出后每分钟重启，最多 999 次。该方式需要用户登录，不是登录前运行的系统服务；`uninstall` 删除任务。Windows 脚本不接受 `-EnvironmentFile`，请配置当前用户或系统环境变量。
 
-服务命令只管理启动方式，不绕过 TLS 校验，也不执行注册；服务安装后可用 `--help` 查看 CLI 注册入口。
+Linux、macOS 和 Termux 的 `--env-file` 接受 `KEY=VALUE` 行，空行和 `#` 注释会忽略；环境文件应限制为服务用户可读（例如 `chmod 600`）。服务安装不会注册服务器，也不会绕过 TLS 校验；使用已注册凭据启动，首次绑定仍通过 CLI 完成。
 
 ### MSVC
 
@@ -176,7 +176,7 @@ cmake --build build-win --config Release
 
 ### Windows 7 兼容性
 
-原生 Windows 目标将 Win32 API 最低版本固定为 Windows 7（`_WIN32_WINNT=0x0601`、`WINVER=0x0601`）。要在 Windows 7 上运行，使用下方 MinGW-w64 交叉构建路径；当前 GitHub Release 的 MSVC/vcpkg Windows 包仍面向现代 Windows，不宣称兼容 Windows 7。OpenSSL DLL 也必须使用面向 Windows 7 的构建版本。
+原生 Windows 目标将 Win32 API 最低版本固定为 Windows 7（`_WIN32_WINNT=0x0601`、`WINVER=0x0601`）。Release 提供独立的 `plugmesh-server-windows7-v<version>.zip`，使用 MinGW-w64 和静态 Win7 OpenSSL；普通 `plugmesh-server-windows-v<version>.zip` 仍面向现代 Windows，不宣称兼容 Windows 7。
 
 
 没有 Windows 主机时，可用 MinGW-w64 在 Linux 上交叉编译，检查 Windows 分支能否编译和链接：
@@ -188,21 +188,20 @@ sudo apt-get install g++-mingw-w64-x86-64-posix
 # 2. 交叉编译静态 OpenSSL（示例版本 3.0.20）；前缀用任意可写目录即可，无需 root
 curl -LO https://deb.debian.org/debian/pool/main/o/openssl/openssl_3.0.20.orig.tar.gz
 tar xzf openssl_3.0.20.orig.tar.gz && cd openssl-3.0.20
-./Configure mingw64 no-shared no-tests --cross-compile-prefix=x86_64-w64-mingw32- --prefix=/tmp/mingw-openssl
+./Configure mingw64 no-shared no-tests no-asm --cross-compile-prefix=x86_64-w64-mingw32- --prefix=/tmp/mingw-openssl --libdir=lib
 make -j"$(nproc)" && make install_sw
 cd ..
 
-# 3. 交叉编译服务器
-cmake -S native-server -B /tmp/build-win \
-  -DCMAKE_TOOLCHAIN_FILE="$PWD/native-server/cmake/mingw-w64-toolchain.cmake" \
-  -DOPENSSL_ROOT_DIR=/tmp/mingw-openssl \
-  -DCMAKE_BUILD_TYPE=Release
-cmake --build /tmp/build-win -j"$(nproc)"
+# 3. 构建并打包 Windows 7 版本（包含静态 OpenSSL 许可证）
+npm ci && npm run native-ui:build
+OPENSSL_ROOT_DIR=/tmp/mingw-openssl \
+OPENSSL_SOURCE_DIR="$PWD/openssl-3.0.20" \
+bash scripts/build-windows7-native.sh
 ```
 
-项目根目录的 `scripts/build-windows7-native.sh` 会用同一工具链构建并打包 `plugmesh-server-windows7.zip`；必须设置 `OPENSSL_ROOT_DIR`，且该前缀必须提供用 `mingw64 no-shared` 构建的 `libssl.a`/`libcrypto.a`。不要把 GitHub Release 的 MSVC/vcpkg ZIP 当作 Win7 包；它们可能链接到 Win8+ 的系统 API 或 OpenSSL DLL。若已有现代 ZIP 在 Win7 报 `kernel32.dll`，请改用该 MinGW 包，不能通过复制一个新的 `kernel32.dll` 修复系统。
+Release workflow 会用 OpenSSL 3.0.20 源码构建静态 MinGW 库并生成 `plugmesh-server-windows7-v<version>.zip`。本地构建时，项目根目录的 `scripts/build-windows7-native.sh` 也会打包同一格式；必须设置 `OPENSSL_ROOT_DIR`（含 `lib/libssl.a` 与 `lib/libcrypto.a`）和 `OPENSSL_SOURCE_DIR`（含上游 `LICENSE.txt`，打包后命名为 `LICENSE.openssl.txt`）。普通 MSVC/vcpkg ZIP 仍不是 Win7 包；不要通过复制新的 `kernel32.dll` 修复系统。
 
-产物为 `plugmesh-server.exe`、`plugmesh-plugin-host.exe`、本地 UI smoke 服务器、各 smoke 测试和示例插件 `libplugmesh-*.dll`。`CMAKE_BUILD_TYPE` 必须是 `Release`：未优化时 websocketpp/Asio 模板实例化会超过 MinGW COFF 单节大小上限。
+Win7 ZIP 包含 `plugmesh-server.exe`、`plugmesh-plugin-host.exe`、嵌入式本地 UI、示例插件 `libplugmesh-sample.dll`、`LICENSE.openssl.txt`、服务安装脚本和文档。`CMAKE_BUILD_TYPE` 必须是 `Release`：未优化时 websocketpp/Asio 模板实例化会超过 MinGW COFF 单节大小上限。
 
 产物默认静态链接 MinGW 运行时，只依赖 `ADVAPI32`、`KERNEL32`、`MSWSOCK`、`WS2_32` 等系统 DLL，不需要附带 `libstdc++`/`libgcc`/`libwinpthread`。
 

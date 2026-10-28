@@ -50,6 +50,8 @@ jobs:
         run: npm run ui:css-audit
       - name: 原生 Release 打包契约
         run: npm run release:workflow:test
+      - name: Native service lifecycle contract
+        run: npm run native:service:test
       - name: Worker 类型检查
         run: npm run worker:typecheck
       - name: 构建管理端

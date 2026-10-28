@@ -21,6 +21,9 @@ npm run --silent release:workflow:test
 step 'Termux CLI 构建契约'
 npm run --silent native:termux:test
 
+step 'Native service lifecycle contract'
+npm run --silent native:service:test
+
 npm run --silent worker:typecheck
 
 step '构建管理端'

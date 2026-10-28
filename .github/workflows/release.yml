@@ -31,13 +31,16 @@ jobs:
       - name: 校验 Termux CLI 契约
         run: bash scripts/termux-build.test.sh
 
+      - name: 校验原生服务生命周期
+        run: bash scripts/service-install.test.sh
+
       - name: 校验发布标签
         env:
           RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
           set -euo pipefail
-          if [[ ! "$RELEASE_TAG" =~ ^v[^/[:space:]]+$ ]]; then
-            echo "::error::发布标签必须以 v 开头且不能包含斜杠或空格：$RELEASE_TAG"
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+([.][0-9]+)*(-[0-9A-Za-z.-]+)?([+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::发布标签必须是 v 前缀数字版本号（可带 prerelease/build metadata）：$RELEASE_TAG"
             exit 1
           fi
           echo "发布标签：$RELEASE_TAG"
@@ -46,19 +49,18 @@ jobs:
     name: 构建 ${{ matrix.name }}
     needs: validate
     runs-on: ${{ matrix.os }}
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             name: linux
-            archive: plugmesh-server-linux.zip
           - os: windows-latest
             name: windows
-            archive: plugmesh-server-windows.zip
           - os: macos-14
             name: macos
-            archive: plugmesh-server-macos.zip
     steps:
       - uses: actions/checkout@v4
 
@@ -116,7 +118,7 @@ jobs:
               --artifact-type ALL \
               --build-type Release \
               --package-name plugmesh-server \
-              --archive-name plugmesh-server-linux.zip \
+              --archive-name "plugmesh-server-linux-${RELEASE_TAG}.zip" \
               --archive-format zip
 
       - name: 构建（macOS）
@@ -147,9 +149,11 @@ jobs:
           Copy-Item native-server/PORT-MAPPING.md dist/plugmesh-server/PORT-MAPPING.md
           Get-ChildItem "$vcpkg\installed\x64-windows\bin\*.dll" -ErrorAction SilentlyContinue |
             Copy-Item -Destination dist/plugmesh-server/
-          Compress-Archive -Path dist/plugmesh-server -DestinationPath dist/plugmesh-server-windows.zip -Force
-          (Get-FileHash dist/plugmesh-server-windows.zip -Algorithm SHA256).Hash.ToLower() + '  plugmesh-server-windows.zip' |
-            Set-Content -Encoding ascii dist/plugmesh-server-windows.zip.sha256
+          $archiveName = "plugmesh-server-windows-$env:RELEASE_TAG.zip"
+          $archivePath = "dist/$archiveName"
+          Compress-Archive -Path dist/plugmesh-server -DestinationPath $archivePath -Force
+          (Get-FileHash $archivePath -Algorithm SHA256).Hash.ToLower() + "  $archiveName" |
+            Set-Content -Encoding ascii "$archivePath.sha256"
 
       - name: 打包（macOS）
         if: runner.os == 'macOS'
@@ -187,20 +191,75 @@ jobs:
           cp dist/plugmesh-server/libplugmesh-server.dylib dist/plugmesh-server/sdk/lib/
           cp native-server/PORT-MAPPING.md dist/plugmesh-server/PORT-MAPPING.md
           cd dist
-          zip -r plugmesh-server-macos.zip plugmesh-server
-          shasum -a 256 plugmesh-server-macos.zip > plugmesh-server-macos.zip.sha256
+          archive_name="plugmesh-server-macos-${RELEASE_TAG}.zip"
+          zip -r "$archive_name" plugmesh-server
+          shasum -a 256 "$archive_name" > "$archive_name.sha256"
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
-          name: plugmesh-server-${{ matrix.name }}
+          name: plugmesh-server-${{ matrix.name }}-${{ env.RELEASE_TAG }}
           path: dist/*.zip*
+          if-no-files-found: error
+
+  windows7:
+    name: 构建 Windows 7 兼容包
+    needs: validate
+    runs-on: ubuntu-22.04
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 准备 Node.js 和本地 UI
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 构建本地 UI
+        run: |
+          npm ci
+          npm run native-ui:build
+
+      - name: 安装 MinGW-w64 POSIX 工具链
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++-mingw-w64-x86-64-posix perl make zip
+
+      - name: 构建静态 Win7 OpenSSL
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/openssl_3.0.20.orig.tar.gz"
+          curl -fL https://deb.debian.org/debian/pool/main/o/openssl/openssl_3.0.20.orig.tar.gz -o "$archive"
+          printf '%s  %s\n' 'c80a01dfc70ece4dc21168932c37739042d404d46ccc81a5986dd75314ecda6f' "$archive" | sha256sum -c -
+          tar -xzf "$archive" -C "$RUNNER_TEMP"
+          cd "$RUNNER_TEMP/openssl-3.0.20"
+          perl Configure mingw64 no-shared no-tests no-asm \\
+            --cross-compile-prefix=x86_64-w64-mingw32- \\
+            --prefix="$RUNNER_TEMP/openssl-win7" --libdir=lib
+          make -j2
+          make install_sw
+
+      - name: 构建 Win7 包
+        env:
+          OPENSSL_ROOT_DIR: ${{ runner.temp }}/openssl-win7
+          OPENSSL_SOURCE_DIR: ${{ runner.temp }}/openssl-3.0.20
+          PLUGMESH_WIN7_ARCHIVE: ${{ github.workspace }}/dist/plugmesh-server-windows7-${{ env.RELEASE_TAG }}.zip
+        run: bash scripts/build-windows7-native.sh
+
+      - name: 上传 Win7 构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugmesh-server-windows7-${{ env.RELEASE_TAG }}
+          path: dist/plugmesh-server-windows7-${{ env.RELEASE_TAG }}.zip*
           if-no-files-found: error
 
   termux:
     name: 构建 Android Termux CLI
     needs: validate
     runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
 
@@ -241,7 +300,8 @@ jobs:
           set -euo pipefail
           test "$(cat termux-prebuilt/SOURCE_COMMIT)" = "$GITHUB_SHA"
           mkdir -p dist
-          cp termux-prebuilt/plugmesh-server-termux.tar.gz* dist/
+          archive="plugmesh-server-termux-${RELEASE_TAG}.tar.gz"
+          cp "termux-prebuilt/${archive}"* dist/
 
       - name: 使用 Termux builder 构建
         if: steps.prebuilt.outputs.ref == ''
@@ -249,30 +309,32 @@ jobs:
           set -euo pipefail
           docker run --rm \
             --user "$(id -u):$(id -g)" \
+            --env RELEASE_TAG="$RELEASE_TAG" \
             --entrypoint /bin/bash \
             -v "$GITHUB_WORKSPACE:/src" \
             -w /src \
             androidzeros/termux-package-builder:latest \
-            -lc 'export PREFIX=/data/data/com.termux/files/usr; bash scripts/build-termux-native.sh --artifact-type ALL --build-type Release'
+            -lc 'export PREFIX=/data/data/com.termux/files/usr; bash scripts/build-termux-native.sh --artifact-type ALL --build-type Release --archive-name "plugmesh-server-termux-${RELEASE_TAG}.tar.gz"'
 
       - name: 校验 Termux 构建结果
         run: |
           set -euo pipefail
-          test -f dist/plugmesh-server-termux.tar.gz
-          (cd dist && sha256sum -c plugmesh-server-termux.tar.gz.sha256)
+          archive="plugmesh-server-termux-${RELEASE_TAG}.tar.gz"
+          test -f "dist/$archive"
+          (cd dist && sha256sum -c "$archive.sha256")
 
       - name: 上传 Termux 产物
         uses: actions/upload-artifact@v4
         with:
-          name: plugmesh-server-termux
+          name: plugmesh-server-termux-${{ env.RELEASE_TAG }}
           path: |
-            dist/plugmesh-server-termux.tar.gz
-            dist/plugmesh-server-termux.tar.gz.sha256
+            dist/plugmesh-server-termux-${{ env.RELEASE_TAG }}.tar.gz
+            dist/plugmesh-server-termux-${{ env.RELEASE_TAG }}.tar.gz.sha256
           if-no-files-found: error
 
   publish:
     name: 创建 Release
-    needs: [build, termux]
+    needs: [build, termux, windows7]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -291,6 +353,9 @@ jobs:
         run: |
           set -euo pipefail
           cd dist
+          for archive in ./*.zip ./*.tar.gz; do
+            sha256sum "$archive" > "$archive.sha256"
+          done
           sha256sum ./*.zip ./*.tar.gz > SHA256SUMS
           cat SHA256SUMS
 
@@ -302,14 +367,16 @@ jobs:
           files: |
             dist/*.zip
             dist/*.tar.gz
+            dist/*.sha256
             dist/SHA256SUMS
           fail_on_unmatched_files: true
           body: |
-            Plugmesh 原生端构建产物（未签名，请核对 `SHA256SUMS` 后再运行）。
+            Plugmesh 原生端构建产物（未签名，请核对 `SHA256SUMS` 后再运行）。所有归档和 sidecar 文件名均包含本次 release tag。
 
-            - `plugmesh-server-linux.zip`：Linux x86_64（内含 OpenSSL 3 运行库）
-            - `plugmesh-server-windows.zip`：Windows x64（内含随包 OpenSSL DLL）
-            - `plugmesh-server-macos.zip`：macOS（`brew install openssl@3`）
-             - `plugmesh-server-termux.tar.gz`：Android Termux CLI（不是 APK，需在 Termux 中解压并安装 clang/cmake/openssl/zlib 运行依赖）
+            - `plugmesh-server-linux-${{ env.RELEASE_TAG }}.zip`：Linux x86_64（内含 OpenSSL 3 运行库）
+            - `plugmesh-server-windows-${{ env.RELEASE_TAG }}.zip`：Windows x64（内含随包 OpenSSL DLL）
+            - `plugmesh-server-windows7-${{ env.RELEASE_TAG }}.zip`：Windows 7 x64（MinGW-w64、Win32 API 6.1、静态 OpenSSL）
+            - `plugmesh-server-macos-${{ env.RELEASE_TAG }}.zip`：macOS（`brew install openssl@3`）
+            - `plugmesh-server-termux-${{ env.RELEASE_TAG }}.tar.gz`：Android Termux CLI（不是 APK，需在 Termux 中解压并安装 clang/cmake/openssl/zlib 运行依赖）
 
             校验：`sha256sum -c SHA256SUMS`；从源码构建方式见仓库 `native-server/README.md`。

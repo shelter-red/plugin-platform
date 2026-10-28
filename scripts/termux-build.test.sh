@@ -10,7 +10,8 @@ for required in \
   'id: prebuilt' \
   'ref="termux-release-${RELEASE_TAG}"' \
   'test "$(cat termux-prebuilt/SOURCE_COMMIT)" = "$GITHUB_SHA"' \
-  'sha256sum -c plugmesh-server-termux.tar.gz.sha256'; do
+  'archive="plugmesh-server-termux-${RELEASE_TAG}.tar.gz"' \
+  'sha256sum -c "$archive.sha256"'; do
   grep -Fq -- "$required" <<<"$read_workflow" || { echo "missing Termux release contract: $required" >&2; exit 1; }
 done
 
