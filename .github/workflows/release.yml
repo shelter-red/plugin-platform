@@ -234,9 +234,7 @@ jobs:
           printf '%s  %s\n' 'c80a01dfc70ece4dc21168932c37739042d404d46ccc81a5986dd75314ecda6f' "$archive" | sha256sum -c -
           tar -xzf "$archive" -C "$RUNNER_TEMP"
           cd "$RUNNER_TEMP/openssl-3.0.20"
-          perl Configure mingw64 no-shared no-tests no-asm \\
-            --cross-compile-prefix=x86_64-w64-mingw32- \\
-            --prefix="$RUNNER_TEMP/openssl-win7" --libdir=lib
+          perl Configure mingw64 no-shared no-tests no-asm --cross-compile-prefix=x86_64-w64-mingw32- --prefix="$RUNNER_TEMP/openssl-win7" --libdir=lib
           make -j2
           make install_sw
 

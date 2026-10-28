@@ -30,6 +30,7 @@ grep -Fq 'name: 构建 Windows 7 兼容包' "$WORKFLOW"
 grep -Fq 'needs: [build, termux, windows7]' "$WORKFLOW"
 grep -Fq 'scripts/build-windows7-native.sh' "$WORKFLOW"
 grep -Fq -- '--libdir=lib' "$WORKFLOW"
+grep -Fq 'perl Configure mingw64 no-shared no-tests no-asm --cross-compile-prefix=x86_64-w64-mingw32- --prefix="$RUNNER_TEMP/openssl-win7" --libdir=lib' "$WORKFLOW"
 grep -Fq 'OPENSSL_SOURCE_DIR: ${{ runner.temp }}/openssl-3.0.20' "$WORKFLOW"
 grep -Fq 'OPENSSL_SOURCE_DIR' "$ROOT/scripts/build-windows7-native.sh"
 grep -Fq 'LICENSE.openssl.txt' "$ROOT/scripts/build-windows7-native.sh"
@@ -57,6 +58,7 @@ assert.ok(workflow.includes('name: 构建 Windows 7 兼容包'), 'Release 必须
 assert.ok(workflow.includes('needs: [build, termux, windows7]'), 'Release 发布必须等待 Win7 包')
 assert.ok(workflow.includes('scripts/build-windows7-native.sh'), 'Win7 job 必须调用交叉构建脚本')
 assert.ok(workflow.includes('--libdir=lib'), '静态 OpenSSL 必须安装到 CMake 查找的 lib 目录')
+assert.ok(workflow.includes('perl Configure mingw64 no-shared no-tests no-asm --cross-compile-prefix=x86_64-w64-mingw32- --prefix="$RUNNER_TEMP/openssl-win7" --libdir=lib'), 'OpenSSL Configure 必须是单行命令，避免 shell 续行转义错误')
 assert.ok(workflow.includes('name: plugmesh-server-windows7-${{ env.RELEASE_TAG }}'), 'Win7 ZIP artifact 名必须包含 release tag')
 for (const marker of [
   'plugmesh-server-linux-${RELEASE_TAG}.zip',
