@@ -66,7 +66,7 @@ printf 'PLUGMESH_TEST_VALUE="value with spaces=and equals"\nPLUGMESH_TEST_CAPTUR
 
 linux_home="$tmp/linux-home"
 mkdir -p "$linux_home"
-SYSTEMCTL_LOG="$tmp/systemctl.log" HOME="$linux_home" PATH="$tmp/bin:$PATH" bash "$service" install --name linux-test --executable "$tmp/fake-server" --env-file "$tmp/service config.env"
+XDG_CONFIG_HOME="$linux_home/.config" SYSTEMCTL_LOG="$tmp/systemctl.log" HOME="$linux_home" PATH="$tmp/bin:$PATH" bash "$service" install --name linux-test --executable "$tmp/fake-server" --env-file "$tmp/service config.env"
 unit="$linux_home/.config/systemd/user/linux-test.service"
 grep -Fq "ExecStart=\"$tmp/fake-server\"" "$unit"
 grep -Fq "EnvironmentFile=-${tmp}/service\\x20config.env" "$unit"
@@ -74,12 +74,12 @@ grep -Fq "WorkingDirectory=$tmp" "$unit"
 ! grep -Fq 'WorkingDirectory="' "$unit"
 grep -Fq 'enable --now linux-test.service' "$tmp/systemctl.log"
 for action in start stop status; do
-  SYSTEMCTL_LOG="$tmp/systemctl.log" HOME="$linux_home" PATH="$tmp/bin:$PATH" bash "$service" "$action" --name linux-test --executable "$tmp/fake-server"
+  XDG_CONFIG_HOME="$linux_home/.config" SYSTEMCTL_LOG="$tmp/systemctl.log" HOME="$linux_home" PATH="$tmp/bin:$PATH" bash "$service" "$action" --name linux-test --executable "$tmp/fake-server"
 done
 grep -Fq 'start linux-test.service' "$tmp/systemctl.log"
 grep -Fq 'stop linux-test.service' "$tmp/systemctl.log"
 grep -Fq 'status linux-test.service' "$tmp/systemctl.log"
-SYSTEMCTL_LOG="$tmp/systemctl.log" HOME="$linux_home" PATH="$tmp/bin:$PATH" bash "$service" uninstall --name linux-test --executable "$tmp/fake-server"
+XDG_CONFIG_HOME="$linux_home/.config" SYSTEMCTL_LOG="$tmp/systemctl.log" HOME="$linux_home" PATH="$tmp/bin:$PATH" bash "$service" uninstall --name linux-test --executable "$tmp/fake-server"
 [[ ! -e "$unit" ]]
 
 mac_home="$tmp/mac home"
