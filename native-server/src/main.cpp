@@ -346,6 +346,27 @@ bool run_registration_setup(plugmesh::ServerConfig& config, uint16_t port, const
   return true;
 }
 
+int print_usage(const char* executable) {
+  const auto name = executable && *executable ? std::filesystem::path(executable).filename().string() : "plugmesh-server";
+  std::cout << "Plugmesh native server\n\n"
+               "Usage:\n"
+               "  " << name << " [--help]\n"
+               "  " << name << " --register [<worker-url> <server-name> <credential-file>]\n\n"
+               "Registration arguments may be omitted and will be read from environment variables or prompts:\n"
+               "  PLUGMESH_WORKER_URL, PLUGMESH_SERVER_NAME, PLUGMESH_CREDENTIAL_FILE\n"
+               "  PLUGMESH_REGISTRATION_CODE, PLUGMESH_LOCAL_UI_PASSWORD,\n"
+               "  PLUGMESH_LOCAL_UI_PASSWORD_CONFIRMATION, PLUGMESH_CREDENTIAL_PASSWORD\n\n"
+               "Runtime variables:\n"
+               "  PLUGMESH_PLUGIN_DIRECTORY, PLUGMESH_PLUGIN_HOST, PLUGMESH_LOCAL_PORT\n"
+               "  PLUGMESH_CREDENTIAL_FILE, PLUGMESH_CREDENTIAL_PASSWORD, PLUGMESH_CA_BUNDLE\n"
+               "  PLUGMESH_DEBUG_TLS=1  include TLS diagnostics in stderr\n\n"
+               "Examples:\n"
+               "  " << name << " --register https://platform.shelter.red \"My server\" ~/.config/plugmesh/credentials.json\n"
+               "  PLUGMESH_CREDENTIAL_PASSWORD='...' " << name << " --register\n"
+               "  " << name << "\n";
+  return 0;
+}
+
 int register_server(int argc, char** argv) {
   if (argc > 5) {
     std::cerr << "usage: plugmesh-server --register [<worker-url> <server-name> <credential-file>]\n"
@@ -394,6 +415,7 @@ int register_server(int argc, char** argv) {
 }  // namespace
 
 int main(int argc, char** argv) {
+  if (argc > 1 && (std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h")) return print_usage(argc > 0 ? argv[0] : nullptr);
   if (argc > 1 && std::string(argv[1]) == "--register") return register_server(argc, argv);
   const auto ui_directory = local_ui_directory();
   std::string ui_error;

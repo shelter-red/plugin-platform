@@ -165,7 +165,11 @@ const httpErrorKey = (status: number) => {
 function errorMessage(error: unknown, fallbackKey: string): string {
   if (error instanceof RequestError) {
     const key = error.code ? errorCodeKeys[error.code] ?? `errors.code.${error.code}` : undefined
-    if (key && i18n.exists(key)) return i18n.t(key)
+    if (key && i18n.exists(key)) {
+      const translated = i18n.t(key)
+      if (error.code === 'registration_tls_failed' && error.message) return `${translated} (${error.message})`
+      return translated
+    }
     if (/[\u4e00-\u9fa5]/.test(error.message)) return error.message
     return i18n.t(httpErrorKey(error.status), { status: error.status })
   }

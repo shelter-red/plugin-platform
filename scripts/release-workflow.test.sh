@@ -68,5 +68,10 @@ const mingw = fs.readFileSync(require('node:path').join(root, 'native-server/cma
 assert.ok(cmake.includes('_WIN32_WINNT=0x0601') && cmake.includes('WINVER=0x0601'), 'Windows 原生目标必须固定 Win7 API 版本')
 assert.ok(cmake.includes('--major-subsystem-version,6,--minor-subsystem-version,1') && cmake.includes('/SUBSYSTEM:CONSOLE,6.01'), 'Windows 可执行文件必须固定 Win7 PE subsystem 版本')
 assert.ok(mingw.includes('CMAKE_SYSTEM_VERSION 6.1'), 'MinGW 工具链必须固定 Windows 7 系统版本')
+const readme = fs.readFileSync(require('node:path').join(root, 'native-server/README.md'), 'utf8')
+for (const marker of ['--help', 'PLUGMESH_DEBUG_TLS', 'Worker 的实际 HTTPS 主机名']) {
+  assert.ok(readme.includes(marker), `原生 README 缺少 CLI/TLS 用法说明：${marker}`)
+}
+assert.ok(fs.readFileSync(require('node:path').join(root, 'native-server/src/main.cpp'), 'utf8').includes('std::string(argv[1]) == "--help"'), 'CLI 必须提供 --help')
 console.log('release workflow package contract passed')
 NODE

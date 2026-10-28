@@ -53,10 +53,15 @@ native-server/build/plugmesh-credential-store-smoke
 首次绑定可以使用 CLI fallback。管理端生成注册码后，在本地执行：
 
 ```bash
+# 查看完整参数和环境变量说明
+./plugmesh-server --help
+
 PLUGMESH_CREDENTIAL_PASSWORD='本地口令' \
 PLUGMESH_REGISTRATION_CODE='一次性注册码' \
-native-server/build/plugmesh-server --register https://console.example.com '工作站插件服务器' ~/.config/plugmesh/credentials.json
+./plugmesh-server --register https://console.example.com '工作站插件服务器' ~/.config/plugmesh/credentials.json
 ```
+
+CLI 注册失败时默认会打印阶段和底层错误分类；排查 TLS 时可临时设置 `PLUGMESH_DEBUG_TLS=1` 获取 OpenSSL 诊断。该输出不包含注册码、访问令牌或凭据口令。`https://` 地址必须是 Worker 的实际 HTTPS 主机名，不能填管理控制台页面路径、带尾部 API 路径的 URL 或自签名证书地址。
 
 注册成功后，服务器启动时设置 `PLUGMESH_CREDENTIAL_FILE` 和 `PLUGMESH_CREDENTIAL_PASSWORD`，即可从加密凭据文件恢复长期连接参数。插件放在服务器同目录的 `plugins` 时无需设置 `PLUGMESH_PLUGIN_DIRECTORY`；自定义目录时再显式设置。
 
