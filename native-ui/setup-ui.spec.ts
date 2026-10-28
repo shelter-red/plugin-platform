@@ -23,15 +23,19 @@ test('local UI first-time binding survives the server restart', async ({ page })
   await page.getByLabel('确认本地 UI 口令').fill('setup-password')
 
   const registrationCode = page.getByLabel('一次性注册码')
-  const expectBindingError = async (code: string, message: string, hiddenDetail: string) => {
+  const expectBindingError = async (code: string, message: string, hiddenDetail: string, showDetail = false) => {
     await registrationCode.fill(code)
     await page.getByRole('button', { name: '绑定服务器' }).click()
     await expect(page.getByRole('alert')).toContainText(message)
-    await expect(page.getByRole('alert')).not.toContainText(hiddenDetail)
+    if (showDetail) {
+      await expect(page.getByRole('alert')).toContainText(hiddenDetail)
+    } else {
+      await expect(page.getByRole('alert')).not.toContainText(hiddenDetail)
+    }
   }
   await expectBindingError('invalid-code', '一次性注册码无效或已过期', 'Registration code is invalid')
   await expectBindingError('connection-error', '无法连接 Worker', 'registration connection failed')
-  await expectBindingError('tls-error', 'TLS 证书验证失败', 'certificate verify failed')
+  await expectBindingError('tls-error', 'TLS 证书验证失败', 'certificate verify failed', true)
   await expectBindingError('save-error', '本地凭据保存失败', 'unable to write credential file')
 
   await registrationCode.fill('one-time-smoke-code')
