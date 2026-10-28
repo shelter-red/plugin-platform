@@ -7,6 +7,8 @@
 
 #include <nlohmann/json.hpp>
 #include <openssl/err.h>
+#include <openssl/ssl.h>
+#include <openssl/x509_vfy.h>
 
 #include <type_traits>
 #include <cstdlib>
@@ -87,6 +89,13 @@ bool register_with_client(const std::string& worker_url, const std::string& code
       const auto connection_error = connection->get_ec();
       const auto tls_handshake_failed = websocketpp::transport::asio::socket::make_error_code(websocketpp::transport::asio::socket::error::tls_handshake_failed);
       const auto tls_handshake_timeout = websocketpp::transport::asio::socket::make_error_code(websocketpp::transport::asio::socket::error::tls_handshake_timeout);
+      if (connection_error == tls_handshake_failed || connection_error == tls_handshake_timeout) {
+        const long verify_result = SSL_get_verify_result(connection->get_socket().native_handle());
+        if (verify_result != X509_V_OK) {
+          const char* reason = X509_verify_cert_error_string(verify_result);
+          if (reason != nullptr) error += "; certificate verification failed: " + std::string(reason);
+        }
+      }
       failure = connection_error == tls_handshake_failed || connection_error == tls_handshake_timeout ? RegistrationFailure::tls_failed : RegistrationFailure::connection_failed;
     } else {
       failure = RegistrationFailure::connection_failed;

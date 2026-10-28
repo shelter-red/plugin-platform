@@ -33,7 +33,7 @@ export default {
       registration_invalid_input: '绑定信息不完整或 Worker 地址无效',
       registration_code_invalid_or_expired: '一次性注册码无效或已过期，请在管理端重新生成',
       registration_connection_failed: '无法连接 Worker，请检查地址和网络后重试',
-      registration_tls_failed: 'Worker 的 TLS 证书验证失败，请检查地址或证书配置',
+      registration_tls_failed: 'Worker 的 TLS 握手失败，请检查证书、主机名和网络连接',
       registration_invalid_response: 'Worker 返回了无效的注册响应，请确认服务版本后重试',
       credential_save_failed: '绑定已完成，但本地凭据保存失败，请检查凭据存储或文件路径',
       credential_actions_unavailable: '当前状态下无法管理访问密钥',

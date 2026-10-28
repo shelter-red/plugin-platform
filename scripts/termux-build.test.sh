@@ -47,6 +47,7 @@ for required in \
   'local binary="$package_dir/$name.bin"' \
   'exec "\$script_dir/$name.bin"' \
   'chmod 0755' \
+  'plugmesh-service.sh' \
   'tar -C "$dist_dir" -czf' \
   'sha256sum "$archive_name" > "$archive_name.sha256"'; do
   grep -Fq -- "$required" <<<"$read_script" || { echo "missing Termux build contract: $required" >&2; exit 1; }
@@ -59,6 +60,7 @@ fake_bin="$tmp_root/bin"
 prefix="$tmp_root/prefix"
 mkdir -p "$sim_repo/scripts" "$sim_repo/native-server" "$fake_bin" "$prefix/include/openssl" "$prefix/lib" "$prefix/etc/tls"
 cp "$script" "$sim_repo/scripts/build-termux-native.sh"
+cp "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)/scripts/plugmesh-service.sh" "$sim_repo/scripts/plugmesh-service.sh"
 printf '%s\n' 'README fixture' > "$sim_repo/native-server/README.md"
 printf '%s\n' 'Port mapping fixture' > "$sim_repo/native-server/PORT-MAPPING.md"
 printf '%s\n' 'header fixture' > "$prefix/include/openssl/ssl.h"

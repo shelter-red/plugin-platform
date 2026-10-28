@@ -130,6 +130,8 @@ cp native-server/include/plugmesh/server_api.h native-server/include/plugmesh/pl
 cp native-server/examples/sample_plugin.cpp "/src/dist/$package_name/sdk/"
 cp native-server/PORT-MAPPING.md "/src/dist/$package_name/PORT-MAPPING.md"
 cp native-server/README.md "/src/dist/$package_name/README.md"
+cp scripts/plugmesh-service.sh "/src/dist/$package_name/plugmesh-service.sh"
+chmod +x "/src/dist/$package_name/plugmesh-service.sh"
 cp /etc/ssl/certs/ca-certificates.crt "/src/dist/$package_name/ca-certificates.crt"
 
 printf '类型：%s\n平台：Linux x86_64\n构建类型：%s\n' "${artifact_type,,}" "$build_type" > "/src/dist/$package_name/BUILD-INFO.txt"

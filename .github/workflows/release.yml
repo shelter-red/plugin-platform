@@ -136,6 +136,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist/plugmesh-server | Out-Null
           Copy-Item native-server/build-win/Release/plugmesh-server.exe dist/plugmesh-server/
           Copy-Item native-server/README.md dist/plugmesh-server/README.md
+          Copy-Item scripts/install-plugmesh-service.ps1 dist/plugmesh-server/
           Copy-Item native-server/build-win/Release/plugmesh-plugin-host.exe dist/plugmesh-server/
           New-Item -ItemType Directory -Force -Path dist/plugmesh-server/sdk/include/plugmesh, dist/plugmesh-server/sdk/lib, dist/plugmesh-server/sdk/examples, dist/plugmesh-server/sdk/plugins/sample.plugin | Out-Null
           Copy-Item native-server/include/plugmesh/*.h dist/plugmesh-server/sdk/include/plugmesh/
@@ -157,6 +158,8 @@ jobs:
           mkdir -p dist/plugmesh-server
           cp native-server/build/plugmesh-server dist/plugmesh-server/
           cp native-server/README.md dist/plugmesh-server/README.md
+          cp scripts/plugmesh-service.sh dist/plugmesh-server/plugmesh-service.sh
+          chmod +x dist/plugmesh-server/plugmesh-service.sh
           cp native-server/build/plugmesh-plugin-host dist/plugmesh-server/
           mkdir -p dist/plugmesh-server/sdk/include/plugmesh dist/plugmesh-server/sdk/lib dist/plugmesh-server/sdk/examples dist/plugmesh-server/sdk/plugins/sample.plugin
           cp native-server/include/plugmesh/*.h dist/plugmesh-server/sdk/include/plugmesh/

@@ -63,6 +63,8 @@ PLUGMESH_REGISTRATION_CODE='一次性注册码' \
 
 CLI 注册失败时默认会打印阶段和底层错误分类；排查 TLS 时可临时设置 `PLUGMESH_DEBUG_TLS=1` 获取 OpenSSL 诊断。该输出不包含注册码、访问令牌或凭据口令。`https://` 地址必须是 Worker 的实际 HTTPS 主机名，不能填管理控制台页面路径、带尾部 API 路径的 URL 或自签名证书地址。
 
+如果 Linux 上访问 `workers.dev` 超时或握手被重置，而浏览器或其他平台正常，优先比较同一设备的 DNS 解析、代理/防火墙和 IPv4/IPv6 出口；可用 `curl -v https://<worker-host>/api/health` 检查网络路径。底层原因可能是网络重置而非证书链错误；使用该网络可达且已配置的 Worker HTTPS 主机名，并保留证书和主机名校验，不要关闭 TLS 验证。
+
 注册成功后，服务器启动时设置 `PLUGMESH_CREDENTIAL_FILE` 和 `PLUGMESH_CREDENTIAL_PASSWORD`，即可从加密凭据文件恢复长期连接参数。插件放在服务器同目录的 `plugins` 时无需设置 `PLUGMESH_PLUGIN_DIRECTORY`；自定义目录时再显式设置。
 
 所有参数都可以省略，交给交互式提示（无浏览器环境的备用入口）：
@@ -151,6 +153,17 @@ cd plugmesh-server-termux
 Termux 包内的 `plugmesh-server`、`plugmesh-server.bin`、`plugmesh-plugin-host`、`plugmesh-plugin-host.bin`、`libc++_shared.so` 和 `plugins/` 必须保持相对位置；运行时继续使用 Termux 的 OpenSSL/zlib，不应把 Debian Linux 包中的 `.so` 或 glibc 运行库复制进来。端口映射、SSH/大文件流和本地 UI 的行为与其它原生构建一致。
 
 
+## 开机自启常驻服务
+
+服务器本身保持前台进程模型；服务管理器负责开机启动、异常重启和日志生命周期。先完成一次绑定并确认凭据文件/系统凭据可被目标用户读取，再安装服务。不要把注册码、访问令牌或凭据口令写入服务脚本。
+
+- Linux：`bash ./plugmesh-service.sh install --executable "$PWD/plugmesh-server"`，安装用户级 `systemd` unit；用 `uninstall` 移除，`status` 查看状态。无 systemd 的发行版应使用同一可执行文件配置到发行版的用户服务管理器。
+- macOS：`bash ./plugmesh-service.sh install --executable "$PWD/plugmesh-server"`，安装 `~/Library/LaunchAgents/com.shelter-red.plugmesh-server.plist`；用 `uninstall` 移除。
+- Termux：安装 `termux-services` 后执行同一脚本，会创建 `$PREFIX/var/service/plugmesh-server`；没有该包时脚本创建 `~/.termux/boot/plugmesh-server`，需要额外安装 Termux:Boot 才能在 Android 启动时运行。
+- Windows 7 及更高版本：在 PowerShell 执行 `scripts\\install-plugmesh-service.ps1 -Action install -Executable C:\\Plugmesh\\plugmesh-server.exe`，使用当前用户的 Task Scheduler 登录触发器；`uninstall` 删除任务。服务使用前台模式启动，凭据通过系统 Credential Manager 或环境变量/文件配置提供。
+
+服务命令只管理启动方式，不绕过 TLS 校验，也不执行注册；服务安装后可用 `--help` 查看 CLI 注册入口。
+
 ### MSVC
 
 需要 Visual Studio 2019 或更高版本、CMake 3.16 以上，以及 64 位 OpenSSL 3（推荐 `vcpkg install openssl:x64-windows`）：
@@ -186,6 +199,8 @@ cmake -S native-server -B /tmp/build-win \
   -DCMAKE_BUILD_TYPE=Release
 cmake --build /tmp/build-win -j"$(nproc)"
 ```
+
+项目根目录的 `scripts/build-windows7-native.sh` 会用同一工具链构建并打包 `plugmesh-server-windows7.zip`；必须设置 `OPENSSL_ROOT_DIR`，且该前缀必须提供用 `mingw64 no-shared` 构建的 `libssl.a`/`libcrypto.a`。不要把 GitHub Release 的 MSVC/vcpkg ZIP 当作 Win7 包；它们可能链接到 Win8+ 的系统 API 或 OpenSSL DLL。若已有现代 ZIP 在 Win7 报 `kernel32.dll`，请改用该 MinGW 包，不能通过复制一个新的 `kernel32.dll` 修复系统。
 
 产物为 `plugmesh-server.exe`、`plugmesh-plugin-host.exe`、本地 UI smoke 服务器、各 smoke 测试和示例插件 `libplugmesh-*.dll`。`CMAKE_BUILD_TYPE` 必须是 `Release`：未优化时 websocketpp/Asio 模板实例化会超过 MinGW COFF 单节大小上限。
 

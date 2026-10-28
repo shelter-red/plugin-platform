@@ -126,6 +126,8 @@ if [[ "$termux_static_deps" != ON ]]; then
   cp "$PREFIX/lib/libc++_shared.so" "$package_dir/"
 fi
 cp "$repo_root/native-server/README.md" "$repo_root/native-server/PORT-MAPPING.md" "$package_dir/"
+cp "$repo_root/scripts/plugmesh-service.sh" "$package_dir/"
+chmod 0755 "$package_dir/plugmesh-service.sh"
 cp "$ca_bundle" "$package_dir/ca-certificates.crt"
 
 printf '类型：%s\n平台：Android Termux (%s)\n构建类型：%s\n依赖：Termux clang/cmake/openssl/zlib\n' \

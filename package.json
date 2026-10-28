@@ -1,7 +1,7 @@
 {
   "name": "plugin-platform",
   "private": true,
-  "version": "0.3.1",
+  "version": "0.3.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -51,7 +51,8 @@
     "stack:browser": "playwright test --config playwright.browser.config.ts",
     "ui:conventions": "node scripts/ui-conventions.mjs",
     "ui:css-audit": "node scripts/ui-css-audit.mjs",
-    "ci:local": "bash scripts/ci-local.sh"
+    "ci:local": "bash scripts/ci-local.sh",
+    "native:service:test": "bash scripts/service-install.test.sh"
   },
   "dependencies": {
     "@ant-design/icons": "^5.6.1",

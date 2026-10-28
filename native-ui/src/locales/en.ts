@@ -33,7 +33,7 @@ export default {
       registration_invalid_input: 'The binding details are incomplete or the Worker URL is invalid',
       registration_code_invalid_or_expired: 'The one-time registration code is invalid or expired. Generate a new code in the console.',
       registration_connection_failed: 'Unable to connect to the Worker. Check the address and network, then try again.',
-      registration_tls_failed: 'The Worker TLS certificate could not be verified. Check the address or certificate configuration.',
+      registration_tls_failed: 'The Worker TLS handshake failed. Check the certificate, hostname, and network connection.',
       registration_invalid_response: 'The Worker returned an invalid registration response. Check the service version and try again.',
       credential_save_failed: 'Binding completed, but local credentials could not be saved. Check the credential store or file path.',
       credential_actions_unavailable: 'Access keys cannot be managed in the current state',
