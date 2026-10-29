@@ -60,7 +60,7 @@ int main() {
   }
   const auto key_path = path.string() + ".key";
   {
-    std::ofstream key(key_path, std::ios::trunc);
+    std::ofstream key(key_path, std::ios::binary | std::ios::trunc);
     key << "correct-password\n";
   }
   plugmesh::ServerConfig configured_from_environment;
