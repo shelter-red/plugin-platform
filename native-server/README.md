@@ -141,7 +141,7 @@ bash scripts/build-termux-native.sh
 bash scripts/build-termux-native.sh --artifact-type SHARED
 ```
 
-脚本不修改 `/etc/apt`，不下载或编译 x86_64 OpenSSL，也不执行 glibc ABI 检查。它使用 `$PREFIX` 下的 Android/Termux 原生库，本地默认生成 `dist/plugmesh-server-termux.tar.gz` 和 `dist/plugmesh-server-termux.tar.gz.sha256`；正式 Release 名称会附加 tag，例如 `plugmesh-server-termux-v0.3.3.tar.gz` 及同名 `.sha256` sidecar。归档同时携带 `$PREFIX/etc/tls/cert.pem` 复制出的 `ca-certificates.crt`，静态 OpenSSL 因而能验证 Worker TLS；普通构建归档携带匹配的 `libc++_shared.so`；`plugmesh-server` 与 `plugmesh-plugin-host` 是同目录启动器，会先把包目录放到 `LD_LIBRARY_PATH` 最前面，再启动旁边的 `.bin` ELF。全静态构建则把 libc++、libc++abi、libunwind、OpenSSL 静态归入 ELF，不依赖设备的 `libc++_shared.so`，因此旧设备上的全局 libc++ 不会抢先加载。不会复制 Debian Linux 包中的 `.so` 或 glibc 运行库。校验并解压后直接通过命令行启动：
+脚本不修改 `/etc/apt`，不下载或编译 x86_64 OpenSSL，也不执行 glibc ABI 检查。它使用 `$PREFIX` 下的 Android/Termux 原生库，本地默认生成 `dist/plugmesh-server-termux.tar.gz` 和 `dist/plugmesh-server-termux.tar.gz.sha256`；正式 Release 名称会附加 tag，例如 `plugmesh-server-termux-v0.3.6.tar.gz` 及同名 `.sha256` sidecar。归档保留构建时 `ca-certificates.crt` 作为离线 fallback；launcher 优先使用显式 `PLUGMESH_CA_BUNDLE`，否则使用当前 Termux `$PREFIX/etc/tls/cert.pem`、备用 `$PREFIX/etc/tls/certs/ca-bundle.crt`，最后才回退包内 CA，因此更新 `ca-certificates` 后立即生效。遇到 `unable to get local issuer certificate` 时先运行 `pkg update && pkg upgrade ca-certificates`；私有 CA 应通过 `PLUGMESH_CA_BUNDLE=/path/to/ca.pem` 提供正确 PEM 根证书，不要关闭证书或主机名校验。普通构建归档携带匹配的 `libc++_shared.so`；`plugmesh-server` 与 `plugmesh-plugin-host` 是同目录启动器，会先把包目录放到 `LD_LIBRARY_PATH` 最前面，再启动旁边的 `.bin` ELF。全静态构建则把 libc++、libc++abi、libunwind、OpenSSL 静态归入 ELF，不依赖设备的 `libc++_shared.so`，因此旧设备上的全局 libc++ 不会抢先加载。不会复制 Debian Linux 包中的 `.so` 或 glibc 运行库。校验并解压后直接通过命令行启动：
 
 ```bash
 (cd dist && sha256sum -c plugmesh-server-termux.tar.gz.sha256)

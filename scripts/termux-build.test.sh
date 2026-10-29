@@ -37,11 +37,16 @@ for required in \
   'Android Termux' \
   'TERMUX-README.txt' \
   'does not include the plugmesh-server executable' \
+  'current Termux CA store' \
   'Native UI is embedded in plugmesh-server' \
   'libc++_shared.so' \
   'missing Termux libc++ runtime' \
   'ca_bundle="$PREFIX/etc/tls/cert.pem"' \
   'ca-certificates.crt' \
+  'PLUGMESH_CA_BUNDLE is not readable' \
+  '\$PREFIX/etc/tls/cert.pem' \
+  '\$PREFIX/etc/tls/certs/ca-bundle.crt' \
+  '\$script_dir/ca-certificates.crt' \
   'missing Termux CA bundle' \
   'write_local_launcher' \
   'LD_LIBRARY_PATH' \
@@ -59,6 +64,7 @@ trap 'rm -rf "$tmp_root"' EXIT
 sim_repo="$tmp_root/repo"
 fake_bin="$tmp_root/bin"
 prefix="$tmp_root/prefix"
+mkdir -p "$sim_repo/native-ui/dist"
 mkdir -p "$sim_repo/scripts" "$sim_repo/native-server" "$fake_bin" "$prefix/include/openssl" "$prefix/lib" "$prefix/etc/tls"
 cp "$script" "$sim_repo/scripts/build-termux-native.sh"
 cp "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)/scripts/plugmesh-service.sh" "$sim_repo/scripts/plugmesh-service.sh"
@@ -68,6 +74,7 @@ printf '%s\n' 'header fixture' > "$prefix/include/openssl/ssl.h"
 printf '%s\n' 'library fixture' > "$prefix/lib/libssl.so"
 printf '%s\n' 'libc++ fixture' > "$prefix/lib/libc++_shared.so"
 printf '%s\n' 'CA bundle fixture' > "$prefix/etc/tls/cert.pem"
+printf '%s\n' 'UI fixture' > "$sim_repo/native-ui/dist/index.html"
 cat > "$fake_bin/cmake" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -75,6 +82,11 @@ printf '%s\n' "$*" >> "$TERMUX_CMAKE_LOG"
 if [[ "${1:-}" == --build ]]; then
   build_dir="$2"
   mkdir -p "$build_dir/plugins/sample.plugin"
+  cat > "$build_dir/plugmesh-server" <<'SERVER'
+#!/usr/bin/env bash
+printf '%s' "${PLUGMESH_CA_BUNDLE:-}" > "$TERMUX_CA_CAPTURE"
+SERVER
+  chmod +x "$build_dir/plugmesh-server"
   printf '%s\n' 'binary fixture' > "$build_dir/plugmesh-plugin-host"
   printf '%s\n' 'library fixture' > "$build_dir/libplugmesh-sample.so"
   printf '%s\n' 'manifest fixture' > "$build_dir/plugins/sample.plugin/manifest.json"
@@ -97,6 +109,45 @@ if [[ -e "$sim_repo/dist/plugmesh-server-termux/plugmesh-server" ]] || \
   echo 'Termux SHARED package contract incorrectly advertises a server executable' >&2
   exit 1
 fi
+
+TERMUX_CMAKE_LOG="$tmp_root/cmake.log" PREFIX="$prefix" PATH="$fake_bin:$PATH" \
+  TERMUX_CA_CAPTURE="$tmp_root/selected-ca" bash "$sim_repo/scripts/build-termux-native.sh" \
+  --artifact-type EXECUTABLE --package-name launcher-test --archive-name launcher-test.tar.gz
+launcher="$sim_repo/dist/launcher-test/plugmesh-server"
+rm "$sim_repo/dist/launcher-test/libc++_shared.so"
+run_launcher() {
+  env -u PLUGMESH_CA_BUNDLE PREFIX="$prefix" TERMUX_CA_CAPTURE="$tmp_root/selected-ca" "$launcher"
+}
+run_launcher
+[[ "$(<"$tmp_root/selected-ca")" == "$prefix/etc/tls/cert.pem" ]] || {
+  echo 'Termux launcher did not prefer the current Termux CA store' >&2
+  exit 1
+}
+printf '%s\n' 'custom CA fixture' > "$tmp_root/custom-ca.pem"
+PLUGMESH_CA_BUNDLE="$tmp_root/custom-ca.pem" PREFIX="$prefix" TERMUX_CA_CAPTURE="$tmp_root/selected-ca" "$launcher"
+[[ "$(<"$tmp_root/selected-ca")" == "$tmp_root/custom-ca.pem" ]] || {
+  echo 'Termux launcher did not preserve the explicit PLUGMESH_CA_BUNDLE override' >&2
+  exit 1
+}
+set +e
+PLUGMESH_CA_BUNDLE="$tmp_root/missing-ca.pem" PREFIX="$prefix" TERMUX_CA_CAPTURE="$tmp_root/selected-ca" "$launcher" >/dev/null 2>&1
+status=$?
+set -e
+[[ $status -eq 2 ]] || { echo 'Termux launcher accepted a missing explicit CA bundle' >&2; exit 1; }
+mv "$prefix/etc/tls/cert.pem" "$tmp_root/cert.pem.saved"
+mkdir -p "$prefix/etc/tls/certs"
+printf '%s\n' 'Termux CA fallback fixture' > "$prefix/etc/tls/certs/ca-bundle.crt"
+run_launcher
+[[ "$(<"$tmp_root/selected-ca")" == "$prefix/etc/tls/certs/ca-bundle.crt" ]] || {
+  echo 'Termux launcher did not use the alternate runtime CA path' >&2
+  exit 1
+}
+rm "$prefix/etc/tls/certs/ca-bundle.crt"
+run_launcher
+[[ "$(<"$tmp_root/selected-ca")" == "$sim_repo/dist/launcher-test/ca-certificates.crt" ]] || {
+  echo 'Termux launcher did not fall back to the packaged CA bundle' >&2
+  exit 1
+}
 
 if grep -Fq -- '--include-ui' <<<"$read_script" || grep -Fq 'package_dir/native-ui/dist' <<<"$read_script"; then
   echo 'Termux CLI must embed UI and must not ship an external native-ui/dist directory' >&2

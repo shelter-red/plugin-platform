@@ -104,7 +104,15 @@ export LD_LIBRARY_PATH="\$script_dir\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}"
 if [[ -f "\$script_dir/libc++_shared.so" ]]; then
   export LD_PRELOAD="\$script_dir/libc++_shared.so\${LD_PRELOAD:+:\$LD_PRELOAD}"
 fi
-export PLUGMESH_CA_BUNDLE="\$script_dir/ca-certificates.crt"
+if [[ -n "\${PLUGMESH_CA_BUNDLE:-}" ]]; then
+  [[ -s "\$PLUGMESH_CA_BUNDLE" ]] || { printf 'PLUGMESH_CA_BUNDLE is not readable: %s\n' "\$PLUGMESH_CA_BUNDLE" >&2; exit 2; }
+elif [[ -n "\${PREFIX:-}" && -s "\$PREFIX/etc/tls/cert.pem" ]]; then
+  export PLUGMESH_CA_BUNDLE="\$PREFIX/etc/tls/cert.pem"
+elif [[ -n "\${PREFIX:-}" && -s "\$PREFIX/etc/tls/certs/ca-bundle.crt" ]]; then
+  export PLUGMESH_CA_BUNDLE="\$PREFIX/etc/tls/certs/ca-bundle.crt"
+elif [[ -s "\$script_dir/ca-certificates.crt" ]]; then
+  export PLUGMESH_CA_BUNDLE="\$script_dir/ca-certificates.crt"
+fi
 exec "\$script_dir/$name.bin" "\$@"
 EOF
   chmod 0755 "$launcher"
@@ -151,7 +159,8 @@ Run the server from this directory:
   ./plugmesh-server
 
 The server and plugin host statically carry libc++ and OpenSSL. The launcher
-sets the package CA bundle explicitly and the executable only requires Android
+uses `PLUGMESH_CA_BUNDLE` when set, otherwise the current Termux CA store, then
+the package CA bundle as a fallback. The executable only requires Android
 system libraries, so it does not use the device's global libc++_shared.so and is
 not affected by an older Termux C++ runtime. Keep the launchers, `.bin` files,
 CA bundle, and plugins directory together.
