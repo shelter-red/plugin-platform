@@ -184,12 +184,12 @@ elseif (PLUGMESH_TERMUX)
     add_compile_options(-nostdinc++ "-isystem${PLUGMESH_TERMUX_LIBCXX_INCLUDE_DIR}")
     foreach(target_name plugmesh-server plugmesh-plugin-host plugmesh-server-shared plugmesh-sample)
       if (TARGET ${target_name})
-        target_link_options(${target_name} PRIVATE -nostdlib++
-          -Wl,--start-group)
+        target_link_options(${target_name} PRIVATE -nostdlib++)
         target_link_libraries(${target_name} PRIVATE
+          "-Wl,--start-group"
           "${PLUGMESH_TERMUX_LIBCXX}" "${PLUGMESH_TERMUX_LIBCXXABI}"
-          "${PLUGMESH_TERMUX_LIBUNWIND}" dl m c)
-        target_link_options(${target_name} PRIVATE -Wl,--end-group)
+          "${PLUGMESH_TERMUX_LIBUNWIND}" dl m c
+          "-Wl,--end-group")
       endif()
     endforeach()
   endif()
