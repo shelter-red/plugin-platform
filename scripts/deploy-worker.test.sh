@@ -8,6 +8,7 @@ trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/scripts" "$TMP/worker" "$TMP/state" "$TMP/bin"
 cp "$ROOT/scripts/deploy-worker.sh" "$TMP/scripts/"
 cp "$ROOT/wrangler.toml" "$TMP/wrangler.toml"
+sed -i '/^database_id = /d' "$TMP/wrangler.toml"
 
 cat > "$TMP/bin/npm" <<'FAKE_NPM'
 #!/usr/bin/env bash
@@ -136,6 +137,7 @@ printf 'ok：README 与 package.json 锁定 Cloudflare Workers Builds 账号连�
 
 mkdir -p "$TMP/state-local-fresh"
 cp "$ROOT/wrangler.toml" "$TMP/wrangler.toml"
+sed -i '/^database_id = /d' "$TMP/wrangler.toml"
 printf '[]\n' > "$TMP/state-local-fresh/secrets.json"
 touch "$TMP/state-local-fresh/d1-empty" "$TMP/state-local-fresh/r2-empty"
 fresh_output=$(run_deploy_with_state "$TMP/state-local-fresh" env)
@@ -161,6 +163,7 @@ printf 'ok：已有密钥不被环境变量或重跑覆盖\n'
 
 mkdir -p "$TMP/state-cloud"
 cp "$ROOT/wrangler.toml" "$TMP/wrangler.toml"
+sed -i '/^database_id = /d' "$TMP/wrangler.toml"
 printf '[]\n' > "$TMP/state-cloud/secrets.json"
 : > "$TMP/npm.log"
 cloud_output=$(cd "$TMP" && \
@@ -187,6 +190,7 @@ printf 'ok：Workers Builds 缺少 dist 时先构建，并自动创建资源、�
 
 mkdir -p "$TMP/state-cloud-prebuilt"
 cp "$ROOT/wrangler.toml" "$TMP/wrangler.toml"
+sed -i '/^database_id = /d' "$TMP/wrangler.toml"
 printf '[]\n' > "$TMP/state-cloud-prebuilt/secrets.json"
 mkdir -p "$TMP/dist"
 printf '<!doctype html>\n' > "$TMP/dist/index.html"
@@ -207,6 +211,7 @@ printf 'ok：Workers Builds 已构建 dist 时不重复构建\n'
 
 mkdir -p "$TMP/state-cloud-existing"
 cp "$ROOT/wrangler.toml" "$TMP/wrangler.toml"
+sed -i '/^database_id = /d' "$TMP/wrangler.toml"
 node -e 'const fs = require("node:fs"); const path = process.argv[1]; const text = fs.readFileSync(path, "utf8").replace(/^(database_name = "plugmesh"\n)/m, "$1database_id = \"existing-database-id\"\n"); fs.writeFileSync(path, text)' "$TMP/wrangler.toml"
 printf '[]\n' > "$TMP/state-cloud-existing/secrets.json"
 existing_output=$(cd "$TMP" && \
@@ -229,6 +234,7 @@ printf 'ok：Workers Builds 已有 D1 ID 时先迁移，再启用资源校验并
 
 mkdir -p "$TMP/state-drift"
 cp "$ROOT/wrangler.toml" "$TMP/wrangler.toml"
+sed -i '/^database_id = /d' "$TMP/wrangler.toml"
 node -e 'const fs = require("node:fs"); const path = process.argv[1]; const text = fs.readFileSync(path, "utf8").replace(/^(database_name = "plugmesh"\n)/m, "$1database_id = \"existing-database-id\"\n"); fs.writeFileSync(path, text)' "$TMP/wrangler.toml"
 printf '[]\n' > "$TMP/state-drift/secrets.json"
 touch "$TMP/state-drift/pending-migration"

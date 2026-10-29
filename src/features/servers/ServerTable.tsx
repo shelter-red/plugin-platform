@@ -1,11 +1,11 @@
 import { useTranslation } from 'react-i18next'
 import { Button, Table, type TableProps } from 'antd'
-import { MoreHorizontal, Server } from 'lucide-react'
+import { MoreHorizontal, Server, Trash2 } from 'lucide-react'
 import type { ApiServer } from '../../api'
 import { StatusBadge } from '../../components/StatusBadge'
 import { formatDateTime } from '../../lib/format'
 
-export function ServerTable({ servers, loading, onDetail }: { servers: ApiServer[]; loading: boolean; onDetail: (id: string) => void }) {
+export function ServerTable({ servers, loading, onDetail, onDelete, canDelete }: { servers: ApiServer[]; loading: boolean; onDetail: (id: string) => void; onDelete: (server: ApiServer) => void; canDelete: boolean }) {
   const { t } = useTranslation()
   const columns: TableProps<ApiServer>['columns'] = [
     {
@@ -26,8 +26,8 @@ export function ServerTable({ servers, loading, onDetail }: { servers: ApiServer
     {
       title: '',
       key: 'actions',
-      width: 64,
-      render: (_, server) => <Button type="text" size="small" onClick={() => onDetail(server.id)} aria-label={t('servers.view', { name: server.name })} title={t('servers.viewTitle')} icon={<MoreHorizontal size={17} />} />,
+      width: 96,
+      render: (_, server) => <div className="table-actions"><Button type="text" size="small" onClick={() => onDetail(server.id)} aria-label={t('servers.view', { name: server.name })} title={t('servers.viewTitle')} icon={<MoreHorizontal size={17} />} />{canDelete && <Button danger type="text" size="small" onClick={() => onDelete(server)} aria-label={t('servers.delete', { name: server.name })} title={t('servers.delete', { name: server.name })} icon={<Trash2 size={16} />} />}</div>,
     },
   ]
 

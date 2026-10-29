@@ -83,6 +83,7 @@ test('已取消、失败或过期的 Free 订阅不提供免费额度基线', as
   }
 })
 
+test('Global API Key 加密存储、旧 OAuth 数据拒绝和清理', async () => {
   expect((await readCloudflareSubscriptions(AUTH, ACCOUNT_A, jsonFetcher({ [`/client/v4/accounts/${ACCOUNT_A}/subscriptions`]: () => subscriptions('pro') })) ).plan.free).toBe(false)
   const updatedAt = await storeCloudflareCredential(testEnv, { kind: 'global_api_key', email: EMAIL, globalApiKey: KEY, accountId: ACCOUNT_A, verifiedAt: '2026-10-24T00:00:00.000Z' })
   expect(await readStoredCloudflareCredential(testEnv)).toEqual({ kind: 'global_api_key', credential: { kind: 'global_api_key', email: EMAIL, globalApiKey: KEY, accountId: ACCOUNT_A, verifiedAt: '2026-10-24T00:00:00.000Z' }, updatedAt })

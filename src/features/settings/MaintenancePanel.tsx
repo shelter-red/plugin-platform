@@ -26,7 +26,7 @@ export function MaintenancePanel({ settings, onChange, onAction }: {
     </div>
   }>
     <MaintenanceToggle settings={settings} maintenance={state.maintenance} saving={state.saving} onToggle={() => void state.toggleMaintenance()} />
-    <DomainSuffixForm enabled={Boolean(settings)} value={state.domainSuffix} saving={state.suffixSaving} disabled={state.quotaSaving} onChange={state.setDomainSuffix} onSave={() => void state.saveDomainSuffix()} />
+    <DomainSuffixForm enabled={Boolean(settings)} value={state.domainSuffix} saving={state.suffixSaving} disabled={state.quotaSaving} canReset={state.canResetDomainSuffix} onChange={state.setDomainSuffix} onSave={() => void state.saveDomainSuffix()} onReset={() => void state.resetDomainSuffix()} />
     <QuotaSettings
       values={state.quotaForm}
       saving={state.quotaSaving}

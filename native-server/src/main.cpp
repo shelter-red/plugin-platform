@@ -13,6 +13,7 @@
 #include <atomic>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <thread>
@@ -235,6 +236,64 @@ std::filesystem::path default_credential_file() {
   return executable_directory() / "plugmesh-credentials.json";
 }
 
+std::filesystem::path resolve_credential_file(std::filesystem::path configured) {
+  if (!configured.empty()) return configured;
+  const auto default_file = default_credential_file();
+  const auto marker = default_file.parent_path() / "credentials.path";
+  std::ifstream selected(marker, std::ios::binary);
+  std::string value;
+  if (selected && std::getline(selected, value)) {
+    const std::filesystem::path candidate(trim(value));
+    if (!candidate.empty() && candidate.is_absolute()) return candidate;
+  }
+  return std::filesystem::exists(default_file) ? default_file : std::filesystem::path();
+}
+
+bool persist_credential_file(const std::filesystem::path& credential_file, std::string& error) {
+  const auto default_file = default_credential_file();
+  const auto marker = default_file.parent_path() / "credentials.path";
+  std::error_code fs_error;
+  if (credential_file.empty() || credential_file == default_file) {
+    std::filesystem::remove(marker, fs_error);
+    if (fs_error) {
+      error = "cannot clear credential file selection: " + fs_error.message();
+      return false;
+    }
+    return true;
+  }
+  std::filesystem::create_directories(marker.parent_path(), fs_error);
+  if (fs_error) {
+    error = "cannot create credential settings directory: " + fs_error.message();
+    return false;
+  }
+  auto temporary = marker;
+  temporary += ".tmp";
+  {
+    std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+    if (!output || !(output << credential_file.string() << '\n')) {
+      error = "cannot persist credential file selection";
+      return false;
+    }
+  }
+#ifndef _WIN32
+  std::filesystem::permissions(temporary, std::filesystem::perms::owner_read | std::filesystem::perms::owner_write, std::filesystem::perm_options::replace, fs_error);
+  if (fs_error) {
+    std::filesystem::remove(temporary, fs_error);
+    error = "cannot protect credential file selection";
+    return false;
+  }
+#endif
+  std::filesystem::remove(marker, fs_error);
+  fs_error.clear();
+  std::filesystem::rename(temporary, marker, fs_error);
+  if (fs_error) {
+    std::filesystem::remove(temporary, fs_error);
+    error = "cannot save credential file selection";
+    return false;
+  }
+  return true;
+}
+
 void open_local_setup_browser(uint16_t port) {
   const auto url = std::string("http://127.0.0.1:") + std::to_string(port) + "/";
 #ifdef _WIN32
@@ -248,7 +307,7 @@ void open_local_setup_browser(uint16_t port) {
 }
 
 bool run_registration_setup(plugmesh::ServerConfig& config, uint16_t port, const std::filesystem::path& ui_directory, std::string& error) {
-  const auto initial_credential_file = config.credential_file.string();
+  const auto initial_credential_file = config.credential_file.empty() ? default_credential_file().string() : config.credential_file.string();
   std::atomic<bool> registration_complete{false};
   std::atomic<bool> callback_active{false};
   std::atomic<bool> server_failed{false};
@@ -267,17 +326,18 @@ bool run_registration_setup(plugmesh::ServerConfig& config, uint16_t port, const
     std::string password = text("credentialPassword");
     const auto local_ui_password = text("localUiPassword");
     const auto local_ui_password_confirmation = text("localUiPasswordConfirmation");
-    const auto credential_file = text("credentialFile").empty() ? config.credential_file.string() : text("credentialFile");
-    const auto resolved_credential_file = credential_file.empty() ? default_credential_file() : std::filesystem::path(credential_file);
-     const auto key_file = config.credential_key_file.empty() ? std::filesystem::path(resolved_credential_file.string() + ".key") : config.credential_key_file;
-     if (password.empty() && !plugmesh::ensure_credential_key(key_file, password, callback_error)) {
+    const auto use_system_store = payload.value("useSystemCredentials", false);
+    const auto credential_file = use_system_store ? std::string() : (text("credentialFile").empty() ? config.credential_file.string() : text("credentialFile"));
+    const auto resolved_credential_file = use_system_store ? std::filesystem::path() : (credential_file.empty() ? default_credential_file() : std::filesystem::absolute(std::filesystem::path(credential_file)).lexically_normal());
+    const auto key_file = resolved_credential_file.empty() ? std::filesystem::path() : std::filesystem::path(resolved_credential_file.string() + ".key");
+    if (!use_system_store && password.empty() && !plugmesh::ensure_credential_key(key_file, password, callback_error)) {
        callback_error_code = "credential_save_failed";
        callback_active = false;
        return nlohmann::json::object();
      }
-     const auto use_system_store = false;
+
     if (worker_url.empty() || server_name.empty() || code.empty() || local_ui_password.size() < 8 || local_ui_password != local_ui_password_confirmation || (!use_system_store && password.empty()) || (use_system_store && !plugmesh::system_credentials_available())) {
-      if (local_ui_password.size() < 8) callback_error = "本地 UI 口令至少需要 8 个字符";
+      if (local_ui_password.size() < 8) callback_error = "本地 UI 登录口令至少需要 8 个字符";
       else if (local_ui_password != local_ui_password_confirmation) callback_error = "本地 UI 口令与确认口令不一致";
       else callback_error = use_system_store ? "当前平台没有可用的系统凭据存储，请填写凭据文件路径和口令" : "Worker 地址、服务器名称、注册码、凭据口令和凭据文件路径均为必填";
       callback_error_code = "registration_invalid_input";
@@ -292,6 +352,11 @@ bool run_registration_setup(plugmesh::ServerConfig& config, uint16_t port, const
       return nlohmann::json::object();
     }
 
+    if (!persist_credential_file(resolved_credential_file, callback_error)) {
+      callback_error_code = "credential_save_failed";
+      callback_active = false;
+      return nlohmann::json::object();
+    }
     plugmesh::RegistrationResult registration;
     plugmesh::RegistrationFailure registration_failure = plugmesh::RegistrationFailure::none;
     if (!plugmesh::register_server(worker_url, code, server_name, registration, callback_error, &registration_failure)) {
@@ -428,8 +493,8 @@ int main(int argc, char** argv) {
   }
   const auto config = plugmesh::load_config_from_environment();
   auto resolved_config = config;
-  if (resolved_config.credential_file.empty()) resolved_config.credential_file = default_credential_file();
-  if (resolved_config.credential_key_file.empty()) resolved_config.credential_key_file = resolved_config.credential_file.string() + ".key";
+  if (resolved_config.credential_file.empty()) resolved_config.credential_file = resolve_credential_file({});
+  if (resolved_config.credential_key_file.empty() && !resolved_config.credential_file.empty()) resolved_config.credential_key_file = resolved_config.credential_file.string() + ".key";
   std::string plugin_directory_error;
   if (!plugmesh::prepare_executable_plugin_directory(resolved_config, executable_directory(argc > 0 ? argv[0] : nullptr), plugin_directory_error)) {
     std::cerr << "plugmesh-server: " << plugin_directory_error << '\n';

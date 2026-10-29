@@ -3,6 +3,7 @@ export default {
   common: {
     processing: 'Working',
     retry: 'Retry',
+    cancel: 'Cancel',
     closeToast: 'Dismiss notification',
     updatedAt: 'Updated at {{time}}',
     statusLoading: 'Loading status',
@@ -74,10 +75,11 @@ export default {
     registrationCode: 'One-time registration code',
     credentialFile: 'Credential file path',
     credentialFilePlaceholder: 'Leave empty to use the system credential store',
-    localUiPassword: 'Local UI password',
-    confirmPassword: 'Confirm local UI password',
-    credentialPassword: 'Credential file encryption password',
-    credentialPasswordSystemPlaceholder: 'Optional when using the system credential store',
+    useSystemCredentials: 'Use the system credential store',
+    localUiPassword: 'Local UI login password',
+    confirmPassword: 'Confirm local UI login password',
+    credentialPassword: 'Data encryption password',
+    credentialPasswordSystemPlaceholder: 'Not used with system credential storage',
     submit: 'Bind server',
     success: 'Bound successfully. Sign in with the local UI password.',
   },
@@ -89,6 +91,7 @@ export default {
   login: { title: 'Sign in to local console', submit: 'Sign in' },
   nav: {
     aria: 'Local server navigation',
+    toggle: 'Toggle navigation menu',
     overview: 'Overview',
     plugins: 'Plugins',
     mappings: 'Port maps',
@@ -138,7 +141,7 @@ export default {
     noPermissions: 'none',
   },
   mappings: {
-    index: '03 / Port mapping', title: 'Cross-server TCP mappings', refreshTargets: 'Refresh targets', name: 'Mapping name', protocol: 'Protocol label', listenPort: 'Local listen port', targetServer: 'Target plugin server', selectTarget: 'Select an online server', targetHost: 'Target host', targetPort: 'Target port', targetPassword: 'Target server password (first trust only)', targetPasswordPlaceholder: 'Enter UI password to verify', targetTableTitle: 'Target server authorization', targetTableBody: 'Inspect remote plugins and prepare local mappings.', remotePlugins: '{{count}} plugins', remoteProxies: '{{count}} port proxies', httpPlugin: 'HTTP via plugin domain', mapProxy: 'Map locally', proxyAlreadyMapped: 'Already mapped', proxyMapped: '{{name}} is mapped to localhost:{{port}}', proxyMapFailed: 'Unable to create the local mapping. Verify the target password first.', noLocalPort: 'No available local port was found in the automatic range.', authorizeTarget: 'Verify password', reauthorizeTarget: 'Re-verify password', authorized: 'Authorized', targetPasswordRequired: 'Enter the target server password', targetAuthorized: '{{name}} authorized', targetAuthorizeFailed: 'Unable to verify target password', add: 'Add mapping', update: 'Save changes', edit: 'Edit mapping', enable: 'Start listener', disable: 'Stop listener', listening: 'Listening', stopped: 'Stopped', delete: 'Delete mapping', emptyTitle: 'No mappings configured', emptyBody: 'Refresh the target server list, then add a TCP port to forward.', saved: 'Mapping saved and started', deleted: 'Mapping deleted', targetsFailed: 'Unable to load target servers', saveFailed: 'Unable to save mapping', deleteFailed: 'Unable to delete mapping',
+    index: '03 / Port mapping', title: 'Cross-server TCP mappings', refreshTargets: 'Refresh targets', name: 'Mapping name', protocol: 'Protocol label', listenPort: 'Local listen port', targetServer: 'Target plugin server', selectTarget: 'Select an online server', targetHost: 'Target host', targetPort: 'Target port', targetPassword: 'Target server password (first trust only)', targetPasswordPlaceholder: 'Enter UI password to verify', targetTableTitle: 'Target server authorization', targetTableBody: 'Inspect remote plugins and prepare local mappings.', remotePlugins: '{{count}} plugins', remoteProxies: '{{count}} port proxies', httpPlugin: 'HTTP via plugin domain', mapProxy: 'Map locally', proxyAlreadyMapped: 'Already mapped', proxyMapped: '{{name}} is mapped to localhost:{{port}}', proxyMapFailed: 'Unable to create the local mapping. Verify the target password first.', noLocalPort: 'No available local port was found in the automatic range.', authorizeTarget: 'Verify password', reauthorizeTarget: 'Re-verify password', verifyMenu: 'Verification', needsAuth: 'Needs authorization', failed: 'Verification failed', authorized: 'Authorized', targetPasswordRequired: 'Enter the target server password', targetAuthorized: '{{name}} authorized', targetAuthorizeFailed: 'Unable to verify target password', add: 'Add mapping', update: 'Save changes', edit: 'Edit mapping', enable: 'Start listener', disable: 'Stop listener', listening: 'Listening', stopped: 'Stopped', delete: 'Delete mapping', emptyTitle: 'No mappings configured', emptyBody: 'Refresh the target server list, then add a TCP port to forward.', saved: 'Mapping saved and started', deleted: 'Mapping deleted', targetsFailed: 'Unable to load target servers', saveFailed: 'Unable to save mapping', deleteFailed: 'Unable to delete mapping',
   },
   binding: {
     index: '03 / Connection',

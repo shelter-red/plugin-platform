@@ -1,5 +1,6 @@
 import { beforeEach, expect, test } from 'vitest'
 import type { ControlFrame } from '../src/types'
+import { isSafeResponsePreview } from '../src/index'
 import { decodeBody, openControl, publicRequest, reply, seedServer, sendFrame, testEnv, resetDatabase } from './helpers'
 
 beforeEach(resetDatabase)
@@ -15,15 +16,37 @@ test('真实 Durable Object 转发 HTTP 方法、请求头、响应头与状态�
   expect(frame.payload?.path).toBe('/created?from=test')
   expect((frame.payload?.headers as Record<string, string>)['x-runtime-case']).toBe('forwarded')
   expect(decodeBody(frame.payload)).toBe('{"hello":"worker"}')
-  reply(socket, frame, 201, 'created by plugin', { 'x-plugin-version': '1.2.0' })
+  reply(socket, frame, 201, 'created by plugin', { 'x-plugin-version': '1.2.0', 'content-length': '17' })
   const response = await responsePromise
   expect(response.status).toBe(201)
   expect(response.headers.get('x-plugin-version')).toBe('1.2.0')
   expect(await response.text()).toBe('created by plugin')
+  let row: { count: number; server_name: string; plugin_name: string; response_preview: string | null } | null = null
   await expect.poll(async () => {
-    const row = await testEnv.DB.prepare('SELECT COUNT(*) AS count FROM request_logs WHERE hostname = ? AND status = 201').bind(hostname).first<{ count: number }>()
+    row = await testEnv.DB.prepare('SELECT COUNT(*) AS count, MAX(server_name) AS server_name, MAX(plugin_name) AS plugin_name, MAX(response_preview) AS response_preview FROM request_logs WHERE hostname = ? AND status = 201').bind(hostname).first<{ count: number; server_name: string; plugin_name: string; response_preview: string | null }>()
     return row?.count ?? 0
   }, { timeout: 3_000 }).toBe(1)
+  expect(row).toMatchObject({ server_name: 'Runtime server', plugin_name: 'Runtime sample', response_preview: 'created by plugin' })
+  const secretBody = 'token=topsecret'
+  const secretPending = channel.next()
+  const secretResponsePromise = publicRequest(hostname, '/sensitive')
+  const secretFrame = await secretPending
+  reply(socket, secretFrame, 200, secretBody, { 'content-length': String(secretBody.length) })
+  const secretResponse = await secretResponsePromise
+  expect(await secretResponse.text()).toBe(secretBody)
+  let sensitiveRow: { count: number; response_preview: string | null } | null = null
+  await expect.poll(async () => {
+    sensitiveRow = await testEnv.DB.prepare('SELECT COUNT(*) AS count, MAX(response_preview) AS response_preview FROM request_logs WHERE hostname = ? AND path = ?').bind(hostname, '/sensitive').first<{ count: number; response_preview: string | null }>()
+    return sensitiveRow?.count ?? 0
+  }, { timeout: 3_000 }).toBe(1)
+  expect(sensitiveRow?.response_preview).toBeNull()
+  expect(isSafeResponsePreview('123456', 'application/json')).toBe(false)
+  expect(isSafeResponsePreview('{"code":123456}', 'application/json')).toBe(false)
+  expect(isSafeResponsePreview('{"ok":true}', 'application/json')).toBe(true)
+  expect(isSafeResponsePreview('created by plugin', 'text/plain')).toBe(true)
+  expect(isSafeResponsePreview('OTP 123456', 'text/plain')).toBe(false)
+  expect(isSafeResponsePreview('status 482913', 'text/plain')).toBe(false)
+  expect(isSafeResponsePreview('OTP abc123', 'text/plain')).toBe(false)
   socket.close(1000, 'test complete')
 })
 

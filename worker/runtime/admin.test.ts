@@ -219,6 +219,11 @@ test('管理 API 保存配额并让维护模式阻止注册码与域名分配', 
   const invalidSuffix = await api('/api/settings/platform', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify({ pluginDomainSuffix: 'not a domain' }) })
   expect(invalidSuffix.status).toBe(400)
 
+  const resetSuffix = await api('/api/settings/platform', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify({ pluginDomainSuffix: '' }) })
+  expect(resetSuffix.status).toBe(200)
+  expect((await resetSuffix.json() as typeof defaultPlatformSettings).pluginDomainSuffix).toBe(defaultPlatformSettings.pluginDomainSuffix)
+  const storedAfterReset = await testEnv.DB.prepare('SELECT value_json FROM platform_settings WHERE key = ?').bind('platform').first<{ value_json: string }>()
+  expect(JSON.parse(storedAfterReset?.value_json ?? '{}').pluginDomainSuffix).toBe(defaultPlatformSettings.pluginDomainSuffix)
   const maintenance = await api('/api/settings/platform', ADMIN_TOKEN, { method: 'PUT', body: JSON.stringify({ maintenance: true }) })
   expect((await maintenance.json() as typeof defaultPlatformSettings).maintenance).toBe(true)
 
@@ -228,5 +233,49 @@ test('管理 API 保存配额并让维护模式阻止注册码与域名分配', 
   expect(domain.status).toBe(503)
 
   const audit = await testEnv.DB.prepare("SELECT COUNT(*) AS count FROM audit_log WHERE action = 'platform.settings.updated'").first<{ count: number }>()
-  expect(audit?.count).toBe(2)
+  expect(audit?.count).toBe(3)
+})
+
+test('删除域名和服务器会断开活动绑定并保留脱敏访问日志快照', { timeout: 30_000 }, async () => {
+  const hostname = await seedServer()
+  await seedMemberSession()
+  await seedViewerSession()
+  const createdAt = new Date().toISOString()
+  await testEnv.DB.prepare('INSERT INTO request_logs (id, workspace_id, user_id, domain_id, plugin_instance_id, hostname, method, path, status, duration_ms, error, created_at, server_id, server_name, plugin_name, response_preview) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .bind('log-delete-runtime', 'ws_default', 'user-runtime', 'domain-runtime', 'plugin-runtime', hostname, 'GET', '/sample', 200, 12, null, createdAt, 'server-runtime', 'Runtime server', 'Runtime sample', 'ok')
+    .run()
+  const { socket } = await openControl()
+  const websocketResponse = await publicRequest(hostname, '/socket', { headers: { Upgrade: 'websocket' } })
+  expect(websocketResponse.status).toBe(101)
+  const publicSocket = websocketResponse.webSocket!
+  publicSocket.accept()
+  const publicSocketClosed = new Promise<number>((resolve) => publicSocket.addEventListener('close', (event) => resolve(event.code), { once: true }))
+
+  const readOnlyDelete = await api('/api/domains/domain-runtime', VIEWER_TOKEN, { method: 'DELETE' })
+  expect(readOnlyDelete.status).toBe(403)
+
+  const deletedDomain = await api('/api/domains/domain-runtime', MEMBER_TOKEN, { method: 'DELETE' })
+  expect(deletedDomain.status).toBe(200)
+  const domainLog = await testEnv.DB.prepare('SELECT domain_id, server_name, plugin_name FROM request_logs WHERE id = ?').bind('log-delete-runtime').first<{ domain_id: string; server_name: string; plugin_name: string }>()
+  expect(domainLog).toEqual({ domain_id: '', server_name: 'Runtime server', plugin_name: 'Runtime sample' })
+  expect(await publicSocketClosed).toBe(1008)
+  const domainBridge = testEnv.PLUGIN_BRIDGE.get(testEnv.PLUGIN_BRIDGE.idFromName('server-runtime'))
+  const staleRoute = await domainBridge.fetch(new Request('https://worker.invalid/proxy', { headers: { 'x-plugmesh-domain-id': 'domain-runtime' } }))
+  expect(staleRoute.status).toBe(410)
+
+
+  const serverDelete = await api('/api/servers/server-runtime', MEMBER_TOKEN, { method: 'DELETE' })
+  expect(serverDelete.status).toBe(200)
+  expect(await testEnv.DB.prepare('SELECT id FROM servers WHERE id = ?').bind('server-runtime').first()).toBeNull()
+  expect(await testEnv.DB.prepare('SELECT id FROM plugin_instances WHERE id = ?').bind('plugin-runtime').first()).toBeNull()
+  const retainedLog = await testEnv.DB.prepare('SELECT server_id, domain_id, plugin_instance_id, server_name, plugin_name, response_preview FROM request_logs WHERE id = ?').bind('log-delete-runtime').first()
+  expect(retainedLog).toEqual({ server_id: '', domain_id: '', plugin_instance_id: '', server_name: 'Runtime server', plugin_name: 'Runtime sample', response_preview: 'ok' })
+  const logsResponse = await api('/api/access-logs', MEMBER_TOKEN)
+  expect(logsResponse.status).toBe(200)
+  const accessLogs = await logsResponse.json() as { results: Array<Record<string, unknown>> }
+  expect(accessLogs.results).toContainEqual(expect.objectContaining({ id: 'log-delete-runtime', server_name: 'Runtime server', plugin_name: 'Runtime sample', response_preview: 'ok' }))
+  const bridge = testEnv.PLUGIN_BRIDGE.get(testEnv.PLUGIN_BRIDGE.idFromName('server-runtime'))
+  const status = await bridge.fetch(new Request('https://worker.invalid/status'))
+  expect(await status.json()).toEqual({ online: false })
+  socket.close(1000, 'test complete')
 })

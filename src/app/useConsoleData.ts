@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { detailedErrorMessage } from '../errors'
+import { detailedErrorMessage, errorMessage } from '../errors'
 import type { Notify } from '../components/ToastProvider'
-import { ApiError, currentWorkspaceId, fetchAccessLogs, fetchAudit, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchLocalUsage, fetchMe, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchServers, fetchSmtpSettings, fetchWorkspaces, setActiveWorkspace as applyActiveWorkspace, type ApiAccessLog, type ApiAudit, type ApiDomain, type ApiMe, type ApiOverview, type ApiPlugin, type ApiServer, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type PlatformSettings, type SmtpSettings, type Workspace } from '../api'
+import { ApiError, currentWorkspaceId, deleteDomain as deleteDomainRequest, deleteServer as deleteServerRequest, fetchAccessLogs, fetchAudit, fetchCloudflareSettings, fetchCloudflareUsage, fetchDomains, fetchLocalUsage, fetchMe, fetchOverview, fetchPlatformSettings, fetchPlugins, fetchServers, fetchSmtpSettings, fetchWorkspaces, setActiveWorkspace as applyActiveWorkspace, type ApiAccessLog, type ApiAudit, type ApiDomain, type ApiMe, type ApiOverview, type ApiPlugin, type ApiServer, type CloudflareSettings, type CloudflareUsage, type LocalUsage, type PlatformSettings, type SmtpSettings, type Workspace } from '../api'
 
 export type AuthState = 'loading' | 'authenticated' | 'anonymous'
 
@@ -233,11 +233,33 @@ export function useConsoleData({ notify }: { notify: Notify }) {
     }
   }
 
+  const removeServer = async (server: ApiServer) => {
+    try {
+      const result = await deleteServerRequest(server.id)
+      await refreshData(false)
+      notify(result.cleanupPending ? 'warning' : 'success', t(result.cleanupPending ? 'toast.serverDeleteCleanupPending' : 'toast.serverDeleted', { name: server.name }))
+    } catch (error) {
+      notify('error', errorMessage(error, 'toast.deleteFailed'))
+      throw error
+    }
+  }
+
+  const removeDomain = async (domain: ApiDomain) => {
+    try {
+      const result = await deleteDomainRequest(domain.id)
+      await refreshData(false)
+      notify(result.cleanupPending ? 'warning' : 'success', t(result.cleanupPending ? 'toast.domainDeleteCleanupPending' : 'toast.domainDeleted', { name: domain.hostname }))
+    } catch (error) {
+      notify('error', errorMessage(error, 'toast.deleteFailed'))
+      throw error
+    }
+  }
+
   return {
     authEnabled, apiConnected, authState, authUser, workspaces, activeWorkspaceId, activeWorkspace, canWrite, isSuperAdmin,
     overview, servers, plugins, domains, audits, accessLogs, usage, localUsage,
     dataLoading, dataError, auditLoading, auditError, accessLogsLoading, accessLogsError, usageLoading, usageRefreshing, usageError,
     platformSettings, setPlatformSettings, cloudflareSettings, setCloudflareSettings, smtpSettings, setSmtpSettings,
-    apiLive, range, setRange, switchWorkspace, reloadWorkspaces, refreshData, refreshUsage,
+    apiLive, range, setRange, switchWorkspace, reloadWorkspaces, refreshData, refreshUsage, removeServer, removeDomain,
   }
 }

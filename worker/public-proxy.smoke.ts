@@ -14,6 +14,8 @@ const readyRoute: PluginRoute = {
   status: 'online',
   hostname: 'ready.plugins.example.test',
   plugin_id: 'demo.plugin',
+  plugin_name: 'Demo plugin',
+  server_name: 'Demo server',
   manifest_json: JSON.stringify({ capabilities: { http: true, websocket: false, sse: false, fileStream: false } }),
   plugin_state: 'enabled',
   server_status: 'online',

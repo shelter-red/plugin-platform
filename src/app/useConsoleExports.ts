@@ -14,7 +14,7 @@ export function useConsoleExports({ accessLogs, audits, notify }: {
   const exportAccessLogs = () => {
     const rows = accessLogs ?? []
     if (rows.length === 0) return notify('info', t('toast.noAccessLogs'))
-    downloadCsv(`plugmesh-access-logs-${new Date().toISOString().slice(0, 10)}.csv`, [t('csv.accessLogs.hostname'), t('csv.accessLogs.method'), t('csv.accessLogs.path'), t('csv.accessLogs.status'), t('csv.accessLogs.duration'), t('csv.accessLogs.error'), t('csv.accessLogs.createdAt')], rows.map((log) => [log.hostname, log.method, log.path, log.status, log.duration_ms, log.error, log.created_at]))
+    downloadCsv(`plugmesh-access-logs-${new Date().toISOString().slice(0, 10)}.csv`, [t('csv.accessLogs.hostname'), t('csv.accessLogs.server'), t('csv.accessLogs.plugin'), t('csv.accessLogs.method'), t('csv.accessLogs.path'), t('csv.accessLogs.status'), t('csv.accessLogs.duration'), t('csv.accessLogs.responsePreview'), t('csv.accessLogs.error'), t('csv.accessLogs.createdAt')], rows.map((log) => [log.hostname, log.server_name, log.plugin_name, log.method, log.path, log.status, log.duration_ms, log.response_preview, log.error, log.created_at]))
     notify('success', t('toast.accessLogsExported', { count: rows.length }))
   }
 

@@ -3,9 +3,12 @@ import type { Page } from './routes'
 
 export const sidebarNavGroups: { labelKey: string; items: { id: Page; icon: typeof LayoutDashboard }[] }[] = [
   {
-    labelKey: 'nav.groups.main',
+    labelKey: 'nav.groups.overview',
+    items: [{ id: 'overview', icon: LayoutDashboard }],
+  },
+  {
+    labelKey: 'nav.groups.resources',
     items: [
-      { id: 'overview', icon: LayoutDashboard },
       { id: 'servers', icon: Server },
       { id: 'plugins', icon: Box },
       { id: 'domains', icon: Globe2 },
@@ -13,12 +16,15 @@ export const sidebarNavGroups: { labelKey: string; items: { id: Page; icon: type
     ],
   },
   {
-    labelKey: 'nav.groups.system',
+    labelKey: 'nav.groups.monitoring',
     items: [
       { id: 'usage', icon: Gauge },
       { id: 'logs', icon: Activity },
       { id: 'audit', icon: FileText },
-      { id: 'settings', icon: Settings },
     ],
+  },
+  {
+    labelKey: 'nav.groups.administration',
+    items: [{ id: 'settings', icon: Settings }],
   },
 ]

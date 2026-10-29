@@ -31,13 +31,17 @@ ServerConfig load_config_from_environment() {
 }
 
 bool load_persisted_config(ServerConfig& config, std::string& error) {
-  if (!config.worker_url.empty() && !config.server_id.empty() && !config.access_token.empty()) return true;
+  const bool binding_complete = !config.worker_url.empty() && !config.server_id.empty() && !config.access_token.empty();
+  if (binding_complete && !config.local_ui_password_verifier.empty()) return true;
   auto password = read_env("PLUGMESH_CREDENTIAL_PASSWORD");
   if (password.empty() && !config.credential_key_file.empty()) {
     std::ifstream key_file(config.credential_key_file, std::ios::binary);
     if (key_file) std::getline(key_file, password);
   }
-  return load_credentials_into_config(config.credential_file, password, config.worker_url, config.server_id, config.access_token, config.local_ui_password_verifier, error);
+  if (!load_credentials_into_config(config.credential_file, password, config.worker_url, config.server_id, config.access_token, config.local_ui_password_verifier, error)) {
+    return binding_complete;
+  }
+  return true;
 }
 
 bool validate_worker_url(const std::string& worker_url, std::string& error) {

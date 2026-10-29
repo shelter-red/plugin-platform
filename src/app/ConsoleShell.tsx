@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { Drawer } from 'antd'
+import { Drawer, Layout } from 'antd'
 import { CircleHelp, LogOut, UserRound } from 'lucide-react'
 import { type AppThemeMode, type ThemePreference } from '../app/theme'
 import { useToast } from '../components/ToastProvider'
@@ -178,7 +178,7 @@ export function ConsoleShell({ theme, setTheme, effectiveTheme, language }: Cons
   if (!page && !docPage) return <Navigate to="/" replace />
 
   return (
-    <div className={`app-shell theme-${effectiveTheme}`}>
+    <Layout className={`app-shell theme-${effectiveTheme}`}>
       {mobileNav ? (
         <Drawer
           rootClassName={`nav-drawer theme-${effectiveTheme}`}
@@ -191,17 +191,21 @@ export function ConsoleShell({ theme, setTheme, effectiveTheme, language }: Cons
         >
           <Sidebar {...sidebarProps} compactNav={false} />
         </Drawer>
-      ) : <Sidebar {...sidebarProps} />}
+      ) : (
+        <Layout.Sider className="shell-sider" width={236} collapsedWidth={64} collapsed={compactNav} trigger={null}>
+          <Sidebar {...sidebarProps} />
+        </Layout.Sider>
+      )}
 
-      <main className="main-column">
+      <Layout className="main-column">
         <Topbar title={meta.title} theme={theme} onThemeChange={setTheme} language={language} onLanguageChange={changeLanguage} userInitials={userInitials} userMenuItems={userMenuItems} onUserMenu={onUserMenu} onOpenPalette={() => setPaletteOpen(true)} onOpenNav={() => setSidebarOpen(true)} onOpenAudit={() => selectPage('audit')} />
-        <div className="page-scroll">
+        <Layout.Content className="page-scroll">
           <div className="page-content">
             <PageHeader title={meta.title} description={meta.description} apiLive={apiLive} page={page} canWrite={canWrite} activeWorkspace={activeWorkspace} dataLoading={dataLoading} dataError={dataError} usageRefreshing={usageRefreshing} onRefreshData={() => void refreshData()} onRefreshUsage={() => void refreshUsage()} onOpenProvision={setModal} />
             {page === 'overview' && <OverviewPage overview={overview} usage={usage} localUsage={localUsage} settings={platformSettings} audits={audits ?? []} accessLogs={accessLogs} accessLogsLoading={accessLogsLoading} accessLogsError={accessLogsError} servers={servers ?? []} range={range} setRange={setRange} onNavigate={selectPage} />}
-            {page === 'servers' && <ServersPage servers={servers ?? []} loading={dataLoading} onRefresh={() => void refreshData()} onDetail={(id) => void openDetail('server', id)} />}
+            {page === 'servers' && <ServersPage servers={servers ?? []} loading={dataLoading} onRefresh={() => void refreshData()} onDetail={(id) => void openDetail('server', id)} onDelete={data.removeServer} canDelete={canWrite} />}
             {page === 'plugins' && <PluginsPage plugins={plugins ?? []} loading={dataLoading} onSync={() => void syncManifests()} onDetail={(id) => void openDetail('plugin', id)} onHealth={(plugin) => void runHealthCheck(plugin)} />}
-            {page === 'domains' && <DomainsPage domains={domains ?? []} loading={dataLoading} onAction={notify} onRefresh={() => void refreshData()} />}
+            {page === 'domains' && <DomainsPage domains={domains ?? []} loading={dataLoading} onAction={notify} onRefresh={() => void refreshData()} onDelete={data.removeDomain} canDelete={canWrite} />}
             {page === 'usage' && <UsagePage settings={platformSettings} usage={usage} localUsage={localUsage} loading={usageLoading} error={usageError} onOpenCloudflareSettings={() => openSettingsSection('cloudflare')} />}
             {page === 'logs' && <AccessLogsPage logs={accessLogs ?? []} loading={accessLogsLoading} error={accessLogsError} onExport={exportAccessLogs} />}
             {page === 'audit' && <AuditPage audits={audits ?? []} loading={auditLoading} error={auditError} onExport={exportAudit} />}
@@ -209,11 +213,11 @@ export function ConsoleShell({ theme, setTheme, effectiveTheme, language }: Cons
             {page === 'settings' && <SettingsPage focusSection={settingsFocus} settings={platformSettings} apiLive={apiLive} isSuperAdmin={isSuperAdmin} onSettingsChange={setPlatformSettings} cloudflareSettings={cloudflareSettings} onCloudflareChange={setCloudflareSettings} smtpSettings={smtpSettings} onSmtpChange={setSmtpSettings} onAction={notify} />}
             {docPage && (docPage === 'account' ? <AccountPage user={authUser} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} /> : <DocPage page={docPage} />)}
           </div>
-        </div>
-      </main>
+        </Layout.Content>
+      </Layout>
       {modal && <ProvisionModal type={modal} plugins={plugins ?? []} onClose={() => setModal(null)} onConfirm={(input) => confirmModal(modal, input)} />}
       {detail && <DetailModal detail={detail} data={detailData} loading={detailLoading} error={detailError} healthLoading={healthPluginId === detail.id} actionLoading={pluginActionLoading?.id === detail.id ? pluginActionLoading.action : null} onClose={closeDetail} onOpenPlugin={(id) => void openDetail('plugin', id)} onHealth={(plugin) => void runHealthCheck(plugin)} onAction={(plugin, action) => void runPluginAction(plugin, action)} />}
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} items={paletteItems} />}
-    </div>
+    </Layout>
   )
 }

@@ -1,5 +1,6 @@
 import { SELF } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
+import { makeFrame } from '../src/protocol'
 import { CONTROL_TOKEN, DEFAULT_WORKSPACE_ID, hashToken, resetDatabase, seedServer, testEnv } from './helpers'
 import { TunnelSession } from '../src/tunnel-session'
 
@@ -66,13 +67,17 @@ describe('TCP tunnel control and binary data path', () => {
     targetControl.accept()
     targetControl.binaryType = 'arraybuffer'
     expect(JSON.parse((await nextMessage(targetControl)).data as string).type).toBe('hello')
-    const openFrame = nextMessage(targetControl)
 
-    const listed = await SELF.fetch(`https://console.example.com/control/tunnel/targets?serverId=server-runtime`, {
+    const listedPromise = SELF.fetch(`https://console.example.com/control/tunnel/targets?serverId=server-runtime`, {
       headers: { Authorization: `Bearer ${CONTROL_TOKEN}` },
     })
+    const info = JSON.parse((await nextMessage(targetControl)).data as string) as { type: string; requestId: string }
+    expect(info.type).toBe('plugin.info')
+    targetControl.send(JSON.stringify({ ...makeFrame('plugin.result', TARGET_ID, { ok: true, manifests: [], portMappings: [] }), requestId: info.requestId }))
+    const listed = await listedPromise
     expect(listed.status).toBe(200)
     expect(await listed.json()).toMatchObject({ results: [{ id: TARGET_ID, name: 'SSH host', status: 'online' }] })
+    const openFrame = nextMessage(targetControl)
 
     const source = await connect(`https://console.example.com/control/tunnel/connect?serverId=server-runtime&targetServerId=${TARGET_ID}&targetHost=127.0.0.1&targetPort=22&protocol=tcp`, CONTROL_TOKEN)
     const sessionFrame = await messageBytes((await nextMessage(source)).data)

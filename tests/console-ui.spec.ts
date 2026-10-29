@@ -10,6 +10,10 @@ test('管理端桌面空态和主题切换可用', async ({ page }) => {
   await page.goto('/')
 
   await expect(page.getByRole('heading', { name: '总览', level: 1 })).toBeVisible()
+  await expect(page.locator('.app-shell.ant-layout')).toBeVisible()
+  await expect(page.locator('.shell-sider.ant-layout-sider')).toBeVisible()
+  await expect(page.getByRole('navigation', { name: '主导航' }).getByText('资源管理')).toBeVisible()
+  await expect(page.getByRole('navigation', { name: '主导航' }).getByText('监控与记录')).toBeVisible()
   await expect(page.getByText('等待 Worker 数据').first()).toBeVisible()
   await expect(page.getByRole('heading', { name: '最近错误和连接异常' })).toBeVisible()
   await expect(page.getByRole('heading', { name: '暂无错误摘要' })).toBeVisible()

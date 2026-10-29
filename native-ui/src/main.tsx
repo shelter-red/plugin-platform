@@ -1,8 +1,32 @@
-import { StrictMode, useCallback, useEffect, useRef, useState } from 'react'
-import { createRoot } from 'react-dom/client'
+import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
+import {
+  Alert,
+  Button,
+  Card,
+  Checkbox,
+  Col,
+  ConfigProvider,
+  Descriptions,
+  Empty,
+  Form,
+  Input,
+  Layout,
+  Menu,
+  Modal,
+  Popconfirm,
+  Row,
+  Select,
+  Space,
+  Spin,
+  Statistic,
+  Table,
+  Tag,
+  Typography,
+  theme as antdTheme,
+} from "antd";
+import { createRoot } from "react-dom/client";
 import {
   Activity,
-  AlertCircle,
   Check,
   CircleHelp,
   CircleSlash,
@@ -18,7 +42,6 @@ import {
   Network,
   Pencil,
   Power,
-  Plus,
   RefreshCw,
   Settings2,
   ShieldCheck,
@@ -28,708 +51,1626 @@ import {
   Wifi,
   WifiOff,
   X,
-} from 'lucide-react'
-import { useTranslation } from 'react-i18next'
-import i18n, { storeLanguage } from './i18n'
-import './styles.css'
+} from "lucide-react";
+import { Menu as MenuIcon } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import i18n, { storeLanguage } from "./i18n";
+import "./styles.css";
 
-type Theme = 'dark' | 'light' | 'system'
-type PluginState = 'discovered' | 'loaded' | 'enabled' | 'disabled' | 'unloaded' | 'failed' | string
-
+type Theme = "dark" | "light" | "system";
+type PluginState = string;
 interface LocalSession {
-  ok: boolean
-  authenticated: boolean
-  configured: boolean
-  passwordConfigured: boolean
-  passwordSetupRequired: boolean
+  ok: boolean;
+  authenticated: boolean;
+  configured: boolean;
+  passwordConfigured: boolean;
+  passwordSetupRequired: boolean;
 }
-
-interface LocalStatus {
-  ok: boolean
-  service: string
-  port: number
-  configured: boolean
-  connected: boolean
-  systemCredentialsAvailable: boolean
-  serverId?: string
-  workerUrl?: string
-  credentialFile?: string
-  portMappings?: LocalMapping[]
-}
-
 interface LocalMapping {
-  name: string
-  protocol: string
-  listenPort: number
-  targetServerId: string
-  targetServer: string
-  targetHost: string
-  targetPort: number
-  state: string
-  enabled: boolean
+  name: string;
+  protocol: string;
+  listenPort: number;
+  targetServerId: string;
+  targetServer: string;
+  targetHost: string;
+  targetPort: number;
+  state: string;
+  enabled: boolean;
 }
-
-interface MappingTarget {
-  id: string
-  name: string
-  status: string
-  plugins: RemotePlugin[]
-  portMappings: RemotePortMapping[]
-  pluginDomains?: Record<string, string>
+interface LocalStatus {
+  ok: boolean;
+  service: string;
+  port: number;
+  configured: boolean;
+  connected: boolean;
+  systemCredentialsAvailable: boolean;
+  serverId?: string;
+  workerUrl?: string;
+  credentialFile?: string;
+  portMappings?: LocalMapping[];
 }
-
 interface RemotePlugin {
-  id: string
-  name: string
-  version: string
-  state: string
-  capabilities: { http: boolean; websocket: boolean; sse: boolean; fileStream: boolean }
-  domain?: string
+  id: string;
+  name: string;
+  version: string;
+  state: string;
+  capabilities: {
+    http: boolean;
+    websocket: boolean;
+    sse: boolean;
+    fileStream: boolean;
+  };
+  domain?: string;
 }
-
 interface RemotePortMapping {
-  name: string
-  protocol: string
-  targetHost: string
-  targetPort: number
-  enabled: boolean
-  state: string
+  name: string;
+  protocol: string;
+  targetHost: string;
+  targetPort: number;
+  enabled: boolean;
+  state: string;
 }
-
+interface MappingTarget {
+  id: string;
+  name: string;
+  status: string;
+  plugins: RemotePlugin[];
+  portMappings: RemotePortMapping[];
+  pluginDomains?: Record<string, string>;
+}
 interface LocalPlugin {
-  id: string
-  name: string
-  version: string
-  abiVersion: string
-  library: string
-  healthPath: string
-  permissions: string[]
-  state: PluginState
-  capabilities: { http: boolean; websocket: boolean; sse: boolean; fileStream: boolean }
+  id: string;
+  name: string;
+  version: string;
+  abiVersion: string;
+  library: string;
+  healthPath: string;
+  permissions: string[];
+  state: PluginState;
+  capabilities: {
+    http: boolean;
+    websocket: boolean;
+    sse: boolean;
+    fileStream: boolean;
+  };
 }
-
 interface Diagnostics extends LocalStatus {
-  pluginCount: number
-  loadedPluginCount: number
-  enabledPluginCount: number
-  failedPluginCount: number
+  pluginCount: number;
+  loadedPluginCount: number;
+  enabledPluginCount: number;
+  failedPluginCount: number;
 }
-
-interface ActionResult {
-  ok: boolean
-  pluginId: string
-  action: string
-  state: PluginState
-}
-
 interface LocalLog {
-  timestamp: string
-  level: number
-  message: string
+  timestamp: string;
+  level: number;
+  message: string;
 }
-
 class RequestError extends Error {
-  constructor(message: string, readonly status: number, readonly code?: string) {
-    super(message)
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code?: string,
+  ) {
+    super(message);
   }
 }
-
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, init)
-  const data = await response.json().catch(() => null) as { error?: string; code?: string } | null
-  if (!response.ok) throw new RequestError(data?.error ?? '', response.status, data?.code)
-  return data as T
+  const response = await fetch(path, init);
+  const data = (await response.json().catch(() => null)) as {
+    error?: string;
+    code?: string;
+  } | null;
+  if (!response.ok)
+    throw new RequestError(data?.error ?? "", response.status, data?.code);
+  return data as T;
 }
-
-// 本地服务返回的 error 文本面向开发；UI 只按错误码或状态码给出本地化文案，避免英文外泄。
 const errorCodeKeys: Record<string, string> = {
-  password_too_short: 'errors.passwordTooShort',
-  password_mismatch: 'errors.passwordMismatch',
-  password_setup_failed: 'errors.passwordSetupFailed',
-  registration_failed: 'errors.bindFailed',
-  plugin_action_failed: 'errors.pluginActionFailed',
-  health_check_failed: 'errors.healthCheckFailed',
-  credential_action_failed: 'errors.credentialActionFailed',
-}
-
-const httpErrorKey = (status: number) => {
-  if (status === 401) return 'errors.http.unauthorized'
-  if (status === 403) return 'errors.http.forbidden'
-  if (status === 404) return 'errors.http.notFound'
-  if (status === 409) return 'errors.http.conflict'
-  if (status === 429) return 'errors.http.rateLimited'
-  if (status >= 500) return 'errors.http.serverError'
-  return 'errors.http.failed'
-}
-
+  password_too_short: "errors.passwordTooShort",
+  password_mismatch: "errors.passwordMismatch",
+  password_setup_failed: "errors.passwordSetupFailed",
+  registration_failed: "errors.bindFailed",
+  plugin_action_failed: "errors.pluginActionFailed",
+  health_check_failed: "errors.healthCheckFailed",
+  credential_action_failed: "errors.credentialActionFailed",
+};
+const httpErrorKey = (status: number) =>
+  status === 401
+    ? "errors.http.unauthorized"
+    : status === 403
+      ? "errors.http.forbidden"
+      : status === 404
+        ? "errors.http.notFound"
+        : status === 409
+          ? "errors.http.conflict"
+          : status === 429
+            ? "errors.http.rateLimited"
+            : status >= 500
+              ? "errors.http.serverError"
+              : "errors.http.failed";
 function errorMessage(error: unknown, fallbackKey: string): string {
   if (error instanceof RequestError) {
-    const key = error.code ? errorCodeKeys[error.code] ?? `errors.code.${error.code}` : undefined
+    const key = error.code
+      ? (errorCodeKeys[error.code] ?? `errors.code.${error.code}`)
+      : undefined;
     if (key && i18n.exists(key)) {
-      const translated = i18n.t(key)
-      if (error.code === 'registration_tls_failed' && error.message) return `${translated} (${error.message})`
-      return translated
+      const translated = i18n.t(key);
+      return error.code === "registration_tls_failed" && error.message
+        ? `${translated} (${error.message})`
+        : translated;
     }
-    if (/[\u4e00-\u9fa5]/.test(error.message)) return error.message
-    return i18n.t(httpErrorKey(error.status), { status: error.status })
+    if (/[^\x00-\x7F]/.test(error.message)) return error.message;
+    return i18n.t(httpErrorKey(error.status), { status: error.status });
   }
-  if (error instanceof Error && i18n.exists(error.message)) return i18n.t(error.message)
-  return i18n.t(fallbackKey)
+  if (error instanceof Error && i18n.exists(error.message))
+    return i18n.t(error.message);
+  return i18n.t(fallbackKey);
 }
-
-function formatTime(date: Date) {
-  return date.toLocaleTimeString(i18n.resolvedLanguage === 'en' ? 'en-US' : 'zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-}
-
-function stateTone(state: PluginState) {
-  if (state === 'enabled') return 'positive'
-  if (state === 'failed') return 'negative'
-  if (state === 'loaded' || state === 'disabled') return 'warning'
-  return 'muted'
-}
-
 const emptySetupForm = {
-  workerUrl: '',
-  serverName: '',
-  registrationCode: '',
-  localUiPassword: '',
-  localUiPasswordConfirmation: '',
-  credentialPassword: '',
-  credentialFile: '',
-}
+  workerUrl: "",
+  serverName: "",
+  registrationCode: "",
+  localUiPassword: "",
+  localUiPasswordConfirmation: "",
+  credentialPassword: "",
+  credentialFile: "",
+  useSystemCredentials: false,
+};
+const emptyMapping = {
+  name: "",
+  protocol: "tcp",
+  listenPort: "",
+  targetServerId: "",
+  targetHost: "127.0.0.1",
+  targetPort: "",
+  enabled: true,
+};
 
 function App() {
-  const { t } = useTranslation()
-  const [activeSection, setActiveSection] = useState('overview')
+  const { t } = useTranslation();
+  const [active, setActive] = useState("overview");
+  const [isMobileNav, setIsMobileNav] = useState(() => matchMedia("(max-width: 991px)").matches);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>(() => {
-    const saved = localStorage.getItem('plugmesh-local-theme')
-    return saved === 'light' || saved === 'system' ? saved : 'dark'
-  })
-  const [systemLight, setSystemLight] = useState(() => matchMedia('(prefers-color-scheme: light)').matches)
-  const [session, setSession] = useState<LocalSession | null>(null)
-  const [sessionLoading, setSessionLoading] = useState(true)
-  const [sessionError, setSessionError] = useState<string | null>(null)
-  const [status, setStatus] = useState<LocalStatus | null>(null)
-  const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null)
-  const [plugins, setPlugins] = useState<LocalPlugin[]>([])
-  const [mappings, setMappings] = useState<LocalMapping[]>([])
-  const [mappingTargets, setMappingTargets] = useState<MappingTarget[]>([])
-  const [mappingTargetPasswords, setMappingTargetPasswords] = useState<Record<string, string>>({})
-  const [mappingTargetAuthBusy, setMappingTargetAuthBusy] = useState<string | null>(null)
-  const [mappingTargetAuthorized, setMappingTargetAuthorized] = useState<Record<string, boolean>>({})
-  const [mappingTargetsLoading, setMappingTargetsLoading] = useState(false)
-  const mappingTargetsInFlight = useRef(false)
-  const [mappingBusy, setMappingBusy] = useState(false)
-  const [editingMapping, setEditingMapping] = useState('')
-  const [mappingForm, setMappingForm] = useState({ name: '', protocol: 'tcp', listenPort: '', targetServerId: '', targetHost: '127.0.0.1', targetPort: '', targetPassword: '', enabled: true })
-  const [logs, setLogs] = useState<LocalLog[]>([])
-  const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
-  const [busyPlugin, setBusyPlugin] = useState<string | null>(null)
-  const [message, setMessage] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
-  const [accessBusy, setAccessBusy] = useState(false)
-  const [credentialBusy, setCredentialBusy] = useState<'rotate' | 'revoke' | null>(null)
-  const [loginPassword, setLoginPassword] = useState('')
-  const [setupForm, setSetupForm] = useState(emptySetupForm)
-  const [migrationForm, setMigrationForm] = useState({ password: '', passwordConfirmation: '', credentialPassword: '' })
-  const [credentialPassword, setCredentialPassword] = useState('')
-
-  const effectiveTheme = theme === 'system' ? (systemLight ? 'light' : 'dark') : theme
-  const cycleTheme = () => setTheme(theme === 'dark' ? 'light' : theme === 'light' ? 'system' : 'dark')
-  const themeIcon = theme === 'light' ? <Sun size={15} /> : theme === 'system' ? <CircleHelp size={15} /> : <Moon size={15} />
-
+    const saved = localStorage.getItem("plugmesh-local-theme");
+    return saved === "light" || saved === "system" ? saved : "dark";
+  });
+  const [systemLight, setSystemLight] = useState(
+    () => matchMedia("(prefers-color-scheme: light)").matches,
+  );
+  const [session, setSession] = useState<LocalSession | null>(null);
+  const [sessionLoading, setSessionLoading] = useState(true);
+  const [sessionError, setSessionError] = useState<string | null>(null);
+  const [status, setStatus] = useState<LocalStatus | null>(null);
+  const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
+  const [plugins, setPlugins] = useState<LocalPlugin[]>([]);
+  const [mappings, setMappings] = useState<LocalMapping[]>([]);
+  const [targets, setTargets] = useState<MappingTarget[]>([]);
+  const [logs, setLogs] = useState<LocalLog[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [busyPlugin, setBusyPlugin] = useState<string | null>(null);
+  const [busyMapping, setBusyMapping] = useState(false);
+  const [message, setMessage] = useState<{
+    kind: "success" | "error";
+    text: string;
+  } | null>(null);
+  const [accessBusy, setAccessBusy] = useState(false);
+  const [loginPassword, setLoginPassword] = useState("");
+  const [setupForm, setSetupForm] = useState(emptySetupForm);
+  const [migrationForm, setMigrationForm] = useState({
+    password: "",
+    passwordConfirmation: "",
+    credentialPassword: "",
+  });
+  const [credentialPassword, setCredentialPassword] = useState("");
+  const [authStates, setAuthStates] = useState<
+    Record<string, "authorized" | "needs-auth" | "failed">
+  >({});
+  const [verificationTarget, setVerificationTarget] =
+    useState<MappingTarget | null>(null);
+  const [targetPassword, setTargetPassword] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
+  const [editing, setEditing] = useState("");
+  const [mappingForm, setMappingForm] = useState(emptyMapping);
+  const [mappingEditor] = Form.useForm();
+  const targetFlight = useRef(false);
+  const effectiveTheme =
+    theme === "system" ? (systemLight ? "light" : "dark") : theme;
+  const cycleTheme = () =>
+    setTheme(
+      theme === "dark" ? "light" : theme === "light" ? "system" : "dark",
+    );
+  const themeIcon =
+    theme === "light" ? (
+      <Sun size={15} />
+    ) : theme === "system" ? (
+      <CircleHelp size={15} />
+    ) : (
+      <Moon size={15} />
+    );
   const loadSession = useCallback(async () => {
     try {
-      const nextSession = await request<LocalSession>('/api/session')
-      setSession(nextSession)
-      setSessionError(null)
-      return nextSession
-    } catch (cause) {
-      setSessionError(errorMessage(cause, 'errors.localServerUnavailable'))
-      return null
+      const next = await request<LocalSession>("/api/session");
+      setSession(next);
+      setSessionError(null);
+      return next;
+    } catch (e) {
+      setSessionError(errorMessage(e, "errors.localServerUnavailable"));
+      return null;
     } finally {
-      setSessionLoading(false)
+      setSessionLoading(false);
     }
-  }, [])
-
-  const refresh = useCallback(async (manual = false) => {
-    if (manual) setRefreshing(true)
-    try {
-      const [nextStatus, nextDiagnostics, nextPlugins] = await Promise.all([
-        request<LocalStatus>('/api/status'),
-        request<Diagnostics>('/api/diagnostics'),
-        request<{ plugins: LocalPlugin[] }>('/api/plugins'),
-      ])
-      const nextLogs = await request<{ logs: LocalLog[] }>('/api/logs')
-      setStatus(nextStatus)
-      setDiagnostics(nextDiagnostics)
-      setPlugins(nextPlugins.plugins ?? [])
-      setMappings(nextStatus.portMappings ?? [])
-      setLogs(nextLogs.logs ?? [])
-      setError(null)
-      setLastUpdated(new Date())
-    } catch (cause) {
-      if (cause instanceof RequestError && cause.status === 401) void loadSession()
-      else setError(errorMessage(cause, 'errors.localServerUnavailable'))
-    } finally {
-      setLoading(false)
-      setRefreshing(false)
-    }
-  }, [loadSession])
-
-  const refreshMappingTargets = useCallback(async (silent = false) => {
-    if (mappingTargetsInFlight.current) return
-    mappingTargetsInFlight.current = true
-    setMappingTargetsLoading(true)
-    try {
-      const result = await request<{ targets: MappingTarget[] }>('/api/mappings/targets')
-      const nextTargets = (result.targets ?? []).map((target) => ({ ...target, plugins: (target.plugins ?? []).map((plugin) => ({ ...plugin, domain: target.pluginDomains?.[plugin.id] })), portMappings: target.portMappings ?? [] }))
-      setMappingTargets(nextTargets)
-      setMappingTargetAuthorized((current) => Object.fromEntries(Object.entries(current).filter(([id]) => nextTargets.some((target) => target.id === id && target.status === 'online'))))
-      if (!mappingForm.targetServerId && nextTargets.length) setMappingForm((current) => ({ ...current, targetServerId: nextTargets[0].id }))
-    } catch (cause) {
-      if (!silent) setMessage({ kind: 'error', text: errorMessage(cause, 'mappings.targetsFailed') })
-    } finally {
-      mappingTargetsInFlight.current = false
-      setMappingTargetsLoading(false)
-    }
-  }, [mappingForm.targetServerId])
-
-  const isRemoteProxyMapped = (target: MappingTarget, proxy: RemotePortMapping) => mappings.some((mapping) => mapping.targetServerId === target.id && mapping.targetHost === proxy.targetHost && mapping.targetPort === proxy.targetPort && mapping.protocol === proxy.protocol)
-
-  const mapRemoteProxy = async (target: MappingTarget, proxy: RemotePortMapping) => {
-    if (mappingBusy) return
-    const usedPorts = new Set(mappings.map((mapping) => mapping.listenPort))
-    const listenPort = Array.from({ length: 1000 }, (_, index) => 30000 + index).find((port) => !usedPorts.has(port))
-    if (!listenPort) {
-      setMessage({ kind: 'error', text: t('mappings.noLocalPort') })
-      return
-    }
-    const name = `${target.name}-${proxy.name}`.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64) || `proxy-${proxy.targetPort}`
-    setMappingBusy(true)
-    try {
-      await request('/api/mappings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, protocol: proxy.protocol, listenPort, targetServerId: target.id, targetHost: proxy.targetHost, targetPort: proxy.targetPort, targetPassword: '', enabled: true }) })
-      await refresh(true)
-      setMessage({ kind: 'success', text: t('mappings.proxyMapped', { name, port: listenPort }) })
-    } catch (cause) {
-      setMessage({ kind: 'error', text: errorMessage(cause, 'mappings.proxyMapFailed') })
-    } finally {
-      setMappingBusy(false)
-    }
-  }
-
-  const authorizeMappingTarget = async (target: MappingTarget) => {
-    const password = mappingTargetPasswords[target.id] ?? ''
-    if (!password) {
-      setMessage({ kind: 'error', text: t('mappings.targetPasswordRequired') })
-      return
-    }
-    setMappingTargetAuthBusy(target.id)
-    try {
-      await request(`/api/mappings/targets/${encodeURIComponent(target.id)}/authorize`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ targetPassword: password }) })
-      setMappingTargetPasswords((current) => ({ ...current, [target.id]: '' }))
-      setMappingTargetAuthorized((current) => ({ ...current, [target.id]: true }))
-      setMessage({ kind: 'success', text: t('mappings.targetAuthorized', { name: target.name }) })
-    } catch (cause) {
-      setMessage({ kind: 'error', text: errorMessage(cause, 'mappings.targetAuthorizeFailed') })
-    } finally {
-      setMappingTargetAuthBusy(null)
-    }
-  }
-
-  const waitForRestart = useCallback(async () => {
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-      await new Promise((resolve) => window.setTimeout(resolve, 250))
+  }, []);
+  const refresh = useCallback(
+    async (manual = false) => {
+      if (manual) setRefreshing(true);
       try {
-        const nextSession = await request<LocalSession>('/api/session')
-        setSession(nextSession)
-        setSessionError(null)
-        return true
-      } catch {}
+        const [s, d, p, l] = await Promise.all([
+          request<LocalStatus>("/api/status"),
+          request<Diagnostics>("/api/diagnostics"),
+          request<{ plugins: LocalPlugin[] }>("/api/plugins"),
+          request<{ logs: LocalLog[] }>("/api/logs"),
+        ]);
+        setStatus(s);
+        setDiagnostics(d);
+        setPlugins(p.plugins ?? []);
+        setMappings(s.portMappings ?? []);
+        setLogs(l.logs ?? []);
+        setLastUpdated(new Date());
+        setError(null);
+      } catch (e) {
+        if (e instanceof RequestError && e.status === 401) void loadSession();
+        else setError(errorMessage(e, "errors.localServerUnavailable"));
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [loadSession],
+  );
+  const refreshTargets = useCallback(async () => {
+    if (targetFlight.current) return;
+    targetFlight.current = true;
+    try {
+      const result = await request<{ targets: MappingTarget[] }>(
+        "/api/mappings/targets",
+      );
+      const next = (result.targets ?? []).map((x) => ({
+        ...x,
+        plugins: (x.plugins ?? []).map((p) => ({
+          ...p,
+          domain: x.pluginDomains?.[p.id],
+        })),
+        portMappings: x.portMappings ?? [],
+      }));
+      setTargets(next);
+      setAuthStates((current) =>
+        Object.fromEntries(
+          next
+            .filter((x) => x.status === "online")
+            .map((x) => [x.id, current[x.id] ?? "needs-auth"]),
+        ),
+      );
+      if (
+        !mappingForm.targetServerId &&
+        next.some((x) => x.status === "online")
+      )
+        setMappingForm((x) => ({
+          ...x,
+          targetServerId: next.find((y) => y.status === "online")!.id,
+        }));
+    } catch (e) {
+      setMessage({
+        kind: "error",
+        text: errorMessage(e, "mappings.targetsFailed"),
+      });
+    } finally {
+      targetFlight.current = false;
     }
-    setSessionError(t('errors.restartTimeout'))
-    return false
-  }, [])
-
-  useEffect(() => { void loadSession() }, [loadSession])
+  }, [mappingForm.targetServerId]);
   useEffect(() => {
-    if (!session || session.configured || session.authenticated) return
-    void request<LocalStatus>('/api/status')
-      .then((nextStatus) => {
-        setStatus(nextStatus)
-        setSetupForm((current) => ({ ...current, credentialFile: current.credentialFile || nextStatus.credentialFile || '' }))
-        setSessionError(null)
+    void loadSession();
+  }, [loadSession]);
+  useEffect(() => {
+    if (!session || session.configured || session.authenticated) return;
+    void request<LocalStatus>("/api/status")
+      .then((next) => {
+        setStatus(next);
+        setSetupForm((x) => ({
+          ...x,
+          credentialFile: x.credentialFile || next.credentialFile || "",
+        }));
       })
-      .catch((cause) => setSessionError(errorMessage(cause, 'errors.setupStatusFailed')))
-  }, [session])
+      .catch((e) =>
+        setSessionError(errorMessage(e, "errors.setupStatusFailed")),
+      );
+  }, [session]);
   useEffect(() => {
-    if (!session?.authenticated) return
-    void refresh()
-    const timer = window.setInterval(() => void refresh(), 5000)
-    void refreshMappingTargets(true)
-    const targetTimer = window.setInterval(() => void refreshMappingTargets(true), 15000)
+    if (!session?.authenticated) return;
+    void refresh();
+    void refreshTargets();
+    const timer = window.setInterval(() => void refresh(), 5000);
+    const targetTimer = window.setInterval(() => void refreshTargets(), 15000);
     return () => {
-      window.clearInterval(timer)
-      window.clearInterval(targetTimer)
-    }
-  }, [refresh, refreshMappingTargets, session?.authenticated])
-  useEffect(() => localStorage.setItem('plugmesh-local-theme', theme), [theme])
+      clearInterval(timer);
+      clearInterval(targetTimer);
+    };
+  }, [session?.authenticated, refresh, refreshTargets]);
+  useEffect(() => localStorage.setItem("plugmesh-local-theme", theme), [theme]);
   useEffect(() => {
-    const media = matchMedia('(prefers-color-scheme: light)')
-    const update = (event: MediaQueryListEvent) => setSystemLight(event.matches)
-    media.addEventListener('change', update)
-    return () => media.removeEventListener('change', update)
-  }, [])
+    const m = matchMedia("(prefers-color-scheme: light)");
+    const fn = (e: MediaQueryListEvent) => setSystemLight(e.matches);
+    m.addEventListener("change", fn);
+    return () => m.removeEventListener("change", fn);
+  }, []);
   useEffect(() => {
-    if (!message) return
-    const timer = window.setTimeout(() => setMessage(null), 3200)
-    return () => window.clearTimeout(timer)
-  }, [message])
-  useEffect(() => {
-    if (!session?.authenticated || !session.configured || session.passwordSetupRequired) return
-    const sections = ['overview', 'plugins', 'mappings', 'setup', 'logs'].map((id) => document.getElementById(id)).filter((section): section is HTMLElement => Boolean(section))
-    const observer = new IntersectionObserver((entries) => {
-      const visible = entries.filter((entry) => entry.isIntersecting).sort((left, right) => right.intersectionRatio - left.intersectionRatio)[0]
-      if (visible) setActiveSection(visible.target.id)
-    }, { rootMargin: '-12% 0px -68% 0px', threshold: [0, 0.15, 0.4, 0.7] })
-    sections.forEach((section) => observer.observe(section))
-    return () => observer.disconnect()
-  }, [session?.authenticated, session?.configured, session?.passwordSetupRequired])
-
-  const submitLogin = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setAccessBusy(true)
+    if (!message) return;
+    const timer = setTimeout(() => setMessage(null), 3200);
+    return () => clearTimeout(timer);
+  }, [message]);
+  const submitLogin = async () => {
+    setAccessBusy(true);
     try {
-      await request('/api/session', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
+      await request("/api/session", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({ password: loginPassword }),
-      })
-      setLoginPassword('')
-      await loadSession()
-    } catch (cause) {
-      setSessionError(errorMessage(cause, 'errors.loginFailed'))
+      });
+      setLoginPassword("");
+      await loadSession();
+    } catch (e) {
+      setSessionError(errorMessage(e, "errors.loginFailed"));
     } finally {
-      setAccessBusy(false)
+      setAccessBusy(false);
     }
-  }
-
-  const submitMigration = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (migrationForm.password.length < 8 || migrationForm.password !== migrationForm.passwordConfirmation) {
-      setSessionError(t(migrationForm.password.length < 8 ? 'errors.passwordTooShort' : 'errors.passwordMismatch'))
-      return
+  };
+  const submitMigration = async () => {
+    if (
+      migrationForm.password.length < 8 ||
+      migrationForm.password !== migrationForm.passwordConfirmation
+    ) {
+      setSessionError(
+        t(
+          migrationForm.password.length < 8
+            ? "errors.passwordTooShort"
+            : "errors.passwordMismatch",
+        ),
+      );
+      return;
     }
-    setAccessBusy(true)
+    setAccessBusy(true);
     try {
-      await request('/api/session/password', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
+      await request("/api/session/password", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
         body: JSON.stringify(migrationForm),
-      })
-      setMigrationForm({ password: '', passwordConfirmation: '', credentialPassword: '' })
-      await loadSession()
-    } catch (cause) {
-      setSessionError(errorMessage(cause, 'errors.passwordSetupFailed'))
+      });
+      await loadSession();
+    } catch (e) {
+      setSessionError(errorMessage(e, "errors.passwordSetupFailed"));
     } finally {
-      setAccessBusy(false)
+      setAccessBusy(false);
     }
-  }
-
-  const submitSetup = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (setupForm.localUiPassword.length < 8 || setupForm.localUiPassword !== setupForm.localUiPasswordConfirmation) {
-      setSessionError(t(setupForm.localUiPassword.length < 8 ? 'errors.passwordTooShort' : 'errors.passwordMismatch'))
-      return
+  };
+  const submitSetup = async () => {
+    if (
+      setupForm.localUiPassword.length < 8 ||
+      setupForm.localUiPassword !== setupForm.localUiPasswordConfirmation
+    ) {
+      setSessionError(
+        t(
+          setupForm.localUiPassword.length < 8
+            ? "errors.passwordTooShort"
+            : "errors.passwordMismatch",
+        ),
+      );
+      return;
     }
-    setAccessBusy(true)
+    setAccessBusy(true);
     try {
-      await request('/api/register', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(setupForm),
-      })
-      setSetupForm((current) => ({ ...current, registrationCode: '', localUiPassword: '', localUiPasswordConfirmation: '', credentialPassword: '' }))
-      setMessage({ kind: 'success', text: t('setup.success') })
-      await waitForRestart()
-    } catch (cause) {
-      setSessionError(errorMessage(cause, 'errors.bindFailed'))
+      const { useSystemCredentials: _, ...withoutToggle } = setupForm;
+      await request("/api/register", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(
+          status?.systemCredentialsAvailable ? setupForm : withoutToggle,
+        ),
+      });
+      setMessage({ kind: "success", text: t("setup.success") });
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        const next = await loadSession();
+        if (next) break;
+      }
+    } catch (e) {
+      setSessionError(errorMessage(e, "errors.bindFailed"));
     } finally {
-      setAccessBusy(false)
+      setAccessBusy(false);
     }
-  }
-
+  };
   const logout = async () => {
-    await request('/api/session', { method: 'DELETE' }).catch(() => null)
-    setSession((current) => current ? { ...current, authenticated: false } : current)
-    setStatus(null)
-    setDiagnostics(null)
-    setPlugins([])
-    setLogs([])
-    setError(null)
-  }
-
-  const runAction = async (plugin: LocalPlugin, action: 'load' | 'unload' | 'enable' | 'disable' | 'reload') => {
-    setBusyPlugin(plugin.id)
+    await request("/api/session", { method: "DELETE" }).catch(() => null);
+    setSession((x) => (x ? { ...x, authenticated: false } : x));
+  };
+  const pluginAction = async (plugin: LocalPlugin, action: string) => {
+    setBusyPlugin(plugin.id);
     try {
-      const result = await request<ActionResult>(`/api/plugins/${encodeURIComponent(plugin.id)}/${action}`, { method: 'POST' })
-      setMessage({ kind: 'success', text: t('plugins.stateChanged', { name: plugin.name, state: t(`state.${result.state}`, { defaultValue: result.state }) }) })
-      await refresh()
-    } catch (cause) {
-      setMessage({ kind: 'error', text: errorMessage(cause, 'errors.pluginActionFailed') })
+      const result = await request<{ state: string }>(
+        `/api/plugins/${encodeURIComponent(plugin.id)}/${action}`,
+        { method: "POST" },
+      );
+      setMessage({
+        kind: "success",
+        text: t("plugins.stateChanged", {
+          name: plugin.name,
+          state: t(`state.${result.state}`, { defaultValue: result.state }),
+        }),
+      });
+      await refresh();
+    } catch (e) {
+      setMessage({
+        kind: "error",
+        text: errorMessage(e, "errors.pluginActionFailed"),
+      });
     } finally {
-      setBusyPlugin(null)
+      setBusyPlugin(null);
     }
-  }
-
-  const saveMapping = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setMappingBusy(true)
+  };
+  const health = async (plugin: LocalPlugin) => {
+    setBusyPlugin(plugin.id);
     try {
-      const endpoint = editingMapping ? `/api/mappings/${encodeURIComponent(editingMapping)}` : '/api/mappings'
-      await request(endpoint, { method: editingMapping ? 'PUT' : 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...mappingForm, listenPort: Number(mappingForm.listenPort), targetPort: Number(mappingForm.targetPort) }) })
-      setMappingForm((current) => ({ ...current, name: '', listenPort: '', targetPort: '', targetPassword: '' }))
-      setEditingMapping('')
-      await refresh(true)
-      setMessage({ kind: 'success', text: t('mappings.saved') })
-    } catch (cause) {
-      setMessage({ kind: 'error', text: errorMessage(cause, 'mappings.saveFailed') })
+      const result = await request<{ status: number }>(
+        `/api/plugins/${encodeURIComponent(plugin.id)}/health`,
+      );
+      setMessage({
+        kind: "success",
+        text: t("plugins.healthPassed", {
+          name: plugin.name,
+          status: result.status,
+        }),
+      });
+    } catch (e) {
+      setMessage({
+        kind: "error",
+        text: errorMessage(e, "errors.healthCheckFailed"),
+      });
     } finally {
-      setMappingBusy(false)
+      setBusyPlugin(null);
     }
-  }
-
-  const deleteMapping = async (mapping: LocalMapping) => {
-    setMappingBusy(true)
+  };
+  const authorize = async () => {
+    if (!verificationTarget || !targetPassword) return;
+    setAuthBusy(true);
     try {
-      await request(`/api/mappings/${encodeURIComponent(mapping.name)}`, { method: 'DELETE' })
-      await refresh(true)
-      setMessage({ kind: 'success', text: t('mappings.deleted') })
-    } catch (cause) {
-      setMessage({ kind: 'error', text: errorMessage(cause, 'mappings.deleteFailed') })
+      await request(
+        `/api/mappings/targets/${encodeURIComponent(verificationTarget.id)}/authorize`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ targetPassword }),
+        },
+      );
+      setAuthStates((x) => ({ ...x, [verificationTarget.id]: "authorized" }));
+      setMessage({
+        kind: "success",
+        text: t("mappings.targetAuthorized", { name: verificationTarget.name }),
+      });
+      setVerificationTarget(null);
+    } catch (e) {
+      setAuthStates((x) => ({ ...x, [verificationTarget.id]: "failed" }));
+      setMessage({
+        kind: "error",
+        text: errorMessage(e, "mappings.targetAuthorizeFailed"),
+      });
     } finally {
-      setMappingBusy(false)
+      setTargetPassword("");
+      setAuthBusy(false);
     }
-  }
-
-  const toggleMapping = async (mapping: LocalMapping) => {
-    setMappingBusy(true)
+  };
+  const saveMapping = async (values: typeof mappingForm) => {
+    setBusyMapping(true);
     try {
-      await request(`/api/mappings/${encodeURIComponent(mapping.name)}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: mapping.name, protocol: mapping.protocol, listenPort: mapping.listenPort, targetServerId: mapping.targetServerId, targetHost: mapping.targetHost, targetPort: mapping.targetPort, enabled: !mapping.enabled }) })
-      await refresh(true)
-    } catch (cause) {
-      setMessage({ kind: 'error', text: errorMessage(cause, 'mappings.saveFailed') })
+      const endpoint = editing
+        ? `/api/mappings/${encodeURIComponent(editing)}`
+        : "/api/mappings";
+      await request(endpoint, {
+        method: editing ? "PUT" : "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          ...values,
+          targetPassword: "",
+          listenPort: Number(values.listenPort),
+          targetPort: Number(values.targetPort),
+        }),
+      });
+      setEditing("");
+      setMappingForm(emptyMapping);
+      mappingEditor.resetFields();
+      await refresh(true);
+      setMessage({ kind: "success", text: t("mappings.saved") });
+    } catch (e) {
+      setMessage({
+        kind: "error",
+        text: errorMessage(e, "mappings.saveFailed"),
+      });
     } finally {
-      setMappingBusy(false)
+      setBusyMapping(false);
     }
-  }
-
-  const runHealth = async (plugin: LocalPlugin) => {
-    setBusyPlugin(plugin.id)
+  };
+  const mappingAction = async (
+    mapping: LocalMapping,
+    action: "toggle" | "delete",
+  ) => {
+    setBusyMapping(true);
     try {
-      const result = await request<{ ok: boolean; status: number; bodySize: number }>(`/api/plugins/${encodeURIComponent(plugin.id)}/health`)
-      setMessage({ kind: 'success', text: t('plugins.healthPassed', { name: plugin.name, status: result.status }) })
-    } catch (cause) {
-      setMessage({ kind: 'error', text: errorMessage(cause, 'errors.healthCheckFailed') })
+      if (action === "delete")
+        await request(`/api/mappings/${encodeURIComponent(mapping.name)}`, {
+          method: "DELETE",
+        });
+      else
+        await request(`/api/mappings/${encodeURIComponent(mapping.name)}`, {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            name: mapping.name,
+            protocol: mapping.protocol,
+            listenPort: mapping.listenPort,
+            targetServerId: mapping.targetServerId,
+            targetHost: mapping.targetHost,
+            targetPort: mapping.targetPort,
+            enabled: !mapping.enabled,
+          }),
+        });
+      await refresh(true);
+      if (action === "delete")
+        setMessage({ kind: "success", text: t("mappings.deleted") });
+    } catch (e) {
+      setMessage({
+        kind: "error",
+        text: errorMessage(
+          e,
+          action === "delete" ? "mappings.deleteFailed" : "mappings.saveFailed",
+        ),
+      });
     } finally {
-      setBusyPlugin(null)
+      setBusyMapping(false);
     }
-  }
-
-  const runCredentialAction = async (action: 'rotate' | 'revoke') => {
-    if (action === 'revoke' && !window.confirm(t('binding.revokeConfirm'))) return
-    setCredentialBusy(action)
+  };
+  const credentialAction = async (action: "rotate" | "revoke", confirmed = false) => {
     try {
+    if (action === "revoke" && !confirmed) {
+      Modal.confirm({
+        title: t("binding.revoke"),
+        content: t("binding.revokeConfirm"),
+        okText: t("binding.revoke"),
+        cancelText: t("common.cancel"),
+        okButtonProps: { danger: true },
+        onOk: () => credentialAction("revoke", true),
+      });
+      return;
+    }
       await request(`/api/credentials/${action}`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        method: "POST",
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({ credentialPassword }),
-      })
-      setCredentialPassword('')
-      setMessage({ kind: 'success', text: t(action === 'rotate' ? 'binding.rotateDone' : 'binding.revokeDone') })
-      if (action === 'revoke') await waitForRestart()
-      else await refresh(true)
-    } catch (cause) {
-      setMessage({ kind: 'error', text: errorMessage(cause, 'errors.credentialActionFailed') })
-    } finally {
-      setCredentialBusy(null)
+      });
+      setCredentialPassword("");
+      setMessage({
+        kind: "success",
+        text: t(
+          action === "rotate" ? "binding.rotateDone" : "binding.revokeDone",
+        ),
+      });
+      await refresh(true);
+    } catch (e) {
+      setMessage({
+        kind: "error",
+        text: errorMessage(e, "errors.credentialActionFailed"),
+      });
     }
-  }
-
-  if (sessionLoading || !session) {
-    return <AccessShell theme={effectiveTheme} themeIcon={themeIcon} onTheme={cycleTheme} error={sessionError}>
-      <div className="access-loading"><LoaderCircle size={22} className="spin" /><strong>{t('access.loading')}</strong></div>
-    </AccessShell>
-  }
-
-  if (!session.configured) {
-    return <AccessShell theme={effectiveTheme} themeIcon={themeIcon} onTheme={cycleTheme} error={sessionError}>
-      <form className="access-form access-form-wide" onSubmit={(event) => void submitSetup(event)}>
-        <AccessHeading icon={<Network size={20} />} title={t('setup.title')} />
-        <div className="access-fields two-columns">
-          <Field label={t('setup.workerUrl')}><input value={setupForm.workerUrl} onChange={(event) => setSetupForm((current) => ({ ...current, workerUrl: event.target.value }))} placeholder="https://console.example.com" required /></Field>
-          <Field label={t('setup.serverName')}><input value={setupForm.serverName} onChange={(event) => setSetupForm((current) => ({ ...current, serverName: event.target.value }))} required /></Field>
-          <Field label={t('setup.registrationCode')}><input value={setupForm.registrationCode} onChange={(event) => setSetupForm((current) => ({ ...current, registrationCode: event.target.value }))} required /></Field>
-          <Field label={t('setup.credentialFile')}><input value={setupForm.credentialFile} onChange={(event) => setSetupForm((current) => ({ ...current, credentialFile: event.target.value }))} required={!status?.systemCredentialsAvailable} placeholder={status?.systemCredentialsAvailable ? t('setup.credentialFilePlaceholder') : undefined} /></Field>
-          <Field label={t('setup.localUiPassword')}><input type="password" autoComplete="new-password" value={setupForm.localUiPassword} onChange={(event) => setSetupForm((current) => ({ ...current, localUiPassword: event.target.value }))} required /></Field>
-          <Field label={t('setup.confirmPassword')}><input type="password" autoComplete="new-password" value={setupForm.localUiPasswordConfirmation} onChange={(event) => setSetupForm((current) => ({ ...current, localUiPasswordConfirmation: event.target.value }))} required /></Field>
-          <Field label={t('setup.credentialPassword')} wide><input type="password" autoComplete="new-password" value={setupForm.credentialPassword} onChange={(event) => setSetupForm((current) => ({ ...current, credentialPassword: event.target.value }))} required={!status?.systemCredentialsAvailable || Boolean(setupForm.credentialFile)} placeholder={status?.systemCredentialsAvailable && !setupForm.credentialFile ? t('setup.credentialPasswordSystemPlaceholder') : undefined} /></Field>
-        </div>
-        <button className="button primary with-icon" type="submit" disabled={accessBusy || !status}>{accessBusy ? <LoaderCircle size={15} className="spin" /> : <ShieldCheck size={15} />}{t('setup.submit')}</button>
-      </form>
-    </AccessShell>
-  }
-
-  if (session.passwordSetupRequired) {
-    return <AccessShell theme={effectiveTheme} themeIcon={themeIcon} onTheme={cycleTheme} error={sessionError}>
-      <form className="access-form" onSubmit={(event) => void submitMigration(event)}>
-        <AccessHeading icon={<ShieldCheck size={20} />} title={t('migration.title')} />
-        <p className="access-note">{t('migration.note')}</p>
-        <div className="access-fields">
-          <Field label={t('setup.localUiPassword')}><input type="password" autoComplete="new-password" value={migrationForm.password} onChange={(event) => setMigrationForm((current) => ({ ...current, password: event.target.value }))} required /></Field>
-          <Field label={t('setup.confirmPassword')}><input type="password" autoComplete="new-password" value={migrationForm.passwordConfirmation} onChange={(event) => setMigrationForm((current) => ({ ...current, passwordConfirmation: event.target.value }))} required /></Field>
-          <Field label={t('setup.credentialPassword')}><input type="password" autoComplete="current-password" value={migrationForm.credentialPassword} onChange={(event) => setMigrationForm((current) => ({ ...current, credentialPassword: event.target.value }))} placeholder={t('setup.credentialPasswordSystemPlaceholder')} /></Field>
-        </div>
-        <button className="button primary with-icon" type="submit" disabled={accessBusy}>{accessBusy ? <LoaderCircle size={15} className="spin" /> : <KeyRound size={15} />}{t('migration.submit')}</button>
-      </form>
-    </AccessShell>
-  }
-
-  if (!session.authenticated) {
-    return <AccessShell theme={effectiveTheme} themeIcon={themeIcon} onTheme={cycleTheme} error={sessionError}>
-      <form className="access-form" onSubmit={(event) => void submitLogin(event)}>
-        <AccessHeading icon={<KeyRound size={20} />} title={t('login.title')} />
-        <div className="access-fields">
-          <Field label={t('setup.localUiPassword')}><input type="password" autoComplete="current-password" value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} autoFocus required /></Field>
-        </div>
-        <button className="button primary with-icon" type="submit" disabled={accessBusy}>{accessBusy ? <LoaderCircle size={15} className="spin" /> : <LogIn size={15} />}{t('login.submit')}</button>
-      </form>
-    </AccessShell>
-  }
-
-  const enabledCount = diagnostics?.enabledPluginCount ?? plugins.filter((plugin) => plugin.state === 'enabled').length
-
+  };
+  if (sessionLoading || !session)
+    return (
+      <AccessShell
+        theme={effectiveTheme}
+        themeIcon={themeIcon}
+        onTheme={cycleTheme}
+        error={sessionError}
+      >
+        <Spin tip={t("access.loading")} />
+      </AccessShell>
+    );
+  if (!session.configured)
+    return (
+      <AccessShell
+        theme={effectiveTheme}
+        themeIcon={themeIcon}
+        onTheme={cycleTheme}
+        error={sessionError}
+      >
+        <SetupForm
+          value={setupForm}
+          setValue={setSetupForm}
+          status={status}
+          busy={accessBusy}
+          onSubmit={() => void submitSetup()}
+        />
+      </AccessShell>
+    );
+  if (session.passwordSetupRequired)
+    return (
+      <AccessShell
+        theme={effectiveTheme}
+        themeIcon={themeIcon}
+        onTheme={cycleTheme}
+        error={sessionError}
+      >
+        <Form layout="vertical" onFinish={() => void submitMigration()}>
+          <Typography.Title level={3}>{t("migration.title")}</Typography.Title>
+          <Form.Item
+            label={t("setup.localUiPassword")}
+            name="password"
+            rules={[{ required: true }]}
+          >
+            <Input.Password
+              value={migrationForm.password}
+              onChange={(e) =>
+                setMigrationForm((x) => ({ ...x, password: e.target.value }))
+              }
+            />
+          </Form.Item>
+          <Form.Item label={t("setup.confirmPassword")}>
+            <Input.Password
+              value={migrationForm.passwordConfirmation}
+              onChange={(e) =>
+                setMigrationForm((x) => ({
+                  ...x,
+                  passwordConfirmation: e.target.value,
+                }))
+              }
+            />
+          </Form.Item>
+          <Form.Item label={t("setup.credentialPassword")}>
+            <Input.Password
+              value={migrationForm.credentialPassword}
+              onChange={(e) =>
+                setMigrationForm((x) => ({
+                  ...x,
+                  credentialPassword: e.target.value,
+                }))
+              }
+            />
+          </Form.Item>
+          <Button type="primary" htmlType="submit" loading={accessBusy}>
+            {t("migration.submit")}
+          </Button>
+        </Form>
+      </AccessShell>
+    );
+  if (!session.authenticated)
+    return (
+      <AccessShell
+        theme={effectiveTheme}
+        themeIcon={themeIcon}
+        onTheme={cycleTheme}
+        error={sessionError}
+      >
+        <Form layout="vertical" onFinish={() => void submitLogin()}>
+          <Typography.Title level={3}>{t("login.title")}</Typography.Title>
+          <Form.Item
+            label={t("setup.localUiPassword")}
+            name="password"
+            rules={[{ required: true }]}
+          >
+            <Input.Password
+              autoFocus
+              value={loginPassword}
+              onChange={(e) => setLoginPassword(e.target.value)}
+            />
+          </Form.Item>
+          <Button
+            type="primary"
+            htmlType="submit"
+            loading={accessBusy}
+            icon={<LogIn size={15} />}
+          >
+            {t("login.submit")}
+          </Button>
+        </Form>
+      </AccessShell>
+    );
+  const menuItems = [
+    { key: "overview", icon: <Activity size={16} />, label: t("nav.overview") },
+    { key: "plugins", icon: <FileCode2 size={16} />, label: t("nav.plugins") },
+    { key: "mappings", icon: <Network size={16} />, label: t("nav.mappings") },
+    { key: "setup", icon: <Settings2 size={16} />, label: t("nav.settings") },
+    { key: "logs", icon: <Terminal size={16} />, label: t("nav.logs") },
+  ];
+  const onlineTargets = targets.filter((x) => x.status === "online");
+  const enabled =
+    diagnostics?.enabledPluginCount ??
+    plugins.filter((x) => x.state === "enabled").length;
   return (
-    <div className={`local-app theme-${effectiveTheme}`}>
-      <aside className="rail">
-        <div className="brand"><span className="brand-mark"><Network size={17} /></span><div><strong>PLUGMESH</strong><span>LOCAL SERVER</span></div></div>
-        <div className={`connection-rail ${status?.connected ? 'online' : 'offline'}`}>
-          <div className="connection-line" />
-          <div className="connection-node"><span /></div>
-          <div className="connection-copy"><span>{t('connector.label')}</span><strong>{status?.connected ? t('connector.online') : t('connector.offline')}</strong></div>
-          <div className="connection-detail">{status?.serverId ?? t('common.serverIdMissing')}</div>
-        </div>
-        <nav className="side-nav" aria-label={t('nav.aria')}>
-          <a className={`side-link ${activeSection === 'overview' ? 'active' : ''}`} href="#overview"><Activity size={15} />{t('nav.overview')}</a>
-          <a className={`side-link ${activeSection === 'plugins' ? 'active' : ''}`} href="#plugins"><FileCode2 size={15} />{t('nav.plugins')}<span>{plugins.length}</span></a>
-          <a className={`side-link ${activeSection === 'mappings' ? 'active' : ''}`} href="#mappings"><Network size={15} />{t('nav.mappings')}<span>{mappings.length}</span></a>
-          <a className={`side-link ${activeSection === 'setup' ? 'active' : ''}`} href="#setup"><Settings2 size={15} />{t('nav.settings')}</a>
-          <a className={`side-link ${activeSection === 'logs' ? 'active' : ''}`} href="#logs"><Terminal size={15} />{t('nav.logs')}<span>{logs.length}</span></a>
-        </nav>
-        <div className="rail-bottom"><div className="local-only"><HardDrive size={14} /><span>{t('nav.localOnly')}<br /><strong>127.0.0.1:{status?.port ?? '----'}</strong></span></div><a className="docs-link" href="#setup"><Terminal size={14} />{t('nav.cli')}</a></div>
-      </aside>
-
-      <main className="workspace">
-        <header className="topbar">
-          <div><span className="overline">{t('shell.overline')}</span><h1>{t('shell.title')}</h1></div>
-          <div className="top-actions">
-            <button className="icon-button" title={t('shell.refresh')} aria-label={t('shell.refresh')} onClick={() => void refresh(true)} disabled={refreshing}><RefreshCw size={16} className={refreshing ? 'spin' : ''} /></button>
-            <button className="icon-button" title={t('shell.theme')} aria-label={t('shell.theme')} onClick={cycleTheme}>{themeIcon}</button>
-            <LanguageButton />
-            <button className="icon-button" title={t('shell.logout')} aria-label={t('shell.logout')} onClick={() => void logout()}><LogOut size={16} /></button>
+    <ConfigProvider
+      theme={{
+        algorithm:
+          effectiveTheme === "dark"
+            ? antdTheme.darkAlgorithm
+            : antdTheme.defaultAlgorithm,
+        token: { borderRadius: 6, colorPrimary: "#1677ff" },
+      }}
+    >
+      <Layout className={`native-layout theme-${effectiveTheme}`}>
+        <Layout.Sider
+          breakpoint="lg"
+          collapsedWidth="0"
+          collapsed={isMobileNav && !mobileNavOpen}
+          trigger={null}
+          onBreakpoint={(broken) => { setIsMobileNav(broken); if (!broken) setMobileNavOpen(false); }}
+          className="native-sider"
+        >
+          <div className="native-brand">
+            <Network size={18} />
+            <Typography.Title level={4}>PLUGMESH</Typography.Title>
           </div>
-        </header>
+          <Menu
+            theme={effectiveTheme}
+            mode="inline"
+            selectedKeys={[active]}
+            items={menuItems}
+            onClick={({ key }) => { setActive(key); setMobileNavOpen(false); }}
+          />
+          <div className="sider-footer">
+            <HardDrive size={14} />
+            127.0.0.1:{status?.port ?? "----"}
+          </div>
+        </Layout.Sider>
+        <Layout>
+          <Layout.Header className="native-header">
+            <Space>
+              <Typography.Text type="secondary">
+                {t("shell.overline")}
+              </Typography.Text>
+              {isMobileNav && (
+                <Button
+                  aria-label={t("nav.toggle")}
+                  aria-expanded={mobileNavOpen}
+                  icon={<MenuIcon size={16} />}
+                  onClick={() => setMobileNavOpen((open) => !open)}
+                />
+              )}
+              <Typography.Title level={3}>{t("shell.title")}</Typography.Title>
+            </Space>
+            <Space>
+              <Button
+                aria-label={t("shell.refresh")}
+                icon={<RefreshCw size={16} />}
+                loading={refreshing}
+                onClick={() => void refresh(true)}
+              />
+              <Button
+                aria-label={t("shell.theme")}
+                icon={themeIcon}
+                onClick={cycleTheme}
+              />
+              <LanguageButton />
+              <Button
+                aria-label={t("shell.logout")}
+                icon={<LogOut size={16} />}
+                onClick={() => void logout()}
+              />
+            </Space>
+          </Layout.Header>
+          <Layout.Content className="native-content">
+            {message && (
+              <Alert
+                closable
+                showIcon
+                type={message.kind === "success" ? "success" : "error"}
+                message={message.text}
+                onClose={() => setMessage(null)}
+              />
+            )}
+            {error && (
+              <Alert
+                showIcon
+                type="error"
+                message={t("shell.readError")}
+                description={error}
+                action={
+                  <Button onClick={() => void refresh(true)}>
+                    {t("common.retry")}
+                  </Button>
+                }
+              />
+            )}
+            {active === "overview" && (
+              <Overview
+                status={status}
+                diagnostics={diagnostics}
+                plugins={plugins}
+                enabled={enabled}
+                lastUpdated={lastUpdated}
+                t={t}
+              />
+            )}
+            {active === "plugins" && (
+              <PluginsPage
+                plugins={plugins}
+                loading={loading}
+                busy={busyPlugin}
+                onAction={(p: LocalPlugin, a: string) =>
+                  void pluginAction(p, a)
+                }
+                onHealth={(p: LocalPlugin) => void health(p)}
+                t={t}
+              />
+            )}
+            {active === "mappings" && (
+              <MappingsPage
+                targets={onlineTargets}
+                allTargets={targets}
+                authStates={authStates}
+                mappings={mappings}
+                mappingForm={mappingForm}
+                setMappingForm={setMappingForm}
+                editing={editing}
+                setEditing={setEditing}
+                form={mappingEditor}
+                busy={busyMapping}
+                authBusy={authBusy}
+                refreshTargets={() => void refreshTargets()}
+                onVerify={(target: MappingTarget) => {
+                  setTargetPassword("");
+                  setVerificationTarget(target);
+                }}
+                onSave={saveMapping}
+                onMappingAction={mappingAction}
+                t={t}
+              />
+            )}
+            {active === "setup" && (
+              <SetupPage
+                status={status}
+                credentialPassword={credentialPassword}
+                setCredentialPassword={setCredentialPassword}
+                onAction={credentialAction}
+                t={t}
+              />
+            )}
+            {active === "logs" && <LogsPage logs={logs} t={t} />}
+          </Layout.Content>
+        </Layout>
+        <Modal
+          title={t("mappings.targetPassword")}
+          open={Boolean(verificationTarget)}
+          onCancel={() => {
+            setVerificationTarget(null);
+            setTargetPassword("");
+          }}
+          onOk={() => void authorize()}
+          okText={t("mappings.authorizeTarget")}
+          confirmLoading={authBusy}
+          okButtonProps={{ disabled: !targetPassword }}
+          destroyOnClose
+        >
+          <Typography.Paragraph>
+            {verificationTarget?.name}
+          </Typography.Paragraph>
+          <Input.Password
+            aria-label={t("mappings.targetPassword")}
+            value={targetPassword}
+            onChange={(e) => setTargetPassword(e.target.value)}
+            onPressEnter={() => void authorize()}
+          />
+        </Modal>
+      </Layout>
+    </ConfigProvider>
+  );
+}
 
-        {message && <div className={`toast ${message.kind}`} role="status">{message.kind === 'success' ? <Check size={15} /> : <AlertCircle size={15} />}{message.text}<button onClick={() => setMessage(null)} aria-label={t('common.closeToast')}><X size={14} /></button></div>}
-        {error && <section className="error-strip"><AlertCircle size={17} /><div><strong>{t('shell.readError')}</strong><span>{error}</span></div><button className="button secondary" onClick={() => void refresh(true)}>{t('common.retry')}</button></section>}
-
-        <div className="content">
-          <section id="overview" className="hero-grid"><div><span className="section-index">{`01 / ${t('nav.overview')}`}</span><h2>{status?.connected ? t('overview.connectedTitle') : t('overview.offlineTitle')}</h2><p>{status?.connected ? t('overview.connectedBody') : t('overview.offlineBody')}</p></div><div className={`status-seal ${status?.connected ? 'online' : 'offline'}`}><span>{status?.connected ? t('overview.online') : t('overview.offline')}</span><div>{status?.connected ? <Wifi size={34} /> : <WifiOff size={34} />}</div><small>{lastUpdated ? t('common.updatedAt', { time: formatTime(lastUpdated) }) : t('common.statusLoading')}</small></div></section>
-
-          <section className="metric-grid" aria-label={t('metrics.aria')}><Metric label={t('metrics.plugins')} value={diagnostics?.pluginCount ?? (loading ? t('common.unavailable') : plugins.length)} icon={<FileCode2 size={16} />} /><Metric label={t('metrics.enabled')} value={enabledCount} icon={<Cpu size={16} />} accent /><Metric label={t('metrics.failed')} value={diagnostics?.failedPluginCount ?? 0} icon={<CircleSlash size={16} />} danger={Boolean(diagnostics?.failedPluginCount)} /><Metric label={t('metrics.port')} value={status?.port ?? t('common.unavailable')} icon={<Network size={16} />} /></section>
-
-          <section id="plugins" className="section-block"><div className="section-heading"><div><span className="section-index">{t('plugins.index')}</span><h2>{t('plugins.title')}</h2></div><span className="section-meta">{t('plugins.count', { count: plugins.length })} · {t('plugins.loadedCount', { count: diagnostics?.loadedPluginCount ?? 0 })}</span></div>{loading && <LoadingState />}{!loading && !error && plugins.length === 0 && <EmptyState title={t('plugins.emptyTitle')} body={t('plugins.emptyBody')} />}{!loading && !error && plugins.length > 0 && <div className="plugin-list">{plugins.map((plugin) => <PluginRow key={plugin.id} plugin={plugin} busy={busyPlugin === plugin.id} onAction={(action) => void runAction(plugin, action)} onHealth={() => void runHealth(plugin)} />)}</div>}</section>
-
-          <section id="mappings" className="section-block">
-            <div className="section-heading"><div><span className="section-index">{t('mappings.index')}</span><h2>{t('mappings.title')}</h2></div><button className="button secondary with-icon" onClick={() => void refreshMappingTargets()} disabled={mappingTargetsLoading}><RefreshCw size={14} className={mappingTargetsLoading ? 'spin' : ''} />{t('mappings.refreshTargets')}</button></div>
-                         {mappingTargets.length > 0 && <div className="mapping-target-list"><div className="mapping-target-list-heading"><strong>{t('mappings.targetTableTitle')}</strong><span>{t('mappings.targetTableBody')}</span></div>{mappingTargets.map((target) => <div className="mapping-target-row" key={target.id}><div className="mapping-target-summary"><strong>{target.name}</strong><span className={`status-badge ${target.status === 'online' ? 'positive' : 'warning'}`}>{target.status}</span>{mappingTargetAuthorized[target.id] && <span className="status-badge positive">{t('mappings.authorized')}</span>}<span>{t('mappings.remotePlugins', { count: target.plugins.length })} · {t('mappings.remoteProxies', { count: target.portMappings.length })}</span></div><label><span className="sr-only">{t('mappings.targetPassword')}</span><input type="password" autoComplete="new-password" placeholder={t('mappings.targetPasswordPlaceholder')} value={mappingTargetPasswords[target.id] ?? ''} onChange={(event) => setMappingTargetPasswords((current) => ({ ...current, [target.id]: event.target.value }))} /></label><button className="button secondary with-icon" type="button" onClick={() => void authorizeMappingTarget(target)} disabled={mappingTargetAuthBusy !== null || target.status !== 'online'}>{mappingTargetAuthBusy === target.id ? <LoaderCircle size={14} className="spin" /> : <KeyRound size={14} />}{t(mappingTargetAuthorized[target.id] ? 'mappings.reauthorizeTarget' : 'mappings.authorizeTarget')}</button>{(target.plugins.length > 0 || target.portMappings.length > 0) && <div className="mapping-target-details">{target.plugins.map((plugin) => <span className="mapping-target-chip" key={plugin.id}><FileCode2 size={12} />{plugin.name}{plugin.capabilities.http && (plugin.domain ? <a className="mapping-target-link" href={`https://${plugin.domain}`} target="_blank" rel="noreferrer"> · {plugin.domain}</a> : ` · ${t('mappings.httpPlugin')}`)}</span>)}{target.portMappings.filter((proxy) => proxy.enabled && proxy.protocol !== 'http').map((proxy) => <button className="mapping-target-proxy" key={proxy.name} type="button" onClick={() => void mapRemoteProxy(target, proxy)} disabled={mappingBusy || mappingTargetAuthBusy !== null || isRemoteProxyMapped(target, proxy)}><Network size={12} />{proxy.name} · {proxy.protocol.toUpperCase()}:{proxy.targetPort} · {isRemoteProxyMapped(target, proxy) ? t('mappings.proxyAlreadyMapped') : t('mappings.mapProxy')}</button>)}</div>}</div>)}</div>}
-             <form className="mapping-form" onSubmit={(event) => void saveMapping(event)}>
-              <label><span>{t('mappings.name')}</span><input required maxLength={64} pattern="[A-Za-z0-9_-]+" value={mappingForm.name} onChange={(event) => setMappingForm({ ...mappingForm, name: event.target.value })} /></label>
-              <label><span>{t('mappings.protocol')}</span><select value={mappingForm.protocol} onChange={(event) => setMappingForm({ ...mappingForm, protocol: event.target.value })}><option value="tcp">TCP</option><option value="http">HTTP</option><option value="websocket">WebSocket</option></select></label>
-              <label><span>{t('mappings.listenPort')}</span><input required type="number" min="1" max="65535" value={mappingForm.listenPort} onChange={(event) => setMappingForm({ ...mappingForm, listenPort: event.target.value })} /></label>
-              <label><span>{t('mappings.targetServer')}</span><select required value={mappingForm.targetServerId} onChange={(event) => setMappingForm({ ...mappingForm, targetServerId: event.target.value })}><option value="">{t('mappings.selectTarget')}</option>{mappingTargets.filter((target) => target.status === 'online').map((target) => <option key={target.id} value={target.id}>{target.name}</option>)}</select></label>
-              <label><span>{t('mappings.targetHost')}</span><input required maxLength={253} value={mappingForm.targetHost} onChange={(event) => setMappingForm({ ...mappingForm, targetHost: event.target.value })} /></label>
-              <label><span>{t('mappings.targetPort')}</span><input required type="number" min="1" max="65535" value={mappingForm.targetPort} onChange={(event) => setMappingForm({ ...mappingForm, targetPort: event.target.value })} /></label>
-              <label><span>{t('mappings.targetPassword')}</span><input type="password" autoComplete="new-password" value={mappingForm.targetPassword} onChange={(event) => setMappingForm({ ...mappingForm, targetPassword: event.target.value })} /></label>
-              <button className="button primary with-icon" type="submit" disabled={mappingBusy || !mappingForm.targetServerId}>{editingMapping ? <Pencil size={14} /> : <Plus size={14} />}{t(editingMapping ? 'mappings.update' : 'mappings.add')}</button>
-              {editingMapping && <button className="button secondary" type="button" onClick={() => { setEditingMapping(''); setMappingForm({ name: '', protocol: 'tcp', listenPort: '', targetServerId: '', targetHost: '127.0.0.1', targetPort: '', targetPassword: '', enabled: true }) }}>{t('common.cancel')}</button>}
-            </form>
-            {mappings.length === 0 ? <EmptyState title={t('mappings.emptyTitle')} body={t('mappings.emptyBody')} /> : <div className="mapping-list">{mappings.map((mapping) => <div className="mapping-row" key={mapping.name}><div className="mapping-endpoint"><strong>{mapping.name}</strong><span>{mapping.protocol.toUpperCase()} · 127.0.0.1:{mapping.listenPort} → {mapping.targetHost}:{mapping.targetPort}</span></div><div className="mapping-target"><span>{mapping.targetServer}</span><span className={`status-badge ${mapping.state === 'listening' ? 'positive' : 'warning'}`}>{t(mapping.state === 'listening' ? 'mappings.listening' : 'mappings.stopped')}</span></div><div className="mapping-actions"><button className="icon-button" title={t(mapping.enabled ? 'mappings.disable' : 'mappings.enable')} aria-label={t(mapping.enabled ? 'mappings.disable' : 'mappings.enable')} onClick={() => void toggleMapping(mapping)} disabled={mappingBusy}><Power size={15} /></button><button className="icon-button" title={t('mappings.edit')} aria-label={t('mappings.edit')} onClick={() => { setEditingMapping(mapping.name); setMappingForm({ name: mapping.name, protocol: mapping.protocol, listenPort: String(mapping.listenPort), targetServerId: mapping.targetServerId, targetHost: mapping.targetHost, targetPort: String(mapping.targetPort), targetPassword: '', enabled: mapping.enabled }); void refreshMappingTargets() }} disabled={mappingBusy}><Pencil size={15} /></button><button className="icon-button danger-icon" title={t('mappings.delete')} aria-label={t('mappings.delete')} onClick={() => void deleteMapping(mapping)} disabled={mappingBusy}><Trash2 size={15} /></button></div></div>)}</div>}
-          </section>
-
-          <section id="setup" className="section-block setup-section">
-            <div className="section-heading"><div><span className="section-index">{t('binding.index')}</span><h2>{t('binding.title')}</h2></div><span className="status-badge positive"><span className="status-dot" />{t('binding.configured')}</span></div>
-            <div className="setup-grid">
-              <div className="setup-copy"><h3>{t('binding.doneTitle')}</h3><p>{status?.systemCredentialsAvailable && !status.credentialFile ? t('binding.systemStoreBody') : t('binding.fileStoreBody')}</p><div className="command-block"><span>id</span><code>{status?.serverId ?? t('common.serverIdMissing')}</code></div><span className="text-link">{status?.systemCredentialsAvailable && !status.credentialFile ? t('binding.storeSystem') : t('binding.storeFile', { path: status?.credentialFile ?? t('binding.noPath') })}</span></div>
-              <div className="setup-state credential-state"><Terminal size={22} /><strong>{t('binding.manage')}</strong><span>{status?.systemCredentialsAvailable && !status.credentialFile ? t('binding.systemStoreHint') : t('binding.fileStoreHint')}</span><label className="credential-password">{t('binding.credentialPassword')}<input type="password" value={credentialPassword} onChange={(event) => setCredentialPassword(event.target.value)} placeholder={status?.systemCredentialsAvailable && !status.credentialFile ? t('binding.systemStorePlaceholder') : t('binding.passwordPlaceholder')} /></label><div className="credential-actions"><button className="button secondary with-icon" onClick={() => void runCredentialAction('rotate')} disabled={credentialBusy !== null}>{credentialBusy === 'rotate' && <LoaderCircle size={14} className="spin" />}{t('binding.rotate')}</button><button className="button danger-button with-icon" onClick={() => void runCredentialAction('revoke')} disabled={credentialBusy !== null}>{credentialBusy === 'revoke' && <LoaderCircle size={14} className="spin" />}{t('binding.revoke')}</button></div></div>
-            </div>
-          </section>
-
-          <section id="logs" className="section-block"><div className="section-heading"><div><span className="section-index">{t('logs.index')}</span><h2>{t('logs.title')}</h2></div><span className="section-meta">{t('logs.count', { count: logs.length })}</span></div>{logs.length === 0 ? <EmptyState title={t('logs.emptyTitle')} body={t('logs.emptyBody')} /> : <div className="log-list">{logs.slice().reverse().map((log, index) => <div className="log-row" key={`${log.timestamp}-${index}`}><span className={`log-level level-${log.level}`}>{log.level >= 3 ? 'ERR' : log.level === 2 ? 'WARN' : 'INFO'}</span><time>{log.timestamp}</time><span>{log.message}</span></div>)}</div>}</section>
-        </div>
-        <footer className="footer"><span>Plugmesh Local Server</span><span>{t('common.footerService', { service: status?.service ?? 'unavailable' })}</span></footer>
+function AccessShell({
+  theme,
+  themeIcon,
+  onTheme,
+  error,
+  children,
+}: {
+  theme: "dark" | "light";
+  themeIcon: React.ReactNode;
+  onTheme: () => void;
+  error: string | null;
+  children: React.ReactNode;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className={`access-shell theme-${theme}`}>
+      <header className="access-header">
+        <Typography.Title level={3}>PLUGMESH</Typography.Title>
+        <Space>
+          <LanguageButton />
+          <Button
+            aria-label={t("shell.theme")}
+            icon={themeIcon}
+            onClick={onTheme}
+          />
+        </Space>
+      </header>
+      <main className="access-main">
+        <Card
+          title={
+            <Typography.Title level={2}>{t("access.title")}</Typography.Title>
+          }
+          className="access-card"
+        >
+          {error && (
+            <Alert role="alert" type="error" showIcon message={error} />
+          )}
+          {children}
+        </Card>
       </main>
     </div>
-  )
+  );
 }
-
-function AccessShell({ theme, themeIcon, onTheme, error, children }: { theme: 'dark' | 'light'; themeIcon: React.ReactNode; onTheme: () => void; error: string | null; children: React.ReactNode }) {
-  const { t } = useTranslation()
-  return <div className={`local-app access-shell theme-${theme}`}><header className="access-header"><div className="brand access-brand"><span className="brand-mark"><Network size={17} /></span><div><strong>PLUGMESH</strong><span>LOCAL SERVER</span></div></div><LanguageButton /><button className="icon-button" title={t('shell.theme')} aria-label={t('shell.theme')} onClick={onTheme}>{themeIcon}</button></header><main className="access-main"><div className="access-context"><span className="section-index">LOCALHOST / 127.0.0.1</span><h1>{t('access.title')}</h1><div className="access-rule"><span /></div><p>{t('access.note')}</p></div><div className="access-panel">{error && <div className="access-error" role="alert"><AlertCircle size={15} /><span>{error}</span></div>}{children}</div></main></div>
+function SetupForm({
+  value,
+  setValue,
+  status,
+  busy,
+  onSubmit,
+}: {
+  value: typeof emptySetupForm;
+  setValue: React.Dispatch<React.SetStateAction<typeof emptySetupForm>>;
+  status: LocalStatus | null;
+  busy: boolean;
+  onSubmit: () => void;
+}) {
+  const { t } = useTranslation();
+  const f = (key: keyof typeof emptySetupForm) => ({
+    value: value[key] as string,
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+      setValue((x) => ({ ...x, [key]: e.target.value })),
+  });
+  return (
+    <Form layout="vertical" onFinish={onSubmit}>
+      <Typography.Title level={3}>{t("setup.title")}</Typography.Title>
+      <Row gutter={16}>
+        <Col xs={24} md={12}>
+          <Form.Item name="workerUrl" label={t("setup.workerUrl")} required>
+            <Input {...f("workerUrl")} />
+          </Form.Item>
+        </Col>
+        <Col xs={24} md={12}>
+          <Form.Item name="serverName" label={t("setup.serverName")} required>
+            <Input {...f("serverName")} />
+          </Form.Item>
+        </Col>
+        <Col xs={24}>
+          <Form.Item
+            name="registrationCode"
+            label={t("setup.registrationCode")}
+            required
+          >
+            <Input {...f("registrationCode")} />
+          </Form.Item>
+        </Col>
+        {status?.systemCredentialsAvailable && (
+          <Col xs={24}>
+            <Checkbox
+              checked={value.useSystemCredentials}
+              onChange={(e) =>
+                setValue((x) => ({
+                  ...x,
+                  useSystemCredentials: e.target.checked,
+                }))
+              }
+            >
+              {t("setup.useSystemCredentials")}
+            </Checkbox>
+          </Col>
+        )}
+        {!value.useSystemCredentials && (
+          <>
+            <Col xs={24} md={12}>
+              <Form.Item
+                name="credentialFile"
+                label={t("setup.credentialFile")}
+                required
+              >
+                <Input {...f("credentialFile")} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item
+                name="credentialPassword"
+                label={t("setup.credentialPassword")}
+                required
+              >
+                <Input.Password {...f("credentialPassword")} />
+              </Form.Item>
+            </Col>
+          </>
+        )}
+        <Col xs={24} md={12}>
+          <Form.Item
+            name="localUiPassword"
+            label={t("setup.localUiPassword")}
+            required
+          >
+            <Input.Password {...f("localUiPassword")} />
+          </Form.Item>
+        </Col>
+        <Col xs={24} md={12}>
+          <Form.Item
+            name="localUiPasswordConfirmation"
+            label={t("setup.confirmPassword")}
+            required
+          >
+            <Input.Password {...f("localUiPasswordConfirmation")} />
+          </Form.Item>
+        </Col>
+      </Row>
+      <Button
+        type="primary"
+        htmlType="submit"
+        loading={busy}
+        icon={<ShieldCheck size={15} />}
+      >
+        {t("setup.submit")}
+      </Button>
+    </Form>
+  );
 }
-
-function AccessHeading({ icon, title }: { icon: React.ReactNode; title: string }) {
-  return <div className="access-heading"><span>{icon}</span><h2>{title}</h2></div>
+function Overview({
+  status,
+  diagnostics,
+  plugins,
+  enabled,
+  lastUpdated,
+  t,
+}: any) {
+  return (
+    <>
+      <Typography.Title level={2}>{t("nav.overview")}</Typography.Title>
+      <Row gutter={[16, 16]}>
+        <Col xs={24} md={12}>
+          <Card
+            title={
+              status?.connected
+                ? t("overview.connectedTitle")
+                : t("overview.offlineTitle")
+            }
+          >
+            <Alert
+              type={status?.connected ? "success" : "warning"}
+              showIcon
+              message={
+                status?.connected ? t("overview.online") : t("overview.offline")
+              }
+              description={
+                status?.connected
+                  ? t("overview.connectedBody")
+                  : t("overview.offlineBody")
+              }
+            />
+          </Card>
+        </Col>
+        <Col xs={24} md={12}>
+          <Card>
+            <Descriptions column={1}>
+              <Descriptions.Item label={t("connector.label")}>
+                {status?.connected
+                  ? t("connector.online")
+                  : t("connector.offline")}
+              </Descriptions.Item>
+              <Descriptions.Item label="Server ID">
+                {status?.serverId ?? t("common.serverIdMissing")}
+              </Descriptions.Item>
+              <Descriptions.Item
+                label={t("common.updatedAt", {
+                  time: lastUpdated?.toLocaleTimeString() ?? "—",
+                })}
+              >
+                {status?.port ?? "—"}
+              </Descriptions.Item>
+            </Descriptions>
+          </Card>
+        </Col>
+        {[
+          [t("metrics.plugins"), diagnostics?.pluginCount ?? plugins.length],
+          [t("metrics.enabled"), enabled],
+          [t("metrics.failed"), diagnostics?.failedPluginCount ?? 0],
+          [t("metrics.port"), status?.port ?? "—"],
+        ].map(([label, value]) => (
+          <Col xs={12} md={6} key={String(label)}>
+            <Card>
+              <Statistic title={label} value={value as any} />
+            </Card>
+          </Col>
+        ))}
+      </Row>
+    </>
+  );
 }
-
-function Field({ label, wide = false, children }: { label: string; wide?: boolean; children: React.ReactNode }) {
-  return <label className={wide ? 'wide-field' : undefined}><span>{label}</span>{children}</label>
+function PluginsPage({ plugins, loading, busy, onAction, onHealth, t }: any) {
+  const columns = [
+    {
+      title: "Name",
+      dataIndex: "name",
+      render: (_: string, p: LocalPlugin) => (
+        <Space direction="vertical">
+          <Typography.Text strong>{p.name}</Typography.Text>
+          <Typography.Text type="secondary">
+            {p.id} · v{p.version} · ABI {p.abiVersion}
+          </Typography.Text>
+        </Space>
+      ),
+    },
+    {
+      title: "State",
+      dataIndex: "state",
+      render: (s: string) => (
+        <Tag
+          color={s === "enabled" ? "green" : s === "failed" ? "red" : "gold"}
+        >
+          {t(`state.${s}`, { defaultValue: s })}
+        </Tag>
+      ),
+    },
+    { title: t("plugins.library"), dataIndex: "library" },
+    {
+      title: "Actions",
+      render: (_: unknown, p: LocalPlugin) => (
+        <PluginActions
+          plugin={p}
+          busy={busy === p.id}
+          onAction={onAction}
+          onHealth={onHealth}
+          t={t}
+        />
+      ),
+    },
+  ];
+  return (
+    <Card
+      title={
+        <Typography.Title level={2}>{t("plugins.title")}</Typography.Title>
+      }
+    >
+      <Table
+        rowKey="id"
+        loading={loading}
+        locale={{ emptyText: <Empty description={t("plugins.emptyTitle")} /> }}
+        dataSource={plugins}
+        columns={columns}
+        scroll={{ x: 700 }}
+      />
+    </Card>
+  );
 }
-
-function Metric({ label, value, icon, accent = false, danger = false }: { label: string; value: number | string; icon: React.ReactNode; accent?: boolean; danger?: boolean }) {
-  return <div className={`metric ${accent ? 'accent' : ''} ${danger ? 'danger' : ''}`}><span className="metric-icon">{icon}</span><span className="metric-label">{label}</span><strong>{value}</strong></div>
+function PluginActions({ plugin, busy, onAction, onHealth, t }: any) {
+  if (busy) return <Spin size="small" />;
+  return (
+    <Space wrap>
+      {plugin.state === "enabled" && (
+        <Button
+          aria-label={t("plugins.health")}
+          size="small"
+          onClick={() => onHealth(plugin)}
+        >
+          {t("plugins.health")}
+        </Button>
+      )}
+      <Button
+        aria-label={
+          plugin.state === "discovered" || plugin.state === "unloaded"
+            ? t("plugins.load")
+            : t("plugins.reload")
+        }
+        size="small"
+        onClick={() =>
+          onAction(
+            plugin,
+            plugin.state === "discovered" || plugin.state === "unloaded"
+              ? "load"
+              : "reload",
+          )
+        }
+      >
+        {plugin.state === "discovered" || plugin.state === "unloaded"
+          ? t("plugins.load")
+          : t("plugins.reload")}
+      </Button>
+      {(plugin.state === "loaded" || plugin.state === "disabled") && (
+        <Button
+          aria-label={t("plugins.enable")}
+          size="small"
+          type="primary"
+          onClick={() => onAction(plugin, "enable")}
+        >
+          {t("plugins.enable")}
+        </Button>
+      )}
+      {plugin.state === "enabled" && (
+        <Button
+          aria-label={t("plugins.disable")}
+          size="small"
+          onClick={() => onAction(plugin, "disable")}
+        >
+          {t("plugins.disable")}
+        </Button>
+      )}
+      {plugin.state !== "discovered" && plugin.state !== "unloaded" && (
+        <Button
+          aria-label={t("plugins.unload")}
+          size="small"
+          danger
+          onClick={() => onAction(plugin, "unload")}
+        >
+          {t("plugins.unload")}
+        </Button>
+      )}
+    </Space>
+  );
 }
-
-function PluginRow({ plugin, busy, onAction, onHealth }: { plugin: LocalPlugin; busy: boolean; onAction: (action: 'load' | 'unload' | 'enable' | 'disable' | 'reload') => void; onHealth: () => void }) {
-  const { t } = useTranslation()
-  const canEnable = plugin.state === 'loaded' || plugin.state === 'disabled'
-  const canDisable = plugin.state === 'enabled'
-  const canUnload = plugin.state !== 'discovered' && plugin.state !== 'unloaded'
-  return <article className="plugin-row"><div className="plugin-main"><div className="plugin-icon"><FileCode2 size={18} /></div><div className="plugin-copy"><div className="plugin-title"><h3>{plugin.name}</h3><span className={`status-badge ${stateTone(plugin.state)}`}><span className="status-dot" />{t(`state.${plugin.state}`, { defaultValue: plugin.state })}</span></div><span className="plugin-id">{plugin.id} · v{plugin.version} · ABI {plugin.abiVersion}</span><span className="plugin-meta">{t('plugins.library')}: {plugin.library} · {t('plugins.healthPath')}: {plugin.healthPath} · {t('plugins.permissions')}: {plugin.permissions.length > 0 ? plugin.permissions.join(', ') : t('plugins.noPermissions')}</span><div className="capability-list">{plugin.capabilities.http && <span>HTTP</span>}{plugin.capabilities.websocket && <span>WebSocket</span>}{plugin.capabilities.sse && <span>SSE</span>}{plugin.capabilities.fileStream && <span>{t('plugins.fileStream')}</span>}</div></div></div><div className="plugin-actions">{busy ? <span className="action-loading"><LoaderCircle size={16} className="spin" />{t('common.processing')}</span> : <>{plugin.state === 'enabled' && <ActionButton label={t('plugins.health')} onClick={onHealth} />}{plugin.state === 'discovered' || plugin.state === 'unloaded' ? <ActionButton label={t('plugins.load')} onClick={() => onAction('load')} /> : <ActionButton label={t('plugins.reload')} onClick={() => onAction('reload')} />}{canEnable && <ActionButton label={t('plugins.enable')} onClick={() => onAction('enable')} primary />}{canDisable && <ActionButton label={t('plugins.disable')} onClick={() => onAction('disable')} />}{canUnload && <ActionButton label={t('plugins.unload')} onClick={() => onAction('unload')} />}</>}</div></article>
+function MappingsPage({
+  targets,
+  allTargets,
+  authStates,
+  mappings,
+  mappingForm,
+  setMappingForm,
+  editing,
+  setEditing,
+  form,
+  busy,
+  authBusy,
+  refreshTargets,
+  onVerify,
+  onSave,
+  onMappingAction,
+  t,
+}: any) {
+  const targetOptions = targets.map((x: MappingTarget) => ({
+    label: x.name,
+    value: x.id,
+  }));
+  const columns = [
+    { title: t("mappings.name"), dataIndex: "name" },
+    {
+      title: "Endpoint",
+      render: (_: unknown, m: LocalMapping) =>
+        `${m.protocol.toUpperCase()} · 127.0.0.1:${m.listenPort} → ${m.targetHost}:${m.targetPort}`,
+    },
+    { title: t("mappings.targetServer"), dataIndex: "targetServer" },
+    {
+      title: "State",
+      render: (_: unknown, m: LocalMapping) => (
+        <Tag color={m.state === "listening" ? "green" : "gold"}>
+          {t(
+            m.state === "listening" ? "mappings.listening" : "mappings.stopped",
+          )}
+        </Tag>
+      ),
+    },
+    {
+      title: "Actions",
+      render: (_: unknown, m: LocalMapping) => (
+        <Space>
+          <Button
+            aria-label={t(m.enabled ? "mappings.disable" : "mappings.enable")}
+            icon={<Power size={14} />}
+            onClick={() => onMappingAction(m, "toggle")}
+          />
+          <Button
+            aria-label={t("mappings.edit")}
+            icon={<Pencil size={14} />}
+            onClick={() => {
+              setEditing(m.name);
+              const next = {
+                name: m.name,
+                protocol: m.protocol,
+                listenPort: String(m.listenPort),
+                targetServerId: m.targetServerId,
+                targetHost: m.targetHost,
+                targetPort: String(m.targetPort),
+                enabled: m.enabled,
+              };
+              setMappingForm(next);
+              form.setFieldsValue(next);
+            }}
+          />
+          <Popconfirm
+            title={t("mappings.delete")}
+            onConfirm={() => onMappingAction(m, "delete")}
+          >
+            <Button
+              danger
+              aria-label={t("mappings.delete")}
+              icon={<Trash2 size={14} />}
+            />
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+  return (
+    <Space direction="vertical" size="large" className="screen-stack">
+      <Card
+        title={
+          <Space>
+            <Typography.Title level={2}>{t("mappings.title")}</Typography.Title>
+            <Button icon={<RefreshCw size={14} />} onClick={refreshTargets}>
+              {t("mappings.refreshTargets")}
+            </Button>
+          </Space>
+        }
+      >
+        <Table
+          rowKey="id"
+          dataSource={allTargets}
+          pagination={false}
+          scroll={{ x: 600 }}
+          columns={[
+            {
+              title: t("mappings.targetServer"),
+              render: (_: unknown, x: MappingTarget) => (
+                <Space direction="vertical">
+                  <Typography.Text>{x.name}</Typography.Text>
+                  <Typography.Text type="secondary">{x.id}</Typography.Text>
+                </Space>
+              ),
+            },
+            {
+              title: "Status",
+              render: (_: unknown, x: MappingTarget) => (
+                <Tag color={x.status === "online" ? "green" : "default"}>
+                  {x.status}
+                </Tag>
+              ),
+            },
+            {
+              title: "Authorization",
+              render: (_: unknown, x: MappingTarget) => (
+                <Tag
+                  color={
+                    authStates[x.id] === "authorized"
+                      ? "green"
+                      : authStates[x.id] === "failed"
+                        ? "red"
+                        : "gold"
+                  }
+                >
+                  {t(
+                    authStates[x.id] === "authorized"
+                      ? "mappings.authorized"
+                      : authStates[x.id] === "failed"
+                        ? "mappings.failed"
+                        : "mappings.needsAuth",
+                  )}
+                </Tag>
+              ),
+            },
+            {
+              title: "Action",
+              render: (_: unknown, x: MappingTarget) => (
+                <Button
+                  disabled={x.status !== "online" || authBusy}
+                  onClick={() => onVerify(x)}
+                  icon={<KeyRound size={14} />}
+                >
+                  {t("mappings.verifyMenu")}
+                </Button>
+              ),
+            },
+          ]}
+        />
+      </Card>
+      <Card title={editing ? t("mappings.update") : t("mappings.add")}>
+        <Form
+          form={form}
+          layout="vertical"
+          initialValues={mappingForm}
+          onFinish={onSave}
+        >
+          <Row gutter={16}>
+            <Col xs={24} md={8}>
+              <Form.Item
+                name="name"
+                label={t("mappings.name")}
+                rules={[{ required: true }]}
+              >
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={4}>
+              <Form.Item name="protocol" label={t("mappings.protocol")}>
+                <Select
+                  options={[
+                    { value: "tcp", label: "TCP" },
+                    { value: "http", label: "HTTP" },
+                    { value: "websocket", label: "WebSocket" },
+                  ]}
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={4}>
+              <Form.Item
+                name="listenPort"
+                label={t("mappings.listenPort")}
+                rules={[{ required: true }]}
+              >
+                <Input type="number" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={8}>
+              <Form.Item
+                name="targetServerId"
+                label={t("mappings.targetServer")}
+                rules={[{ required: true }]}
+              >
+                <Select
+                  aria-label={t("mappings.targetServer")}
+                  options={targetOptions}
+                  placeholder={t("mappings.selectTarget")}
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item
+                name="targetHost"
+                label={t("mappings.targetHost")}
+                rules={[{ required: true }]}
+              >
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item
+                name="targetPort"
+                label={t("mappings.targetPort")}
+                rules={[{ required: true }]}
+              >
+                <Input type="number" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Space>
+            <Button type="primary" htmlType="submit" loading={busy}>
+              {editing ? t("mappings.update") : t("mappings.add")}
+            </Button>
+            {editing && (
+              <Button
+                onClick={() => {
+                  setEditing("");
+                  setMappingForm(emptyMapping);
+                  form.resetFields();
+                }}
+              >
+                {t("common.cancel")}
+              </Button>
+            )}
+          </Space>
+        </Form>
+      </Card>
+      <Card title={t("mappings.title")}>
+        <Table
+          rowKey="name"
+          dataSource={mappings}
+          locale={{
+            emptyText: <Empty description={t("mappings.emptyTitle")} />,
+          }}
+          columns={columns}
+          scroll={{ x: 700 }}
+        />
+      </Card>
+    </Space>
+  );
 }
-
-function ActionButton({ label, onClick, primary = false }: { label: string; onClick: () => void; primary?: boolean }) {
-  return <button className={`button compact ${primary ? 'primary' : 'secondary'}`} onClick={onClick}>{label}</button>
+function SetupPage({
+  status,
+  credentialPassword,
+  setCredentialPassword,
+  onAction,
+  t,
+}: any) {
+  return (
+    <Card
+      title={
+        <Typography.Title level={2}>{t("binding.title")}</Typography.Title>
+      }
+    >
+      <Descriptions bordered column={{ xs: 1, md: 2 }}>
+        <Descriptions.Item label="Server ID">
+          {status?.serverId ?? "—"}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("binding.configured")}>
+          <Tag color="green">{t("binding.configured")}</Tag>
+        </Descriptions.Item>
+        <Descriptions.Item label="Worker">
+          {status?.workerUrl ?? "—"}
+        </Descriptions.Item>
+        <Descriptions.Item
+          label={t("binding.storeFile", {
+            path: status?.credentialFile ?? t("binding.storeSystem"),
+          })}
+        >
+          {status?.credentialFile ?? t("binding.storeSystem")}
+        </Descriptions.Item>
+      </Descriptions>
+      <Form layout="vertical" className="setup-action-form">
+        <Form.Item label={t("binding.credentialPassword")}>
+          <Input.Password
+            value={credentialPassword}
+            onChange={(e) => setCredentialPassword(e.target.value)}
+          />
+        </Form.Item>
+        <Space>
+          <Button onClick={() => onAction("rotate")}>
+            {t("binding.rotate")}
+          </Button>
+          <Button danger onClick={() => onAction("revoke")}>
+            {t("binding.revoke")}
+          </Button>
+        </Space>
+      </Form>
+    </Card>
+  );
 }
-
-function LoadingState() {
-  const { t } = useTranslation()
-  return <div className="loading-state"><LoaderCircle size={18} className="spin" /><span>{t('plugins.loading')}</span></div>
+function LogsPage({ logs, t }: any) {
+  return (
+    <Card
+      title={<Typography.Title level={2}>{t("logs.title")}</Typography.Title>}
+    >
+      <Table
+        rowKey={(x: LocalLog, i) => `${x.timestamp}-${i}`}
+        dataSource={logs.slice().reverse()}
+        pagination={{ pageSize: 20 }}
+        columns={[
+          {
+            title: "Level",
+            render: (_: unknown, x: LocalLog) => (
+              <Tag
+                color={x.level >= 3 ? "red" : x.level === 2 ? "gold" : "green"}
+              >
+                {x.level >= 3 ? "ERR" : x.level === 2 ? "WARN" : "INFO"}
+              </Tag>
+            ),
+          },
+          { title: "Time", dataIndex: "timestamp" },
+          { title: "Message", dataIndex: "message" },
+        ]}
+        locale={{ emptyText: <Empty description={t("logs.emptyTitle")} /> }}
+      />
+    </Card>
+  );
 }
-
 function LanguageButton() {
-  const { t, i18n: translate } = useTranslation()
-  const next = translate.resolvedLanguage === 'en' ? 'zh-CN' : 'en'
-  const change = () => {
-    storeLanguage(next)
-    void translate.changeLanguage(next)
-  }
-  return <button className="icon-button" title={t('language.switch')} aria-label={t('language.switch')} onClick={change}><Languages size={16} /></button>
+  const { t, i18n: translate } = useTranslation();
+  const next = translate.resolvedLanguage === "en" ? "zh-CN" : "en";
+  return (
+    <Button
+      aria-label={t("language.switch")}
+      icon={<Languages size={16} />}
+      onClick={() => {
+        storeLanguage(next);
+        void translate.changeLanguage(next);
+      }}
+    />
+  );
 }
-function EmptyState({ title, body }: { title: string; body: string }) { return <div className="empty-state"><FileCode2 size={22} /><strong>{title}</strong><span>{body}</span></div> }
-
-createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>)
-
-export default App
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <ConfigProvider
+      theme={{
+        algorithm: antdTheme.defaultAlgorithm,
+        token: { borderRadius: 6, colorPrimary: "#1677ff" },
+      }}
+    >
+      <App />
+    </ConfigProvider>
+  </StrictMode>,
+);
+export default App;

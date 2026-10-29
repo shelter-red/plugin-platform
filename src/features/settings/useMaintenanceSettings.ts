@@ -10,6 +10,7 @@ export const PLATFORM_QUOTA_FIELDS = [
 ] as const
 
 type PlatformQuotaForm = Record<keyof PlatformQuotas, string>
+const DEFAULT_DOMAIN_SUFFIX = '.plugins.example.com'
 
 const EMPTY_PLATFORM_FORM: PlatformQuotaForm = { activeConnections: '', r2Bytes: '', r2Objects: '' }
 
@@ -22,6 +23,7 @@ export function useMaintenanceSettings(settings: PlatformSettings | null, onChan
   const [quotaForm, setQuotaForm] = useState(EMPTY_PLATFORM_FORM)
   const [domainSuffix, setDomainSuffix] = useState('')
   const maintenance = settings?.maintenance ?? false
+  const canResetDomainSuffix = Boolean(settings && settings.pluginDomainSuffix !== DEFAULT_DOMAIN_SUFFIX)
 
   useEffect(() => {
     if (!settings) return
@@ -72,6 +74,23 @@ export function useMaintenanceSettings(settings: PlatformSettings | null, onChan
     }
   }
 
+  const resetDomainSuffix = async () => {
+    if (!settings) {
+      onAction('warning', t('settings.domainSuffix.notConnected'))
+      return
+    }
+    setSuffixSaving(true)
+    try {
+      const next = await updatePlatformSettings({ ...settings, pluginDomainSuffix: '' })
+      onChange(next)
+      setDomainSuffix(next.pluginDomainSuffix)
+      onAction('success', t('settings.domainSuffix.resetDone'))
+    } catch {
+      onAction('error', t('settings.domainSuffix.resetFailed'))
+    } finally {
+      setSuffixSaving(false)
+    }
+  }
   const saveQuotas = async () => {
     if (!settings) {
       onAction('warning', t('settings.quotas.notConnected'))
@@ -99,8 +118,8 @@ export function useMaintenanceSettings(settings: PlatformSettings | null, onChan
 
   return {
     maintenance, saving, quotaSaving, suffixSaving,
-    quotaForm, domainSuffix,
+    quotaForm, domainSuffix, canResetDomainSuffix,
     setQuotaForm, setDomainSuffix,
-    toggleMaintenance, saveDomainSuffix, saveQuotas,
+    toggleMaintenance, saveDomainSuffix, resetDomainSuffix, saveQuotas,
   }
 }

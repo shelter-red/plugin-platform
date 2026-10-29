@@ -9,6 +9,8 @@ const MAX_CONTROL_COMMAND_BYTES = 8 * 1024
 const MAX_PROXY_REQUEST_BODY_BYTES = 32 * 1024
 const MAX_PROXY_RESPONSE_BODY_BYTES = 16 * 1024 * 1024
 const MAX_WEBSOCKET_MESSAGE_BYTES = 32 * 1024
+const REVOKED_DOMAIN_TTL_MS = 60_000
+const MAX_REVOKED_DOMAINS = 512
 const FILE_STREAM_R2_THRESHOLD_BYTES = 1024 * 1024
 const CONTROL_FRAME_TIME_WINDOW_MS = 5 * 60 * 1000
 const MAX_SEEN_CONTROL_NONCES = 2048
@@ -46,6 +48,8 @@ export class PluginBridge {
   private pending = new Map<string, PendingResponse>()
   private pendingCommands = new Map<string, PendingCommand>()
   private publicSockets = new Map<string, WebSocket>()
+  private publicSocketDomains = new Map<string, string>()
+  private revokedDomains = new Map<string, number>()
   private reservedPublicConnections = new Set<string>()
   private seenControlNonces = new Map<string, number>()
 
@@ -55,13 +59,37 @@ export class PluginBridge {
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url)
+    const publicDomainId = request.headers.get('x-plugmesh-domain-id') ?? ''
+    if ((url.pathname === '/proxy' || url.pathname === '/websocket') && this.isDomainRevoked(publicDomainId)) return new Response('Domain not found', { status: 410 })
     if (url.pathname === '/status') return Response.json({ online: Boolean(this.serverSocket && this.serverSocket.readyState === WebSocket.OPEN) })
+    if (url.pathname === '/admin/disconnect') return this.adminDisconnect(request)
+    if (url.pathname === '/admin/disconnect-domain') return this.adminDisconnectDomain(request, url)
     if (url.pathname === '/connect') return this.connectServer(request)
     if (url.pathname === '/proxy') return this.proxyRequest(request)
     if (url.pathname === '/command') return this.command(request)
     if (url.pathname === '/tunnel/open') return this.openTunnel(request)
     if (url.pathname === '/websocket') return this.proxyWebSocket(request)
     return new Response('Not found', { status: 404 })
+  }
+
+  private adminDisconnect(request: Request): Response {
+    if (request.method !== 'POST' || !this.serverId || request.headers.get('x-plugmesh-server-id') !== this.serverId) return new Response('Forbidden', { status: 403 })
+    const socket = this.serverSocket
+    this.serverSocket = null
+    this.failPendingRequests('Plugin server binding deleted', 503)
+    this.failPendingCommands('Plugin server binding deleted')
+    this.closePublicSockets(1008, 'Plugin server binding deleted')
+    socket?.close(1008, 'Server binding deleted')
+    return new Response(null, { status: 204 })
+  }
+
+  private adminDisconnectDomain(request: Request, url: URL): Response {
+    if (request.method !== 'POST' || !this.serverId || request.headers.get('x-plugmesh-server-id') !== this.serverId) return new Response('Forbidden', { status: 403 })
+    const domainId = url.searchParams.get('domainId')
+    if (!domainId) return new Response('Domain id is required', { status: 400 })
+    this.closePublicSocketsForDomain(domainId)
+    this.rememberRevokedDomain(domainId)
+    return new Response(null, { status: 204 })
   }
 
   private connectServer(request: Request): Response {
@@ -162,12 +190,14 @@ export class PluginBridge {
     const socket = pair[1]
     const connectionId = crypto.randomUUID()
     const pluginId = request.headers.get('x-plugmesh-plugin-id') ?? undefined
+    const domainId = request.headers.get('x-plugmesh-domain-id') ?? ''
     const requestPath = request.headers.get('x-plugmesh-request-path') ?? (() => {
       const url = new URL(request.url)
       return url.pathname + url.search
     })()
     socket.accept()
     this.publicSockets.set(connectionId, socket)
+    if (domainId) this.publicSocketDomains.set(connectionId, domainId)
     this.reservedPublicConnections.add(connectionId)
     socket.addEventListener('message', (event) => {
       const binary = typeof event.data !== 'string'
@@ -192,6 +222,7 @@ export class PluginBridge {
     socket.addEventListener('close', (event) => {
       if (this.publicSockets.get(connectionId) !== socket) return
       this.publicSockets.delete(connectionId)
+      this.publicSocketDomains.delete(connectionId)
       if (this.reservedPublicConnections.delete(connectionId)) void releaseActiveConnection(this.env)
       if (this.serverSocket?.readyState === WebSocket.OPEN) {
         try {
@@ -212,6 +243,7 @@ export class PluginBridge {
       this.serverSocket.send(serializedFrame)
     } catch {
       this.publicSockets.delete(connectionId)
+      this.publicSocketDomains.delete(connectionId)
       this.reservedPublicConnections.delete(connectionId)
       void releaseActiveConnection(this.env)
       socket.close(1011, 'Plugin server unavailable')
@@ -309,11 +341,40 @@ export class PluginBridge {
   private closePublicSockets(code: number, reason: string) {
     const sockets = [...this.publicSockets.entries()]
     this.publicSockets.clear()
+    this.publicSocketDomains.clear()
     for (const [connectionId, socket] of sockets) {
       if (this.reservedPublicConnections.delete(connectionId)) void releaseActiveConnection(this.env)
       socket.close(code, reason)
     }
   }
+  private closePublicSocketsForDomain(domainId: string) {
+    for (const [connectionId, socket] of this.publicSockets) {
+      if (this.publicSocketDomains.get(connectionId) === domainId) socket.close(1008, 'Plugin domain deleted')
+    }
+  }
+  private rememberRevokedDomain(domainId: string) {
+    const now = Date.now()
+    for (const [id, expiresAt] of this.revokedDomains) if (expiresAt <= now) this.revokedDomains.delete(id)
+    this.revokedDomains.delete(domainId)
+    while (this.revokedDomains.size >= MAX_REVOKED_DOMAINS) {
+      const oldest = this.revokedDomains.keys().next().value
+      if (oldest === undefined) break
+      this.revokedDomains.delete(oldest)
+    }
+    this.revokedDomains.set(domainId, now + REVOKED_DOMAIN_TTL_MS)
+  }
+
+  private isDomainRevoked(domainId: string) {
+    if (!domainId) return false
+    const expiresAt = this.revokedDomains.get(domainId)
+    if (!expiresAt) return false
+    if (expiresAt <= Date.now()) {
+      this.revokedDomains.delete(domainId)
+      return false
+    }
+    return true
+  }
+
 
   private handleServerMessage(data: string | ArrayBuffer) {
     const raw = typeof data === 'string' ? data : new TextDecoder().decode(data)

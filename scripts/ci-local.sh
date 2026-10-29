@@ -32,6 +32,17 @@ npm run --silent build
 step 'Worker smoke'
 npm run --silent worker:smoke
 
+step 'Worker runtime integration tests'
+if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+  echo 'Worker runtime tests require Docker and the Playwright Noble image because workerd needs glibc 2.32+.' >&2
+  exit 1
+fi
+docker run --rm --ipc=host \
+  --user "$(id -u):$(id -g)" \
+  -e HOME=/tmp \
+  -v "$PWD:/w" -w /w \
+  mcr.microsoft.com/playwright:v1.55.1-noble npm run worker:runtime-test
+
 step '管理端 UI smoke（含双主题×三视口像素基线）'
 # CI=1 不只影响报告：playwright.config.ts 里的重试次数和断言超时都按 CI 取值，
 # 不设这个变量跑出来的「全绿」并不等于 Actions 上的行为。

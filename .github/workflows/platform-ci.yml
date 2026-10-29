@@ -58,6 +58,8 @@ jobs:
         run: npm run build
       - name: Worker smoke
         run: npm run worker:smoke
+      - name: Worker runtime tests
+        run: npm run worker:runtime-test
       - name: 管理端 UI smoke
         run: npm run ui:smoke
       - name: 汇总失败用例

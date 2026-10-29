@@ -181,10 +181,13 @@ export interface ApiAudit {
 export interface ApiAccessLog {
   id: string
   hostname: string
+  server_name: string | null
+  plugin_name: string | null
   method: string
   path: string
   status: number
   duration_ms: number
+  response_preview: string | null
   error: string | null
   created_at: string
 }
@@ -366,6 +369,12 @@ export async function fetchServerDetails(serverId: string): Promise<ApiServerDet
   return response.json() as Promise<ApiServerDetail>
 }
 
+export async function deleteServer(serverId: string): Promise<{ cleanupPending?: boolean }> {
+  const response = await apiRequest(`/api/servers/${encodeURIComponent(serverId)}`, { method: 'DELETE' })
+  await assertOk(response, 'server deletion request failed')
+  return response.json() as Promise<{ cleanupPending?: boolean }>
+}
+
 export async function fetchPlugins(): Promise<ApiPlugin[]> {
   const response = await apiRequest(`/api/plugins`, { credentials: 'include' })
   if (!response.ok) throw new ApiError(response.status, 'plugins request failed')
@@ -384,6 +393,12 @@ export async function fetchDomains(): Promise<ApiDomain[]> {
   if (!response.ok) throw new ApiError(response.status, 'domains request failed')
   const data = await response.json() as { results?: ApiDomain[] }
   return data.results ?? []
+}
+
+export async function deleteDomain(domainId: string): Promise<{ cleanupPending?: boolean }> {
+  const response = await apiRequest(`/api/domains/${encodeURIComponent(domainId)}`, { method: 'DELETE' })
+  await assertOk(response, 'domain deletion request failed')
+  return response.json() as Promise<{ cleanupPending?: boolean }>
 }
 
 export async function fetchAudit(): Promise<ApiAudit[]> {

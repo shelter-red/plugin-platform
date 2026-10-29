@@ -248,6 +248,10 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   if (url.pathname === '/api/usage/local') return localUsageApi(env, user, url, workspace)
   const serverDetail = url.pathname.match(/^\/api\/servers\/([^/]+)$/)
   const serverSync = url.pathname.match(/^\/api\/servers\/([^/]+)\/sync$/)
+  if (request.method === 'DELETE' && serverDetail) {
+    const serverId = decodePathSegment(serverDetail[1])
+    return serverId === null ? json({ error: 'Not found' }, 404) : deleteServerApi(env, user, workspace, serverId, request.url)
+  }
   if (request.method === 'POST' && serverSync) {
     const serverId = decodePathSegment(serverSync[1])
     return serverId === null ? json({ error: 'Not found' }, 404) : syncServer(request, env, user, workspace, serverId)
@@ -265,6 +269,11 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   if (request.method === 'POST' && pluginAction) {
     const pluginId = decodePathSegment(pluginAction[1])
     return pluginId === null ? json({ error: 'Not found' }, 404) : commandPlugin(request, env, user, workspace, pluginId, pluginAction[2] as 'load' | 'unload' | 'enable' | 'disable' | 'reload' | 'health')
+  }
+  const domainDetail = url.pathname.match(/^\/api\/domains\/([^/]+)$/)
+  if (request.method === 'DELETE' && domainDetail) {
+    const domainId = decodePathSegment(domainDetail[1])
+    return domainId === null ? json({ error: 'Not found' }, 404) : deleteDomainApi(env, user, workspace, domainId, request.url)
   }
   if (request.method === 'POST' && url.pathname === '/api/domains') return assignDomain(request, env, user, workspace)
   if (request.method === 'POST' && url.pathname === '/api/registration-codes') return createRegistrationCode(env, user, workspace)
@@ -383,12 +392,66 @@ async function workspaceApi(request: Request, env: Env, user: AuthenticatedUser,
   return json({ id: access.workspace.id, deleted: true })
 }
 
+async function deleteServerApi(env: Env, user: AuthenticatedUser, workspace: Workspace, serverId: string, baseUrl: string): Promise<Response> {
+  const server = await env.DB.prepare('SELECT id, name FROM servers WHERE id = ? AND workspace_id = ?').bind(serverId, workspace.id).first<{ id: string; name: string }>()
+  if (!server) return json({ error: 'Plugin server not found' }, 404)
+  const domains = await env.DB.prepare('SELECT id, hostname FROM domains WHERE workspace_id = ? AND plugin_instance_id IN (SELECT id FROM plugin_instances WHERE server_id = ?)').bind(workspace.id, serverId).all<{ id: string; hostname: string }>()
+  const deletedAt = new Date().toISOString()
+  const results = await env.DB.batch([
+    env.DB.prepare("UPDATE servers SET status = 'revoked', last_seen_at = ? WHERE id = ? AND workspace_id = ?").bind(deletedAt, serverId, workspace.id),
+    env.DB.prepare("UPDATE plugin_instances SET state = 'server_offline', desired_state = 'unloaded', updated_at = ? WHERE server_id = ? AND workspace_id = ?").bind(deletedAt, serverId, workspace.id),
+    env.DB.prepare("UPDATE domains SET status = 'offline' WHERE workspace_id = ? AND plugin_instance_id IN (SELECT id FROM plugin_instances WHERE server_id = ?)").bind(workspace.id, serverId),
+    env.DB.prepare("UPDATE request_logs SET server_id = '', domain_id = '', plugin_instance_id = '' WHERE workspace_id = ? AND server_id = ?").bind(workspace.id, serverId),
+    env.DB.prepare('DELETE FROM domains WHERE workspace_id = ? AND plugin_instance_id IN (SELECT id FROM plugin_instances WHERE server_id = ?)').bind(workspace.id, serverId),
+    env.DB.prepare('DELETE FROM plugin_instances WHERE server_id = ? AND workspace_id = ?').bind(serverId, workspace.id),
+    env.DB.prepare('DELETE FROM servers WHERE id = ? AND workspace_id = ?').bind(serverId, workspace.id),
+    env.DB.prepare('INSERT INTO audit_log (id, workspace_id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), workspace.id, user.id, 'server.deleted', JSON.stringify({ serverId, name: server.name }), deletedAt),
+  ])
+  if ((results[6]?.meta.changes ?? 0) !== 1) return json({ error: 'Plugin server changed while being deleted' }, 409)
+  const cleanupPending = !await retryBridgeCleanup(env, serverId, '/admin/disconnect', baseUrl)
+  if (cleanupPending) await recordAudit(env, workspace.id, user.id, 'server.cleanup.failed', { serverId })
+  for (const domain of domains.results) invalidatePluginRoute(domain.hostname)
+  return json({ id: serverId, deleted: true, cleanupPending })
+}
+
+async function retryBridgeCleanup(env: Env, serverId: string, path: string, baseUrl: string): Promise<boolean> {
+  const bridge = env.PLUGIN_BRIDGE.get(env.PLUGIN_BRIDGE.idFromName(serverId))
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await bridge.fetch(new Request(new URL(path, baseUrl), { method: 'POST', headers: { 'x-plugmesh-server-id': serverId } }))
+      if (response.status === 204) return true
+      const status = await bridge.fetch(new Request(new URL('/status', baseUrl)))
+      if (!(await status.json() as { online?: boolean }).online) return true
+    } catch {
+      // Retry transient Durable Object fetch failures before reporting pending cleanup.
+    }
+    if (attempt < 2) await wait(50 * (attempt + 1))
+  }
+  return false
+}
+
+async function deleteDomainApi(env: Env, user: AuthenticatedUser, workspace: Workspace, domainId: string, baseUrl: string): Promise<Response> {
+  const domain = await env.DB.prepare('SELECT domains.id, domains.hostname, plugin_instances.server_id FROM domains JOIN plugin_instances ON plugin_instances.id = domains.plugin_instance_id WHERE domains.id = ? AND domains.workspace_id = ?').bind(domainId, workspace.id).first<{ id: string; hostname: string; server_id: string }>()
+  if (!domain) return json({ error: 'Domain not found' }, 404)
+  const deletedAt = new Date().toISOString()
+  const results = await env.DB.batch([
+    env.DB.prepare("UPDATE request_logs SET domain_id = '' WHERE workspace_id = ? AND domain_id = ?").bind(workspace.id, domainId),
+    env.DB.prepare('DELETE FROM domains WHERE id = ? AND workspace_id = ?').bind(domainId, workspace.id),
+    env.DB.prepare('INSERT INTO audit_log (id, workspace_id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), workspace.id, user.id, 'domain.deleted', JSON.stringify({ domainId, hostname: domain.hostname }), deletedAt),
+  ])
+  if ((results[1]?.meta.changes ?? 0) !== 1) return json({ error: 'Domain changed while being deleted' }, 409)
+  const cleanupPending = !await retryBridgeCleanup(env, domain.server_id, `/admin/disconnect-domain?domainId=${encodeURIComponent(domainId)}`, baseUrl)
+  if (cleanupPending) await recordAudit(env, workspace.id, user.id, 'domain.cleanup.failed', { domainId, hostname: domain.hostname, serverId: domain.server_id })
+  invalidatePluginRoute(domain.hostname)
+  return json({ id: domainId, deleted: true, cleanupPending })
+}
+
 async function serverDetailsApi(env: Env, workspace: Workspace, serverId: string, baseUrl: string): Promise<Response> {
   const server = await env.DB.prepare('SELECT id, name, status, last_seen_at, created_at FROM servers WHERE id = ? AND workspace_id = ?').bind(serverId, workspace.id).first()
   if (!server) return json({ error: 'Plugin server not found' }, 404)
   const [plugins, errors] = await Promise.all([
     env.DB.prepare('SELECT plugin_instances.id, plugin_instances.plugin_id, plugin_instances.name, plugin_instances.version, plugin_instances.state, plugin_instances.desired_state, plugin_instances.server_id, servers.name AS server_name, plugin_instances.manifest_json, plugin_instances.updated_at, domains.hostname AS domain_hostname FROM plugin_instances JOIN servers ON servers.id = plugin_instances.server_id LEFT JOIN domains ON domains.plugin_instance_id = plugin_instances.id WHERE plugin_instances.server_id = ? AND plugin_instances.workspace_id = ? ORDER BY plugin_instances.updated_at DESC').bind(serverId, workspace.id).all(),
-    env.DB.prepare('SELECT request_logs.id, request_logs.hostname, request_logs.method, request_logs.path, request_logs.status, request_logs.duration_ms, request_logs.error, request_logs.created_at FROM request_logs JOIN plugin_instances ON plugin_instances.id = request_logs.plugin_instance_id WHERE request_logs.workspace_id = ? AND plugin_instances.server_id = ? AND request_logs.status >= 500 ORDER BY request_logs.created_at DESC LIMIT 20').bind(workspace.id, serverId).all(),
+    env.DB.prepare('SELECT id, hostname, server_id, server_name, plugin_name, method, path, status, duration_ms, error, response_preview, created_at FROM request_logs WHERE workspace_id = ? AND server_id = ? AND status >= 500 ORDER BY created_at DESC LIMIT 20').bind(workspace.id, serverId).all(),
   ])
   return json({ server: { ...server, status: server.status === 'revoked' ? 'revoked' : await pluginServerOnline(env, serverId, baseUrl) ? 'online' : 'offline' }, plugins: plugins.results, recentErrors: errors.results })
 }
@@ -407,7 +470,7 @@ export async function syncServer(request: Request, env: Env, user: Authenticated
 async function pluginDetailsApi(env: Env, workspace: Workspace, pluginInstanceId: string, baseUrl: string): Promise<Response> {
   const plugin = await env.DB.prepare('SELECT plugin_instances.id, plugin_instances.plugin_id, plugin_instances.name, plugin_instances.version, plugin_instances.state, plugin_instances.desired_state, plugin_instances.server_id, plugin_instances.manifest_json, plugin_instances.created_at, plugin_instances.updated_at, servers.name AS server_name, servers.status AS server_status, domains.id AS domain_id, domains.hostname AS domain_hostname, domains.status AS domain_status FROM plugin_instances JOIN servers ON servers.id = plugin_instances.server_id LEFT JOIN domains ON domains.plugin_instance_id = plugin_instances.id WHERE plugin_instances.id = ? AND plugin_instances.workspace_id = ?').bind(pluginInstanceId, workspace.id).first<{ server_id: string; server_status: string }>()
   if (!plugin) return json({ error: 'Plugin instance not found' }, 404)
-  const recentErrors = await env.DB.prepare('SELECT id, hostname, method, path, status, duration_ms, error, created_at FROM request_logs WHERE workspace_id = ? AND plugin_instance_id = ? AND status >= 500 ORDER BY created_at DESC LIMIT 20').bind(workspace.id, pluginInstanceId).all()
+  const recentErrors = await env.DB.prepare('SELECT id, hostname, server_id, server_name, plugin_name, method, path, status, duration_ms, error, response_preview, created_at FROM request_logs WHERE workspace_id = ? AND plugin_instance_id = ? AND status >= 500 ORDER BY created_at DESC LIMIT 20').bind(workspace.id, pluginInstanceId).all()
   return json({ plugin: { ...plugin, server_status: plugin.server_status === 'revoked' ? 'revoked' : await pluginServerOnline(env, plugin.server_id, baseUrl) ? 'online' : 'offline' }, recentErrors: recentErrors.results })
 }
 
@@ -687,22 +750,105 @@ type AccessLogRecord = {
   userId: string
   domainId: string
   pluginInstanceId: string
+  serverId: string
+  serverName: string
+  pluginName: string
   hostname: string
   method: string
   path: string
   status: number
   durationMs: number
   error?: string
+  response?: Response
+}
+
+const safePreviewWords = new Set(['ok', 'success', 'healthy', 'ready', 'pong', 'created', 'deleted', 'accepted', 'rejected', 'true', 'false', 'null', 'forbidden', 'unauthorized', 'unavailable', 'timeout'])
+
+function isSafePreviewText(value: string): boolean {
+  const text = value.trim()
+  if (!text) return false
+  if (/\b(?:password|passcode|secret|token|authorization|credential|cookie|session|private[_ -]?key|api[_ -]?key|access[_ -]?key)\b/iu.test(text)) return false
+  if (/https?:\/\/|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/iu.test(text)) return false
+  if (/[A-Za-z0-9+/_=-]{12,}/u.test(text)) return false
+  if (/\b\d{4,}\b/u.test(text)) return false
+  if (/\b(?=[A-Za-z0-9_-]{6,}\b)(?=[A-Za-z0-9_-]*[A-Za-z])(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]+\b/u.test(text)) return false
+  if (text.split(/\s+/u).some((word) => word.length >= 8 && !safePreviewWords.has(word.toLowerCase()))) return false
+  if (!/\s/u.test(text) && !safePreviewWords.has(text.toLowerCase())) return false
+  return true
+}
+
+export function isSafeResponsePreview(text: string, contentType: string): boolean {
+  if (Array.from(text).length >= 20 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(text)) return false
+  if (contentType === 'text/plain') return isSafePreviewText(text)
+  if (contentType !== 'application/json') return false
+  let value: unknown
+  try {
+    value = JSON.parse(text)
+  } catch {
+    return false
+  }
+  if (value === null || typeof value === 'boolean') return true
+  if (typeof value === 'string') return isSafePreviewText(value)
+  if (typeof value !== 'object' || Array.isArray(value)) return false
+  const entries = Object.entries(value)
+  if (entries.length === 0 || entries.length > 3) return false
+  return entries.every(([key, entry]) => {
+    if (!['ok', 'success', 'status', 'message', 'code'].includes(key.toLowerCase())) return false
+    if (typeof entry === 'string') return isSafePreviewText(entry)
+    if (typeof entry === 'boolean') return true
+    return false
+  })
+}
+
+async function shortPrintableResponsePreview(response: Response | undefined): Promise<string | null> {
+  if (!response?.body) return null
+  const declaredLength = response.headers.get('content-length')
+  if (declaredLength === null) return null
+  const length = Number(declaredLength)
+  const contentType = response.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase() ?? ''
+  if (!Number.isInteger(length) || length < 0 || length > 80) return null
+  if (contentType !== 'text/plain' && contentType !== 'application/json') return null
+  const reader = response.clone().body?.getReader()
+  if (!reader) return null
+  const chunks: Uint8Array[] = []
+  let size = 0
+  try {
+    while (size <= 80) {
+      const { done, value } = await reader.read()
+      if (done) break
+      size += value.byteLength
+      if (size > 80) return null
+      chunks.push(value)
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined)
+  }
+  if (size !== length) return null
+  const bytes = new Uint8Array(size)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  let text: string
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+  } catch {
+    return null
+  }
+  if (!isSafeResponsePreview(text, contentType)) return null
+  return text
 }
 
 async function recordAccessLog(env: Env, log: AccessLogRecord): Promise<void> {
-  await env.DB.prepare('INSERT INTO request_logs (id, workspace_id, user_id, domain_id, plugin_instance_id, hostname, method, path, status, duration_ms, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), log.workspaceId, log.userId, log.domainId, log.pluginInstanceId, log.hostname, log.method.slice(0, 16), log.path.slice(0, 2048), log.status, Math.max(0, Math.round(log.durationMs)), log.error?.slice(0, 160) ?? null, new Date().toISOString()).run()
+  const preview = await shortPrintableResponsePreview(log.response)
+  await env.DB.prepare('INSERT INTO request_logs (id, workspace_id, user_id, domain_id, plugin_instance_id, hostname, method, path, status, duration_ms, error, created_at, server_id, server_name, plugin_name, response_preview) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), log.workspaceId, log.userId, log.domainId, log.pluginInstanceId, log.hostname, log.method.slice(0, 16), log.path.slice(0, 2048), log.status, Math.max(0, Math.round(log.durationMs)), log.error?.slice(0, 160) ?? null, new Date().toISOString(), log.serverId, log.serverName.slice(0, 128), log.pluginName.slice(0, 128), preview).run()
 }
 
 async function accessLogsApi(env: Env, workspace: Workspace): Promise<Response> {
   const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
   const [logs, errors] = await Promise.all([
-    env.DB.prepare('SELECT id, hostname, method, path, status, duration_ms, error, created_at FROM request_logs WHERE workspace_id = ? AND created_at >= ? ORDER BY created_at DESC LIMIT 200').bind(workspace.id, since).all(),
+    env.DB.prepare('SELECT id, hostname, server_id, server_name, plugin_name, method, path, status, duration_ms, error, response_preview, created_at FROM request_logs WHERE workspace_id = ? AND created_at >= ? ORDER BY created_at DESC LIMIT 200').bind(workspace.id, since).all(),
     env.DB.prepare('SELECT COUNT(*) AS count FROM request_logs WHERE workspace_id = ? AND created_at >= ? AND status >= 500').bind(workspace.id, since).first<{ count: number }>(),
   ])
   return json({ results: logs.results, errorCount: errors?.count ?? 0, since })
@@ -877,12 +1023,13 @@ async function proxyPublicHost(request: Request, env: Env, url: URL, ctx: Execut
   const startedAt = Date.now()
   const mode = selectPublicRequestMode(request, domain.manifest_json)
   if (!mode) {
-    ctx.waitUntil(recordAccessLog(env, { workspaceId: domain.workspace_id, userId: domain.user_id, domainId: domain.domain_id, pluginInstanceId: domain.plugin_instance_id, hostname: domain.hostname, method: request.method, path: url.pathname, status: 501, durationMs: Date.now() - startedAt, error: 'plugin capability unavailable' }))
+    ctx.waitUntil(recordAccessLog(env, { workspaceId: domain.workspace_id, userId: domain.user_id, domainId: domain.domain_id, pluginInstanceId: domain.plugin_instance_id, serverId: domain.server_id, serverName: domain.server_name, pluginName: domain.plugin_name, hostname: domain.hostname, method: request.method, path: url.pathname, status: 501, durationMs: Date.now() - startedAt, error: 'plugin capability unavailable' }))
     return new Response('Plugin capability is not available', { status: 501, headers: { 'content-type': 'text/plain; charset=utf-8' } })
   }
   const bridge = env.PLUGIN_BRIDGE.get(env.PLUGIN_BRIDGE.idFromName(domain.server_id))
   const headers = new Headers(request.headers)
   headers.set('x-plugmesh-server-id', domain.server_id)
+  headers.set('x-plugmesh-domain-id', domain.domain_id)
   headers.set('x-plugmesh-plugin-id', domain.plugin_id)
   headers.set('x-plugmesh-request-path', url.pathname + url.search)
   headers.set('x-plugmesh-request-mode', mode)
@@ -892,10 +1039,10 @@ async function proxyPublicHost(request: Request, env: Env, url: URL, ctx: Execut
       : await bridge.fetch(new Request(new URL('/proxy', request.url), { method: request.method, headers, body: request.body }))
     const bridgeOffline = bridgeResponse.status === 503 && bridgeResponse.headers.get('x-plugmesh-bridge-error') === 'server-offline'
     const response = bridgeOffline ? maintenanceResponse('插件暂时不可用', '插件服务器当前离线，请稍后再试。') : bridgeResponse
-    ctx.waitUntil(recordAccessLog(env, { workspaceId: domain.workspace_id, userId: domain.user_id, domainId: domain.domain_id, pluginInstanceId: domain.plugin_instance_id, hostname: domain.hostname, method: request.method, path: url.pathname, status: response.status, durationMs: Date.now() - startedAt, ...(bridgeOffline ? { error: 'plugin server offline' } : {}) }))
+    ctx.waitUntil(recordAccessLog(env, { workspaceId: domain.workspace_id, userId: domain.user_id, domainId: domain.domain_id, pluginInstanceId: domain.plugin_instance_id, serverId: domain.server_id, serverName: domain.server_name, pluginName: domain.plugin_name, hostname: domain.hostname, method: request.method, path: url.pathname, status: response.status, durationMs: Date.now() - startedAt, response, ...(bridgeOffline ? { error: 'plugin server offline' } : {}) }))
     return response
   } catch {
-    ctx.waitUntil(recordAccessLog(env, { workspaceId: domain.workspace_id, userId: domain.user_id, domainId: domain.domain_id, pluginInstanceId: domain.plugin_instance_id, hostname: domain.hostname, method: request.method, path: url.pathname, status: 502, durationMs: Date.now() - startedAt, error: 'bridge request failed' }))
+    ctx.waitUntil(recordAccessLog(env, { workspaceId: domain.workspace_id, userId: domain.user_id, domainId: domain.domain_id, pluginInstanceId: domain.plugin_instance_id, serverId: domain.server_id, serverName: domain.server_name, pluginName: domain.plugin_name, hostname: domain.hostname, method: request.method, path: url.pathname, status: 502, durationMs: Date.now() - startedAt, error: 'bridge request failed' }))
     return new Response('Plugin bridge request failed', { status: 502 })
   }
 }
@@ -918,12 +1065,16 @@ async function platformSettingsApi(request: Request, env: Env, user: Authenticat
       message: 'Cloudflare 免费额度由 subscriptions 读取，不能在平台设置中修改',
     }, 400)
   }
-  const pluginDomainSuffix = body?.pluginDomainSuffix === undefined
+  const requestedSuffix = body?.pluginDomainSuffix
+  const clearCustomSuffix = typeof requestedSuffix === 'string' && !requestedSuffix.trim()
+  const pluginDomainSuffix = requestedSuffix === undefined
     ? settings.pluginDomainSuffix
-    : normalizePluginDomainSuffix(body.pluginDomainSuffix)
+    : clearCustomSuffix
+      ? defaultPlatformSettings.pluginDomainSuffix
+      : normalizePluginDomainSuffix(requestedSuffix)
   if (!pluginDomainSuffix) return json({ error: 'Invalid plugin domain suffix' }, 400)
   let cloudflareDomain: Awaited<ReturnType<typeof configureCloudflareDomain>> | null = null
-  if (pluginDomainSuffix !== settings.pluginDomainSuffix) {
+  if (pluginDomainSuffix !== settings.pluginDomainSuffix && pluginDomainSuffix !== defaultPlatformSettings.pluginDomainSuffix) {
     try {
       const stored = await readStoredCloudflareCredential(env)
       if (!stored || stored.kind !== 'global_api_key') throw new CloudflareCredentialError(400, 'credential_required', '请先在 Cloudflare 设置中保存 Email 和 Global API Key，再配置插件域名')

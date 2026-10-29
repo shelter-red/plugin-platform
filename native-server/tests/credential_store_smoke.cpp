@@ -1,4 +1,5 @@
 #include "plugmesh/credential_store.h"
+#include "plugmesh/server_config.h"
 
 #include <cstdlib>
 #include <cstring>
@@ -57,6 +58,33 @@ int main() {
     std::cerr << "round-trip failed: " << error << '\n';
     return 6;
   }
+  const auto key_path = path.string() + ".key";
+  {
+    std::ofstream key(key_path, std::ios::trunc);
+    key << "correct-password\n";
+  }
+  plugmesh::ServerConfig configured_from_environment;
+  configured_from_environment.worker_url = expected.worker_url;
+  configured_from_environment.server_id = expected.server_id;
+  configured_from_environment.access_token = expected.access_token;
+  configured_from_environment.credential_file = path;
+  configured_from_environment.credential_key_file = key_path;
+  if (!plugmesh::load_persisted_config(configured_from_environment, error) ||
+      configured_from_environment.local_ui_password_verifier != verifier ||
+      configured_from_environment.server_id != expected.server_id) {
+    std::cerr << "environment binding did not restore the persisted UI verifier: " << error << '\n';
+    return 18;
+  }
+  plugmesh::ServerConfig environment_only;
+  environment_only.worker_url = expected.worker_url;
+  environment_only.server_id = expected.server_id;
+  environment_only.access_token = expected.access_token;
+  environment_only.credential_file = path.string() + ".missing";
+  if (!plugmesh::load_persisted_config(environment_only, error) || environment_only.server_id != expected.server_id) {
+    std::cerr << "complete environment binding was rejected without a credential file: " << error << '\n';
+    return 19;
+  }
+  std::filesystem::remove(key_path, ignored);
   if (plugmesh::load_credentials(path, "wrong-password", actual, error)) {
     std::cerr << "wrong password was accepted\n";
     return 7;

@@ -1,10 +1,10 @@
 import { useTranslation } from 'react-i18next'
 import { Button, Table, type TableProps } from 'antd'
-import { Copy, Globe2 } from 'lucide-react'
+import { Copy, Globe2, Trash2 } from 'lucide-react'
 import type { ApiDomain } from '../../api'
 import { StatusBadge } from '../../components/StatusBadge'
 
-export function DomainTable({ domains, loading, onCopy }: { domains: ApiDomain[]; loading: boolean; onCopy: (hostname: string) => void }) {
+export function DomainTable({ domains, loading, onCopy, onDelete, canDelete }: { domains: ApiDomain[]; loading: boolean; onCopy: (hostname: string) => void; onDelete: (domain: ApiDomain) => void; canDelete: boolean }) {
   const { t } = useTranslation()
   const columns: TableProps<ApiDomain>['columns'] = [
     {
@@ -25,8 +25,8 @@ export function DomainTable({ domains, loading, onCopy }: { domains: ApiDomain[]
     {
       title: '',
       key: 'actions',
-      width: 64,
-      render: (_, domain) => <Button type="text" size="small" onClick={() => onCopy(domain.hostname)} aria-label={t('domains.copy', { hostname: domain.hostname })} title={t('domains.copy', { hostname: domain.hostname })} icon={<Copy size={16} />} />,
+      width: 96,
+      render: (_, domain) => <div className="table-actions"><Button type="text" size="small" onClick={() => onCopy(domain.hostname)} aria-label={t('domains.copy', { hostname: domain.hostname })} title={t('domains.copy', { hostname: domain.hostname })} icon={<Copy size={16} />} />{canDelete && <Button danger type="text" size="small" onClick={() => onDelete(domain)} aria-label={t('domains.delete', { name: domain.hostname })} title={t('domains.delete', { name: domain.hostname })} icon={<Trash2 size={16} />} />}</div>,
     },
   ]
 

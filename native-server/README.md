@@ -44,6 +44,8 @@
 
 Windows 使用 Credential Manager、macOS 使用 Keychain 保存系统凭据。macOS 会先通过 `SecItemCopyMatching` 只读探测默认钥匙串；无钥匙串、锁定或无权访问时，首次绑定界面会要求填写凭据文件路径和口令，改用 OpenSSL AES-256-GCM 加密文件。当前 Linux 构建未检测到 Secret Service 开发依赖，因此直接使用同一套加密文件回退。文件回退的口令通过 PBKDF2-HMAC-SHA256 派生密钥，文件只保存加密 envelope，不保存明文 access token，POSIX 下权限收紧为用户可读写。
 
+首次绑定界面将“本地 UI 登录口令”与“数据加密口令”分开。选择文件存储后，服务器会在用户配置目录保存已选文件的绝对路径；重启时自动复用该路径和凭据，不需要重新绑定。Windows/macOS 可选择系统凭据存储，此时不需要数据加密口令。显式设置 `PLUGMESH_CREDENTIAL_FILE` 时始终优先于界面保存的路径。
+
 凭据存储回归测试：
 
 ```bash

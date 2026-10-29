@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import { expect, test, type Page, type Route } from '@playwright/test'
 
 const overview = { onlineServers: 2, enabledPlugins: 3, domains: 1 }
@@ -63,6 +64,7 @@ type WorkerMock = {
   domains: unknown[]
   audits: unknown[]
   accessLogs: unknown[]
+  deleteRequests: string[]
   snapshots: unknown[]
   domainError: string | null
   maintenance: boolean
@@ -102,6 +104,7 @@ async function mockWorker(page: Page): Promise<WorkerMock> {
     domains: [],
     audits: [],
     accessLogs: [],
+    deleteRequests: [],
     snapshots: [],
     domainError: null,
     maintenance: false,
@@ -157,7 +160,13 @@ async function handleApi(route: Route, state: WorkerMock, logsGate: Promise<void
     return route.fulfill({ json: { accepted: true } })
   }
   const serverDetail = pathname.match(/^\/api\/servers\/([^/]+)$/)
-  if (method === 'GET' && serverDetail) {
+  if (serverDetail && method === 'DELETE') {
+    const id = decodeURIComponent(serverDetail[1])
+    state.deleteRequests.push(`DELETE ${pathname}`)
+    state.servers = state.servers.filter((item) => (item as { id: string }).id !== id)
+    return route.fulfill({ json: { id, deleted: true } })
+  }
+  if (serverDetail && method === 'GET') {
     const id = decodeURIComponent(serverDetail[1])
     const server = (state.servers as { id: string }[]).find((item) => item.id === id)
     if (!server) return route.fulfill({ status: 404, json: { error: 'server not found' } })
@@ -216,7 +225,16 @@ async function handleApi(route: Route, state: WorkerMock, logsGate: Promise<void
   if (pathname === '/api/settings/platform' && method === 'PUT') {
     const body = route.request().postDataJSON() as typeof platformSettings
     state.platformUpdates.push(body)
-    return route.fulfill({ json: { ...platformSettings, ...body, maintenance: state.maintenance } })
+    const result = { ...platformSettings, ...body, maintenance: state.maintenance }
+    if (!body.pluginDomainSuffix) result.pluginDomainSuffix = '.plugins.example.com'
+    return route.fulfill({ json: result })
+  }
+  const domainDelete = pathname.match(/^\/api\/domains\/([^/]+)$/)
+  if (method === 'DELETE' && domainDelete) {
+    const id = decodeURIComponent(domainDelete[1])
+    state.deleteRequests.push(`DELETE ${pathname}`)
+    state.domains = state.domains.filter((item) => (item as { id: string }).id !== id)
+    return route.fulfill({ json: { id, deleted: true } })
   }
   if (pathname === '/api/access-logs') {
     await logsGate
@@ -604,6 +622,13 @@ test('管理端在后台保存插件域名后缀', async ({ page }) => {
   await expect(page.getByText('插件域名后缀已保存，Cloudflare DNS 和 Worker Route 已同步')).toBeVisible()
   expect(worker.platformUpdates).toHaveLength(1)
   expect(worker.platformUpdates[0]).toMatchObject({ pluginDomainSuffix: 'plugins.example.net' })
+  await panel.getByRole('button', { name: '清除自定义后缀' }).click()
+  await expect(page.getByText('恢复为内置默认后缀？现有域名保持不变。')).toBeVisible()
+  await page.getByRole('button', { name: '恢复默认' }).click()
+  await expect(page.getByText('已恢复默认后缀，现有域名保持不变')).toBeVisible()
+  await expect(panel.getByLabel('插件域名后缀')).toHaveValue('.plugins.example.com')
+  expect(worker.platformUpdates).toHaveLength(2)
+  expect(worker.platformUpdates[1]).toMatchObject({ pluginDomainSuffix: '' })
 })
 
 test('管理端总览显示平台维护状态', async ({ page }) => {
@@ -663,6 +688,55 @@ test('管理端访问日志先显示加载态再回到空态', async ({ page }) 
   await expect(page.getByText('正在读取访问日志')).toBeVisible()
   worker.releaseLogs()
   await expect(page.getByText('暂无访问日志')).toBeVisible()
+})
+
+test('管理端删除服务器和域名前需确认，完成后刷新列表', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  const worker = await mockWorker(page)
+  worker.servers = [onlineServer]
+  worker.domains = [onlineDomain]
+  await page.goto('/')
+
+  await page.getByRole('menuitem', { name: '插件服务器', exact: true }).click()
+  await page.getByRole('button', { name: '删除 本地开发服务器' }).click()
+  await expect(page.getByRole('dialog', { name: '确定删除服务器“本地开发服务器”？' })).toBeVisible()
+  await page.getByRole('dialog').getByRole('button').first().click()
+  expect(worker.deleteRequests).toEqual([])
+
+  await page.getByRole('button', { name: '删除 本地开发服务器' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: '删除服务器' }).click()
+  await expect(page.getByRole('button', { name: '删除 本地开发服务器' })).toHaveCount(0)
+  expect(worker.deleteRequests).toEqual(['DELETE /api/servers/server-1'])
+
+  await page.getByRole('menuitem', { name: '公开域名', exact: true }).click()
+  await page.getByRole('button', { name: '删除 demo.plugins.example.com' }).click()
+  await expect(page.getByRole('dialog', { name: '确定删除域名“demo.plugins.example.com”？' })).toBeVisible()
+  await page.getByRole('dialog').getByRole('button', { name: '删除域名' }).click()
+  await expect(page.getByRole('button', { name: '删除 demo.plugins.example.com' })).toHaveCount(0)
+  expect(worker.deleteRequests).toEqual(['DELETE /api/servers/server-1', 'DELETE /api/domains/domain-1'])
+})
+
+test('访问日志表格和 CSV 包含服务器、插件与响应预览', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  const worker = await mockWorker(page)
+  worker.accessLogs = [{ ...accessLogEntry, server_name: '本地开发服务器', plugin_name: '示例插件', response_preview: '{"ok":true}' }]
+  await page.goto('/')
+  worker.releaseLogs()
+  await page.getByRole('menuitem', { name: '访问日志', exact: true }).click()
+
+  await expect(page.getByText('本地开发服务器')).toBeVisible()
+  await expect(page.getByText('示例插件')).toBeVisible()
+  await expect(page.getByText('{"ok":true}')).toBeVisible()
+  const downloadPromise = page.waitForEvent('download')
+  await page.getByRole('button', { name: '导出日志' }).click()
+  const download = await downloadPromise
+  const csv = await readFile((await download.path())!, 'utf8')
+  expect(csv).toContain('服务器')
+  expect(csv).toContain('插件')
+  expect(csv).toContain('响应预览')
+  expect(csv).toContain('本地开发服务器')
+  expect(csv).toContain('示例插件')
+  expect(csv).toContain('{""ok"":true}')
 })
 
 test('管理端数据读取失败时显示错误并可重试恢复', async ({ page }) => {
