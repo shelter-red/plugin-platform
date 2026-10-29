@@ -556,7 +556,12 @@ bool PortMapper::start(const ServerConfig& server_config, std::string& error) {
       listener->acceptor = std::make_unique<Tcp::acceptor>(*listener->context);
       const Tcp::endpoint endpoint(asio::ip::address_v4::loopback(), listener->mapping.listen_port);
       listener->acceptor->open(endpoint.protocol());
+#ifdef _WIN32
       listener->acceptor->set_option(Tcp::acceptor::reuse_address(false));
+#else
+      // Let a stopped mapping reclaim its loopback port after accepted sockets enter TIME_WAIT.
+      listener->acceptor->set_option(Tcp::acceptor::reuse_address(true));
+#endif
       listener->acceptor->bind(endpoint);
       listener->acceptor->listen(asio::socket_base::max_listen_connections);
       listener->acceptor->non_blocking(true);
