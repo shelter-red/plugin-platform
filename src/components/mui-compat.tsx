@@ -99,8 +99,8 @@ function InputField({ type, prefix, suffix, addonAfter, allowClear, status, onPr
 }
 
 type InputNumberProps = { value?: number | null; min?: number; max?: number; step?: number; onChange?: (value: number | null) => void; [key: string]: any }
-export function InputNumber({ value, onChange, min, max, step, ...props }: InputNumberProps) {
-  return <TextField {...props} type="number" value={value ?? ''} onChange={(event) => { const raw = event.target.value; const number = raw === '' ? null : Number(raw); if (number === null || ((min === undefined || number >= min) && (max === undefined || number <= max))) onChange?.(number) }} slotProps={{ htmlInput: { min, max, step } }} fullWidth />
+export function InputNumber({ value, onChange, min, max, step, 'aria-label': ariaLabel, ...props }: InputNumberProps & { 'aria-label'?: string }) {
+  return <TextField {...props} type="number" value={value ?? ''} onChange={(event) => { const raw = event.target.value; const number = raw === '' ? null : Number(raw); if (number === null || ((min === undefined || number >= min) && (max === undefined || number <= max))) onChange?.(number) }} slotProps={{ ...props.slotProps, htmlInput: { ...(props.slotProps?.htmlInput ?? {}), min, max, step, ...(ariaLabel ? { 'aria-label': ariaLabel } : {}) } }} fullWidth />
 }
 
 type SelectOption = { value: string | number; label: ReactNode; disabled?: boolean }
