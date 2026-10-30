@@ -48,6 +48,8 @@ jobs:
         run: npm run ui:conventions
       - name: 样式死代码审计
         run: npm run ui:css-audit
+      - name: 字节格式化回归测试
+        run: npm run ui:format-test
       - name: 原生 Release 打包契约
         run: npm run release:workflow:test
       - name: Native service lifecycle contract

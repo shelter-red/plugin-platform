@@ -51,6 +51,7 @@
     "stack:browser": "playwright test --config playwright.browser.config.ts",
     "ui:conventions": "node scripts/ui-conventions.mjs",
     "ui:css-audit": "node scripts/ui-css-audit.mjs",
+    "ui:format-test": "vitest run src/lib/format.test.ts",
     "ci:local": "bash scripts/ci-local.sh",
     "native:service:test": "bash scripts/service-install.test.sh"
   },

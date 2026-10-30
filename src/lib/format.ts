@@ -6,7 +6,14 @@ export const formatNumber = (value: number) => value.toLocaleString(currentLocal
 
 export function formatBytes(value: number): string | null {
   if (!Number.isFinite(value) || value < 0) return null
-  if (value >= 1024 * 1024 * 1024) return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GB`
-  if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`
-  return `${Math.round(value / 1024)} KB`
+  const units = ['B', 'KiB', 'MiB', 'GiB']
+  let amount = value
+  let unitIndex = 0
+  while (amount >= 1024 && unitIndex < units.length - 1) {
+    amount /= 1024
+    unitIndex += 1
+  }
+  const digits = unitIndex === 0 || amount >= 100 ? 0 : amount >= 10 ? 1 : 2
+  const formatted = amount.toFixed(digits).replace(/\.0+$|(?<=\.[0-9])0+$/g, '')
+  return `${formatted} ${units[unitIndex]}`
 }
