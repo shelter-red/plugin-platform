@@ -21,12 +21,12 @@ test('真实 Durable Object 转发 HTTP 方法、请求头、响应头与状态�
   expect(response.status).toBe(201)
   expect(response.headers.get('x-plugin-version')).toBe('1.2.0')
   expect(await response.text()).toBe('created by plugin')
-  let row: { count: number; server_name: string; plugin_name: string; response_preview: string | null } | null = null
+  let row: { count: number; server_name: string; plugin_name: string; path: string; response_preview: string | null } | null = null
   await expect.poll(async () => {
-    row = await testEnv.DB.prepare('SELECT COUNT(*) AS count, MAX(server_name) AS server_name, MAX(plugin_name) AS plugin_name, MAX(response_preview) AS response_preview FROM request_logs WHERE hostname = ? AND status = 201').bind(hostname).first<{ count: number; server_name: string; plugin_name: string; response_preview: string | null }>()
+    row = await testEnv.DB.prepare('SELECT COUNT(*) AS count, MAX(server_name) AS server_name, MAX(plugin_name) AS plugin_name, MAX(path) AS path, MAX(response_preview) AS response_preview FROM request_logs WHERE hostname = ? AND status = 201').bind(hostname).first<{ count: number; server_name: string; plugin_name: string; path: string; response_preview: string | null }>()
     return row?.count ?? 0
   }, { timeout: 3_000 }).toBe(1)
-  expect(row).toMatchObject({ server_name: 'Runtime server', plugin_name: 'Runtime sample', response_preview: 'created by plugin' })
+  expect(row).toMatchObject({ server_name: 'Runtime server', plugin_name: 'Runtime sample', path: '/created?from=test', response_preview: 'created by plugin' })
   const secretBody = 'token=topsecret'
   const secretPending = channel.next()
   const secretResponsePromise = publicRequest(hostname, '/sensitive')

@@ -294,6 +294,7 @@ export interface PlatformSettings {
   maintenance: boolean
   pluginDomainSuffix: string
   quotas: PlatformQuotas
+  cloudflareCleanupStatus?: 'removed' | 'active' | 'in_use' | 'credentials_missing' | 'cleanup_failed' | 'foreign_route'
 }
 
 export type SmtpAuthType = 'plain' | 'login' | 'cram-md5'

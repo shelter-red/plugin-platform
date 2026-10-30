@@ -5,7 +5,7 @@ import { authenticatePassword, changeAdminPassword, clearSessionCookie, createSe
 import type { AuthenticatedUser, CloudflarePlanSummary, CloudflareUsageLimits, Env } from './types'
 import { decryptSecret, encryptSecret } from './secrets'
 import { isEmail, parseSmtpSettings, publicSmtpSettings, sendSmtpTest, validateSmtpSettings, type SmtpSettings } from './email'
-import { CloudflareCredentialError, cloudflarePlanLimits, configureCloudflareDomain, deleteStoredCloudflareCredential, maskCloudflareAccountId, readCloudflareSubscriptions, readStoredCloudflareCredential, storeCloudflareCredential, validateCloudflareCredential } from './cloudflare-credentials'
+import { CloudflareCredentialError, cloudflarePlanLimits, configureCloudflareDomain, deleteStoredCloudflareCredential, maskCloudflareAccountId, readCloudflareSubscriptions, readStoredCloudflareCredential, removeManagedCloudflareDomain, storeCloudflareCredential, validateCloudflareCredential } from './cloudflare-credentials'
 import { activateMaintenance, cloudflareQuotaReason, defaultPlatformSettings, getPlatformSettings, isMaintenanceMode, normalizePluginDomainSuffix, releaseR2Usage, reserveR2Usage, setPlatformSettingsCache } from './usage'
 import { findPluginRoute, invalidatePluginRoute } from './route-cache'
 import { selectPublicRequestMode } from './request-mode'
@@ -430,6 +430,22 @@ async function retryBridgeCleanup(env: Env, serverId: string, path: string, base
   return false
 }
 
+export async function cleanupCloudflareSuffixIfUnused(env: Env, suffix: string, fetchImpl: typeof fetch = fetch): Promise<{ status: 'removed' | 'active' | 'in_use' | 'credentials_missing' | 'cleanup_failed' | 'foreign_route'; removedDns?: boolean; removedRoute?: boolean }> {
+  const normalized = suffix.trim().toLowerCase().replace(/^\.+/, '')
+  if (!normalized || normalized === defaultPlatformSettings.pluginDomainSuffix.replace(/^\.+/, '')) return { status: 'active' }
+  const usage = await env.DB.prepare('SELECT COUNT(*) AS count FROM domains WHERE hostname LIKE ?').bind(`%.${normalized}`).first<{ count: number }>()
+  if ((usage?.count ?? 0) > 0) return { status: 'in_use' }
+  try {
+    const stored = await readStoredCloudflareCredential(env)
+    if (!stored || stored.kind !== 'global_api_key') return { status: 'credentials_missing' }
+    const result = await removeManagedCloudflareDomain(stored.credential, stored.credential.accountId, normalized, fetchImpl)
+    if (result.skippedForeignRoute) return { status: 'foreign_route', removedDns: false, removedRoute: false }
+    return { status: 'removed', removedDns: result.removedDns, removedRoute: result.removedRoute }
+  } catch {
+    return { status: 'cleanup_failed' }
+  }
+}
+
 async function deleteDomainApi(env: Env, user: AuthenticatedUser, workspace: Workspace, domainId: string, baseUrl: string): Promise<Response> {
   const domain = await env.DB.prepare('SELECT domains.id, domains.hostname, plugin_instances.server_id FROM domains JOIN plugin_instances ON plugin_instances.id = domains.plugin_instance_id WHERE domains.id = ? AND domains.workspace_id = ?').bind(domainId, workspace.id).first<{ id: string; hostname: string; server_id: string }>()
   if (!domain) return json({ error: 'Domain not found' }, 404)
@@ -440,10 +456,16 @@ async function deleteDomainApi(env: Env, user: AuthenticatedUser, workspace: Wor
     env.DB.prepare('INSERT INTO audit_log (id, workspace_id, user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), workspace.id, user.id, 'domain.deleted', JSON.stringify({ domainId, hostname: domain.hostname }), deletedAt),
   ])
   if ((results[1]?.meta.changes ?? 0) !== 1) return json({ error: 'Domain changed while being deleted' }, 409)
-  const cleanupPending = !await retryBridgeCleanup(env, domain.server_id, `/admin/disconnect-domain?domainId=${encodeURIComponent(domainId)}`, baseUrl)
-  if (cleanupPending) await recordAudit(env, workspace.id, user.id, 'domain.cleanup.failed', { domainId, hostname: domain.hostname, serverId: domain.server_id })
+  const connectorCleanupPending = !await retryBridgeCleanup(env, domain.server_id, `/admin/disconnect-domain?domainId=${encodeURIComponent(domainId)}`, baseUrl)
+  const suffixSeparator = domain.hostname.indexOf('.')
+  const suffixCleanup = suffixSeparator > 0
+    ? await cleanupCloudflareSuffixIfUnused(env, domain.hostname.slice(suffixSeparator + 1))
+    : { status: 'active' as const }
+  const cloudflareCleanupPending = ['credentials_missing', 'cleanup_failed', 'foreign_route'].includes(suffixCleanup.status)
+  if (connectorCleanupPending) await recordAudit(env, workspace.id, user.id, 'domain.cleanup.failed', { domainId, hostname: domain.hostname, serverId: domain.server_id })
+  if (cloudflareCleanupPending) await recordAudit(env, workspace.id, user.id, 'domain.cloudflare_cleanup.failed', { domainId, hostname: domain.hostname, status: suffixCleanup.status })
   invalidatePluginRoute(domain.hostname)
-  return json({ id: domainId, deleted: true, cleanupPending })
+  return json({ id: domainId, deleted: true, cleanupPending: connectorCleanupPending || cloudflareCleanupPending, cloudflareCleanupStatus: suffixCleanup.status })
 }
 
 async function serverDetailsApi(env: Env, workspace: Workspace, serverId: string, baseUrl: string): Promise<Response> {
@@ -1039,10 +1061,10 @@ async function proxyPublicHost(request: Request, env: Env, url: URL, ctx: Execut
       : await bridge.fetch(new Request(new URL('/proxy', request.url), { method: request.method, headers, body: request.body }))
     const bridgeOffline = bridgeResponse.status === 503 && bridgeResponse.headers.get('x-plugmesh-bridge-error') === 'server-offline'
     const response = bridgeOffline ? maintenanceResponse('插件暂时不可用', '插件服务器当前离线，请稍后再试。') : bridgeResponse
-    ctx.waitUntil(recordAccessLog(env, { workspaceId: domain.workspace_id, userId: domain.user_id, domainId: domain.domain_id, pluginInstanceId: domain.plugin_instance_id, serverId: domain.server_id, serverName: domain.server_name, pluginName: domain.plugin_name, hostname: domain.hostname, method: request.method, path: url.pathname, status: response.status, durationMs: Date.now() - startedAt, response, ...(bridgeOffline ? { error: 'plugin server offline' } : {}) }))
+    ctx.waitUntil(recordAccessLog(env, { workspaceId: domain.workspace_id, userId: domain.user_id, domainId: domain.domain_id, pluginInstanceId: domain.plugin_instance_id, serverId: domain.server_id, serverName: domain.server_name, pluginName: domain.plugin_name, hostname: domain.hostname, method: request.method, path: `${url.pathname}${url.search}`, status: response.status, durationMs: Date.now() - startedAt, response, ...(bridgeOffline ? { error: 'plugin server offline' } : {}) }))
     return response
   } catch {
-    ctx.waitUntil(recordAccessLog(env, { workspaceId: domain.workspace_id, userId: domain.user_id, domainId: domain.domain_id, pluginInstanceId: domain.plugin_instance_id, serverId: domain.server_id, serverName: domain.server_name, pluginName: domain.plugin_name, hostname: domain.hostname, method: request.method, path: url.pathname, status: 502, durationMs: Date.now() - startedAt, error: 'bridge request failed' }))
+    ctx.waitUntil(recordAccessLog(env, { workspaceId: domain.workspace_id, userId: domain.user_id, domainId: domain.domain_id, pluginInstanceId: domain.plugin_instance_id, serverId: domain.server_id, serverName: domain.server_name, pluginName: domain.plugin_name, hostname: domain.hostname, method: request.method, path: `${url.pathname}${url.search}`, status: 502, durationMs: Date.now() - startedAt, error: 'bridge request failed' }))
     return new Response('Plugin bridge request failed', { status: 502 })
   }
 }
@@ -1084,6 +1106,7 @@ async function platformSettingsApi(request: Request, env: Env, user: Authenticat
       return json({ code: 'domain_configuration_failed', message: 'Cloudflare 域名配置失败' }, 502)
     }
   }
+  const previousSuffix = settings.pluginDomainSuffix
   const next = {
     maintenance: Boolean(body?.maintenance ?? settings.maintenance),
     pluginDomainSuffix,
@@ -1095,8 +1118,16 @@ async function platformSettingsApi(request: Request, env: Env, user: Authenticat
   }
   await env.DB.prepare('INSERT INTO platform_settings (key, value_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at').bind('platform', JSON.stringify(next), new Date().toISOString()).run()
   setPlatformSettingsCache(next)
+  let cloudflareCleanupStatus: Awaited<ReturnType<typeof cleanupCloudflareSuffixIfUnused>>['status'] | undefined
+  if (previousSuffix !== pluginDomainSuffix) {
+    const result = await cleanupCloudflareSuffixIfUnused(env, previousSuffix)
+    cloudflareCleanupStatus = result.status
+    if (['credentials_missing', 'cleanup_failed', 'foreign_route'].includes(result.status)) {
+      await recordAudit(env, null, user.id, 'platform.domain_suffix_cleanup.failed', { suffix: previousSuffix, status: result.status })
+    }
+  }
   await env.DB.prepare('INSERT INTO audit_log (id, workspace_id, user_id, action, detail_json, created_at) VALUES (?, NULL, ?, ?, ?, ?)').bind(crypto.randomUUID(), user.id, 'platform.settings.updated', JSON.stringify(next), new Date().toISOString()).run()
-  return json({ ...next, ...(cloudflareDomain ? { cloudflareDomain } : {}) })
+  return json({ ...next, ...(cloudflareDomain ? { cloudflareDomain } : {}), ...(cloudflareCleanupStatus ? { cloudflareCleanupStatus } : {}) })
 }
 
 function parsePositiveQuota(value: unknown, fallback: number): number {

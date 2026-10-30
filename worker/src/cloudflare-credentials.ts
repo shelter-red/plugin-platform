@@ -372,6 +372,41 @@ async function configureCloudflareWorkerRoute(auth: CloudflareAuth, zoneId: stri
   return saved.result.id
 }
 
+export async function removeManagedCloudflareDomain(
+  auth: CloudflareAuth,
+  accountId: string,
+  domainSuffix: string,
+  fetchImpl: Fetcher = fetch,
+): Promise<{ zoneId: string; hostname: string; routePattern: string; removedDns: boolean; removedRoute: boolean; skippedForeignRoute: boolean }> {
+  const domain = domainSuffix.trim().toLowerCase().replace(/^\.+/, '')
+  const hostname = `*.${domain}`
+  const routePattern = `${hostname}/*`
+  const zone = selectCloudflareZone(await listCloudflareZones(auth, accountId, fetchImpl), domain)
+  const routes = await requestCloudflare<CloudflareWorkerRoute[]>('routes', auth, `/zones/${encodeURIComponent(zone.id)}/workers/routes`, fetchImpl)
+  if (routes.success === false || !Array.isArray(routes.result)) throw upstreamError(envelopeErrors(routes) ?? 'Cloudflare Worker Route 响应结构无效')
+  const route = routes.result.find((candidate) => candidate.pattern === routePattern)
+  const skippedForeignRoute = Boolean(route?.script && route.script !== 'plugmesh-worker')
+  let removedRoute = false
+  if (route?.id && route.script === 'plugmesh-worker') {
+    const deleted = await requestCloudflare<unknown>('routes', auth, `/zones/${encodeURIComponent(zone.id)}/workers/routes/${encodeURIComponent(route.id)}`, fetchImpl, { method: 'DELETE' })
+    if (deleted.success === false) throw upstreamError(envelopeErrors(deleted) ?? 'Cloudflare Worker Route 删除失败')
+    removedRoute = true
+  }
+
+  let removedDns = false
+  if (!skippedForeignRoute) {
+    const dns = await requestCloudflare<CloudflareDnsRecord[]>('dns', auth, `/zones/${encodeURIComponent(zone.id)}/dns_records?name=${encodeURIComponent(hostname)}`, fetchImpl)
+    if (dns.success === false || !Array.isArray(dns.result)) throw upstreamError(envelopeErrors(dns) ?? 'Cloudflare DNS 响应结构无效')
+    const record = dns.result.find((candidate) => candidate.name === hostname && candidate.type === 'A' && candidate.content === '192.0.2.1' && candidate.comment === 'Managed by Plugmesh')
+    if (record) {
+      const deleted = await requestCloudflare<unknown>('dns', auth, `/zones/${encodeURIComponent(zone.id)}/dns_records/${encodeURIComponent(record.id)}`, fetchImpl, { method: 'DELETE' })
+      if (deleted.success === false) throw upstreamError(envelopeErrors(deleted) ?? 'Cloudflare DNS 记录删除失败')
+      removedDns = true
+    }
+  }
+  return { zoneId: zone.id, hostname, routePattern, removedDns, removedRoute, skippedForeignRoute }
+}
+
 /** 用已保存的 Global API Key 把插件通配域名接到当前 Worker。 */
 export async function configureCloudflareDomain(
   auth: CloudflareAuth,

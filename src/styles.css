@@ -961,8 +961,8 @@ h1 {
   font: 500 11px 'IBM Plex Mono', monospace;
 }
 .resource-bottom {
-  color: var(--text-4);
-  font-size: 9px;
+  color: var(--text-2);
+  font-size: 10px;
 }
 .activity-list {
   padding: 0 16px 12px;
@@ -1315,7 +1315,8 @@ td a {
   font-size: 10px;
 }
 .resource-card-limit span {
-  color: var(--text-4);
+  color: var(--text-2);
+  font-size: 11px;
 }
 .resource-card-limit .resource-card-percent {
   margin-left: 6px;

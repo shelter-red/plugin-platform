@@ -2,10 +2,8 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
-import { App as AntdApp, ConfigProvider } from 'antd'
-import enUS from 'antd/locale/en_US'
-import zhCN from 'antd/locale/zh_CN'
-import '@ant-design/v5-patch-for-react-19'
+import { ThemeProvider, CssBaseline } from '@mui/material'
+import { App as UiApp } from './components/mui-compat'
 import '@fontsource/dm-sans/latin-400.css'
 import '@fontsource/dm-sans/latin-500.css'
 import '@fontsource/dm-sans/latin-600.css'
@@ -45,7 +43,7 @@ function Root() {
     return () => mediaQuery.removeEventListener('change', updateSystemTheme)
   }, [])
 
-  return <ConfigProvider locale={language === 'en' ? enUS : zhCN} theme={createAppTheme(effectiveTheme)}><AntdApp><ConsoleShell theme={theme} setTheme={setTheme} effectiveTheme={effectiveTheme} language={language} /></AntdApp></ConfigProvider>
+  return <ThemeProvider theme={createAppTheme(effectiveTheme)}><CssBaseline /><UiApp><ConsoleShell theme={theme} setTheme={setTheme} effectiveTheme={effectiveTheme} language={language} /></UiApp></ThemeProvider>
 }
 
 createRoot(document.getElementById('root')!).render(<BrowserRouter><Root /></BrowserRouter>)

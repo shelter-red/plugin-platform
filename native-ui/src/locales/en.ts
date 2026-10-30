@@ -70,6 +70,7 @@ export default {
   },
   setup: {
     title: 'Bind plugin server',
+    body: 'Long-term access credentials and the local UI login password are separate security credentials.',
     workerUrl: 'Worker URL',
     serverName: 'Server name',
     registrationCode: 'One-time registration code',
@@ -78,7 +79,8 @@ export default {
     useSystemCredentials: 'Use the system credential store',
     localUiPassword: 'Local UI login password',
     confirmPassword: 'Confirm local UI login password',
-    credentialPassword: 'Data encryption password',
+    credentialPassword: 'Credential file encryption password (not the login password)',
+    credentialPasswordHint: 'Used only to encrypt the local credential file; it is never the UI login password or sent to the Worker.',
     credentialPasswordSystemPlaceholder: 'Not used with system credential storage',
     submit: 'Bind server',
     success: 'Bound successfully. Sign in with the local UI password.',
@@ -88,7 +90,7 @@ export default {
     note: 'This binding needs a local UI session password before you can continue.',
     submit: 'Save and sign in',
   },
-  login: { title: 'Sign in to local console', submit: 'Sign in' },
+  login: { title: 'Sign in to local console', note: 'Use the local UI login password; it is separate from the credential-file password and access key.', submit: 'Sign in' },
   nav: {
     aria: 'Local server navigation',
     toggle: 'Toggle navigation menu',
@@ -120,7 +122,7 @@ export default {
   metrics: { aria: 'Runtime metrics', plugins: 'Discovered plugins', enabled: 'Enabled', failed: 'Failed', port: 'Local port' },
   plugins: {
     index: '02 / Plugin catalog',
-    title: 'Discovered plugins',
+    title: 'Discovered plugins', name: 'Name', state: 'State', actions: 'Actions',
     count: '{{count}} entries',
     loadedCount: '{{count}} loaded',
     healthPassed: '{{name}}: health check passed ({{status}})',
@@ -141,11 +143,11 @@ export default {
     noPermissions: 'none',
   },
   mappings: {
-    index: '03 / Port mapping', title: 'Cross-server TCP mappings', refreshTargets: 'Refresh targets', name: 'Mapping name', protocol: 'Protocol label', listenPort: 'Local listen port', targetServer: 'Target plugin server', selectTarget: 'Select an online server', targetHost: 'Target host', targetPort: 'Target port', targetPassword: 'Target server password (first trust only)', targetPasswordPlaceholder: 'Enter UI password to verify', targetTableTitle: 'Target server authorization', targetTableBody: 'Inspect remote plugins and prepare local mappings.', remotePlugins: '{{count}} plugins', remoteProxies: '{{count}} port proxies', httpPlugin: 'HTTP via plugin domain', mapProxy: 'Map locally', proxyAlreadyMapped: 'Already mapped', proxyMapped: '{{name}} is mapped to localhost:{{port}}', proxyMapFailed: 'Unable to create the local mapping. Verify the target password first.', noLocalPort: 'No available local port was found in the automatic range.', authorizeTarget: 'Verify password', reauthorizeTarget: 'Re-verify password', verifyMenu: 'Verification', needsAuth: 'Needs authorization', failed: 'Verification failed', authorized: 'Authorized', targetPasswordRequired: 'Enter the target server password', targetAuthorized: '{{name}} authorized', targetAuthorizeFailed: 'Unable to verify target password', add: 'Add mapping', update: 'Save changes', edit: 'Edit mapping', enable: 'Start listener', disable: 'Stop listener', listening: 'Listening', stopped: 'Stopped', delete: 'Delete mapping', emptyTitle: 'No mappings configured', emptyBody: 'Refresh the target server list, then add a TCP port to forward.', saved: 'Mapping saved and started', deleted: 'Mapping deleted', targetsFailed: 'Unable to load target servers', saveFailed: 'Unable to save mapping', deleteFailed: 'Unable to delete mapping',
+    index: '03 / Port mapping', title: 'Cross-server TCP mappings', subtitle: 'Select an online server and verify its password before creating a listener.', targetSection: 'Online target authorization', onlineOnly: 'Only currently online servers are listed. The password is used for authorization and is never saved to mapping config.', passwordNotStored: 'The target password is used briefly in local memory and is never saved to config or sent to the Worker.', endpoint: 'Endpoint', state: 'State', actions: 'Actions', targetServer: 'Target plugin server', refreshTargets: 'Refresh targets', name: 'Mapping name', protocol: 'Protocol label', listenPort: 'Local listen port', selectTarget: 'Select an online server', targetHost: 'Target host', targetPort: 'Target port', targetPassword: 'Target server login password', targetPasswordPlaceholder: 'Used only for verification and never saved', targetTableTitle: 'Target server authorization', targetTableBody: 'Inspect remote plugins and prepare local mappings.', remotePlugins: '{{count}} plugins', remoteProxies: '{{count}} port proxies', httpPlugin: 'HTTP via plugin domain', mapProxy: 'Map locally', proxyAlreadyMapped: 'Already mapped', proxyMapped: '{{name}} is mapped to localhost:{{port}}', proxyMapFailed: 'Unable to create the local mapping. Verify the target password first.', noLocalPort: 'No available local port was found in the automatic range.', authorizeTarget: 'Verify target password', reauthorizeTarget: 'Re-verify', verifyMenu: 'Verification', needsAuth: 'Needs authorization', failed: 'Verification failed', authorized: 'Authorized', targetPasswordRequired: 'Enter the target server password', targetAuthorized: '{{name}} authorized', targetAuthorizeFailed: 'Target password verification failed (400). Check the password or target status.', requestFailed: 'Mapping request failed (400). Verify the online target password first.', notFound: 'Mapping not found', add: 'Add mapping', update: 'Save changes', edit: 'Edit', enable: 'Start listener', disable: 'Stop listener', listening: 'Listening', stopped: 'Stopped', delete: 'Delete mapping', emptyTitle: 'No mappings configured', emptyBody: 'Select an online target and verify its password before adding a port.', saved: 'Mapping saved and started', deleted: 'Mapping deleted', targetsFailed: 'Unable to load target servers', saveFailed: 'Unable to save mapping', deleteFailed: 'Unable to delete mapping',
   },
   binding: {
     index: '03 / Connection',
-    title: 'Binding',
+    title: 'Binding', serverId: 'Server ID', worker: 'Worker URL', storage: 'Long-term credential storage', accessKeyTitle: 'Access key management', credentialPasswordHelp: 'Required for file storage only; this is not the local UI login password. Rotation updates the access key only.',
     configured: 'Configured',
     noPath: 'no path provided',
     doneTitle: 'Server is bound',

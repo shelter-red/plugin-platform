@@ -1,31 +1,47 @@
 * { box-sizing: border-box; }
 :root { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-synthesis: none; text-rendering: optimizeLegibility; }
-body { margin: 0; min-width: 320px; background: #f5f5f5; }
+body { margin: 0; min-width: 320px; background: #0b1220; }
 button, input, select, textarea { font: inherit; }
-.native-layout { min-height: 100vh; }
-.native-sider { position: sticky; inset-block-start: 0; height: 100vh; overflow: auto; }
-.native-brand { height: 64px; padding: 0 20px; display: flex; align-items: center; gap: 10px; color: #1677ff; }
-.native-brand .ant-typography { margin: 0; color: inherit; letter-spacing: .08em; }
-.sider-footer { margin: 24px 16px; padding: 12px; display: flex; align-items: center; gap: 8px; color: #8c8c8c; font-size: 12px; }
-.native-header { height: auto; min-height: 64px; padding: 12px clamp(16px, 4vw, 40px); display: flex; align-items: center; justify-content: space-between; gap: 16px; background: var(--ant-color-bg-container); border-bottom: 1px solid var(--ant-color-border-secondary); }
-.native-header .ant-typography { margin: 0; }
-.native-content { padding: clamp(16px, 4vw, 40px); }
-.native-content > .ant-alert { margin-bottom: 16px; }
-.screen-stack { width: 100%; }
-.screen-stack > .ant-card { width: 100%; }
-.screen-stack .ant-card-head-title .ant-typography { margin: 0; }
-.setup-action-form { max-width: 480px; margin-top: 24px; }
-.access-shell { min-height: 100vh; padding: clamp(16px, 6vw, 72px); background: var(--ant-color-bg-layout, #f5f5f5); }
-.access-header { max-width: 980px; margin: 0 auto 24px; display: flex; align-items: center; justify-content: space-between; }
-.access-header .ant-typography { margin: 0; color: #1677ff; letter-spacing: .08em; }
-.access-main { max-width: 980px; margin: 0 auto; display: grid; place-items: center; min-height: calc(100vh - 150px); }
-.access-card { width: min(100%, 680px); }
-.access-card > .ant-card-head-title { font-size: 22px; }
-@media (max-width: 767px) {
-  .native-header { align-items: flex-start; flex-direction: column; }
-  .native-header > .ant-space:last-child { align-self: stretch; justify-content: flex-end; }
-  .native-content { padding: 12px; }
-  .native-sider { position: relative; height: auto; }
-  .native-sider .ant-menu { max-height: 340px; overflow-y: auto; }
-  .access-shell { padding: 12px; }
+.native-layout { min-height: 100vh; background: var(--mui-palette-background-default); }
+.native-appbar { z-index: 1200; border-bottom: 1px solid rgba(148,163,184,.18); }
+.native-appbar .MuiToolbar-root { min-height: 78px; padding: 12px clamp(16px, 4vw, 44px); gap: 16px; }
+.native-appbar h3 { margin: 0; font-size: 1.35rem; }
+.native-appbar .MuiTypography-overline { letter-spacing: .14em; color: #64748b; }
+.app-frame { display: flex; min-height: calc(100vh - 78px); }
+.native-drawer .MuiDrawer-paper { width: 248px; position: fixed; top: 78px; height: calc(100vh - 78px); border-right: 1px solid rgba(148,163,184,.18); background: var(--mui-palette-background-paper); }
+.drawer-inner { display: flex; flex-direction: column; height: 100%; padding: 18px 12px; }
+.brand { color: #4fd1c5; letter-spacing: .14em; font-weight: 800; padding: 0 12px 18px; }
+.drawer-inner .MuiListItemButton-root { border-radius: 9px; margin: 3px 0; min-height: 46px; }
+.drawer-inner .MuiListItemIcon-root { min-width: 36px; color: inherit; }
+.drawer-footer { margin-top: auto; display: flex; align-items: center; gap: 8px; padding: 14px 12px; color: #64748b; font-size: .82rem; }
+.native-content { flex: 1; min-width: 0; margin-left: 248px; padding: clamp(20px, 4vw, 48px); }
+.native-content .MuiContainer-root { padding: 0; }
+.native-content h1 { margin: 0; }
+.access-shell { min-height: 100vh; padding: clamp(18px, 7vw, 88px) 18px; background: var(--mui-palette-background-default); }
+.access-header { max-width: 760px; margin: 0 auto 24px; display: flex; align-items: center; justify-content: space-between; }
+.access-card { width: min(100%, 720px); margin: 0 auto; padding: clamp(24px, 5vw, 48px); }
+.access-card h2 { margin: 0 0 10px; }
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.form-wide { grid-column: 1 / -1; }
+.overview-grid, .metric-grid { display: grid; gap: 18px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.metric-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.table-paper { overflow: hidden; }
+.table-paper .MuiTableCell-root { white-space: nowrap; }
+.mapping-form { align-items: start; }
+.mobile-only { display: none !important; }
+@media (max-width: 900px) {
+  .mobile-only { display: inline-flex !important; }
+  .native-drawer .MuiDrawer-paper { top: 0; height: 100vh; }
+  .native-content { padding: 20px 14px; margin-left: 0; }
+  .native-appbar .MuiToolbar-root { min-height: 70px; padding: 10px 14px; }
+  .app-frame { min-height: calc(100vh - 70px); }
+  .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  .form-grid, .overview-grid, .metric-grid { grid-template-columns: 1fr; }
+  .form-wide { grid-column: auto; }
+  .access-card { padding: 24px 18px; }
+  .native-appbar h3 { font-size: 1.1rem; }
+  .native-appbar .MuiTypography-overline { display: none; }
+  .table-paper { overflow-x: auto; }
 }

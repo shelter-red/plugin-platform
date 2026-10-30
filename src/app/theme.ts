@@ -1,39 +1,42 @@
-import { theme, type ThemeConfig } from 'antd'
+import { createTheme } from '@mui/material/styles'
 
 export type AppThemeMode = 'dark' | 'light'
 export type ThemePreference = AppThemeMode | 'system'
 
-export const brandColor = { dark: '#10b981', light: '#059669' } as const
+export const brandColor = { dark: '#62d6ad', light: '#087a63' } as const
 
-/**
- * Ant Design 主题令牌：颜色与字体只在这里定义，页面样式不再写死明暗色值。
- * 原生控件（select/option、日期、颜色输入）一律使用 AntD 组件，跟随算法切换。
- */
-export function createAppTheme(mode: AppThemeMode): ThemeConfig {
+export function createAppTheme(mode: AppThemeMode) {
   const dark = mode === 'dark'
-  return {
-    algorithm: dark ? theme.darkAlgorithm : theme.defaultAlgorithm,
-    token: {
-      colorPrimary: brandColor[mode],
-      colorInfo: brandColor[mode],
-      colorLink: dark ? '#34d399' : '#047857',
-      colorBgBase: dark ? '#09090b' : '#f7f7f8',
-      colorBgContainer: dark ? '#111113' : '#ffffff',
-      colorBgElevated: dark ? '#151517' : '#ffffff',
-      colorBorder: dark ? 'rgba(255,255,255,.12)' : 'rgba(24,24,27,.12)',
-      colorBorderSecondary: dark ? 'rgba(255,255,255,.08)' : 'rgba(24,24,27,.08)',
-      borderRadius: 6,
-      fontFamily: "'DM Sans', ui-sans-serif, system-ui, sans-serif",
-      fontFamilyCode: "'IBM Plex Mono', ui-monospace, monospace",
-      fontSize: 12,
+  return createTheme({
+    palette: {
+      mode,
+      primary: { main: brandColor[mode] },
+      secondary: { main: dark ? '#f4bd6a' : '#a66118' },
+      background: { default: dark ? '#111a19' : '#f4f7f5', paper: dark ? '#192321' : '#ffffff' },
+      divider: dark ? 'rgba(220,246,235,.12)' : 'rgba(20,59,48,.14)',
+      success: { main: dark ? '#5bc49b' : '#237a4c' },
+      warning: { main: dark ? '#f3bc67' : '#a55a12' },
+      error: { main: dark ? '#f07f78' : '#b43f35' },
+    },
+    shape: { borderRadius: 6 },
+    typography: {
+      fontFamily: "'DM Sans', 'Noto Sans CJK SC', system-ui, sans-serif",
+      fontSize: 15,
+      h1: { fontSize: '2rem', fontWeight: 700 },
+      h2: { fontSize: '1.65rem', fontWeight: 700 },
+      h3: { fontSize: '1.35rem', fontWeight: 700 },
+      h4: { fontSize: '1.15rem', fontWeight: 700 },
+      body1: { fontSize: '0.95rem', lineHeight: 1.55 },
+      body2: { fontSize: '0.875rem', lineHeight: 1.5 },
+      button: { textTransform: 'none', fontWeight: 600 },
     },
     components: {
-      Layout: { bodyBg: 'transparent', headerBg: 'transparent', siderBg: 'transparent' },
-      Menu: { itemBg: 'transparent', itemHeight: 34, itemBorderRadius: 6, itemMarginInline: 0, subMenuItemBg: 'transparent' },
-      Select: { optionSelectedBg: dark ? 'rgba(16,185,129,.16)' : 'rgba(5,150,105,.12)' },
-      Table: { headerBg: 'transparent' },
-      // 主按钮实心背景统一用可满足 4.5:1 对比度的深绿，与 --primary-solid 保持一致。
-      Button: { colorPrimary: '#047857', colorPrimaryHover: '#065f46', colorPrimaryActive: '#064e3b' },
+      MuiCssBaseline: { styleOverrides: { body: { minWidth: 320, backgroundColor: dark ? '#111a19' : '#f4f7f5' } } },
+      MuiButton: { defaultProps: { disableElevation: true }, styleOverrides: { root: { borderRadius: 6, minHeight: 38 } } },
+      MuiCard: { styleOverrides: { root: { borderRadius: 7, backgroundImage: 'none' } } },
+      MuiOutlinedInput: { styleOverrides: { root: { borderRadius: 6 } } },
+      MuiTableCell: { styleOverrides: { head: { fontWeight: 700 } } },
+      MuiDialog: { styleOverrides: { paper: { borderRadius: 8, backgroundImage: 'none' } } },
     },
-  }
+  })
 }

@@ -1,5 +1,5 @@
 import { beforeEach, expect, test } from 'vitest'
-import { CloudflareCredentialError, configureCloudflareDomain, deleteStoredCloudflareCredential, listCloudflareAccounts, readCloudflareSubscriptions, readStoredCloudflareCredential, selectCloudflareAccountId, storeCloudflareCredential, validateCloudflareCredential, verifyCloudflareGlobalApiKey } from '../src/cloudflare-credentials'
+import { CloudflareCredentialError, configureCloudflareDomain, deleteStoredCloudflareCredential, listCloudflareAccounts, readCloudflareSubscriptions, readStoredCloudflareCredential, removeManagedCloudflareDomain, selectCloudflareAccountId, storeCloudflareCredential, validateCloudflareCredential, verifyCloudflareGlobalApiKey } from '../src/cloudflare-credentials'
 import { encryptSecret } from '../src/secrets'
 import { resetDatabase, testEnv } from './helpers'
 
@@ -17,7 +17,12 @@ function jsonFetcher(routes: Record<string, (call: Call) => Response>, calls: Ca
     const url = new URL(request.url)
     const call = { path: `${url.pathname}${url.search}`, email: request.headers.get('X-Auth-Email'), key: request.headers.get('X-Auth-Key'), method: request.method }
     calls.push(call)
-    return routes[call.path]?.(call) ?? new Response(`unexpected request: ${call.path}`, { status: 500 })
+    const route = routes[call.path] ?? Object.entries(routes).find(([key]) => decodeURIComponent(key) === decodeURIComponent(call.path))?.[1]
+     if (!route && call.path.includes('old.example.com') && call.path.includes('/dns_records?name=')) return Response.json({ success: true, result: [
+      { id: 'owned', type: 'A', name: '*.old.example.com', content: '192.0.2.1', comment: 'Managed by Plugmesh' },
+      { id: 'manual', type: 'A', name: '*.old.example.com', content: '198.51.100.7', comment: 'User record' },
+    ] })
+    return route?.(call) ?? new Response(`unexpected request: ${call.path}`, { status: 500 })
   }) as typeof fetch
 }
 
@@ -74,6 +79,38 @@ test('Global API Key 自动配置 Zone、通配 DNS 和 Worker Route', async () 
     '/client/v4/zones/zone-1/workers/routes': (call) => call.method === 'GET' ? Response.json({ success: true, result: [] }) : Response.json({ success: true, result: { id: 'route-1' } }),
   })
   await expect(configureCloudflareDomain(AUTH, ACCOUNT_A, '.plugins.example.com', fetchImpl)).resolves.toMatchObject({ zoneId: 'zone-1', hostname: '*.plugins.example.com' })
+})
+
+test('只清理匹配 Plugmesh Worker Route 与带管理标记的 wildcard DNS', async () => {
+  const calls: Call[] = []
+  const fetchImpl = jsonFetcher({
+    [`/client/v4/zones?account.id=${ACCOUNT_A}&status=active&page=1&per_page=50`]: () => Response.json({ success: true, result: [{ id: 'zone-1', name: 'example.com', status: 'active' }], result_info: { total_pages: 1 } }),
+    '/client/v4/zones/zone-1/workers/routes': () => Response.json({ success: true, result: [{ id: 'route-1', pattern: '*.old.example.com/*', script: 'plugmesh-worker' }] }),
+    '/client/v4/zones/zone-1/workers/routes/route-1': (call) => {
+      expect(call.method).toBe('DELETE')
+      return Response.json({ success: true, result: { id: 'route-1' } })
+    },
+    '/client/v4/zones/zone-1/dns_records?name=*.old.example.com': () => Response.json({ success: true, result: [
+      { id: 'owned', type: 'A', name: '*.old.example.com', content: '192.0.2.1', comment: 'Managed by Plugmesh' },
+      { id: 'manual', type: 'A', name: '*.old.example.com', content: '198.51.100.7', comment: 'User record' },
+    ] }),
+    '/client/v4/zones/zone-1/dns_records/owned': (call) => {
+      expect(call.method).toBe('DELETE')
+      return Response.json({ success: true, result: { id: 'owned' } })
+    },
+  }, calls)
+  await expect(removeManagedCloudflareDomain(AUTH, ACCOUNT_A, '.old.example.com', fetchImpl)).resolves.toMatchObject({ removedDns: true, removedRoute: true, skippedForeignRoute: false })
+  expect(calls.some((call) => call.path.endsWith('/dns_records/manual'))).toBe(false)
+})
+
+test('旧 wildcard Route 指向其他 Worker 时不删除 Route 或 DNS', async () => {
+  const calls: Call[] = []
+  const fetchImpl = jsonFetcher({
+    [`/client/v4/zones?account.id=${ACCOUNT_A}&status=active&page=1&per_page=50`]: () => Response.json({ success: true, result: [{ id: 'zone-1', name: 'example.com', status: 'active' }], result_info: { total_pages: 1 } }),
+    '/client/v4/zones/zone-1/workers/routes': () => Response.json({ success: true, result: [{ id: 'route-1', pattern: '*.old.example.com/*', script: 'other-worker' }] }),
+  }, calls)
+  await expect(removeManagedCloudflareDomain(AUTH, ACCOUNT_A, 'old.example.com', fetchImpl)).resolves.toMatchObject({ removedDns: false, removedRoute: false, skippedForeignRoute: true })
+  expect(calls.some((call) => call.method === 'DELETE')).toBe(false)
 })
 
 test('已取消、失败或过期的 Free 订阅不提供免费额度基线', async () => {

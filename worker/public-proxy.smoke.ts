@@ -144,6 +144,6 @@ assert.equal(bridgeRequests.length, bridgeCountBeforeUnsupported)
 
 await Promise.all(waits)
 assert.deepEqual(accessLogs.map((entry) => entry.status), [503, 201, 200, 503, 501])
-assert.deepEqual(accessLogs.map((entry) => entry.path), ['/api/items', '/api/items', '/api/items', '/api/items', '/api/items'])
+assert.deepEqual(accessLogs.map((entry) => entry.path), ['/api/items?source=smoke', '/api/items?source=smoke', '/api/items?source=smoke', '/api/items?source=smoke', '/api/items'])
 
 console.log('public proxy smoke test passed')

@@ -51,6 +51,19 @@ export function useMaintenanceSettings(settings: PlatformSettings | null, onChan
     }
   }
 
+  const notifySuffixResult = (next: PlatformSettings, successKey: string) => {
+    const cleanupKey = next.cloudflareCleanupStatus === 'in_use'
+      ? 'settings.domainSuffix.cleanupInUse'
+      : next.cloudflareCleanupStatus === 'foreign_route'
+        ? 'settings.domainSuffix.cleanupForeignRoute'
+        : next.cloudflareCleanupStatus === 'credentials_missing'
+          ? 'settings.domainSuffix.cleanupCredentialsMissing'
+          : next.cloudflareCleanupStatus === 'cleanup_failed'
+            ? 'settings.domainSuffix.cleanupFailed'
+            : null
+    onAction(cleanupKey ? 'warning' : 'success', t(cleanupKey ?? successKey))
+  }
+
   const saveDomainSuffix = async () => {
     if (!settings) {
       onAction('warning', t('settings.domainSuffix.notConnected'))
@@ -65,7 +78,7 @@ export function useMaintenanceSettings(settings: PlatformSettings | null, onChan
       const next = await updatePlatformSettings({ ...settings, pluginDomainSuffix: domainSuffix.trim() })
       onChange(next)
       setDomainSuffix(next.pluginDomainSuffix)
-      onAction('success', t('settings.domainSuffix.saved'))
+      notifySuffixResult(next, 'settings.domainSuffix.saved')
     } catch (error) {
       const invalid = error instanceof ApiError && error.status === 400
       onAction(invalid ? 'warning' : 'error', invalid ? t('settings.domainSuffix.invalid') : error instanceof ApiError ? error.message : t('settings.domainSuffix.saveFailed'))
@@ -84,7 +97,7 @@ export function useMaintenanceSettings(settings: PlatformSettings | null, onChan
       const next = await updatePlatformSettings({ ...settings, pluginDomainSuffix: '' })
       onChange(next)
       setDomainSuffix(next.pluginDomainSuffix)
-      onAction('success', t('settings.domainSuffix.resetDone'))
+      notifySuffixResult(next, 'settings.domainSuffix.resetDone')
     } catch {
       onAction('error', t('settings.domainSuffix.resetFailed'))
     } finally {

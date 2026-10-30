@@ -54,6 +54,8 @@ export default {
     pluginActionFailed: '插件操作失败',
     healthCheckFailed: '健康检查失败',
     credentialActionFailed: '凭据操作失败',
+    mappingRequestFailed: '映射请求失败（400），请先验证在线目标服务器口令',
+    mappingNotFound: '映射不存在',
   },
   state: {
     discovered: '已发现',
@@ -70,6 +72,7 @@ export default {
   },
   setup: {
     title: '绑定插件服务器',
+    body: '长期访问凭据与本地 UI 登录口令是两套不同的安全凭据。',
     workerUrl: 'Worker 地址',
     serverName: '服务器名称',
     registrationCode: '一次性注册码',
@@ -78,7 +81,8 @@ export default {
     useSystemCredentials: '使用系统凭据存储',
     localUiPassword: '本地 UI 登录口令',
     confirmPassword: '确认本地 UI 登录口令',
-    credentialPassword: '数据加密口令',
+    credentialPassword: '凭据文件加密口令（不是登录口令）',
+    credentialPasswordHint: '仅用于本地凭据文件加密；不会作为 UI 登录口令，也不会发送给 Worker。',
     credentialPasswordSystemPlaceholder: '使用系统凭据存储时无需填写',
     submit: '绑定服务器',
     success: '绑定成功，请使用本地 UI 口令登录',
@@ -88,7 +92,7 @@ export default {
     note: '现有绑定需要补充本地 UI 会话口令后才能继续。',
     submit: '保存并登录',
   },
-  login: { title: '登录本地控制台', submit: '登录' },
+  login: { title: '登录本地控制台', note: '使用本地 UI 登录口令；它与凭据文件加密口令、访问密钥彼此独立。', submit: '登录' },
   nav: {
     aria: '本地服务器导航',
     toggle: '切换导航菜单',
@@ -124,7 +128,7 @@ export default {
   metrics: { aria: '运行指标', plugins: '已发现插件', enabled: '已启用', failed: '失败状态', port: '本地端口' },
   plugins: {
     index: '02 / 插件目录',
-    title: '已发现插件',
+    title: '已发现插件', name: '名称', state: '状态', actions: '操作',
     count: '{{count}} 个条目',
     loadedCount: '已加载 {{count}}',
     healthPassed: '{{name}}：健康检查通过（{{status}}）',
@@ -145,11 +149,11 @@ export default {
     noPermissions: '无',
   },
   mappings: {
-    index: '03 / 端口映射', title: '跨服务器 TCP 映射', refreshTargets: '刷新目标服务器', name: '映射名称', protocol: '协议标签', listenPort: '本地监听端口', targetServer: '目标插件服务器', selectTarget: '选择在线服务器', targetHost: '目标主机', targetPort: '目标端口', targetPassword: '目标服务器口令（仅首次信任时需要）', targetPasswordPlaceholder: '输入 UI 口令进行验证', targetTableTitle: '目标服务器授权', targetTableBody: '查看远端插件并准备本地映射。', remotePlugins: '{{count}} 个插件', remoteProxies: '{{count}} 个端口代理', httpPlugin: 'HTTP 通过插件域名访问', mapProxy: '一键映射', proxyAlreadyMapped: '已映射', proxyMapped: '{{name}} 已映射到本地 {{port}} 端口', proxyMapFailed: '本地映射创建失败，请先验证目标服务器口令。', noLocalPort: '自动端口范围内没有可用的本地端口。', authorizeTarget: '验证口令', reauthorizeTarget: '重新验证', verifyMenu: '验证', needsAuth: '需要授权', failed: '验证失败', authorized: '已授权', targetPasswordRequired: '请输入目标服务器口令', targetAuthorized: '{{name}} 已完成授权', targetAuthorizeFailed: '目标服务器口令验证失败', add: '添加映射', update: '保存修改', edit: '编辑映射', enable: '启动监听', disable: '停止监听', listening: '监听中', stopped: '已停止', delete: '删除映射', emptyTitle: '尚未配置映射', emptyBody: '刷新目标服务器列表，然后添加需要转发的 TCP 端口。', saved: '映射已保存并启动', deleted: '映射已删除', targetsFailed: '无法读取目标服务器列表', saveFailed: '映射保存失败', deleteFailed: '映射删除失败',
+    index: '03 / 端口映射', title: '跨服务器 TCP 映射', subtitle: '先选择在线服务器并验证口令，再创建本地监听。', targetSection: '在线目标授权', onlineOnly: '仅显示当前在线服务器；密码只用于本次授权，不会写入映射配置。', passwordNotStored: '目标密码只在本地内存中短暂使用，不会保存到配置或发送给 Worker。', endpoint: '端点', state: '状态', actions: '操作', targetServer: '目标插件服务器', refreshTargets: '刷新目标服务器', name: '映射名称', protocol: '协议标签', listenPort: '本地监听端口', selectTarget: '选择在线服务器', targetHost: '目标主机', targetPort: '目标端口', targetPassword: '目标服务器登录口令', targetPasswordPlaceholder: '仅用于验证目标服务器，不会保存', targetTableTitle: '目标服务器授权', targetTableBody: '查看远端插件并准备本地映射。', remotePlugins: '{{count}} 个插件', remoteProxies: '{{count}} 个端口代理', httpPlugin: 'HTTP 通过插件域名访问', mapProxy: '一键映射', proxyAlreadyMapped: '已映射', proxyMapped: '{{name}} 已映射到本地 {{port}} 端口', proxyMapFailed: '本地映射创建失败，请先验证目标服务器口令。', noLocalPort: '自动端口范围内没有可用的本地端口。', authorizeTarget: '验证目标口令', reauthorizeTarget: '重新验证', verifyMenu: '验证', needsAuth: '需要授权', failed: '验证失败', authorized: '已授权', targetPasswordRequired: '请输入目标服务器口令', targetAuthorized: '{{name}} 已完成授权', targetAuthorizeFailed: '目标服务器口令验证失败（400），请检查口令或目标状态。', requestFailed: '映射请求失败（400），请先验证在线目标服务器口令。', notFound: '映射不存在', add: '添加映射', update: '保存修改', edit: '编辑', enable: '启动监听', disable: '停止监听', listening: '监听中', stopped: '已停止', delete: '删除映射', emptyTitle: '尚未配置映射', emptyBody: '选择在线目标并验证口令后，添加需要转发的 TCP 端口。', saved: '映射已保存并启动', deleted: '映射已删除', targetsFailed: '无法读取目标服务器列表', saveFailed: '映射保存失败', deleteFailed: '映射删除失败',
   },
   binding: {
     index: '03 / 连接设置',
-    title: '绑定管理',
+    title: '绑定管理', serverId: '服务器标识', worker: 'Worker 地址', storage: '长期凭据存储', accessKeyTitle: '访问密钥管理', credentialPasswordHelp: '仅文件存储需要；这不是本地 UI 登录口令。轮换只更新访问密钥。',
     configured: '已配置',
     noPath: '未提供路径',
     doneTitle: '服务器已完成绑定',
